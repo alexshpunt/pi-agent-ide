@@ -14,7 +14,11 @@ import {
 
 import { LspManager } from "./manager.ts";
 import { requestReferences, type LspLocation } from "./navigation.ts";
-import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
+import {
+  diagnosticErrors,
+  documentsPastErrorLimit,
+  withoutCorrectedNames,
+} from "./corrected-names.ts";
 import {
   requestWorkspaceSymbols,
   requestDocumentSymbols,
@@ -115,6 +119,14 @@ function declarationsNamed(symbols: readonly LspDocumentSymbol[], name: string):
     ...declarationsNamed(symbol.children ?? [], name),
   ]);
 }
+/** Symbols found by {@link searchSymbols}. */
+export interface SymbolSearchResult {
+  readonly hits: SymbolHit[];
+  readonly complete: boolean;
+  /** Searched files where the compiler stopped at its error limit, so references can be missing. */
+  readonly pastErrorLimit?: readonly string[];
+}
+
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
 export async function searchSymbols(
   query: string,
@@ -123,7 +135,7 @@ export async function searchSymbols(
   signal?: AbortSignal,
   scope: SymbolSearchScope = {},
   manager = LspManager.getInstance(),
-): Promise<{ readonly hits: SymbolHit[]; readonly complete: boolean }> {
+): Promise<SymbolSearchResult> {
   // Another Pi process may edit a searched file while the server answers. Its ranges then fit
   // neither version, so search again on the current text.
   return retryWhileSourceChanges(
@@ -139,7 +151,7 @@ async function searchSymbolsOnce(
   signal: AbortSignal | undefined,
   scope: SymbolSearchScope,
   manager: LspManager,
-): Promise<{ readonly hits: SymbolHit[]; readonly complete: boolean }> {
+): Promise<SymbolSearchResult> {
   signal?.throwIfAborted();
   const resultScope = scope.resultScope;
   if (resultScope !== undefined) {
@@ -237,6 +249,11 @@ async function searchSymbolsOnce(
     (resultScope === undefined || containsSearchMatch(resultScope, hit));
   const hits: SymbolHit[] = [];
   const seen = new Set<string>();
+  const errorsOf = diagnosticErrors(
+    (uri) => manager.openFile(sourceOf(uri, cwd), cwd, "symbols", signal),
+    signal,
+  );
+  const pastErrorLimit = new Set<string>();
   for (const client of clients) {
     signal?.throwIfAborted();
     const definitions = await requestWorkspaceSymbols(
@@ -317,11 +334,15 @@ async function searchSymbolsOnce(
           text: reference.matchedText,
         }),
         [definition.name, declared.matchedText],
-        diagnosticErrors(
-          (uri) => manager.openFile(sourceOf(uri, cwd), cwd, "symbols", signal),
-          signal,
-        ),
+        errorsOf,
       );
+      // The server answers from the syntax trees of the declaration file and of files it has
+      // open; one past the compiler's error limit can lack references.
+      for (const uri of documentsPastErrorLimit(opened.client, [
+        opened.uri,
+        ...reported.map(({ location }) => location.uri),
+      ]))
+        pastErrorLimit.add(sourceOf(uri, cwd));
       for (const { reference } of named)
         candidates.push({ ...reference, role: "reference", symbol });
       if (scope.navigation === "references" && !candidates.some(included)) continue;
@@ -372,6 +393,7 @@ async function searchSymbolsOnce(
   );
   return {
     hits: hits.slice(0, limit),
-    complete: (resultScope?.complete ?? true) && hits.length <= limit,
+    complete: (resultScope?.complete ?? true) && hits.length <= limit && pastErrorLimit.size === 0,
+    ...(pastErrorLimit.size > 0 && { pastErrorLimit: [...pastErrorLimit].sort() }),
   };
 }

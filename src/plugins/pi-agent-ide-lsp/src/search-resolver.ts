@@ -11,6 +11,7 @@ import {
 } from "pi-agent-search/api/search";
 import path from "node:path";
 import { readLspFileGraph, readLspSymbolGraph, resolveLspDeclaration } from "./lsp/code-views.ts";
+import { errorLimitNote } from "./lsp/corrected-names.ts";
 import type { LspManager } from "./lsp/manager.ts";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
@@ -35,6 +36,8 @@ type Payload =
       readonly sessionId: string;
       readonly hits: readonly SymbolHit[];
       readonly complete: boolean;
+      /** Searched files where the compiler stopped at its error limit. */
+      readonly pastErrorLimit: readonly string[];
       readonly references: boolean;
       readonly data: unknown;
     }
@@ -183,6 +186,7 @@ export function createLspSearchResolver(
         const collect = async (signal?: AbortSignal) => {
           const hits: SymbolHit[] = [];
           let complete = scope?.complete ?? true;
+          const pastErrorLimit = new Set<string>();
           for (const [manager, targets] of groups) {
             const found = await backend.searchSymbols(
               query,
@@ -202,6 +206,7 @@ export function createLspSearchResolver(
             );
             hits.push(...found.hits);
             complete = complete && found.complete;
+            for (const source of found.pastErrorLimit ?? []) pastErrorLimit.add(source);
           }
           if (scope !== undefined) await verifyResultTargets(scope, signal);
           // The search session keeps these hits and its refresh closure for as long as its anchors
@@ -209,6 +214,7 @@ export function createLspSearchResolver(
           return structuredClone({
             hits: hits.slice(0, limit),
             complete: complete && hits.length <= limit,
+            pastErrorLimit: [...pastErrorLimit].sort(),
           });
         };
         const found = await collect(context.signal);
@@ -233,6 +239,7 @@ export function createLspSearchResolver(
             sessionId: session.id,
             hits: found.hits,
             complete: found.complete,
+            pastErrorLimit: found.pastErrorLimit,
             references,
             data: {
               ...data,
@@ -276,14 +283,18 @@ export function createLspSearchResolver(
         theme,
         options.expanded,
         data.cwd,
-        data.references ? ["LSP reference navigation · may leave input scope"] : [],
+        [
+          ...(data.references ? ["LSP reference navigation · may leave input scope"] : []),
+          ...(data.pastErrorLimit.length > 0
+            ? [errorLimitNote(data.pastErrorLimit.map((source) => displaySource(source, data.cwd)))]
+            : []),
+        ],
         data.hits.map((hit) => `${hit.role} ${hit.symbol.name}`),
       );
     },
     format(payload, context) {
       const result = payload as Payload;
-      const display = (source: string) =>
-        source.startsWith("ssh://") ? source : path.relative(context.cwd, source);
+      const display = (source: string) => displaySource(source, context.cwd);
       if (result.mode === "calls")
         return { content: [{ type: "text", text: result.text }], details: result };
       if (result.mode === "declaration") {
@@ -319,12 +330,19 @@ export function createLspSearchResolver(
       if (result.complete && result.hits.length)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
+      if (result.pastErrorLimit.length > 0)
+        lines.push(errorLimitNote(result.pastErrorLimit.map(display)));
       return {
         content: [{ type: "text", text: [heading, ...lines].join("\n") }],
         details: { ...result, cwd: context.cwd },
       };
     },
   };
+}
+
+/** A source as the result names it: relative to the workspace, or its ssh:// URI. */
+function displaySource(source: string, cwd: string): string {
+  return source.startsWith("ssh://") ? source : path.relative(cwd, source);
 }
 
 /**
