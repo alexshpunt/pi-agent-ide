@@ -796,6 +796,47 @@ test("saves opt-in truncated output and reads the temporary protocol without pre
   }
 });
 
+test("a Read that another tool issued returns its whole text and keeps window notices", async () => {
+  const lines = Array.from({ length: DEFAULT_MAX_LINES + 500 }, (_, index) => `line ${index + 1}`);
+  const read = createReadTool(undefined, "compact", undefined, (id) => id.startsWith("codemode/"));
+  const limits: (string | undefined)[] = [];
+  read.registerContributions("dynamic-plugin", {
+    resolvers: [{ resolver: textResolver(lines.join("\n")), preserveTruncatedOutput: true }],
+    handlers: [
+      {
+        stage: "post-read",
+        handler(context) {
+          limits.push(context.outputLimit);
+          return { kind: "continue", context };
+        },
+      },
+    ],
+  });
+  const execute = (id: string, request: { path: string; offset?: number; limit?: number }) =>
+    read.tool.execute(id, request, undefined, undefined, { cwd: "/workspace" } as never);
+
+  try {
+    const nested = await execute("codemode/1", { path: "dynamic:report" });
+    expect(nested.content).toEqual([{ type: "text", text: lines.join("\n") }]);
+    expect(nested.details.temporarySource).toBeUndefined();
+    const page = await execute("codemode/2", { path: "dynamic:report", offset: 1, limit: 2 });
+    expect(page.content).toEqual([
+      {
+        type: "text",
+        text: `line 1\nline 2\n\n[${lines.length - 2} more lines in source. Read "dynamic:report" with offset=3 to continue.]`,
+      },
+    ]);
+    const direct = await execute("model-call", { path: "dynamic:report" });
+    const block = direct.content[0];
+    if (block?.type !== "text") throw new Error("Expected text");
+    expect(block.text).not.toContain(lines.at(-1));
+    expect(direct.details.temporarySource).toMatch(/^temp:/u);
+    expect(limits).toEqual(["none", "none", "model"]);
+  } finally {
+    await read.dispose();
+  }
+});
+
 test("does not save an explicit range as a temporary resource", async () => {
   const read = createReadTool();
   read.registerContributions("dynamic-plugin", {
