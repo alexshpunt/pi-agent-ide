@@ -125,26 +125,41 @@ function renderRow(
   const gutter = `${number} ${marker} `;
   const tone = diffTone(row.kind, palette);
   const styledGutter = withForeground(tone?.foreground ?? palette.contextForeground, gutter);
-  let content = resource.highlightedRows.get(row) ?? row.text.replaceAll("\t", " ".repeat(4));
+  const cursor = resource.cursor;
+  const cursorColumn =
+    cursor !== undefined && cursor.line === row.afterLine && row.kind !== "removed"
+      ? cursor.column
+      : undefined;
+  const shown = visibleRowText(row, cursorColumn);
+  const isWhole = shown.start === 0 && shown.end === row.text.length;
+  let content =
+    (isWhole ? resource.highlightedRows.get(row) : undefined) ??
+    shown.text.replaceAll("\t", " ".repeat(4));
 
   if (row.kind === "modified") {
     content = highlightRanges(
       content,
-      row.text,
-      row.addedRanges ?? [],
+      shown.text,
+      shown.addedRanges,
       palette.modified,
-      row.deletedOffsets ?? [],
+      shown.deletedOffsets,
     );
   }
 
-  const cursor = resource.cursor;
-
-  if (cursor !== undefined && cursor.line === row.afterLine && row.kind !== "removed") {
+  if (cursorColumn !== undefined) {
     content = insertCursor(
       content,
-      expandedOffset(row.text, cursor.column),
+      expandedOffset(shown.text, cursorColumn - shown.start),
       theme.fg("accent", "▌"),
     );
+  }
+
+  if (!isWhole) {
+    const hidden = (row.text.length - shown.text.length).toLocaleString("en-US");
+    // Attached to the text, so wrapping cannot leave an ellipsis alone on the first line.
+    const before = shown.start > 0 ? "…" : "";
+    const after = `${shown.end < row.text.length ? "…" : ""} (${hidden} characters not shown)`;
+    content = `${before && withForeground(palette.contextForeground, before)}${content}${withForeground(palette.contextForeground, after)}`;
   }
 
   const contentWidth = Math.max(1, innerWidth - 1 - visibleWidth(gutter));
@@ -152,6 +167,58 @@ function renderRow(
   const continuationGutter = " ".repeat(gutter.length);
 
   return wrapped.map((line, index) => `${index === 0 ? styledGutter : continuationGutter}${line}`);
+}
+
+/**
+ * Longest row text a panel shows in full. Wrapping and styling cost grows with the text, and a
+ * minified file can hold megabytes on one line; a longer row shows a window of this many
+ * characters around its first change or the cursor.
+ */
+export const MAX_ROW_CHARACTERS = 2_000;
+
+interface VisibleRowText {
+  readonly text: string;
+  /** Offsets of the window in the row's text. */
+  readonly start: number;
+  readonly end: number;
+  /** Change ranges and deletion offsets relative to the window. */
+  readonly addedRanges: readonly DiffTextRange[];
+  readonly deletedOffsets: readonly number[];
+}
+
+function visibleRowText(row: DiffRow, cursorColumn: number | undefined): VisibleRowText {
+  const { text } = row;
+  const addedRanges = row.addedRanges ?? [];
+  const deletedOffsets = row.deletedOffsets ?? [];
+  if (text.length <= MAX_ROW_CHARACTERS) {
+    return { text, start: 0, end: text.length, addedRanges, deletedOffsets };
+  }
+  const focus = cursorColumn ?? addedRanges[0]?.from ?? deletedOffsets[0] ?? 0;
+  let start = Math.min(
+    Math.max(0, focus - Math.floor(MAX_ROW_CHARACTERS / 4)),
+    text.length - MAX_ROW_CHARACTERS,
+  );
+  let end = start + MAX_ROW_CHARACTERS;
+  // Keep surrogate pairs whole at both edges.
+  if (isLowSurrogate(text.charCodeAt(start))) start++;
+  if (isLowSurrogate(text.charCodeAt(end))) end--;
+  return {
+    text: text.slice(start, end),
+    start,
+    end,
+    addedRanges: addedRanges.flatMap(({ from, to }) =>
+      to <= start || from >= end
+        ? []
+        : [{ from: Math.max(from, start) - start, to: Math.min(to, end) - start }],
+    ),
+    deletedOffsets: deletedOffsets.flatMap((offset) =>
+      offset < start || offset > end ? [] : [offset - start],
+    ),
+  };
+}
+
+function isLowSurrogate(code: number): boolean {
+  return code >= 0xdc_00 && code <= 0xdf_ff;
 }
 
 function diffTone(
