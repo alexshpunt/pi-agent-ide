@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDiffModel } from "#src/diff-model.ts";
 import writeAlignment from "./fixtures/write-alignment.json" with { type: "json" };
+import replaceFormatted from "./fixtures/replace-formatted.json" with { type: "json" };
 
 function modified(before: string, after: string) {
   const model = createDiffModel(before, after);
@@ -127,6 +128,21 @@ describe("precise inline changes", () => {
     expect(model.omittedChanges?.unavailable).not.toBe(true);
     expect(model.rows.some((row) => row.changed && row.text.includes("computer_open"))).toBe(true);
     expect(model.added + model.modified + model.removed).toBeGreaterThan(0);
+  });
+  test("pairs the lines of a formatted declaration replacement", () => {
+    // A ~90-line replace in a 721-line file, rewritten by the formatter afterwards.
+    const model = createDiffModel(replaceFormatted.before, replaceFormatted.after, [], {
+      project: false,
+    });
+    expect(model.omittedChanges?.unavailable).not.toBe(true);
+    // Whole-file counts; the final panel shows 27 of the added rows inside the edit's window.
+    expect(model).toMatchObject({ added: 33, modified: 8, removed: 13 });
+    expect(
+      model.rows.find(
+        (row) =>
+          row.kind === "modified" && row.text.includes("const { errorsOf, texts } = context;"),
+      ),
+    ).toBeDefined();
   });
   test("reports unavailable when the comparison deadline expires", () => {
     vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValue(101);
