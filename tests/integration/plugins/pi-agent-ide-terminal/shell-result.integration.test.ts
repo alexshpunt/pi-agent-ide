@@ -14,7 +14,7 @@ import { expect, test } from "vitest";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 test.runIf(process.platform !== "win32")(
-  "native scripts compose readable shell results without expanding the preview",
+  "native scripts get shell results in Pi's bash shape without expanding the preview",
   async () => {
     const root = path.resolve(".tmp/shell-result");
     await mkdir(root, { recursive: true });
@@ -24,20 +24,27 @@ test.runIf(process.platform !== "win32")(
       // a short sleep can finish during an existing turn and never request an extra response.
       const code = `
       const empty = await tools.bash({command: "true"});
-      // A failed command resolves to null; its readable status is in the Codemode result.
+      // A non-zero exit code is a value, not a failure.
       const failed = await tools.bash({command: "printf bad; exit 7"});
-      if (failed !== null) throw Error("Expected exit-7 failure");
       const large = await tools.bash({command: ${JSON.stringify('node -e \'process.stdout.write("HEAD" + "я".repeat(700000) + "TAIL")\'')}});
       const waiting = await tools.bash({command: "read -r line", timeoutSeconds: 0.1});
-      for (const result of [empty, waiting, large]) if (typeof result !== "string") throw Error("Expected readable shell text");
-      const observed = await tools.read({path:waiting});
-      if (!large.includes("Earlier output omitted") || !large.includes("TAIL") || large.includes("�"))
-        throw Error("Invalid bounded shell preview");
-      const largeBytes = encodeURIComponent(large).replace(/%[A-F\\d]{2}|./gu, "x").length;
-      if (largeBytes >= 50 * 1024) throw Error("Shell preview exceeds its byte budget");
-      const logPath = /^fullOutput: (.+)$/mu.exec(large)?.[1];
-      if (!logPath) throw Error("Missing readable full-log path");
-      text("SHELL_RESULTS=" + JSON.stringify({empty, waiting, observed, largeBytes, logPath}));
+      // Only a command that cannot start resolves to null.
+      const unstarted = await tools.bash({command: "true", cwd: "ssh://no-such-target/tmp"});
+      const observed = await tools.read({path: waiting.session});
+      const omitted = /\\n\\n\\[\\.\\.\\. (\\d+) bytes omitted \\.\\.\\.\\]\\n\\n/u.exec(large.output)?.[1];
+      text("SHELL_RESULTS=" + JSON.stringify({
+        empty, failed, waiting, unstarted, observed,
+        large: {
+          truncated: large.truncated,
+          exit_code: large.exit_code,
+          head: large.output.slice(0, 4),
+          tail: large.output.slice(-4),
+          omitted: Number(omitted),
+          bytes: encodeURIComponent(large.output).replace(/%[A-F\\d]{2}|./gu, "x").length,
+          replacement: large.output.includes("�"),
+          full_output_path: large.full_output_path,
+        },
+      }));
     `;
       const result = await new PiIntegrationTest({
         testName: "native-shell-result",
@@ -74,28 +81,59 @@ test.runIf(process.platform !== "win32")(
       const payload = /^SHELL_RESULTS=(.+)$/mu.exec(getToolResultText(result, "script"))?.[1];
       if (payload === undefined) throw new Error("Missing shell script JSON output");
       const data = JSON.parse(payload) as {
-        empty: string;
-        waiting: string;
+        empty: Record<string, unknown>;
+        failed: Record<string, unknown>;
+        waiting: Record<string, unknown>;
+        unstarted: unknown;
         observed: string;
-        largeBytes: number;
-        logPath: string;
+        large: {
+          truncated: boolean;
+          exit_code: number;
+          head: string;
+          tail: string;
+          omitted: number;
+          bytes: number;
+          replacement: boolean;
+          full_output_path: string;
+        };
       };
-      expect(data.empty).toContain("status: completed");
-      expect(data.empty).toContain("exitCode: 0");
-      expect(data.empty).toContain("output: (empty)");
+      expect(Object.keys(data.empty).sort()).toEqual([
+        "exit_code",
+        "full_output_path",
+        "output",
+        "session",
+        "truncated",
+        "wall_time_seconds",
+      ]);
+      expect(data.empty).toMatchObject({ output: "", truncated: false, exit_code: 0 });
+      expect(typeof data.empty.full_output_path).toBe("string");
+      expect(typeof data.empty.wall_time_seconds).toBe("number");
+      // A finished command keeps its session address.
+      expect(data.empty.session).toMatch(/^shell:[a-f\d]{12}$/u);
+      expect(data.failed).toMatchObject({ output: "bad", truncated: false, exit_code: 7 });
+      expect(data.unstarted).toBeNull();
+      // Only the command that could not start is a failure; it is named by its command line.
       const failed = codemodeFailures(getToolResultText(result, "script"));
-      // A failed command is named by its command line.
-      expect(failed).toContain("1 of 5 IDE calls failed:\n- bash printf bad; exit 7\n");
-      expect(failed).toContain("status: failed");
-      expect(failed).toContain("exitCode: 7");
-      expect(failed).toContain("bad");
+      expect(failed).toMatch(/^1 of 6 IDE calls failed:\n- bash true/u);
+      expect(failed).toContain("no-such-target");
+      expect(failed).not.toContain("exit 7");
       expect(failed).not.toContain("<system-result");
-      expect(data.waiting).toContain("status: running");
-      expect(data.waiting).toContain("reason: timeout");
-      expect(data.waiting).not.toContain("exitCode:");
+      expect(data.waiting).toMatchObject({ output: "", truncated: false });
+      expect(data.waiting.session).toMatch(/^shell:[a-f\d]{12}$/u);
+      expect(data.waiting).not.toHaveProperty("exit_code");
       expect(data.observed).toContain("status: running");
-      expect(data.largeBytes).toBeLessThan(50 * 1024);
-      const logPath = data.logPath;
+      // The log holds 1,400,008 bytes; the value keeps its first and last 512 KiB.
+      const marker = "\n\n[... 351432 bytes omitted ...]\n\n";
+      expect(data.large).toMatchObject({
+        truncated: true,
+        exit_code: 0,
+        head: "HEAD",
+        tail: "TAIL",
+        omitted: 1_400_008 - 1024 * 1024,
+        bytes: 1024 * 1024 + marker.length,
+        replacement: false,
+      });
+      const logPath = data.large.full_output_path;
       expect(await readFile(logPath, "utf8")).toBe("HEAD" + "я".repeat(700000) + "TAIL");
       const preview = getToolResultText(result, "preview");
       expect(preview).toContain("Earlier output omitted");
@@ -124,7 +162,7 @@ test.runIf(process.platform !== "win32")(
       await writeFile(path.join(cwd, "task.txt"), "unchanged\n");
       const code = `
         const opened = await tools.bash({command: "IFS= read -r answer; printf 'resource:%s' \\"$answer\\"", background: true});
-        const source = /^session: (shell:[^\\s]+)/m.exec(opened)?.[1];
+        const source = opened.session;
         if (!source) throw Error("Missing live session");
         try {
           const sent = await tools.write({path: source, content: "hello"});
