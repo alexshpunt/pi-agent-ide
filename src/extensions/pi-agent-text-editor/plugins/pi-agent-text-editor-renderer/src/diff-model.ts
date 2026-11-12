@@ -1,6 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
-import { diffChars } from "diff";
-import { DefaultLinesDiffComputer } from "vscode-diff";
+import { diffArrays, diffChars } from "diff";
 
 import type { TextMutationPreviewRange } from "pi-agent-text-editor/api/mutation-preview";
 
@@ -33,7 +32,7 @@ export interface DiffModel {
   readonly omittedChanges?: {
     readonly outside: number;
     readonly ambiguous: number;
-    /** Alignment exhausted its budget; changed-row counts are unknown. */
+    /** The line comparison exceeded its size or time limit; changed-row counts are unknown. */
     readonly unavailable?: boolean;
   };
   readonly rows: readonly DiffRow[];
@@ -57,7 +56,6 @@ const LINE_PAIR_THRESHOLD = 0.5;
 const DIFF_BUDGET_MS = 100;
 const MAX_ALIGNMENT_CELLS = 16_000;
 const MAX_DIFF_CHARACTERS = 1_000_000;
-const lineComputer = new DefaultLinesDiffComputer();
 
 const NON_SEMANTIC_TOKENS = new Set([
   "async",
@@ -157,26 +155,8 @@ function createSemanticRows(
       })),
     ];
   }
-  // With no shared trimmed line, the whole replacement block is already exact.
-  // Avoid the library's character refinement; detailed pairing below remains bounded.
-  const beforeLines = new Set(before.map((line) => line.trim()));
-  const hasSharedLine = after.some((line) => beforeLines.has(line.trim()));
-  const comparison = hasSharedLine
-    ? lineComputer.computeDiff([...before], [...after], {
-        ignoreTrimWhitespace: true,
-        computeMoves: false,
-        maxComputationTimeMs: DIFF_BUDGET_MS,
-      })
-    : {
-        hitTimeout: false,
-        changes: [
-          {
-            original: { startLineNumber: 1, endLineNumberExclusive: before.length + 1 },
-            modified: { startLineNumber: 1, endLineNumberExclusive: after.length + 1 },
-          },
-        ],
-      };
-  if (comparison.hitTimeout || performance.now() >= deadline) return undefined;
+  const changes = compareLines(before, after, deadline);
+  if (changes === undefined || performance.now() >= deadline) return undefined;
   let oldIndex = 0;
   let newIndex = 0;
   const appendContext = (end: number) => {
@@ -190,13 +170,13 @@ function createSemanticRows(
       });
     }
   };
-  for (const change of comparison.changes) {
-    appendContext(change.modified.startLineNumber - 1);
+  for (const change of changes) {
+    appendContext(change.newStart);
     const removed = before
-      .slice(change.original.startLineNumber - 1, change.original.endLineNumberExclusive - 1)
+      .slice(change.oldStart, change.oldEnd)
       .map((text, index) => ({ text, line: beforeStartLine + oldIndex + index }));
     const added = after
-      .slice(change.modified.startLineNumber - 1, change.modified.endLineNumberExclusive - 1)
+      .slice(change.newStart, change.newEnd)
       .map((text, index) => ({ text, line: afterStartLine + newIndex + index }));
     const aligned = alignChangedLines(removed, added, deadline);
     // Detailed pairing is optional: the line comparison already identified this changed block.
@@ -235,6 +215,81 @@ function createSemanticRows(
   return rows;
 }
 
+/** Zero-based, end-exclusive line spans of a changed block. */
+interface LineChange {
+  readonly oldStart: number;
+  readonly oldEnd: number;
+  readonly newStart: number;
+  readonly newEnd: number;
+}
+
+/**
+ * Changed line blocks, compared without edge whitespace, or undefined when the deadline passes.
+ * The panel previews what the agent changed, so a fast minimal (Myers) diff of the lines between
+ * identical edges is preferred over an alignment that is prettier but can miss the budget.
+ */
+function compareLines(
+  before: readonly string[],
+  after: readonly string[],
+  deadline: number,
+): readonly LineChange[] | undefined {
+  const oldLines = before.map((line) => line.trim());
+  const newLines = after.map((line) => line.trim());
+  // With no shared trimmed line, the whole replacement block is already exact; a line diff
+  // would only spend its worst case proving it.
+  const oldSet = new Set(oldLines);
+  if (!newLines.some((line) => oldSet.has(line))) {
+    return [{ oldStart: 0, oldEnd: oldLines.length, newStart: 0, newEnd: newLines.length }];
+  }
+
+  let prefix = 0;
+  while (
+    prefix < oldLines.length &&
+    prefix < newLines.length &&
+    oldLines[prefix] === newLines[prefix]
+  )
+    prefix++;
+  let suffix = 0;
+  while (
+    suffix < oldLines.length - prefix &&
+    suffix < newLines.length - prefix &&
+    oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]
+  )
+    suffix++;
+  const oldEnd = oldLines.length - suffix;
+  const newEnd = newLines.length - suffix;
+  if (prefix === oldEnd || prefix === newEnd) {
+    return prefix === oldEnd && prefix === newEnd
+      ? []
+      : [{ oldStart: prefix, oldEnd, newStart: prefix, newEnd }];
+  }
+
+  const timeout = deadline - performance.now();
+  if (timeout <= 0) return undefined;
+  const parts = diffArrays(oldLines.slice(prefix, oldEnd), newLines.slice(prefix, newEnd), {
+    timeout,
+  });
+  if (parts === undefined) return undefined;
+  const changes: LineChange[] = [];
+  let oldLine = prefix;
+  let newLine = prefix;
+  let open: { readonly oldStart: number; readonly newStart: number } | undefined;
+  for (const part of parts) {
+    if (!part.added && !part.removed) {
+      if (open !== undefined) changes.push({ ...open, oldEnd: oldLine, newEnd: newLine });
+      open = undefined;
+      oldLine += part.count;
+      newLine += part.count;
+      continue;
+    }
+    open ??= { oldStart: oldLine, newStart: newLine };
+    if (part.removed) oldLine += part.count;
+    else newLine += part.count;
+  }
+  if (open !== undefined) changes.push({ ...open, oldEnd: oldLine, newEnd: newLine });
+  return changes;
+}
+
 function scoreAt(scores: readonly (readonly number[])[], row: number, column: number): number {
   const score = scores[row]?.[column];
   if (score === undefined) {
@@ -264,12 +319,22 @@ function alignChangedLines(
     }
     return score;
   };
+  // Every candidate pair reads the tokens of both lines; tokenize each line once.
+  const tokensByLine = new Map<string, readonly string[]>();
+  const tokensOf = (line: string): readonly string[] => {
+    let tokens = tokensByLine.get(line);
+    if (tokens === undefined) {
+      tokens = semanticTokens(line);
+      tokensByLine.set(line, tokens);
+    }
+    return tokens;
+  };
   // Preserve corresponding lines in a replacement block before trying every possible pair.
   if (removed.length > 1 && removed.length === added.length) {
     const paired: DiffRow[] = [];
     for (const [index, before] of removed.entries()) {
       const after = requiredValue(added[index]);
-      const similarity = lineSimilarity(before.text, after.text, compareCharacters);
+      const similarity = lineSimilarity(before.text, after.text, compareCharacters, tokensOf);
       if (similarity === undefined) return undefined;
       if (similarity < LINE_PAIR_THRESHOLD) break;
       const row = modifiedRow(before, after, deadline);
@@ -297,6 +362,7 @@ function alignChangedLines(
         requiredValue(removed[oldIndex - 1]).text,
         requiredValue(added[newIndex - 1]).text,
         compareCharacters,
+        tokensOf,
       );
       if (similarity === undefined) return undefined;
       requiredValue(similarities[oldIndex - 1])[newIndex - 1] = similarity;
@@ -402,11 +468,12 @@ function lineSimilarity(
   before: string,
   after: string,
   compareCharacters: CharacterComparison,
+  tokensOf: (line: string) => readonly string[],
 ): number | undefined {
   const characterScore = compareCharacters(before, after);
   if (characterScore === undefined) return undefined;
-  const beforeTokens = semanticTokens(before);
-  const afterTokens = semanticTokens(after);
+  const beforeTokens = tokensOf(before);
+  const afterTokens = tokensOf(after);
 
   if (beforeTokens.length === 0 && afterTokens.length === 0) {
     return characterScore;
@@ -444,68 +511,114 @@ function directionalTokenSimilarity(
   return total / source.length;
 }
 
-function characterSimilarity(before: string, after: string, deadline: number): number | undefined {
-  const timeout = deadline - performance.now();
-  if (timeout <= 0) return undefined;
+const SURROGATE = /[\uD800-\uDFFF]/u;
+/** Largest bit-parallel LCS run, in word operations, that stays well inside the diff budget. */
+const MAX_LCS_WORD_STEPS = 4_000_000;
+
+/**
+ * The unchanged share of a minimal character diff, as characterSimilarity defines it, computed
+ * with a bit-parallel LCS. Undefined for surrogate pairs, whose code points need code-point
+ * comparison, and for line pairs too long to finish in one uninterrupted step.
+ */
+function codeUnitSimilarity(before: string, after: string): number | undefined {
   const longest = Math.max(before.length, after.length);
-
-  if (longest === 0) {
-    return 1;
-  }
-
-  if (before === after) return 1;
-  const beforeCharacters = Array.from(before);
-  const afterCharacters = Array.from(after);
+  if (longest === 0 || before === after) return 1;
+  if (SURROGATE.test(before) || SURROGATE.test(after)) return undefined;
   let start = 0;
-  let commonLength = 0;
   while (
-    start < beforeCharacters.length &&
-    start < afterCharacters.length &&
-    beforeCharacters[start] === afterCharacters[start]
-  ) {
-    commonLength += requiredValue(beforeCharacters[start]).length;
+    start < before.length &&
+    start < after.length &&
+    before.charCodeAt(start) === after.charCodeAt(start)
+  )
     start++;
-  }
-  let beforeEnd = beforeCharacters.length;
-  let afterEnd = afterCharacters.length;
+  let beforeEnd = before.length;
+  let afterEnd = after.length;
   while (
     beforeEnd > start &&
     afterEnd > start &&
-    beforeCharacters[beforeEnd - 1] === afterCharacters[afterEnd - 1]
+    before.charCodeAt(beforeEnd - 1) === after.charCodeAt(afterEnd - 1)
   ) {
-    commonLength += requiredValue(beforeCharacters[--beforeEnd]).length;
+    beforeEnd--;
     afterEnd--;
   }
-  let left = beforeCharacters.slice(start, beforeEnd);
-  let right = afterCharacters.slice(start, afterEnd);
-  if (right.length > left.length) [left, right] = [right, left];
-  // Short single-unit strings use the same LCS score without a quadratic table.
-  if (right.length <= 31 && left.every((character) => character.length === 1)) {
-    const masks = new Map<string, number>();
-    for (const [index, character] of right.entries()) {
-      masks.set(character, (masks.get(character) ?? 0) | (1 << index));
+  const common = start + before.length - beforeEnd;
+  const beforeLength = beforeEnd - start;
+  const afterLength = afterEnd - start;
+  if (beforeLength === 0 || afterLength === 0) return common / longest;
+  const [long, longEnd, short, shortEnd] =
+    afterLength <= beforeLength
+      ? [before, beforeEnd, after, afterEnd]
+      : [after, afterEnd, before, beforeEnd];
+  const shortLength = shortEnd - start;
+  if ((longEnd - start) * Math.ceil(shortLength / 32) > MAX_LCS_WORD_STEPS) return undefined;
+  return (
+    (common + longestCommonSubsequence(long, start, longEnd, short, start, shortEnd)) / longest
+  );
+}
+
+/**
+ * LCS length of two UTF-16 ranges with Hyyrö's bit-parallel algorithm: one pass over `left`,
+ * 32 positions of `right` per word operation.
+ */
+function longestCommonSubsequence(
+  left: string,
+  leftStart: number,
+  leftEnd: number,
+  right: string,
+  rightStart: number,
+  rightEnd: number,
+): number {
+  const length = rightEnd - rightStart;
+  const words = Math.ceil(length / 32);
+  const masks = new Map<number, Uint32Array>();
+  for (let index = 0; index < length; index++) {
+    const code = right.charCodeAt(rightStart + index);
+    let mask = masks.get(code);
+    if (mask === undefined) {
+      mask = new Uint32Array(words);
+      masks.set(code, mask);
     }
-    let matches = 0;
-    for (const character of left) {
-      const candidates = (masks.get(character) ?? 0) | matches;
-      matches = candidates & ~(candidates - ((matches << 1) | 1));
-    }
-    let unchanged = commonLength;
-    while (matches !== 0) {
-      matches &= matches - 1;
-      unchanged++;
-    }
-    return unchanged / longest;
+    mask[index >>> 5] = requiredValue(mask[index >>> 5]) | (1 << (index & 31));
   }
-  const parts = diffChars(before, after, {
-    timeout: deadline - performance.now(),
-    maxEditLength: 2_000,
-  });
+  // Set bits mark positions of `right` not yet matched.
+  const row = new Uint32Array(words).fill(0xff_ff_ff_ff);
+  for (let index = leftStart; index < leftEnd; index++) {
+    const mask = masks.get(left.charCodeAt(index));
+    if (mask === undefined) continue;
+    let carry = 0;
+    for (let word = 0; word < words; word++) {
+      const value = requiredValue(row[word]);
+      const matched = (value & requiredValue(mask[word])) >>> 0;
+      const sum = value + matched + carry;
+      carry = sum > 0xff_ff_ff_ff ? 1 : 0;
+      row[word] = ((sum >>> 0) | (value ^ matched)) >>> 0;
+    }
+  }
+  let unmatched = 0;
+  for (let word = 0; word < words; word++) {
+    const tail = length - word * 32;
+    let value = requiredValue(row[word]);
+    if (tail < 32) value &= (1 << tail) - 1;
+    while (value !== 0) {
+      value &= value - 1;
+      unmatched++;
+    }
+  }
+  return length - unmatched;
+}
+
+function characterSimilarity(before: string, after: string, deadline: number): number | undefined {
+  const timeout = deadline - performance.now();
+  if (timeout <= 0) return undefined;
+  const exact = codeUnitSimilarity(before, after);
+  if (exact !== undefined) return exact;
+  // Surrogate pairs and very long pairs: a minimal diff over code points, counted in code units.
+  const parts = diffChars(before, after, { timeout, maxEditLength: 2_000 });
   if (parts === undefined) return undefined;
   const unchanged = parts
     .filter((part) => !part.added && !part.removed)
     .reduce((length, part) => length + part.value.length, 0);
-  return unchanged / longest;
+  return unchanged / Math.max(before.length, after.length);
 }
 
 function projectHunks(rows: readonly DiffRow[]): readonly DiffRow[] {

@@ -285,7 +285,7 @@ function renderTail(
           : [
               {
                 text: resource.model.omittedChanges.unavailable
-                  ? "Local diff unavailable: alignment limit reached"
+                  ? "Local diff unavailable: comparison limit reached"
                   : [
                       ...(resource.model.omittedChanges.outside > 0
                         ? [
