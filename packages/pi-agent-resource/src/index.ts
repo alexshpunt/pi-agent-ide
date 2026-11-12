@@ -111,4 +111,10 @@ export {
   type ResolvedResultTargets,
 } from "./result-targets.ts";
 export { connectResultImages, ResultImageStore } from "./result-images.ts";
-export { createLineMap, rangesInText, rebaseOrRelocateRange, type LineMap } from "./line-map.ts";
+export {
+  createLineMap,
+  describeLostRange,
+  rangesInText,
+  rebaseOrRelocateRange,
+  type LineMap,
+} from "./line-map.ts";

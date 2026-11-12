@@ -198,6 +198,57 @@ test.each([
     }
   },
 );
+/** A selection resolved in `resolvedIn`, read from a source whose text is now `current`. */
+function readSelectionOf(resolvedIn: string, current: string, line: number) {
+  const read = createReadTool();
+  read.registerContributions("fixture", {
+    resolvers: [{ resolver: textResolver(current) }],
+    targetResolvers: [
+      {
+        resolver: {
+          id: "targets",
+          tryResolve: () => ({
+            kind: "resolved",
+            targets: [
+              {
+                source: "names.txt",
+                expectedContent: resolvedIn,
+                ranges: [
+                  { start: { lineNumber: line, column: 0 }, end: { lineNumber: line, column: 5 } },
+                ],
+              },
+            ],
+          }),
+        },
+      },
+    ],
+  });
+  return read;
+}
+
+test("a selection resolved in older text shows its own lines after another session moved them", async () => {
+  const read = readSelectionOf("alpha\nmatch\nomega\n", "peer\nalpha\nmatch\nomega\n", 2);
+  try {
+    const result = await read.execute({ path: "selection" }, { cwd: process.cwd() }, "script");
+    expect(result.isError).not.toBe(true);
+    expect(result.script).toMatchObject({ kind: "text", startLine: 3, content: "match\n" });
+  } finally {
+    await read.dispose();
+  }
+});
+
+test("a selection whose own line another session changed is rejected, not shown elsewhere", async () => {
+  const read = readSelectionOf("alpha\nmatch\nomega\n", "alpha\nmatcher\nomega\n", 2);
+  try {
+    const result = await read.execute({ path: "selection" }, { cwd: process.cwd() });
+    expect(result.isError).toBe(true);
+    const block = result.content[0];
+    expect(block?.type === "text" ? block.text : "").toContain("line 2");
+  } finally {
+    await read.dispose();
+  }
+});
+
 test("script multi-target reads keep every selected resource", async () => {
   const read = createReadTool();
   read.registerContributions("fixture", {

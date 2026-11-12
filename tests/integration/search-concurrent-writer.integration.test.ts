@@ -152,6 +152,52 @@ text("searches " + searches);`,
   });
 }, 150_000);
 
+/** Reads of a search's all-line reference from a file a peer rewrites every 50 ms. */
+const readRounds = 20;
+
+test("a Read of a search reference shows the matched lines while another session writes the file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const source = createConcurrentWriterSource({ token: "alphaTokenValue" });
+    await writeFile(path.join(cwd, "names.cpp"), source.content);
+    const peer = await installConcurrentWriter(cwd, {
+      file: "names.cpp",
+      script: "peer-read.mjs",
+      intervalMs: 50,
+      lifetimeMs: 90_000,
+    });
+
+    const run = await runStress(
+      cwd,
+      "search-read-concurrent-writer",
+      `// @options: {"timeout_ms": 150000}
+await tools.bash({command:${JSON.stringify(peer.command)},background:true,name:${JSON.stringify(peer.session)}});
+let rounds = 0;
+// A failed round still stops the peer, so it cannot write into the next run's workspace.
+try {
+  for (let round = 1; round <= ${String(readRounds)}; round += 1) {
+    const result = await tools.search({path:"names.cpp",query:"alphaTokenValue"}).then(value=>value.result);
+    const all = /SEARCH#[A-F0-9]+:all:line/u.exec(result)?.[0];
+    check(all !== undefined, "Round " + round + ": the search shows no all reference: " + result);
+    // Each selected line is a line of the identifier; the peer only moves them down.
+    const read = await tools.read({path:all});
+    check(typeof read === "string", "Round " + round + ": the Read of " + all + " failed: " + JSON.stringify(read));
+    const shown = body(read);
+    check((shown.match(/alphaTokenValue/gu) ?? []).length === ${String(source.tokenOccurrences)} && !shown.includes("total += compute("),
+      "Round " + round + ": the Read of " + all + " shows other lines: " + shown);
+    rounds += 1;
+  }
+} finally {
+  await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
+}
+text("read rounds " + rounds);`,
+    );
+
+    expect(getToolExecution(run, "stress").isError, getToolResultText(run, "stress")).toBe(false);
+    expect(getToolResultText(run, "stress")).toContain(`read rounds ${String(readRounds)}`);
+    expect(await peer.writes()).toBeGreaterThan(readRounds);
+  });
+}, 150_000);
+
 /**
  * Searches that find nothing and offer possible names from a file a peer rewrites every 50 ms.
  * The window between finding a candidate and registering its anchors is short, so the rounds are

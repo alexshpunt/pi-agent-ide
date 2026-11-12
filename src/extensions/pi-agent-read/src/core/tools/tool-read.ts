@@ -2,13 +2,17 @@ import { requiredValue } from "pi-agent-invariant";
 import { Text } from "@earendil-works/pi-tui";
 import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
+  createLineMap,
+  describeLostRange,
   isAgentContent,
   isResourceResolutionAttempt,
+  rangesInText,
   ResourceError,
   resourceScheduler,
   resourceAccesses,
   type ResourceResolver,
   type ResourceResolverContext,
+  type ResultRange,
 } from "pi-agent-resource";
 import {
   type PresentedTextRow,
@@ -668,21 +672,15 @@ async function resolveTextTargets(
       const ranges = target.ranges ?? [
         { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 1 } },
       ];
-      return ranges.map(async (range): Promise<ReadToolResult> => {
+      return ranges.map(async (resolvedRange): Promise<ReadToolResult> => {
         const sourceTarget = request.path?.startsWith("RESULT#") ? request.path : undefined;
-        const rangeLimit = Math.max(
-          1,
-          range.end.lineNumber -
-            range.start.lineNumber +
-            (sourceTarget !== undefined && range.end.column > 0 ? 1 : 0),
-        );
         let rangePipeline: ReadPipelineContext = {
           inputScope: "selection",
           sourceTarget,
           request: {
             ...request,
             path: target.source,
-            limit: request.limit ?? rangeLimit,
+            limit: request.limit ?? selectionLimit(resolvedRange, sourceTarget),
           },
           resolverContext,
           audience,
@@ -706,7 +704,36 @@ async function resolveTextTargets(
         if (resolved.kind === "return") {
           return withViewWarnings(resolved.result, viewWarnings);
         }
-        const processed = await runReadHandlers(resolved.context, handlers);
+        // The range was selected in `expectedContent`. Another session may have written the
+        // source since, so the range moves onto the text this Read acquired, or fails.
+        const acquired = acquiredText(resolved.context);
+        const expected = target.expectedContent;
+        const range =
+          expected === undefined || acquired === undefined
+            ? resolvedRange
+            : rangesInText([resolvedRange], expected, acquired)?.[0];
+        if (range === undefined)
+          return withViewWarnings(
+            failureResult({
+              code: "RESOLVE_FAILED",
+              source: target.source,
+              message: `${target.source} changed after the selection was resolved: ${describeLostRange(
+                resolvedRange,
+                createLineMap(requiredValue(expected), requiredValue(acquired)),
+              )}. Repeat the call that returned the reference for current references.`,
+            }),
+            viewWarnings,
+          );
+        const processed = await runReadHandlers(
+          {
+            ...resolved.context,
+            request: {
+              ...resolved.context.request,
+              limit: request.limit ?? selectionLimit(range, sourceTarget),
+            },
+          },
+          handlers,
+        );
         if (processed.kind === "return") {
           if (processed.result.isError === true)
             return withViewWarnings(processed.result, viewWarnings);
@@ -905,6 +932,22 @@ async function resolveAnchoredOrigin(
     source: state.source,
     message: `No fragment resolver handled anchor "${fragment}"`,
   });
+}
+
+/** Lines a selected range covers; a `RESULT#` range ending inside a line includes that line. */
+function selectionLimit(range: ResultRange, sourceTarget: string | undefined): number {
+  return Math.max(
+    1,
+    range.end.lineNumber -
+      range.start.lineNumber +
+      (sourceTarget !== undefined && range.end.column > 0 ? 1 : 0),
+  );
+}
+
+/** The source text a Read acquired, as its resolver returned it; undefined for other content. */
+function acquiredText(context: ReadPipelineContext): string | undefined {
+  if (context.sourceText !== undefined) return context.sourceText;
+  return context.state?.contentKind === "text" ? context.state.text.content : undefined;
 }
 
 async function resolveSource(

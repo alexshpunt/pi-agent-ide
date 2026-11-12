@@ -279,7 +279,7 @@ function createMatchResolver(
       const result = payload as TextPayload;
 
       const scope = context.scope;
-      const refresh =
+      const rerun =
         scope === undefined
           ? undefined
           : async (signal?: AbortSignal) =>
@@ -289,15 +289,29 @@ function createMatchResolver(
                 context.cwd,
                 signal,
               );
-      // Another session may write a matched file between the search and this registration. The
-      // captured text is the snapshot, and its own matches are registered with it.
-      const captured = await captureCurrentMatches(result, context.cwd, {
-        request: effectiveRequest(result),
-        inContent: scope === undefined,
-        read: sessions.snapshotReader(context.cwd, context.environment),
-        ...(refresh === undefined ? {} : { rerun: refresh }),
-        ...(context.signal === undefined ? {} : { signal: context.signal }),
-      });
+      // Another session may write a matched file between a search and the read of its text. The
+      // captured text is the snapshot, with the matches a search of that text finds.
+      const capture = (
+        found: { readonly matches: readonly TextSearchMatch[]; readonly complete: boolean },
+        signal?: AbortSignal,
+      ) =>
+        captureCurrentMatches(found, context.cwd, {
+          request: effectiveRequest(result),
+          inContent: scope === undefined,
+          read: sessions.snapshotReader(context.cwd, context.environment),
+          ...(rerun === undefined ? {} : { rerun }),
+          ...(signal === undefined ? {} : { signal }),
+        });
+      // An all reference to a changed file searches again, and captures that search the same way.
+      const refresh = async (signal?: AbortSignal) => {
+        const found =
+          rerun === undefined
+            ? await runSearchRecipe(result.recipe, context.cwd, signal, context.environment)
+            : await rerun(signal);
+        const again = await capture(found, signal);
+        return { ...again, notices: [...found.notices, ...again.notices] };
+      };
+      const captured = await capture(result, context.signal);
       const notices = [...result.notices, ...captured.notices];
       const session = await sessions.register(
         result.request.query,

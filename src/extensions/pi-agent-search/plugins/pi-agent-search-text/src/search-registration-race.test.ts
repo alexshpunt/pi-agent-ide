@@ -90,6 +90,37 @@ test("a search registers anchors for lines a concurrent writer only moved", asyn
   expect(details.complete).toBe(true);
 });
 
+test("an all reference searched again keeps its matches when another session writes before the read", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-refresh-race-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "main.cpp");
+  await writeFile(source, text(...original));
+  // Once armed, a peer inserts a line right before every read, so each read of the store sees
+  // newer text than the search that ran just before it.
+  let writes = 0;
+  let armed = false;
+  const sessions = new SearchSessionStore(undefined, new ResultTargetStore(), async (file) => {
+    if (armed) {
+      writes += 1;
+      await writeFile(file, `// peer ${String(writes)}\n${await readFile(file, "utf8")}`);
+    }
+    return readFile(file, "utf8");
+  });
+  const resolver = createTextResolver(sessions);
+  const context = { cwd, signal: new AbortController().signal };
+  const resolved = await resolver.tryResolve({ query: "rename_me", path: "main.cpp" }, context);
+  if (resolved.kind !== "resolved") throw new Error(`Expected matches, got ${resolved.kind}`);
+  const details = (await resolver.format(resolved.payload, context)).details as SearchToolDetails;
+  armed = true;
+
+  // The file changed since the search, so the reference searches again before it resolves.
+  expect(await selected(sessions, `SEARCH#${String(details.sessionId)}:all:match`, cwd)).toEqual([
+    "4:rename_me",
+    "5:rename_me",
+  ]);
+  expect(writes).toBe(2);
+});
+
 test("a search reports the matches of the text it registers when a match disappears", async () => {
   const { cwd, sessions, format } = await searchWhileWriting((source) =>
     writeFile(
