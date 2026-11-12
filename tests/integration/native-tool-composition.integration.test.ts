@@ -1370,7 +1370,7 @@ test("retains complete targets beyond the Search preview", async () => {
     await writeFile(path.join(cwd, "large.txt"), before);
     const run = await runComposition(cwd, "composition-preview-is-not-scope", [
       `const read = await tools.read({path:"large.txt"});
-check(!read.includes("offset=2001") && read.trimEnd().split("\\n").length===2101,"Expected the whole text from a script Read");
+check(!read.includes("offset=2001") && read.split("\\n").filter(line => line==="old").length===2101,"Expected the whole text from a script Read");
 const found=await tools.search({path:read,query:"old",limit:1}).then(value => value.result);
 check(found.includes("2101 matches") && found.includes("(compacted)") && matches(found).length===1,"Expected compacted Search presentation with one example reference");
 store("completeSelection",found); text(found);`,
