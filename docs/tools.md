@@ -80,14 +80,13 @@ Other push-only servers return a `snapshot`: the latest publication, with no pro
 
 ## Terminal sessions
 
-Codemode receives the same readable shell status and output as direct calls. The result includes its session source and a reference to the complete log when output is shortened. A wait timeout leaves a running session, not a failed command. Inspect the reported exit status and effects. A command that fails, including one with a non-zero exit status, resolves to `null`, and the Codemode result lists it with its output.
+In Codemode, `bash`, `powershell`, `remote_bash` and `remote_powershell` resolve to the fields of Pi's own `bash`, plus the session: `{ output, exit_code, truncated, full_output_path, wall_time_seconds, session }`. `output` holds up to 1 MiB; longer output keeps its first and last 512 KiB around an omission marker such as `[... 351432 bytes omitted ...]`, with `truncated` set. `full_output_path` is the complete log. `session` is the `shell:<session>` source, which stays readable after the command ends. A background command, or one still running when its wait times out, has no `exit_code` yet. A non-zero exit code is a value, not a failure: the script gets it, and the Codemode result does not list the call as failed. Only a command that cannot start, such as one with an unknown SSH target, resolves to `null`; the Codemode result lists it with its reason. A direct call still shows readable status and output and reports a non-zero exit code as an error.
 
 ```ts
 const result = await tools.bash({ command: "your-command" });
-if (result !== null) {
-  text(result);
-  text(await tools.read({ path: result }));
-}
+if (result !== null && result.exit_code !== 0) text(result.output);
+const server = await tools.bash({ command: "npm run dev", background: true });
+text(await tools.read({ path: server.session }));
 ```
 
 `bash` (Linux/WSL) or `powershell` (Windows) starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.
