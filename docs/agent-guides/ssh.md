@@ -35,7 +35,7 @@ Keep machine-specific targets out of shared Git history unless the user asks.
 
 ## Work on a target
 
-- Use the ordinary tools with `ssh://<target>/<absolute path>`: read, write and edit tools, search, file_search, ast_search, lsp_search, copy, move, delete, undo. Copy and move also work between local and remote paths.
+- Use the ordinary tools with `ssh://<target>/<absolute path>`: read, write and edit tools, search, file_search, ast_search, lsp_search, copy, move, delete, undo. Copy and move also work between local and remote paths. A transfer has no overall time limit; it stops only when no data moves for 30 s (`TRANSFER_STALLED`), and a failed transfer reports how many bytes it wrote and whether the target file changed.
 - In a Pi session running natively on Windows, local paths in copy and move are Windows paths (`C:\work\file.bin` or `C:/work/file.bin`), and both directions work against a Linux target. A `file:` URL as a copy target is rejected.
 - Run commands with an SSH `cwd`: `bash` for Linux targets and `remote_powershell` for Windows targets. On a Windows host, `powershell` runs on Windows targets and `remote_bash` on Linux targets. `remote_powershell` and `remote_bash` appear only when a target of that OS is configured and need an `ssh://` `cwd`. Debug with `debug` and an SSH `cwd`. Read `docs:terminal` or `docs:debugger` first.
 - `raw:ssh://…` reads original bytes. `web:ssh://<target>/https://…` fetches a page from the target; plain URLs are still fetched locally.
