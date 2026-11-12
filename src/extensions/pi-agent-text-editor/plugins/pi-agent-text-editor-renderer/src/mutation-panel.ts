@@ -13,7 +13,7 @@ import {
 } from "pi-agent-tool-ui";
 
 import { createDiffModel, type DiffModel, type DiffRow } from "./diff-model.ts";
-import { type DiffPanelResource, renderDiffPanel } from "./diff-renderer.ts";
+import { type DiffPanelResource, MAX_ROW_CHARACTERS, renderDiffPanel } from "./diff-renderer.ts";
 
 import type { MutationRenderResource } from "./render-resource.ts";
 import { summarizeStatuses } from "./status-summary.ts";
@@ -391,7 +391,8 @@ function highlightRows(
       continue;
     }
 
-    const line = sourceLine(row);
+    // A row too long to show in full is shown as a plain window; highlighting it is wasted work.
+    const line = row.text.length > MAX_ROW_CHARACTERS ? undefined : sourceLine(row);
     const previous = group.at(-1);
     const previousLine = previous === undefined ? undefined : sourceLine(previous);
     const isStartsNewGroup =
