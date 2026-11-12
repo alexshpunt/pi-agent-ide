@@ -2,7 +2,6 @@ import path from "node:path";
 import { registerIdeCapability } from "#src/api/capabilities.ts";
 import { access } from "node:fs/promises";
 
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { textLineAnchors } from "pi-agent-text";
@@ -55,6 +54,7 @@ import {
 } from "#src/core/reload-resource-store.ts";
 import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
 import { createBreakpointPresenter } from "#src/plugins/pi-agent-ide-debugger/src/breakpoint-view.ts";
+import { StringEnum } from "#src/plugins/pi-agent-ide-debugger/src/string-enum.ts";
 import {
   renderDebugActionCall,
   renderDebugCall,
