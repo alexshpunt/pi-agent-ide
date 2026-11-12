@@ -58,10 +58,11 @@ export default function registerSearchAnchorRuntimeExtension(pi: ExtensionAPI): 
 
   pi.on("tool_call", (event: ToolCallEvent) => {
     const scope = scopeAnchors.at(0);
-    for (const [key, value] of Object.entries(event.input)) {
-      if (value === "SCOPE#RUNTIME:1" && scope !== undefined) event.input[key] = scope;
+    const input: Record<string, unknown> = event.input;
+    for (const [key, value] of Object.entries(input)) {
+      if (value === "SCOPE#RUNTIME:1" && scope !== undefined) input[key] = scope;
     }
-    rewriteInput(event.input, sessionIds, lineAnchors);
+    rewriteInput(input, sessionIds, lineAnchors);
   });
 }
 
