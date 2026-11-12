@@ -41,10 +41,18 @@ const frameSchema = Type.Union([
 type Frame = Static<typeof frameSchema>;
 /** Input bytes per frame; the worker's CHUNK_SIZE. */
 const INPUT_FRAME_BYTES = 16384;
+/** Input frames the worker holds before it acknowledges them; its INPUT_WINDOW. */
+const INPUT_WINDOW_FRAMES = 128;
+/** Input bytes queued or unacknowledged: two 1 MiB writes, which fill INPUT_WINDOW_FRAMES. */
+const INPUT_QUEUE_BYTES = INPUT_WINDOW_FRAMES * INPUT_FRAME_BYTES;
 
 /** Service startup and optional remote terminal dimensions. */
 export interface SshProcessContext extends BackendOperationContext {
   readonly pty?: { readonly cols: number; readonly rows: number };
+  /** The command exits once its input ends. On a stop or a lost connection, a Windows target
+   * closes its input and kills it only after a grace period, so it can remove temporary files.
+   * POSIX targets always send SIGTERM first and need no flag. */
+  readonly gracefulStop?: boolean;
 }
 /** Exact remote process streams. Drain both output streams while the channel is running. */
 export interface SshProcessChannel {
@@ -94,6 +102,7 @@ export async function startSshProcess(
     args,
     cwd,
     ...(context.pty ? { pty: context.pty } : {}),
+    ...(context.gracefulStop === true ? { gracefulStop: true } : {}),
   });
   // Initial argv is separate from the small interactive control frames.
   if (Buffer.byteLength(request) > 48 * 1024 * 1024)
@@ -169,7 +178,13 @@ class ProcessChannel implements SshProcessChannel {
   #transportExit: number | null | undefined;
   #sequence = 0;
   #queuedBytes = 0;
+  /** Settles once every earlier write has sent its frames. */
   #queue: Promise<void> = Promise.resolve();
+  /** Settles once every frame sent so far is acknowledged or rejected. */
+  #drained: Promise<void> = Promise.resolve();
+  #unacknowledgedFrames = 0;
+  /** Writes waiting for the worker to acknowledge a frame; woken in order, or all on close. */
+  readonly #windowWaiters: (() => void)[] = [];
   #stopTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
@@ -223,6 +238,7 @@ class ProcessChannel implements SshProcessChannel {
       const inputError = this.error(code ?? "INPUT_CLOSED");
       for (const pending of this.#acks.values()) pending.reject(inputError);
       this.#acks.clear();
+      for (const wake of this.#windowWaiters.splice(0)) wake();
       if (code) {
         const error = this.error(code);
         this.#rejectReady(error);
@@ -261,33 +277,42 @@ class ProcessChannel implements SshProcessChannel {
 
   async write(bytes: Uint8Array): Promise<void> {
     if (this.#closed || this.#ending || this.#stopping) throw this.error("INPUT_CLOSED");
-    if (this.#queuedBytes + bytes.length > 1024 * 1024) throw this.error("INPUT_LIMIT");
+    if (this.#queuedBytes + bytes.length > INPUT_QUEUE_BYTES) throw this.error("INPUT_LIMIT");
     const data = Buffer.from(bytes);
     this.#queuedBytes += data.length;
-    const result = this.#queue.then(async () => {
-      // Send every frame before awaiting acknowledgements, so one write costs one round trip
-      // instead of one per frame. The 1 MiB bound keeps this within the worker's INPUT_WINDOW.
+    // Frames leave in call order once earlier writes have sent theirs. Acknowledgements of
+    // consecutive writes overlap, so a caller that keeps two writes pending never idles the link.
+    const sent = this.#queue.then(async () => {
       const accepted: Promise<void>[] = [];
-      try {
-        for (let offset = 0; offset < data.length; offset += INPUT_FRAME_BYTES) {
-          if (this.#stopping || this.#closed) throw this.error("INPUT_CLOSED");
-          const frame = this.sendAcknowledged({
-            kind: "input",
-            bytes: data.subarray(offset, offset + INPUT_FRAME_BYTES).toString("base64"),
-          });
-          void frame.catch(() => {});
-          accepted.push(frame);
+      for (let offset = 0; offset < data.length; offset += INPUT_FRAME_BYTES) {
+        await this.openInputWindow();
+        if (this.#stopping || this.#closed) {
+          const closed = Promise.reject(this.error("INPUT_CLOSED"));
+          void closed.catch(() => {});
+          accepted.push(closed);
+          break;
         }
-      } finally {
-        // Settle sent frames before the next write starts, even when this one stops early.
-        await Promise.allSettled(accepted);
+        this.#unacknowledgedFrames++;
+        const frame = this.sendAcknowledged({
+          kind: "input",
+          bytes: data.subarray(offset, offset + INPUT_FRAME_BYTES).toString("base64"),
+        }).finally(() => {
+          this.#unacknowledgedFrames--;
+          this.#windowWaiters.shift()?.();
+        });
+        void frame.catch(() => {});
+        accepted.push(frame);
       }
-      await Promise.all(accepted);
+      return accepted;
     });
-    this.#queue = result.catch(() => {});
+    this.#queue = sent.then(() => {});
+    const settled = sent.then((accepted) => Promise.allSettled(accepted));
+    this.#drained = Promise.all([this.#drained, settled]).then(() => {});
     try {
-      await result;
+      await Promise.all(await sent);
     } finally {
+      // Bytes stay counted until their frames settle, which bounds the memory held for them.
+      await settled;
       this.#queuedBytes -= data.length;
     }
   }
@@ -295,7 +320,8 @@ class ProcessChannel implements SshProcessChannel {
   async end(): Promise<void> {
     if (this.pty) throw new SshBackendError("PTY_INPUT_NOT_CLOSABLE", this.source, "not-applied");
     this.#ending = true;
-    await this.#queue;
+    // The worker accepts the end of input only after it has written every pending frame.
+    await this.#drained;
     await this.send({ kind: "end" });
   }
 
@@ -350,6 +376,11 @@ class ProcessChannel implements SshProcessChannel {
     return new SshBackendError(code, this.source, effect);
   }
 
+  /** Wait until the worker can take one more input frame without exceeding its INPUT_WINDOW. */
+  private async openInputWindow(): Promise<void> {
+    while (this.#unacknowledgedFrames >= INPUT_WINDOW_FRAMES && !this.#closed)
+      await new Promise<void>((resolve) => this.#windowWaiters.push(resolve));
+  }
   private async sendAcknowledged(event: Readonly<Record<string, unknown>>): Promise<void> {
     const id = ++this.#sequence;
     const accepted = new Promise<void>((resolve, reject) => {

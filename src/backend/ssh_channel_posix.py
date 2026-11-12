@@ -13,7 +13,8 @@ import subprocess
 import termios
 import time
 
-from ssh_channel_common import CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, ChannelError, command_line, emit, error_code, initial_request
+from ssh_channel_common import (CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, STOP_GRACE_SECONDS, ChannelError,
+                                command_line, emit, error_code, initial_request)
 
 process = None
 master = None
@@ -97,6 +98,18 @@ def stop_adopted_children():
 
 
 def finish_children():
+    # A lost connection or a failed channel stops the command like a stop request: input ends,
+    # SIGTERM lets it remove its temporary files, and SIGKILL follows after the grace period.
+    if process.poll() is None:
+        if process.stdin is not None and not process.stdin.closed:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
+        kill_group(signal.SIGTERM)
+        deadline = time.monotonic() + STOP_GRACE_SECONDS
+        while process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
     deadline = time.monotonic() + 2
     kill_group(signal.SIGKILL)
     while process.poll() is None or stop_adopted_children():
@@ -277,7 +290,7 @@ def run():
                                 process.stdin.close()
                             input_open = False
                             kill_group(signal.SIGTERM)
-                            stopping = time.monotonic() + 2
+                            stopping = time.monotonic() + STOP_GRACE_SECONDS
                         else:
                             raise ChannelError("INVALID_REQUEST")
                     if len(incoming) > FRAME_LIMIT:

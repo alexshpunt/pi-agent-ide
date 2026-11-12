@@ -16,6 +16,10 @@ class TransferError(Exception):
 
 
 def interrupted(_signal, _frame):
+    # A stop closes input and sends SIGTERM at nearly the same time. Only the first interruption
+    # raises, so a later one cannot skip the removal of the staging file.
+    for ignored in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+        signal.signal(ignored, signal.SIG_IGN)
     raise TransferError("CANCELLED")
 
 
@@ -89,6 +93,8 @@ except OSError as error:
 except Exception:
     reply = {"ok": False, "code": "REMOTE_OPERATION_FAILED", "effect": effect}
 finally:
+    for ignored in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+        signal.signal(ignored, signal.SIG_IGN)
     if temporary is not None:
         try:
             os.unlink(temporary)

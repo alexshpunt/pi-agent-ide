@@ -1,3 +1,5 @@
+import type { ChildProcess } from "node:child_process";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { SshBackend } from "#src/backend/ssh.ts";
@@ -78,6 +80,75 @@ test("SSH service channel delivers consecutive full input windows in order", asy
     await channel.stop().catch(() => {});
   }
 });
+
+test("SSH service channel overlaps two pending writes and holds many small ones within the window", async () => {
+  const channel = await startSshProcess(
+    backend.target,
+    "python3",
+    [
+      "-c",
+      "import os\nwhile True:\n data=os.read(0,65536)\n if not data: break\n os.write(1,data)",
+    ],
+    fixture.workspace,
+  );
+  const stdout: Buffer[] = [];
+  channel.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  channel.stderr.resume();
+  try {
+    const large = Array.from({ length: 2 }, (_, round) => {
+      const bytes = Buffer.alloc(1024 * 1024);
+      for (let index = 0; index < bytes.length; index++) bytes[index] = (index + round * 7) % 251;
+      return bytes;
+    });
+    // Two 1 MiB writes may be pending together; one more byte exceeds the queue.
+    const pending = large.map((bytes) => channel.write(bytes));
+    await expect(channel.write(Buffer.from("x"))).rejects.toMatchObject({ code: "INPUT_LIMIT" });
+    await Promise.all(pending);
+    // More pending frames than the worker's window wait locally instead of failing the channel.
+    const small = Array.from({ length: 300 }, (_, index) => Buffer.from(`${index};`));
+    await Promise.all(small.map((bytes) => channel.write(bytes)));
+    await channel.end();
+    expect(await channel.completion).toEqual({ exitCode: 0 });
+    expect(Buffer.concat(stdout).equals(Buffer.concat([...large, ...small]))).toBe(true);
+  } finally {
+    await channel.stop().catch(() => {});
+  }
+});
+
+test("a lost SSH connection sends SIGTERM before it kills the command", async () => {
+  const marker = path.join(fixture.workspace, "terminated.json");
+  const channel = await startSshProcess(
+    backend.target,
+    "python3",
+    [
+      "-c",
+      [
+        "import json,signal,sys,time",
+        "def stopped(signum, _frame):",
+        " with open(sys.argv[1], 'w') as stream: json.dump({'signal': signum}, stream)",
+        " sys.exit(0)",
+        "signal.signal(signal.SIGTERM, stopped)",
+        "print('ready', flush=True)",
+        "time.sleep(120)",
+      ].join("\n"),
+      marker,
+    ],
+    fixture.workspace,
+  );
+  channel.stderr.resume();
+  await new Promise<void>((resolve) => channel.stdout.once("data", () => resolve()));
+  try {
+    // Kill only the local SSH client, as a crash or a dropped network would.
+    (channel as unknown as { readonly child: ChildProcess }).child.kill("SIGKILL");
+    await expect(channel.completion).rejects.toBeInstanceOf(Error);
+    await expect
+      .poll(async () => readFile(marker, "utf8").catch(() => ""), { timeout: 10_000 })
+      .toBe(JSON.stringify({ signal: 15 }));
+  } finally {
+    await channel.stop().catch(() => {});
+    await rm(marker, { force: true });
+  }
+}, 30_000);
 
 test("SSH service channel can be stopped while stdin is blocked", async () => {
   const channel = await startSshProcess(

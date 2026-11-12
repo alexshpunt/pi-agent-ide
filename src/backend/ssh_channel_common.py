@@ -8,9 +8,12 @@ FRAME_LIMIT = 65536
 # Match the bounded startup request; interactive control frames keep their smaller limit.
 REQUEST_LIMIT = 48 * 1024 * 1024
 CHUNK_SIZE = 16384
-# Input frames the host may send before their acknowledgements arrive. The host never queues
-# more than 1 MiB per write, which is exactly this many full frames.
-INPUT_WINDOW = 64
+# Input frames the host may send before their acknowledgements arrive. The host never holds
+# more than 2 MiB of unacknowledged input, which is exactly this many full frames.
+INPUT_WINDOW = 128
+# Time a stopped command has to exit on its own, for example to remove its temporary files,
+# before the channel kills it.
+STOP_GRACE_SECONDS = 2
 
 # Reads a length-prefixed program from stdin, so worker size never meets argv limits.
 CHILD_LOADER = (

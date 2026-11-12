@@ -1,3 +1,4 @@
+import type { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -6,6 +7,14 @@ import { createSshFileOperationResolver } from "#src/backend/file-operation-reso
 import { TRANSFER_STALL_MS } from "#src/backend/file-transfer.ts";
 import { SshBackendRegistry } from "#src/backend/registry.ts";
 import { remoteLocation } from "#src/backend/identity.ts";
+import { SshBackend } from "#src/backend/ssh.ts";
+import { startSshProcess } from "#src/backend/ssh-channel.ts";
+import {
+  neutralDirectory,
+  remotePython,
+  sshTransferProgram,
+  targetOs,
+} from "#src/backend/ssh-transport.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { sshTransferPolicy } from "#integration/support/ssh-transfer-policy.ts";
 
@@ -94,14 +103,16 @@ test.each(["download", "targets"] as const)(
     if (owned === undefined) throw new Error("Missing source owner");
     const originalRead = owned.backend.readStream.bind(owned.backend);
     const controller = new AbortController();
-    // Cancel once the first 1 MiB chunk has reached the destination.
+    // Cancel after the second 1 MiB chunk. A remote target may still be acknowledging that chunk,
+    // but the first one is confirmed before the second is consumed.
+    let chunks = 0;
     owned.backend.readStream = (filePath, revision, consume, context) =>
       originalRead(
         filePath,
         revision,
         async (bytes) => {
           await consume(bytes);
-          controller.abort();
+          if (++chunks === 2) controller.abort();
         },
         context,
       );
@@ -114,14 +125,16 @@ test.each(["download", "targets"] as const)(
         { cwd: fixture.root, signal: controller.signal },
         sshTransferPolicy,
       );
-      await expect(failure).rejects.toMatchObject({
+      const error: unknown = await failure.catch((caught: unknown) => caught);
+      expect(error).toMatchObject({
         code: "CANCELLED",
         effect: "not-applied",
-        transferredBytes: 1024 * 1024,
         totalBytes: 3 * 1024 * 1024,
       });
+      const written = route === "download" ? [2 * 1024 * 1024] : [1024 * 1024, 2 * 1024 * 1024];
+      expect(written).toContain((error as { transferredBytes: number }).transferredBytes);
       // The visible message carries the progress, not only the structured fields.
-      await expect(failure).rejects.toThrow(/\b1048576 of 3145728 bytes\b/u);
+      expect((error as Error).message).toMatch(/\b(1048576|2097152) of 3145728 bytes\b/u);
       expect(await readFile(actualTarget, "utf8")).toBe("old destination");
       expect(
         (await readdir(path.dirname(actualTarget))).some((name) =>
@@ -388,3 +401,36 @@ test("whole-file owners stream binary files across all backend boundaries", asyn
     await fixture.stop();
   }
 }, 180000);
+
+test("a transfer whose SSH connection is lost removes its staging file on the target", async () => {
+  const fixture = await startSshFixture();
+  const { target } = new SshBackend({
+    id: "fixture",
+    host: "fixture",
+    workspace: fixture.workspace,
+    configFile: fixture.config,
+  });
+  const destination = path.join(fixture.workspace, "target.bin");
+  const staged = async () =>
+    (await readdir(fixture.workspace)).filter((name) => name.startsWith(".pi-ide-transfer-"));
+  try {
+    const channel = await startSshProcess(
+      target,
+      remotePython(await sshTransferProgram(targetOs(target))),
+      [JSON.stringify({ destination, size: 3 * 1024 * 1024, mode: 0o644, expected: null })],
+      neutralDirectory(target),
+      { gracefulStop: true },
+    );
+    channel.stdout.resume();
+    channel.stderr.resume();
+    await channel.write(Buffer.alloc(1024 * 1024, 7));
+    expect(await staged()).toHaveLength(1);
+    // Kill only the local SSH client while the target still waits for bytes.
+    (channel as unknown as { readonly child: ChildProcess }).child.kill("SIGKILL");
+    await expect(channel.completion).rejects.toBeInstanceOf(Error);
+    await expect.poll(staged, { timeout: 10_000 }).toEqual([]);
+    await expect(readFile(destination)).rejects.toMatchObject({ code: "ENOENT" });
+  } finally {
+    await fixture.stop();
+  }
+}, 60000);
