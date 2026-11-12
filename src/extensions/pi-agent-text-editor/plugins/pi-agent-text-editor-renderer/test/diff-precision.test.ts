@@ -144,6 +144,26 @@ describe("precise inline changes", () => {
       ),
     ).toBeDefined();
   });
+  test("leaves changed blocks as removed and added rows without line pairing", () => {
+    const model = createDiffModel(replaceFormatted.before, replaceFormatted.after, [], {
+      project: false,
+      pairLines: false,
+    });
+    // The 8 modified lines of the paired model each become one removed and one added row.
+    expect(model).toMatchObject({ added: 41, modified: 0, removed: 21 });
+  });
+  test("diffs files of a few megabytes", () => {
+    const lines = Array.from({ length: 60_000 }, (_, index) => `const value${index} = ${index};`);
+    const before = lines.join("\n");
+    expect(before.length).toBeGreaterThan(1_000_000);
+    const model = createDiffModel(before, before.replace("value30000 = 30000", "value30000 = 1"));
+    expect(model).toMatchObject({ added: 0, modified: 1, removed: 0 });
+  });
+  test("reports unavailable above the document size limit", () => {
+    const before = "const value = 1;\n".repeat(120_000);
+    const model = createDiffModel(before, `${before}const extra = 2;\n`);
+    expect(model.omittedChanges?.unavailable).toBe(true);
+  });
   test("reports unavailable when the comparison deadline expires", () => {
     vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValue(101);
     const model = createDiffModel("old();", "new();");
