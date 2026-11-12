@@ -1,13 +1,13 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, onTestFinished, test } from "vitest";
-import { ResultTargetStore } from "pi-agent-resource";
+import { ResultTargetStore, type FileGenerationReader } from "pi-agent-resource";
 import type { SearchSelectionMatch, SearchSelectionRegistration } from "pi-agent-search/api/search";
 import {
   SearchSessionStore,
   SearchSnapshotChangedError,
 } from "pi-agent-search-text/search-session";
-import { createAstSearchResolver } from "./search-resolver.ts";
+import { createAstSearchResolver, readSearchedSource } from "./search-resolver.ts";
 
 test("AST matches and captures stay inside one exact scope with their source authority", async () => {
   const base = path.resolve(".tmp/ast-scoped-tests");
@@ -390,4 +390,41 @@ test("AST search fails with a bounded, named reason when its file keeps changing
     `Search result in ${source} changed before its anchors were registered. The structural search ran 5 times and another process wrote its files during every run. Repeat it when those writes stop.`,
   );
   expect(attempts).toBe(5);
+});
+
+// A kernel before 6.13 advances file timestamps every few milliseconds, so a same-size write within
+// one tick keeps the stamp. A fine-grained kernel cannot produce that on demand, so these tests read
+// the real file with pinned timestamps while another writer rewrites it as the read ends.
+async function readWithPinnedTimestamps(ageNs: bigint, rewriteAfterRead: boolean) {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, "racy-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.ts");
+  await writeFile(source, "const a = 1;\n");
+  const changedNs = BigInt(Date.now()) * 1_000_000n - ageNs;
+  let calls = 0;
+  const fileGeneration: FileGenerationReader = async (file) => {
+    const { dev, ino, mode, size } = await stat(file, { bigint: true });
+    // The second call follows the first read of the file.
+    calls += 1;
+    if (calls === 2 && rewriteAfterRead) await writeFile(source, "const b = 1;\n");
+    return { dev, ino, mode, size, mtimeNs: changedNs, ctimeNs: changedNs };
+  };
+  return readSearchedSource(source, undefined, fileGeneration);
+}
+
+test("an AST source read reports a same-size write within the timestamp tick of the previous change", async () => {
+  await expect(readWithPinnedTimestamps(0n, true)).rejects.toMatchObject({
+    code: "SOURCE_CHANGED",
+  });
+});
+
+test("an AST source read of a file that changed just now and stayed the same returns its bytes", async () => {
+  expect((await readWithPinnedTimestamps(0n, false)).toString()).toBe("const a = 1;\n");
+});
+
+test("an AST source read trusts the timestamps of a file that changed long ago", async () => {
+  // The rewrite is invisible to timestamps; a second read would see it and fail the read.
+  expect((await readWithPinnedTimestamps(10_000_000_123n, true)).toString()).toBe("const a = 1;\n");
 });
