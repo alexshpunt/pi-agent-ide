@@ -1033,6 +1033,9 @@ function wholeFileFailureCause(code: string): string {
     case "TIMEOUT": {
       return "operation timed out";
     }
+    case "TRANSFER_STALLED": {
+      return "transfer stopped making progress";
+    }
     case "CANCELLED": {
       return "operation was canceled";
     }

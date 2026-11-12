@@ -5,7 +5,7 @@ files are replaced with ReplaceFileW, and links and junctions are handled as lin
 followed. Git queries and the guarded index write run the target's own Git.
 """
 import base64
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import errno
 import hashlib
 import os
@@ -141,6 +141,25 @@ def read_open(source, count):
         return source.read(count)
     except PermissionError:
         raise OperationError("FILE_IN_USE")
+
+
+@contextmanager
+def stream_source(path):
+    """Open a regular file to stream: its size, revision, a reader and a current-revision check."""
+    try:
+        path = native(path)
+    except Failure as failure:
+        raise OperationError(failure.code)
+    fd = os.open(path, os.O_RDONLY | os.O_BINARY)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise OperationError("INVALID_FILE_TYPE")
+        with os.fdopen(fd, "rb", closefd=False) as source:
+            yield (info.st_size, fingerprint(path, b"", info), lambda count: read_open(source, count),
+                   lambda: fingerprint(path, b"", os.fstat(fd)))
+    finally:
+        os.close(fd)
 
 
 def read_snapshot(path):

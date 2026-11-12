@@ -1,5 +1,6 @@
 """POSIX pipe/PTY channel: process groups, a child subreaper and Linux /proc metadata."""
 import base64
+from collections import deque
 import errno
 import fcntl
 import json
@@ -12,7 +13,7 @@ import subprocess
 import termios
 import time
 
-from ssh_channel_common import CHUNK_SIZE, FRAME_LIMIT, ChannelError, command_line, emit, error_code, initial_request
+from ssh_channel_common import CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, ChannelError, command_line, emit, error_code, initial_request
 
 process = None
 master = None
@@ -153,7 +154,8 @@ def run():
     identity = child_identity()
     emit({"kind": "ready", "pid": process.pid, **({"identity": identity} if identity is not None else {})})
     incoming = bytearray()
-    pending_input = None
+    # Input frames in arrival order: [request id, bytes, bytes already written].
+    pending_inputs = deque()
     stopping = None
     descendant_deadline = None
     next_reap = 0
@@ -196,8 +198,8 @@ def run():
                 emit({"kind": "exit", "exitCode": process.returncode})
                 return
             for key, events in selected.select(0.1):
-                if key.data in ("input", "pty") and events & selectors.EVENT_WRITE and pending_input is not None:
-                    request_id, data, offset = pending_input
+                if key.data in ("input", "pty") and events & selectors.EVENT_WRITE and pending_inputs:
+                    request_id, data, offset = pending_inputs[0]
                     try:
                         count = os.write(input_fd, data[offset:])
                     except OSError as error:
@@ -206,15 +208,16 @@ def run():
                         if stopping is None and process.poll() is None:
                             raise ChannelError("INPUT_CLOSED")
                         input_poll(False)
-                        pending_input = None
+                        pending_inputs.clear()
                         continue
                     offset += count
                     if offset == len(data):
-                        input_poll(False)
-                        pending_input = None
+                        pending_inputs.popleft()
+                        if not pending_inputs:
+                            input_poll(False)
                         emit({"kind": "ack", "id": request_id})
                     else:
-                        pending_input = (request_id, data, offset)
+                        pending_inputs[0][2] = offset
                 if key.data in ("stdout", "stderr", "pty") and events & selectors.EVENT_READ:
                     try:
                         chunk = os.read(key.fd, CHUNK_SIZE)
@@ -229,7 +232,7 @@ def run():
                         selected.unregister(key.fd)
                         outputs.pop(name)
                         if key.data == "pty":
-                            pending_input = None
+                            pending_inputs.clear()
                             input_open = False
                 elif key.data == "control":
                     chunk = os.read(0, FRAME_LIMIT)
@@ -243,30 +246,33 @@ def run():
                             raise ChannelError("FRAME_LIMIT")
                         event = json.loads(line)
                         if event["kind"] == "input":
-                            if pending_input is not None or not input_open:
+                            if not input_open:
                                 raise ChannelError("INVALID_REQUEST")
+                            if len(pending_inputs) >= INPUT_WINDOW:
+                                raise ChannelError("INPUT_LIMIT")
                             data = base64.b64decode(event["bytes"], validate=True)
                             if len(data) > CHUNK_SIZE:
                                 raise ChannelError("FRAME_LIMIT")
                             if not data:
                                 emit({"kind": "ack", "id": event["id"]})
                             else:
-                                pending_input = (event["id"], data, 0)
-                                input_poll(True)
+                                if not pending_inputs:
+                                    input_poll(True)
+                                pending_inputs.append([event["id"], data, 0])
                         elif event["kind"] == "resize":
                             resize(event["cols"], event["rows"])
                             emit({"kind": "ack", "id": event["id"]})
                         elif event["kind"] == "end":
                             if master is not None:
                                 raise ChannelError("PTY_INPUT_NOT_CLOSABLE")
-                            if pending_input is not None:
+                            if pending_inputs:
                                 raise ChannelError("INVALID_REQUEST")
                             process.stdin.close()
                             input_open = False
                         elif event["kind"] == "stop":
-                            if pending_input is not None:
+                            if pending_inputs:
                                 input_poll(False)
-                                pending_input = None
+                                pending_inputs.clear()
                             if master is None and not process.stdin.closed:
                                 process.stdin.close()
                             input_open = False

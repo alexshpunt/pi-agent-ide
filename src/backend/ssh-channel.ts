@@ -39,6 +39,8 @@ const frameSchema = Type.Union([
   }),
 ]);
 type Frame = Static<typeof frameSchema>;
+/** Input bytes per frame; the worker's CHUNK_SIZE. */
+const INPUT_FRAME_BYTES = 16384;
 
 /** Service startup and optional remote terminal dimensions. */
 export interface SshProcessContext extends BackendOperationContext {
@@ -263,13 +265,24 @@ class ProcessChannel implements SshProcessChannel {
     const data = Buffer.from(bytes);
     this.#queuedBytes += data.length;
     const result = this.#queue.then(async () => {
-      for (let offset = 0; offset < data.length; offset += 16384) {
-        if (this.#stopping || this.#closed) throw this.error("INPUT_CLOSED");
-        await this.sendAcknowledged({
-          kind: "input",
-          bytes: data.subarray(offset, offset + 16384).toString("base64"),
-        });
+      // Send every frame before awaiting acknowledgements, so one write costs one round trip
+      // instead of one per frame. The 1 MiB bound keeps this within the worker's INPUT_WINDOW.
+      const accepted: Promise<void>[] = [];
+      try {
+        for (let offset = 0; offset < data.length; offset += INPUT_FRAME_BYTES) {
+          if (this.#stopping || this.#closed) throw this.error("INPUT_CLOSED");
+          const frame = this.sendAcknowledged({
+            kind: "input",
+            bytes: data.subarray(offset, offset + INPUT_FRAME_BYTES).toString("base64"),
+          });
+          void frame.catch(() => {});
+          accepted.push(frame);
+        }
+      } finally {
+        // Settle sent frames before the next write starts, even when this one stops early.
+        await Promise.allSettled(accepted);
       }
+      await Promise.all(accepted);
     });
     this.#queue = result.catch(() => {});
     try {

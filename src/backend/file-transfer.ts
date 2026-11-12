@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants, type BigIntStats } from "node:fs";
-import { lstat, mkdir, open, rename, rm, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, rename, rm, unlink, type FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FileOperationInput } from "pi-agent-text-editor/api/plugin-protocol";
@@ -13,6 +13,30 @@ import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
 import { neutralDirectory, remotePython, sshTransferProgram, targetOs } from "./ssh-transport.ts";
 
 const CHUNK_BYTES = 1024 * 1024;
+/** A transfer fails once no bytes move for this long. Its total duration is unbounded. */
+export const TRANSFER_STALL_MS = 30_000;
+
+/** A failed transfer that tells how many bytes reached the destination and whether it changed. */
+export class SshTransferError extends SshBackendError {
+  constructor(
+    code: string,
+    source: string,
+    readonly target: string,
+    effect: SshBackendError["effect"],
+    readonly transferredBytes: number,
+    readonly totalBytes: number,
+    options?: { readonly cause: SshBackendError },
+  ) {
+    super(code, source, effect, options);
+    const reason =
+      code === "TRANSFER_STALLED" ? `no data moved for ${TRANSFER_STALL_MS / 1000} s; ` : "";
+    const state =
+      effect === "not-applied"
+        ? "the target file was not changed"
+        : "the target file may have changed, check it before retrying";
+    this.message = `${code}: ${source} to ${target}: ${reason}wrote ${transferredBytes} of ${totalBytes} bytes before the failure; ${state}`;
+  }
+}
 
 /** Resolve an explicit local transfer endpoint, rejecting unowned URI schemes. */
 export function localTransferSource(source: string, cwd: string): string {
@@ -151,10 +175,25 @@ export async function transferFile(
     ? undefined
     : await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
   let temporary: string | undefined;
-  let destination;
+  let destination: FileHandle | undefined;
   let channel: SshProcessChannel | undefined;
+  let started = false;
+  let committing = false;
   let published = false;
+  let written = 0;
   let output = "";
+  // A transfer may take minutes, so only a pause while bytes should move ends it.
+  const stall = new AbortController();
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const progress = () => {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => stall.abort(), TRANSFER_STALL_MS);
+  };
+  const signal = context.signal ? AbortSignal.any([context.signal, stall.signal]) : stall.signal;
+  const throwIfStopped = () => {
+    context.signal?.throwIfAborted();
+    if (stall.signal.aborted) throw new SshBackendError("TRANSFER_STALLED", source, "not-applied");
+  };
   const verifySource = async () => {
     const current = remoteSource
       ? await remoteSource.backend.lstat(remoteSource.location.path, context)
@@ -162,9 +201,28 @@ export async function transferFile(
     const revision = "revision" in current ? current.revision : localRevision(current);
     if (revision !== sourceRevision) throw new SshBackendError("CONFLICT", source, "not-applied");
   };
+  const digest = createHash("sha256");
+  const deliver = async (bytes: Buffer) => {
+    throwIfStopped();
+    digest.update(bytes);
+    if (channel) await channel.write(bytes);
+    else {
+      if (destination === undefined) throw new Error("Missing destination descriptor");
+      for (let offset = 0; offset < bytes.length;) {
+        const result = await destination.write(bytes, offset, bytes.length - offset);
+        if (result.bytesWritten === 0)
+          throw new SshBackendError("TRANSFER_FAILED", target, "not-applied");
+        offset += result.bytesWritten;
+      }
+    }
+    written += bytes.length;
+    progress();
+  };
   try {
     if (descriptor && localRevision(await descriptor.stat({ bigint: true })) !== sourceRevision)
       throw new SshBackendError("CONFLICT", source, "not-applied");
+    started = true;
+    progress();
     if (remoteTarget) {
       channel = await startSshProcess(
         remoteTarget.backend.target,
@@ -178,7 +236,7 @@ export async function transferFile(
           }),
         ],
         neutralDirectory(remoteTarget.backend.target),
-        context,
+        { ...context, signal },
       );
       channel.completion.catch(() => {});
       channel.stdout.on("data", (chunk: Buffer) => {
@@ -194,51 +252,43 @@ export async function transferFile(
       );
       destination = await open(temporary, "wx", mode & 0o7777);
     }
-    const digest = createHash("sha256");
-    for (let offset = 0; offset < size;) {
-      context.signal?.throwIfAborted();
-      const limit = Math.min(CHUNK_BYTES, size - offset);
-      let bytes: Buffer;
-      if (remoteSource) {
-        const range = await remoteSource.backend.readRange(
-          remoteSource.location.path,
-          offset,
-          limit,
-          context,
-        );
-        if (
-          range.revision !== sourceRevision ||
-          range.offset !== offset ||
-          range.totalBytes !== size
-        )
-          throw new SshBackendError("CONFLICT", source, "not-applied");
-        bytes = range.bytes;
-      } else {
-        if (descriptor === undefined) throw new Error("Missing source descriptor");
+    // Each channel startup has its own deadline, so the stall window restarts once a step completes.
+    progress();
+    if (remoteSource) {
+      // One channel streams the whole file; the target rechecks its revision after the last byte.
+      const sent = await remoteSource.backend.readStream(
+        remoteSource.location.path,
+        sourceRevision,
+        deliver,
+        { ...context, signal },
+      );
+      if (sent.totalBytes !== size || written !== size)
+        throw new SshBackendError("CONFLICT", source, "not-applied");
+      if (sent.sha256 !== digest.copy().digest("hex"))
+        throw new SshBackendError("CHECKSUM_MISMATCH", source, "not-applied");
+    } else {
+      if (descriptor === undefined) throw new Error("Missing source descriptor");
+      for (let offset = 0; offset < size;) {
+        const limit = Math.min(CHUNK_BYTES, size - offset);
         const buffer = Buffer.allocUnsafe(limit);
         const { bytesRead } = await descriptor.read(buffer, 0, limit, offset);
-        bytes = buffer.subarray(0, bytesRead);
+        if (bytesRead === 0) throw new SshBackendError("CONFLICT", source, "not-applied");
+        await deliver(buffer.subarray(0, bytesRead));
+        offset += bytesRead;
       }
-      if (bytes.length === 0) throw new SshBackendError("CONFLICT", source, "not-applied");
-      digest.update(bytes);
-      if (channel) await channel.write(bytes);
-      else {
-        if (destination === undefined) throw new Error("Missing destination descriptor");
-        for (let written = 0; written < bytes.length;) {
-          const result = await destination.write(bytes, written, bytes.length - written);
-          if (result.bytesWritten === 0)
-            throw new SshBackendError("TRANSFER_FAILED", target, "not-applied");
-          written += result.bytesWritten;
-        }
-      }
-      offset += bytes.length;
     }
+    // Verification requests have their own deadlines and move no bytes, so they never count as a stall.
+    clearTimeout(stallTimer);
     await verifySource();
     // Keep an object transfer tied to its approved leaf versions, not a newer staged snapshot.
     await verifyApprovedEntries?.();
     const sha256 = digest.digest("hex");
-    context.signal?.throwIfAborted();
+    throwIfStopped();
     if (channel) {
+      // From the commit request on, the target may publish before its reply arrives.
+      committing = true;
+      // The target hashes and publishes after the commit request; a dead link must still end the wait.
+      progress();
       await channel.write(Buffer.from(`${JSON.stringify({ sha256 })}\n`));
       await channel.end();
       const completion = await channel.completion;
@@ -282,6 +332,7 @@ export async function transferFile(
       temporary = undefined;
       published = true;
     }
+    clearTimeout(stallTimer);
     if (operation === "move") {
       await verifySource();
       if (remoteSource)
@@ -291,8 +342,29 @@ export async function transferFile(
     return { source, target };
   } catch (error) {
     if (published) throw new SshBackendError(errorCode(error), source, "unknown");
-    throw error;
+    if (!started) throw error;
+    const code = context.signal?.aborted
+      ? "CANCELLED"
+      : stall.signal.aborted
+        ? "TRANSFER_STALLED"
+        : errorCode(error);
+    // Bytes are staged until the commit request, so an earlier failure leaves the destination as it was.
+    const effect = committing
+      ? error instanceof SshBackendError
+        ? error.effect
+        : "unknown"
+      : "not-applied";
+    throw new SshTransferError(
+      code,
+      source,
+      target,
+      effect,
+      written,
+      size,
+      error instanceof SshBackendError ? { cause: error } : undefined,
+    );
   } finally {
+    clearTimeout(stallTimer);
     await descriptor?.close();
     await destination?.close();
     if (temporary !== undefined) await rm(temporary, { force: true });

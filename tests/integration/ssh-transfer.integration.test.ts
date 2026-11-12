@@ -27,21 +27,27 @@ test("streamed transfers preserve external edits and clean unpublished staging f
   const target = remoteLocation("right", targetPath).source;
   const owned = registry.resolve(source);
   if (owned === undefined) throw new Error("Missing source owner");
-  const originalRead = owned.backend.readRange.bind(owned.backend);
+  const originalRead = owned.backend.readStream.bind(owned.backend);
   const before = Buffer.alloc(2 * 1024 * 1024, 65);
   try {
     for (const changed of ["source", "target"] as const) {
       await writeFile(sourcePath, before);
       await writeFile(targetPath, "before target");
       let injected = false;
-      owned.backend.readRange = async (...args) => {
-        const range = await originalRead(...args);
-        if (!injected) {
-          injected = true;
-          await writeFile(changed === "source" ? sourcePath : targetPath, "external edit");
-        }
-        return range;
-      };
+      // Edit an endpoint after the first streamed chunk, while the transfer is in flight.
+      owned.backend.readStream = (filePath, revision, consume, context) =>
+        originalRead(
+          filePath,
+          revision,
+          async (bytes) => {
+            await consume(bytes);
+            if (!injected) {
+              injected = true;
+              await writeFile(changed === "source" ? sourcePath : targetPath, "external edit");
+            }
+          },
+          context,
+        );
       await expect(
         operate("copy", { path: source, target }, { cwd: fixture.workspace }),
       ).rejects.toMatchObject({
@@ -57,7 +63,7 @@ test("streamed transfers preserve external edits and clean unpublished staging f
       ).toBe(false);
     }
   } finally {
-    owned.backend.readRange = originalRead;
+    owned.backend.readStream = originalRead;
     await fixture.stop();
   }
 }, 60000);

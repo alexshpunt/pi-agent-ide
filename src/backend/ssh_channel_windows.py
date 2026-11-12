@@ -18,7 +18,7 @@ import sys
 import threading
 from ctypes import wintypes
 
-from ssh_channel_common import CHUNK_SIZE, FRAME_LIMIT, ChannelError, command_line, emit, error_code, initial_request
+from ssh_channel_common import CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, ChannelError, command_line, emit, error_code, initial_request
 from ssh_paths import InvalidPath, windows_native
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -406,7 +406,8 @@ def run():
     start(control, events)
     start(deliver, process.stdin, inputs, events)
     incoming = bytearray()
-    pending_input = False
+    # Ids of input frames handed to the delivery thread and not yet written.
+    pending_inputs = set()
     input_open = True
     stopping = False
     leader_exited = False
@@ -430,13 +431,13 @@ def run():
             else:
                 outputs.discard(kind)
                 if dimensions is not None:
-                    pending_input = False
+                    pending_inputs.clear()
                     input_open = False
         elif kind == "ack":
-            pending_input = False
+            pending_inputs.discard(value)
             emit({"kind": "ack", "id": value})
         elif kind == "input-failed":
-            pending_input = False
+            pending_inputs.discard(value)
             if not stopping and process.poll() is None:
                 raise ChannelError("INPUT_CLOSED")
         elif kind == "control":
@@ -450,15 +451,17 @@ def run():
                     raise ChannelError("FRAME_LIMIT")
                 event = json.loads(line)
                 if event["kind"] == "input":
-                    if pending_input or not input_open:
+                    if not input_open:
                         raise ChannelError("INVALID_REQUEST")
+                    if len(pending_inputs) >= INPUT_WINDOW:
+                        raise ChannelError("INPUT_LIMIT")
                     data = base64.b64decode(event["bytes"], validate=True)
                     if len(data) > CHUNK_SIZE:
                         raise ChannelError("FRAME_LIMIT")
                     if not data:
                         emit({"kind": "ack", "id": event["id"]})
                     else:
-                        pending_input = True
+                        pending_inputs.add(event["id"])
                         inputs.put((event["id"], data))
                 elif event["kind"] == "resize":
                     if dimensions is None:
@@ -468,7 +471,7 @@ def run():
                 elif event["kind"] == "end":
                     if dimensions is not None:
                         raise ChannelError("PTY_INPUT_NOT_CLOSABLE")
-                    if pending_input:
+                    if pending_inputs:
                         raise ChannelError("INVALID_REQUEST")
                     if input_open:
                         input_open = False
