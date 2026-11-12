@@ -15,6 +15,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { startSshWebFixture } from "./support/ssh-web-fixture.ts";
 import { createPdfFixture } from "#test-fixtures/pdf";
@@ -206,11 +207,20 @@ test("ordinary explicit target web reads and searches retain their owner while b
     expect(getToolResultText(run, "unknown-target")).toContain("UNKNOWN_TARGET");
     expect(getToolResultText(run, "structured")).toContain("Owned café HTTP");
     expect(getToolExecution(run, "target-image").isError).toBe(true);
-    // Codemode receives the completed Read failure as its public error value instead of a throw.
+    // The refused Read resolves to null in the script, and the Codemode result lists it.
     expect(getToolExecution(run, "structured-images").isError).toBe(false);
-    expect(getToolResultText(run, "structured-images")).toContain(
-      '{"status":"error","errors":[{"code":"UNSUPPORTED_CAPABILITY"',
+    expect(codemodeFailures(getToolResultText(run, "structured-images"))).toContain(
+      `1 of 1 IDE call failed:\n- read ${imageSource}\n`,
     );
+    const sequenceRead = run.traceEvents.find(
+      (trace) =>
+        trace.type === "tool_result" &&
+        (trace.event as { toolCallId?: string }).toolCallId === "structured-images/1",
+    );
+    expect(sequenceRead?.event).toMatchObject({
+      isError: true,
+      details: { failure: { code: "UNSUPPORTED_CAPABILITY" } },
+    });
     for (const id of ["target-image", "structured-images"]) {
       expect(getToolResultMessage(run, id).content.some((block) => block.type === "image")).toBe(
         false,

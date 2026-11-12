@@ -149,7 +149,8 @@ test.each(["cold graph", "rename"] as const)(
 const definition = await tools.lsp_search({ query: ${JSON.stringify(mode === "rename" ? "welcome" : "greet")}, path: ${JSON.stringify(`${root}/note.ts`)} }).then(value => value.result);
 if(!definition.includes("definition ") || definition.includes("reference ")) throw Error(definition);
 const references = await tools.lsp_search({ query: ${JSON.stringify(mode === "rename" ? "welcome" : "greet")}, path: definition, references: true }).then(value => value.result);
-const declarations=[...references.matchAll(/declared at (.+)/g)].map(m=>m[1]); if(declarations.length!==3 || new Set(declarations).size!==1) throw Error(references);
+// The definition names its selector; both references point at that declaration.
+const declarations=[...references.matchAll(/declared at (.+)/g)].map(m=>m[1]); if(!/ definition \\S+ · selector /.test(references) || declarations.length!==2 || new Set(declarations).size!==1) throw Error(references);
 const inspected = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} });
 text({ definition, references, inspected: inspected.output });
 if(!inspected.session) throw Error("No owned shell source"); await tools.delete({path:inspected.session});
