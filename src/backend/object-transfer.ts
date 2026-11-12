@@ -211,8 +211,10 @@ export async function transferObject(
         await settleInOrder([checkEntry(source, from, entry), checkEntry(target, to, expected)]);
         if (entry.kind === "directory") {
           if (expected === undefined) started = true;
+          let identity: FileObjectEntry["identity"] | undefined;
+          // A remote target reports the identity it created; that saves an lstat round trip.
           if (target.remote)
-            await target.remote.backend.ensureObjectDirectory(
+            identity = await target.remote.backend.ensureObjectDirectory(
               to,
               entry.mode | 0o700,
               expected?.revision ?? null,
@@ -221,9 +223,10 @@ export async function transferObject(
           else if (expected === undefined) {
             await directoryParents(path.dirname(to));
             await mkdir(to, { mode: entry.mode | 0o700 });
+            identity = (await target.files.inspect(to)).identity;
           }
-          if (expected === undefined)
-            createdDirectories.set(entry.relativePath, (await target.files.inspect(to)).identity);
+          if (expected === undefined && identity !== undefined)
+            createdDirectories.set(entry.relativePath, identity);
         } else if (entry.kind === "symlink") {
           started = true;
           if (entry.link === undefined)

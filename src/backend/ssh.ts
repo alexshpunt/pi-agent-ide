@@ -184,19 +184,22 @@ export class SshBackend {
     return data;
   }
 
-  /** Create a missing directory, or verify an existing native directory, after host transfer policy. */
+  /** Create a missing directory, or verify an existing native directory, after host transfer policy.
+   * Returns the directory's identity, read right after creation.
+   */
   async ensureObjectDirectory(
     filePath: string,
     mode: number,
     revision: string | null,
     context: BackendOperationContext = {},
-  ): Promise<void> {
+  ): Promise<{ readonly device: string; readonly inode: string }> {
     const data = await this.request(
       { operation: "mkdir-object", path: filePath, mode, revision },
       true,
       context,
     );
-    this.checked(Type.Null(), data, filePath, true);
+    this.checked(Type.Object({ device: Type.String(), inode: Type.String() }), data, filePath, true);
+    return data;
   }
 
   /** Create a missing link with its original native bytes; never follow or replace a destination link. */

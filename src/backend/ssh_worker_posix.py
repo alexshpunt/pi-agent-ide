@@ -308,10 +308,11 @@ def perform(request):
         return object_snapshot(path)
     if operation in ("mkdir-object", "symlink-object"):
         info = check_object_revision(path, request["revision"])
+        # A directory reply carries its identity, so the controller needs no extra lstat.
         if operation == "mkdir-object" and info is not None:
             if not stat.S_ISDIR(info.st_mode):
                 raise OperationError("INVALID_FILE_TYPE")
-            return None
+            return {"device": str(info.st_dev), "inode": str(info.st_ino)}
         if info is not None:
             raise OperationError("TRANSFER_TARGET_CHANGED")
         make_object_parents(os.path.dirname(path))
@@ -320,8 +321,10 @@ def perform(request):
             effect = "unknown"
             if operation == "mkdir-object":
                 os.mkdir(path, request["mode"] & 0o7777)
-            else:
-                os.symlink(base64.b64decode(request["link"], validate=True), os.fsencode(path))
+                created = os.lstat(path)
+                effect = "applied"
+                return {"device": str(created.st_dev), "inode": str(created.st_ino)}
+            os.symlink(base64.b64decode(request["link"], validate=True), os.fsencode(path))
             effect = "applied"
         return None
     if operation == "chmod-object":

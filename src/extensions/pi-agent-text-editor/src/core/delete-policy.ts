@@ -34,6 +34,13 @@ export async function prepareDeletion(
   return guard.event;
 }
 
+/** One endpoint whose removal needs host approval. */
+export interface DeletionRequest {
+  readonly source: string;
+  readonly cwd: string;
+  readonly context: DeletePolicyContext;
+}
+
 /** Apply the same approval policy to Delete and each removed Move endpoint. */
 export async function prepareDeletionGuard(
   source: string,
@@ -41,7 +48,33 @@ export async function prepareDeletionGuard(
   context: DeletePolicyContext,
   signal?: AbortSignal,
 ): Promise<DeletionGuard> {
-  const before = await inspectDeletion(source, cwd, signal, context.files);
+  const [guard] = await prepareDeletionGuards([{ source, cwd, context }], signal);
+  return requiredValue(guard);
+}
+
+/** Inspect every endpoint together, then run hooks and approval dialogs one at a time in order.
+ * Each SSH inspection costs several round trips; a failed inspection stops before any dialog.
+ */
+export async function prepareDeletionGuards(
+  requests: readonly DeletionRequest[],
+  signal?: AbortSignal,
+): Promise<DeletionGuard[]> {
+  const inspections = requests.map((request) =>
+    inspectDeletion(request.source, request.cwd, signal, request.context.files),
+  );
+  await settleInOrder(inspections);
+  const inspected = await Promise.all(inspections);
+  const guards: DeletionGuard[] = [];
+  for (const [index, request] of requests.entries())
+    guards.push(await approveDeletion(request, requiredValue(inspected[index]), signal));
+  return guards;
+}
+
+async function approveDeletion(
+  { source, cwd, context }: DeletionRequest,
+  before: Awaited<ReturnType<typeof inspectDeletion>>,
+  signal: AbortSignal | undefined,
+): Promise<DeletionGuard> {
   const event =
     context.files === undefined
       ? before.event

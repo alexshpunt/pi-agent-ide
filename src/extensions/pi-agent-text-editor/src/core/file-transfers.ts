@@ -8,7 +8,7 @@ import type {
 } from "#src/api/file-transfers.ts";
 import {
   assertUnprotectedTransferPath,
-  prepareDeletionGuard,
+  prepareDeletionGuards,
   projectLookup,
   settleInOrder,
   type DeletePolicyContext,
@@ -47,27 +47,21 @@ export async function prepareObjectTransfer(
 ): Promise<FileTransferGuard> {
   signal?.throwIfAborted();
   const before = await inspectTransfer(operation, source, target, signal);
-  const guards: DeletionGuard[] = [];
-  let sourceGuard: DeletionGuard | undefined;
-  if (operation === "move" && before.sourceKind !== "file") {
-    sourceGuard = await prepareDeletionGuard(
-      source.path,
-      source.cwd,
-      { ...context, files: source.files },
-      signal,
-    );
-    guards.push(sourceGuard);
-    // A case-only rename's target is the source itself; it is never removed.
-    if (before.target.entries.length > 0 && !before.caseRename)
-      guards.push(
-        await prepareDeletionGuard(
-          target.path,
-          target.cwd,
-          { ...context, files: target.files },
+  // Removal approvals: the moved source first, then a replaced destination tree.
+  const guards: DeletionGuard[] =
+    operation === "move" && before.sourceKind !== "file"
+      ? await prepareDeletionGuards(
+          [
+            { source: source.path, cwd: source.cwd, context: { ...context, files: source.files } },
+            // A case-only rename's target is the source itself; it is never removed.
+            ...(before.target.entries.length > 0 && !before.caseRename
+              ? [{ source: target.path, cwd: target.cwd, context: { ...context, files: target.files } }]
+              : []),
+          ],
           signal,
-        ),
-      );
-  }
+        )
+      : [];
+  const sourceGuard = guards[0];
   // Rechecks only read, so they run together; a guard failure still comes first.
   const recheck = inspectTransfer(operation, source, target, signal);
   await settleInOrder([...guards.map((guard) => guard.verify()), recheck]);
