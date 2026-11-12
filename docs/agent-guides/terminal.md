@@ -5,6 +5,7 @@
 - Give a long-lived session a `name`, such as `dev-server`; its address becomes `shell:dev-server`. Rename a session with `move`, `path: shell:<session>` and `target: shell:<name>`.
 - Read `shell:` to list the terminal sessions of this Pi session, including finished ones. Search with `path: shell:` to search all of them.
 - A returned or background session is not finished: check `status` and `exitCode` in its `shell:<session>` resource before treating it as done.
+- In Codemode, a terminal call returns `{ output, exit_code, truncated, full_output_path, wall_time_seconds, session }`. Check `exit_code`: a non-zero code is a value, not a failure. It is absent while the command still runs; pass `session` to `read`, `write`, `insert` or `delete`.
 - Don't poll. When only waiting is left, end your turn: Pi wakes you when the session finishes, or with one notice after two minutes of silence. Then decide whether to keep waiting, send input or delete the session.
 - Send input only while `status` is `running`: `write` for exact text, `insert` for keys such as `Enter` or `Ctrl+C`. `delete` ends the session.
 - Use the `image` view when screen layout matters and `sequence` when changes over time matter.
