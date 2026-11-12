@@ -434,11 +434,19 @@ class NativeTextEditBatchCoordinator {
             "The operation was interrupted before writing. No file was changed.",
             "CANCELLED",
           );
+          const registrations = new Map(
+            this.core.getMutationTools().map((tool) => [tool.name, tool]),
+          );
           const operations = script.pending.entries.map((entry) => ({
             id: entry.callId,
             operation: entry.op,
             effect: "not-applied" as const,
             errors: [error],
+            files: mergedFiles(
+              [...mutationSources(requiredValue(registrations.get(entry.op)), entry).values()].map(
+                (source) => ({ source, effect: "not-applied" as const }),
+              ),
+            ),
           }));
           script.reports.push({
             status: "error",
@@ -937,7 +945,7 @@ class NativeTextEditBatchCoordinator {
         ]),
       );
       const calls = journal.snapshot();
-      const operations = calls.map((call) => ({
+      const effects = calls.map((call) => ({
         id: call.callId,
         operation: requiredValue(batch.entries.find((entry) => entry.callId === call.callId)).op,
         effect:
@@ -950,28 +958,45 @@ class NativeTextEditBatchCoordinator {
                 : ("not-applied" as const),
         errors: call.failure === undefined ? [] : [resultError(call.failure.error)],
       }));
-      const files = mergedFiles([
-        ...operations.flatMap((operation) => {
+      // The files of each call with the call's own effect; a file it left unchanged is not-applied.
+      const plannedFiles = new Map(
+        effects.map((operation) => {
           const entry = requiredValue(batch.entries.find((entry) => entry.callId === operation.id));
           const registration = requiredValue(registrations.get(entry.op));
           const mutation = batch.plan.mutations.find(
             (item) => item.callId === operation.id,
           )?.mutation;
-          return [...mutationSources(registration, entry).values()].map((source) => ({
-            source,
-            effect:
-              mutation?.edits.has(source) === false ||
-              unchangedCalls.get(operation.id)?.sources.has(source) === true
-                ? ("not-applied" as const)
-                : operation.effect,
-          }));
+          return [
+            operation.id,
+            [...mutationSources(registration, entry).values()].map((source) => ({
+              source,
+              effect:
+                mutation?.edits.has(source) === false ||
+                unchangedCalls.get(operation.id)?.sources.has(source) === true
+                  ? ("not-applied" as const)
+                  : operation.effect,
+            })),
+          ] as const;
         }),
-        ...observedSources.map((source) => ({ source, effect: "applied" as const })),
-      ]).map((file) =>
+      );
+      // A written file is applied and rollback evidence replaces the journal's effect.
+      const withEvidence = (file: MutationData["files"][number]) =>
         observedSources.includes(file.source)
           ? { ...file, effect: "applied" as const }
-          : (reportedFiles.get(file.source) ?? file),
-      );
+          : (reportedFiles.get(file.source) ?? file);
+      const operations = effects.map((operation) => ({
+        ...operation,
+        // A call that changed no file keeps that, even when a peer wrote the same file.
+        files: mergedFiles(
+          requiredValue(plannedFiles.get(operation.id)).map((file) =>
+            file.effect === "not-applied" ? file : withEvidence(file),
+          ),
+        ),
+      }));
+      const files = mergedFiles([
+        ...[...plannedFiles.values()].flat(),
+        ...observedSources.map((source) => ({ source, effect: "applied" as const })),
+      ]).map(withEvidence);
       const errors = [
         ...new Map(
           [...outcome.errors, ...operations.flatMap((operation) => operation.errors)].map(

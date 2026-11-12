@@ -25,7 +25,7 @@ describe("CodemodeCallLedger", () => {
     expect(ledger.take("script")).toBeUndefined();
   });
 
-  test("adds accepted edits whose batch failed, with the files of the batch", () => {
+  test("adds accepted edits whose batch failed, with the files of each edit", () => {
     const ledger = new CodemodeCallLedger();
     ledger.record("script", { id: "1", tool: "replace", source: "a.txt" });
     ledger.record("script", { id: "2", tool: "replace", source: "b.txt" });
@@ -39,7 +39,7 @@ describe("CodemodeCallLedger", () => {
         "1 of 2 IDE calls failed:",
         "- replace a.txt",
         "  Changed: b.txt. Do not repeat this edit blindly; Read the files first.",
-        "  The edit was accepted, then its editor batch failed when it was saved; the files above are those of the whole batch.",
+        "  The edit was accepted, then its editor batch failed when it was saved.",
         "  Disk full",
       ].join("\n"),
     );
@@ -95,23 +95,40 @@ test("fileEffects reads applied and unknown files from an edit receipt", () => {
   expect(fileEffects({ status: "error", errors: [] })).toEqual({});
 });
 
-test("batchOperations reads the operations of every batch receipt", () => {
+test("batchOperations reads each operation with its own files", () => {
   const details = {
     editorBatchResults: [
       {
         status: "partial",
         data: {
-          files: [{ source: "a.txt", effect: "applied" }],
+          files: [
+            { source: "/w/a.txt", effect: "applied" },
+            { source: "/w/b.txt", effect: "applied" },
+          ],
           operations: [
-            { id: "1", operation: "replace", effect: "applied", errors: [{ message: "Late" }] },
+            {
+              id: "1",
+              operation: "replace",
+              effect: "unknown",
+              errors: [{ message: "Late" }],
+              files: [{ source: "/w/a.txt", effect: "applied" }],
+            },
+            {
+              id: "2",
+              operation: "replace",
+              effect: "applied",
+              errors: [],
+              files: [{ source: "/w/b.txt", effect: "applied" }],
+            },
           ],
         },
       },
-      { status: "success", data: { files: [], operations: [{ id: "2", effect: "applied" }] } },
+      { status: "success", data: { files: [], operations: [{ id: "3", effect: "applied" }] } },
     ],
   };
-  expect(batchOperations(details)).toEqual([
-    { id: "1", effect: "applied", errors: [{ message: "Late" }], changed: ["a.txt"] },
+  expect(batchOperations(details, (source) => source.replace("/w/", ""))).toEqual([
+    { id: "1", effect: "unknown", errors: [{ message: "Late" }], changed: ["a.txt"] },
+    { id: "2", effect: "applied", errors: [], changed: ["b.txt"] },
   ]);
   expect(batchOperations({})).toEqual([]);
 });

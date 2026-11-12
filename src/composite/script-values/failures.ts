@@ -53,7 +53,7 @@ export class CodemodeCallLedger {
       entry.failures.set(operation.id, {
         ...identity(call),
         reason: [
-          "The edit was accepted, then its editor batch failed when it was saved; the files above are those of the whole batch.",
+          "The edit was accepted, then its editor batch failed when it was saved.",
           ...operation.errors.map((error) => error.message),
         ].join("\n"),
         ...(operation.changed === undefined ? {} : { changed: operation.changed }),
@@ -136,8 +136,6 @@ export function batchOperations(
       record(report) && record(report.data) && Array.isArray(report.data.operations)
         ? (report.data.operations as unknown[])
         : [];
-    // A batch receipt reports file effects for the whole batch, not for each operation.
-    const files = fileEffects(report, display);
     return operations.flatMap((operation) =>
       record(operation) &&
       typeof operation.id === "string" &&
@@ -152,7 +150,7 @@ export function batchOperations(
                   ? [{ message: error.message }]
                   : [],
               ),
-              ...files,
+              ...fileEffects({ data: { files: operation.files } }, display),
             },
           ]
         : [],
