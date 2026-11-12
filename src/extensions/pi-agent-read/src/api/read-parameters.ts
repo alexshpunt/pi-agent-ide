@@ -4,7 +4,7 @@ import type { ReadRequest } from "#src/api/tools/read.ts";
 
 /** Canonical arguments shared by standalone and composed operations. */
 export const readParameters = Type.Object({
-  // The IDE replaces a script value with its id before the call runs.
+  // The IDE resolves a value's id to its source before Read runs; `readRequestOf` covers other callers.
   path: Type.Optional(
     Type.Union(resultSourceSchema.anyOf, {
       description:

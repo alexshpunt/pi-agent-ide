@@ -55,12 +55,15 @@ const prefix = "RESULT#";
 /** An issued result reference: `RESULT#<uuid>` or the bare UUID. */
 const referencePattern = /^(?:RESULT#)?[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
 const event = "pi-agent-resource:result-targets";
+const unknownReference =
+  "Result reference expired or unknown. Run Read/Search again and use the new result.";
 
 /**
- * The `id` of a script value, or `undefined` for any other input. A tool's own result record, with
- * a `status` or a `target`, is not a script value; `resolve` reads those itself.
+ * The `id` of a value passed as a source, such as a Read or Search value in a Codemode script, or
+ * `undefined` for any other input. A tool's own result record, with a `status` or a `target`, is
+ * not such a value; `resolve` reads those itself.
  */
-function resultValueId(input: unknown): string | undefined {
+export function resultValueId(input: unknown): string | undefined {
   if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
   if (!("id" in input) || typeof input.id !== "string") return undefined;
   if ("status" in input || ("target" in input && typeof input.target === "string"))
@@ -358,9 +361,7 @@ export class ResultTargetStore {
     if (valueId !== undefined) {
       // A value's id is a reference, never a path: an id the store did not issue is unknown.
       if (!referencePattern.test(valueId) && !this.#matchReferences.has(valueId))
-        throw new Error(
-          "Result reference expired or unknown. Run Read/Search again and use the new result.",
-        );
+        throw new Error(unknownReference);
       return this.source(valueId, cwd, allowResource);
     }
     if (typeof input !== "string") return input;
@@ -377,10 +378,7 @@ export class ResultTargetStore {
     const result = this.#results.get(id);
     // Existing backend selection handles share RESULT# syntax, but never accept an unknown UUID.
     if (!result && !envelope && input.startsWith(prefix) && this.#entries.has(input)) return input;
-    if (!result)
-      throw new Error(
-        "Result reference expired or unknown. Run Read/Search again and use the new result.",
-      );
+    if (!result) throw new Error(unknownReference);
     if (result.cwd !== path.resolve(cwd)) throw new Error("Result belongs to another worktree.");
     if (envelope && createHash("sha256").update(input).digest("hex") !== result.digest)
       throw new Error("Result text changed; pass the original result or its UUID.");

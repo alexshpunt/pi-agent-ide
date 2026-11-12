@@ -108,6 +108,7 @@ export {
   resultInputSchema,
   resultSourceSchema,
   resultValueSchema,
+  resultValueId,
   type ResultRange,
   type ResultSourceTarget,
   type ResolvedResultTargets,
