@@ -2507,6 +2507,19 @@ add(
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
+// Values with an id come from the Read and Search values; until then the script builds one.
+add(
+  "value-id-source",
+  ["compose.value-id-source"],
+  "In one Codemode call, read task.txt. Build an object { id } whose id is RESULT# followed by the UUID in the Read result's system-result envelope, and pass that object as Search's path to find OLD. Build the same kind of object from the Search result and pass it as Replace's path to change OLD to NEW. Do not pass result strings, the file path or a bare UUID to Search or Replace.",
+  [
+    { tool: "read", args: { path: "task.txt" } },
+    { tool: "search", args: { query: "OLD", path: { id: /^RESULT#/u } }, reuse: reuse(0) },
+    { tool: "replace", args: { text: "NEW", path: { id: /^RESULT#/u } }, reuse: reuse(1) },
+  ],
+  { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
 add(
   "stale-insert-recovery",
   ["edit.stale-insert-feedback", "edit.bounded-stale-feedback"],

@@ -36,17 +36,43 @@ export interface ResolvedResultTargets {
   readonly complete: boolean;
 }
 
-/** Public source inputs are paths, unchanged text results, issued IDs or arrays of those strings. */
-export const resultInputSchema = Type.Union([Type.String(), Type.Array(Type.String())]);
+/**
+ * A value that a tool returned to a Codemode script, such as a Read or Search value. Its `id` is the
+ * `RESULT#` reference of its selection; other fields are ignored.
+ */
+export const resultValueSchema = Type.Object({ id: Type.String() });
+
+/** One source: a path, an unchanged text result, an issued ID, or a value that has an `id`. */
+export const resultSourceSchema = Type.Union([Type.String(), resultValueSchema]);
+
+/** Public source inputs are single sources or arrays of them. */
+export const resultInputSchema = Type.Union([
+  ...resultSourceSchema.anyOf,
+  Type.Array(resultSourceSchema),
+]);
 
 const prefix = "RESULT#";
+/** An issued result reference: `RESULT#<uuid>` or the bare UUID. */
+const referencePattern = /^(?:RESULT#)?[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
 const event = "pi-agent-resource:result-targets";
+
+/**
+ * The `id` of a script value, or `undefined` for any other input. A tool's own result record, with
+ * a `status` or a `target`, is not a script value; `resolve` reads those itself.
+ */
+function resultValueId(input: unknown): string | undefined {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
+  if (!("id" in input) || typeof input.id !== "string") return undefined;
+  if ("status" in input || ("target" in input && typeof input.target === "string"))
+    return undefined;
+  return input.id;
+}
 /**
  * Version of the shared store's behavior. Raise it with any change that a store from an older
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 2;
+export const RESULT_TARGET_STORE_VERSION = 3;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -328,6 +354,15 @@ export class ResultTargetStore {
   /** Resolve only issued result strings or IDs. Preview text never defines source authority. */
   public source(input: unknown, cwd: string, allowResource: boolean | "live" = false): unknown {
     if (Array.isArray(input)) return input.map((item) => this.source(item, cwd, allowResource));
+    const valueId = resultValueId(input);
+    if (valueId !== undefined) {
+      // A value's id is a reference, never a path: an id the store did not issue is unknown.
+      if (!referencePattern.test(valueId) && !this.#matchReferences.has(valueId))
+        throw new Error(
+          "Result reference expired or unknown. Run Read/Search again and use the new result.",
+        );
+      return this.source(valueId, cwd, allowResource);
+    }
     if (typeof input !== "string") return input;
     const matchTarget = this.#matchReferences.get(input);
     if (matchTarget) return this.source(matchTarget, cwd, allowResource);

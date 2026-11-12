@@ -1,10 +1,12 @@
-import { Type, type TSchema } from "typebox";
+import { Type, type Static, type TSchema } from "typebox";
+import { resultSourceSchema } from "pi-agent-resource";
 import type { ReadRequest } from "#src/api/tools/read.ts";
 
 /** Canonical arguments shared by standalone and composed operations. */
 export const readParameters = Type.Object({
+  // The IDE replaces a script value with its id before the call runs.
   path: Type.Optional(
-    Type.String({
+    Type.Union(resultSourceSchema.anyOf, {
       description:
         "What to read: a supported resource such as a file or directory path, URL, returned temp: reference, SEARCH# or RESULT# reference, or registered protocol source. Supply a path; an empty call cannot select a source.",
     }),
@@ -28,6 +30,16 @@ export const readParameters = Type.Object({
     }),
   ),
 });
+
+/** Read arguments as declared: `path` can be a script value with an id. */
+export type ReadParameters = Static<typeof readParameters>;
+
+/** A Read request whose script-value path is replaced by its id, which Read resolves itself. */
+export function readRequestOf(parameters: ReadParameters): ReadRequest {
+  const { path, ...rest } = parameters;
+  if (path === undefined) return rest;
+  return { ...rest, path: typeof path === "string" ? path : path.id };
+}
 
 /** Rendered plugin syntax grouped by Read parameter. */
 export type ReadParameterText = Partial<Record<keyof ReadRequest, string>>;

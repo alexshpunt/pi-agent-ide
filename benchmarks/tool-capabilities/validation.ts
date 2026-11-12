@@ -225,6 +225,9 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
 
 function values(value: unknown): string[] {
   if (Array.isArray(value)) return (value as unknown[]).flatMap(values);
+  // A Codemode value passed as a source counts by its id.
+  if (value !== null && typeof value === "object" && "id" in value)
+    return typeof value.id === "string" ? [value.id] : [];
   return typeof value === "string" ? [value] : [];
 }
 
@@ -250,7 +253,13 @@ function reuses(value: unknown, output: string, kind = "result"): boolean {
                     : /(?:SEARCH|RESULT)#[A-F0-9]+(?::[a-z0-9:]+)?|[0-9A-HJKMNP-TV-Z]{7}(?=\|)|scope-(?:begin|end)-[0-9A-HJKMNP-TV-Z]{7}/g,
           ),
         ].map((match) => match[0]);
-  return values(value).some((candidate) => candidate === output || ids.includes(candidate));
+  return values(value).some(
+    (candidate) =>
+      candidate === output ||
+      ids.includes(candidate) ||
+      // `RESULT#<uuid>` names the result whose envelope carries that UUID.
+      (kind === "result" && ids.includes(candidate.replace(/^RESULT#/u, ""))),
+  );
 }
 
 /** Require successful real executions in order, including result provenance and nesting. */

@@ -472,7 +472,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export { readParameters } from "#src/api/read-parameters.ts";
+export { readParameters, readRequestOf } from "#src/api/read-parameters.ts";
 export {
   readDataSchema,
   readOutputSchema,

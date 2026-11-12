@@ -106,6 +106,8 @@ export {
   describeAdjustedRanges,
   ResultTargetStore,
   resultInputSchema,
+  resultSourceSchema,
+  resultValueSchema,
   type ResultRange,
   type ResultSourceTarget,
   type ResolvedResultTargets,

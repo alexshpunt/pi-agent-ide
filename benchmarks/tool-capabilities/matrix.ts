@@ -232,6 +232,8 @@ const groups: [string[], string[]][] = [
   [["ast_search.rule", "compose.ast-search-enclosing"], ["ast-search-enclosing"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
+  // Direct calls take the same object; the focused source-value cases cover them without a model.
+  [["compose.value-id-source"], ["value-id-source"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
   [["compose.result-selector-rejection"], ["result-selector-rejection"]],
   [
