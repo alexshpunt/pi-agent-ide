@@ -16,9 +16,11 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from ctypes import wintypes
 
-from ssh_channel_common import CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, ChannelError, command_line, emit, error_code, initial_request
+from ssh_channel_common import (CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, STOP_GRACE_SECONDS, ChannelError,
+                                command_line, emit, error_code, initial_request)
 from ssh_paths import InvalidPath, windows_native
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -286,6 +288,8 @@ class PtyProcess:
 
 process = None
 job = None
+# Input queue of a command that asked to end on end of input; None when it is killed at once.
+graceful_inputs = None
 
 # npm, pnpm and Yarn shims end with: "%_prog%"  "%dp0%\node_modules\pkg\bin\tool" %*
 SHIM_TARGET = re.compile(r'"%_prog%"\s+(?:\S+\s+)*?"%dp0%\\(?P<script>[^"]+)"\s+%\*', re.IGNORECASE)
@@ -366,7 +370,7 @@ def start(target, *args):
 
 
 def run():
-    global process, job
+    global process, job, graceful_inputs
     request = initial_request()
     dimensions = request.get("pty")
     # `python3` on Windows may be the Store alias; reuse the interpreter that runs this worker.
@@ -401,6 +405,8 @@ def run():
     emit({"kind": "ready", "pid": process.pid})
     events = queue.Queue()
     inputs = queue.Queue()
+    if request.get("gracefulStop") is True and dimensions is None:
+        graceful_inputs = inputs
     for name in outputs:
         start(drain, getattr(process, name), name, events)
     start(control, events)
@@ -411,7 +417,11 @@ def run():
     input_open = True
     stopping = False
     leader_exited = False
+    stop_deadline = None
     while True:
+        if stop_deadline is not None and time.monotonic() >= stop_deadline:
+            stop_deadline = None
+            job.terminate()
         if not leader_exited and process.poll() is not None:
             # Like the POSIX process group, descendants end with the leader.
             leader_exited = True
@@ -480,8 +490,13 @@ def run():
                     if input_open and dimensions is None:
                         input_open = False
                         inputs.put(None)
-                    stopping = True
-                    job.terminate()
+                    if not stopping:
+                        stopping = True
+                        if graceful_inputs is None:
+                            job.terminate()
+                        else:
+                            # Windows has no SIGTERM; the end of input asks the command to exit.
+                            stop_deadline = time.monotonic() + STOP_GRACE_SECONDS
                 else:
                     raise ChannelError("INVALID_REQUEST")
             if len(incoming) > FRAME_LIMIT:
@@ -498,6 +513,13 @@ def main():
     except Exception:
         emit({"kind": "error", "code": "INVALID_REQUEST", "effect": "unknown" if process is not None else "not-applied"})
     finally:
+        if graceful_inputs is not None and process is not None and process.poll() is None:
+            # A lost connection stops the command like a stop request: input ends first.
+            graceful_inputs.put(None)
+            try:
+                process.wait(STOP_GRACE_SECONDS)
+            except subprocess.TimeoutExpired:
+                pass
         if job is not None:
             job.terminate()
             job.close()

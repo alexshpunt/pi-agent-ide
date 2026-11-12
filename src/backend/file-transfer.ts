@@ -202,18 +202,34 @@ export async function transferFile(
     if (revision !== sourceRevision) throw new SshBackendError("CONFLICT", source, "not-applied");
   };
   const digest = createHash("sha256");
+  // The write the target has not acknowledged yet. Each chunk waits only for the one before it,
+  // so the next chunk is already on the link while the target acknowledges the previous one.
+  let pending: Promise<void> | undefined;
+  const settle = async () => {
+    const previous = pending;
+    pending = undefined;
+    await previous;
+  };
   const deliver = async (bytes: Buffer) => {
     throwIfStopped();
     digest.update(bytes);
-    if (channel) await channel.write(bytes);
-    else {
-      if (destination === undefined) throw new Error("Missing destination descriptor");
-      for (let offset = 0; offset < bytes.length;) {
-        const result = await destination.write(bytes, offset, bytes.length - offset);
-        if (result.bytesWritten === 0)
-          throw new SshBackendError("TRANSFER_FAILED", target, "not-applied");
-        offset += result.bytesWritten;
-      }
+    if (channel) {
+      const accepted = channel.write(bytes).then(() => {
+        written += bytes.length;
+        progress();
+      });
+      void accepted.catch(() => {});
+      const previous = pending;
+      pending = accepted;
+      await previous;
+      return;
+    }
+    if (destination === undefined) throw new Error("Missing destination descriptor");
+    for (let offset = 0; offset < bytes.length;) {
+      const result = await destination.write(bytes, offset, bytes.length - offset);
+      if (result.bytesWritten === 0)
+        throw new SshBackendError("TRANSFER_FAILED", target, "not-applied");
+      offset += result.bytesWritten;
     }
     written += bytes.length;
     progress();
@@ -236,7 +252,8 @@ export async function transferFile(
           }),
         ],
         neutralDirectory(remoteTarget.backend.target),
-        { ...context, signal },
+        // The receiver removes its staging file when its input ends before the commit request.
+        { ...context, signal, gracefulStop: true },
       );
       channel.completion.catch(() => {});
       channel.stdout.on("data", (chunk: Buffer) => {
@@ -262,6 +279,7 @@ export async function transferFile(
         deliver,
         { ...context, signal },
       );
+      await settle();
       if (sent.totalBytes !== size || written !== size)
         throw new SshBackendError("CONFLICT", source, "not-applied");
       if (sent.sha256 !== digest.copy().digest("hex"))
@@ -276,6 +294,7 @@ export async function transferFile(
         await deliver(buffer.subarray(0, bytesRead));
         offset += bytesRead;
       }
+      await settle();
     }
     // Verification requests have their own deadlines and move no bytes, so they never count as a stall.
     clearTimeout(stallTimer);
