@@ -13,6 +13,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "./support/ssh-fixture.ts";
 import { createPdfFixture } from "#test-fixtures/pdf";
 
@@ -115,7 +116,12 @@ test("filesystem SSH Read keeps text, bytes, JSONL and media windows readonly an
 const root = ${JSON.stringify(remote)};
 function check(value, message) { if (!value) throw Error(message); }
 
+// A refused IDE call resolves to null; the Codemode result lists its reason.
 async function rejected(action, label) {
+  check((await action()) === null, label+" unexpectedly succeeded");
+}
+// An image block is not a source parameter, so Pi itself rejects the call.
+async function invalid(action, label) {
   let failure; try { await action(); } catch(error) { failure=String(error); }
   check(failure, label+" unexpectedly succeeded");
 }
@@ -149,7 +155,9 @@ check(!environment.includes("SSH_AUTH_SOCK") && !environment.includes('"HOME"'),
 const picture=await tools.read({path:root+"/picture.data"});
 const pdf=await tools.read({path:root+"/document.data"});
 check(pdf.includes("Owned second page 43"),"PDF lost second page");
-for(const result of [raw,zero,picture,pdf]) await rejected(()=>tools.replace({path:result,text:"BAD"}),"readonly edit authority");
+for(const result of [raw,zero,pdf]) await rejected(()=>tools.replace({path:result,text:"BAD"}),"readonly edit authority");
+check(picture?.type === "image","SSH image Read lost its image block");
+await invalid(()=>tools.replace({path:picture,text:"BAD"}),"image edit authority");
 for (const request of [
   {path:root+"/denied.txt"},
   {path:root+"/broken.jsonl",views:["jq:.id"]},
@@ -161,8 +169,7 @@ for (const request of [
   {path:root+"/records.jsonl",views:["jq:.id","anchors"]},
   {path:"raw:"+root+"/bytes.bin",views:["anchors"]}
 ]) {
-  const failure = await tools.read(request);
-  check(failure?.status === "error" && failure.errors.length > 0, "Rejected Read unexpectedly succeeded");
+  check((await tools.read(request)) === null, "Rejected Read unexpectedly succeeded");
 }
 text({note,raw,next,last,picture,pdf,readonly:true});
 `;
@@ -201,6 +208,13 @@ text({note,raw,next,last,picture,pdf,readonly:true});
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     for (const id of ["denied", "broken-json", "broken-image", "broken-pdf"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(true);
+    // Two jq edits, three readonly edits and nine Reads were refused and resolved to null.
+    const refusals = codemodeFailures(getToolResultText(run, "native"));
+    expect(refusals).toMatch(/^14 of \d+ IDE calls failed:\n/u);
+    expect(refusals.match(/^- replace /gmu)).toHaveLength(5);
+    expect(refusals.match(/^- read /gmu)).toHaveLength(9);
+    expect(refusals).toContain(`- read ${remote}/denied.txt`);
+    expect(refusals).not.toContain("private synthetic denied content");
     expect(getToolResultText(run, "text")).toContain("café second");
     expect(getToolResultText(run, "text")).not.toContain("local same basename");
     expect(getToolResultText(run, "directory")).toContain("picture.data");

@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 
@@ -114,8 +115,7 @@ const source=/temp:[a-zA-Z0-9-]+/.exec(result)?.[0];
 check(source && result.includes("truncated"),"Full comparison lost continuation");
 const tail=await tools.read({path:source,offset:-3,limit:3});
 check(tail.includes("right café row 2204"),"Full diff lost final source row");
-let rejected;
-try { await tools.replace({path:result,text:"BAD"}); } catch(error) { rejected=String(error); }
+const rejected = (await tools.replace({path:result,text:"BAD"})) === null;
 check(rejected,"Diff gained edit authority");
 text(await tools.write({path:right,content:"new remote snapshot\\r\\n"}));
 store("diff-result",{source,tail:tail.replace(/^<system-result[^\\n]*>\\n/,"")});
@@ -159,6 +159,9 @@ text({retained:saved.source,readonly:true,current});
     );
     for (const id of ["ordinary", "snapshots", "retained", "final-window"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    expect(codemodeFailures(getToolResultText(run, "snapshots"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace RESULT#/u,
+    );
     expect(getToolResultText(run, "ordinary")).toContain(left);
     expect(getToolResultText(run, "ordinary")).toContain(right);
     expect(getToolResultText(run, "ordinary")).toContain("row 2204");

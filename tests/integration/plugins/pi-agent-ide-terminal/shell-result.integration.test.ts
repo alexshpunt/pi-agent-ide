@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 test.runIf(process.platform !== "win32")(
   "native scripts compose readable shell results without expanding the preview",
@@ -23,12 +24,12 @@ test.runIf(process.platform !== "win32")(
       // a short sleep can finish during an existing turn and never request an extra response.
       const code = `
       const empty = await tools.bash({command: "true"});
-      let failed;
-      try { await tools.bash({command: "printf bad; exit 7"}); throw Error("Expected exit-7 refusal"); }
-      catch (error) { failed = String(error); if (!failed.includes("exitCode: 7")) throw error; }
+      // A failed command resolves to null; its readable status is in the Codemode result.
+      const failed = await tools.bash({command: "printf bad; exit 7"});
+      if (failed !== null) throw Error("Expected exit-7 failure");
       const large = await tools.bash({command: ${JSON.stringify('node -e \'process.stdout.write("HEAD" + "я".repeat(700000) + "TAIL")\'')}});
       const waiting = await tools.bash({command: "read -r line", timeoutSeconds: 0.1});
-      for (const result of [empty, failed, waiting, large]) if (typeof result !== "string") throw Error("Expected readable shell text");
+      for (const result of [empty, waiting, large]) if (typeof result !== "string") throw Error("Expected readable shell text");
       const observed = await tools.read({path:waiting});
       if (!large.includes("Earlier output omitted") || !large.includes("TAIL") || large.includes("�"))
         throw Error("Invalid bounded shell preview");
@@ -36,7 +37,7 @@ test.runIf(process.platform !== "win32")(
       if (largeBytes >= 50 * 1024) throw Error("Shell preview exceeds its byte budget");
       const logPath = /^fullOutput: (.+)$/mu.exec(large)?.[1];
       if (!logPath) throw Error("Missing readable full-log path");
-      text("SHELL_RESULTS=" + JSON.stringify({empty, failed, waiting, observed, largeBytes, logPath}));
+      text("SHELL_RESULTS=" + JSON.stringify({empty, waiting, observed, largeBytes, logPath}));
     `;
       const result = await new PiIntegrationTest({
         testName: "native-shell-result",
@@ -74,7 +75,6 @@ test.runIf(process.platform !== "win32")(
       if (payload === undefined) throw new Error("Missing shell script JSON output");
       const data = JSON.parse(payload) as {
         empty: string;
-        failed: string;
         waiting: string;
         observed: string;
         largeBytes: number;
@@ -83,9 +83,13 @@ test.runIf(process.platform !== "win32")(
       expect(data.empty).toContain("status: completed");
       expect(data.empty).toContain("exitCode: 0");
       expect(data.empty).toContain("output: (empty)");
-      expect(data.failed).toContain("status: failed");
-      expect(data.failed).toContain("exitCode: 7");
-      expect(data.failed).toContain("bad");
+      const failed = codemodeFailures(getToolResultText(result, "script"));
+      // A failed command is named by its command line.
+      expect(failed).toContain("1 of 5 IDE calls failed:\n- bash printf bad; exit 7\n");
+      expect(failed).toContain("status: failed");
+      expect(failed).toContain("exitCode: 7");
+      expect(failed).toContain("bad");
+      expect(failed).not.toContain("<system-result");
       expect(data.waiting).toContain("status: running");
       expect(data.waiting).toContain("reason: timeout");
       expect(data.waiting).not.toContain("exitCode:");
@@ -129,9 +133,7 @@ test.runIf(process.platform !== "win32")(
           const afterKeys = await tools.read({path: keys});
           if (!afterKeys.includes("resource:hello")) throw Error("Key receipt lost its live owner");
           if (!observed.includes("resource:hello")) throw Error("Input receipt lost its live owner");
-          let refused = false;
-          try { await tools.replace({path: sent, text: "not a file"}); }
-          catch { refused = true; }
+          const refused = (await tools.replace({path: sent, text: "not a file"})) === null;
           if (!refused) throw Error("Terminal input granted file edit authority");
           text(observed);
         } finally {

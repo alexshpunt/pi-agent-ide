@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import path from "node:path";
 import type {
   MessageEndEvent,
   MessageEndEventResult,
@@ -8,22 +9,24 @@ import type {
   ToolCallEventResult,
   AgentToolResult,
 } from "@earendil-works/pi-coding-agent";
-import type { JsonValue } from "@earendil-works/pi-ai";
-import {
-  connectResultImages,
-  connectResultTargets,
-  resultErrorSchema,
-  TempResourceStore,
-} from "pi-agent-resource";
-import { Type } from "typebox";
-import { Value } from "typebox/value";
+import { connectResultImages, connectResultTargets, TempResourceStore } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
 import { limitIdeOutput } from "./output-limits.ts";
-import { searchFacts, searchFactsSchema } from "./search-facts.ts";
+import { nullableValueSchema, scriptValueOf } from "./script-values/index.ts";
+import type { ImageBlock } from "./script-values/read.ts";
+import { batchOperations, CodemodeCallLedger, fileEffects } from "./script-values/failures.ts";
 
-/** Tools whose Codemode value is `{ result, hasMatches, complete }`. */
-const searchTools = new Set(["search", "ast_search", "lsp_search", "file_search"]);
+/** The system-result envelope that starts a readable result; its group is the result's UUID. */
+const envelopePattern = /^<system-result\b[^>]*><uuid>([a-f\d-]{36})<\/uuid><\/system-result>\n?/u;
+/** Longest source label in the Codemode failure block. */
+const maxLabelLength = 200;
+
+/** `RESULT#<uuid>` for text that starts with a system-result envelope. */
+function resultReference(value: string): string | undefined {
+  const uuid = envelopePattern.exec(value)?.[1];
+  return uuid === undefined ? undefined : `RESULT#${uuid}`;
+}
 
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
@@ -41,92 +44,41 @@ const sourceFields: Record<string, readonly string[]> = {
   diff: ["before", "after"],
 };
 
-/** Mutation tools whose resource providers may return a plain value to Codemode scripts. */
-const providerValueTools = new Set(["write", "replace", "insert", "delete", "copy", "move"]);
-/** Codemode resolves to the composition text, or to a provider's value when a semantic handler returns one. */
-const providerValueSchema = {
-  anyOf: [
-    { type: "string" },
-    {
-      type: "object",
-      description: "Value returned by a resource provider, such as a computer action outcome.",
-      additionalProperties: true,
-    },
-  ],
+/** What a failed call of a tool without source fields names in the Codemode failure block. */
+const labelFields: Record<string, readonly string[]> = {
+  bash: ["command"],
+  powershell: ["command"],
+  remote_bash: ["command"],
+  remote_powershell: ["command"],
+  debug: ["program"],
+  stage: ["file"],
+  unstage: ["file"],
 };
-const imageBlockSchema = {
-  type: "object",
-  properties: {
-    type: { const: "image" },
-    data: { type: "string" },
-    mimeType: { type: "string" },
-    note: { type: "string" },
-  },
-  required: ["type", "data", "mimeType", "note"],
-};
-const readFailureSchema = Type.Object(
-  {
-    status: Type.Literal("error"),
-    errors: Type.Array(resultErrorSchema, { minItems: 1 }),
-  },
-  { additionalProperties: false },
-);
-/**
- * Read resolves to text, native image blocks or the public failure envelope.
- * Successful image notes carry the same readable, composable result text.
- */
-const readValueSchema = {
-  anyOf: [
-    readFailureSchema,
-    { type: "string" },
-    imageBlockSchema,
-    {
-      type: "object",
-      description: "Several images, such as sequence frames, in source order.",
-      properties: {
-        type: { const: "images" },
-        note: { type: "string" },
-        images: {
-          type: "array",
-          items: { type: "object", properties: imageBlockSchema.properties },
-        },
-      },
-      required: ["type", "note", "images"],
-    },
-  ],
-};
-type ImageBlock = Extract<AgentToolResult<unknown>["content"][number], { type: "image" }>;
-/** Native image script values for a successful Read; text reads keep their composition string. */
-function readValue(
-  content: AgentToolResult<unknown>["content"],
-  note: string,
-): JsonValue | undefined {
-  const images = content
-    .filter((block): block is ImageBlock => block.type === "image")
-    .map(({ data, mimeType }) => ({ type: "image", data, mimeType }));
-  if (images.length === 0) return undefined;
-  const [first] = images;
-  return images.length === 1 && first !== undefined
-    ? { ...first, note }
-    : { type: "images", note, images };
-}
-/** The value a semantic handler asked to return to scripts instead of text. */
-function providerValue(details: unknown): JsonValue | undefined {
-  const metadata = record(details) ? details.metadata : undefined;
-  const action = record(metadata) ? metadata.semanticAction : undefined;
-  const value = record(action) ? action.script : undefined;
-  // Semantic handler results are plain JSON receipts; keep the declared object shape.
-  return record(value) && !Array.isArray(value) ? (value as JsonValue) : undefined;
-}
-function record(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object";
-}
 
-/** Project only validated public errors; discard private Read data and renderer details. */
-function readFailure(outcome: unknown): JsonValue | undefined {
-  if (!record(outcome) || outcome.status !== "error") return undefined;
-  const failure = { status: "error", errors: outcome.errors };
-  return Value.Check(readFailureSchema, failure) ? failure : undefined;
+/** The sources a call names, as its title shows them; enveloped results become `RESULT#<uuid>`. */
+function sourceLabel(name: string, input: Record<string, unknown>): string | undefined {
+  const labels = (field: unknown): string[] => {
+    if (Array.isArray(field)) return field.flatMap(labels);
+    if (field !== null && typeof field === "object" && "path" in field) return labels(field.path);
+    if (typeof field !== "string" || field === "") return [];
+    // One line per entry: a multi-line command is shown on one line.
+    const label = resultReference(field) ?? field.replaceAll(/\s+/gu, " ");
+    return [label.length > maxLabelLength ? `${label.slice(0, maxLabelLength)}…` : label];
+  };
+  // Tools that other modules register through the IDE, such as provider edits, name `path`.
+  const fields = labelFields[name] ?? sourceFields[name] ?? ["path"];
+  // Several sources of one field, such as a path list, are a list; a target follows an arrow.
+  const shown = fields
+    .map((field) => labels(input[field]).join(", "))
+    .filter((label) => label !== "");
+  return shown.length === 0 ? undefined : shown.join(" → ");
+}
+/** A local path inside the workspace relative to it, as scripts usually name it. */
+function displayPath(source: string, cwd: string): string {
+  const root = cwd.endsWith(path.sep) ? cwd : cwd + path.sep;
+  return source.startsWith(root) && source.length > root.length
+    ? source.slice(root.length)
+    : source;
 }
 /** Keep tool records private while strings carry registered composition references. */
 export function createIdeTextResults(
@@ -206,38 +158,68 @@ export function createIdeTextResults(
     const toolCallHandler = handler as ExtensionHandler<ToolCallEvent, ToolCallEventResult>;
     if (event !== "tool_call") return pi.on(event as "tool_call", toolCallHandler);
     return pi.on("tool_call", async (call, context) => {
+      const ide = names.has(call.toolName);
+      // A refused IDE call runs no further IDE hooks, as if the refusal had blocked it.
+      if (ide && refusals.has(call.toolCallId)) return;
       const result = await toolCallHandler(call, context);
-      if (!result?.block || !names.has(call.toolName) || result.reason === undefined) return result;
+      if (!result?.block || !ide || result.terminate === true) return result;
+      // Refuse in execution instead of blocking: a refused call is a failed IDE call, which
+      // resolves to null in Codemode. Pi rejects blocked calls before any tool runs.
       const limited = await limitIdeOutput(
-        [{ type: "text", text: result.reason }],
+        [{ type: "text", text: result.reason ?? "Tool execution was blocked" }],
         "",
         saveFullOutput,
       );
-      return {
-        ...result,
-        reason: limited.text + (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
-      };
+      refusals.set(
+        call.toolCallId,
+        limited.text + (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
+      );
+      return;
     });
   };
+  const refusals = new Map<string, string>();
+  const labels = new Map<string, string | undefined>();
+  const ledger = new CodemodeCallLedger();
+  /** Nested IDE calls that failed; their script value becomes null when their execution ends. */
+  const failedNested = new Set<string>();
   const parents = new Map<string, string>();
   const images = new Map<string, ImageBlock[]>();
+  /** Forget the calls of the last agent run. */
+  const clearCalls = () => {
+    refusals.clear();
+    labels.clear();
+    ledger.clear();
+    failedNested.clear();
+  };
   const clear = () => {
     parents.clear();
     images.clear();
     contextErrors.clear();
+    clearCalls();
   };
   pi.on("session_start", clear);
   pi.on("session_shutdown", clear);
+  pi.on("agent_end", clearCalls);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
-      'Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. A completed Read failure returns { status: "error", errors }; inspect errors before using its value. Successful text Reads and other text tools return strings. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.';
+      "Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. A failed IDE call returns null (a resource provider's action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
       parents.set(event.toolCallId, parents.get(event.parentToolCallId) ?? event.parentToolCallId);
   });
+  pi.on("tool_execution_end", (event) => {
+    if (!failedNested.delete(event.toolCallId)) return;
+    // Pi drops a null structuredContent that a tool_result hook returns, because the agent loop
+    // merges it with `??`. It hands this same result object to the calling script after the
+    // event, so the failure value is set here.
+    const result: unknown = event.result;
+    if (result !== null && typeof result === "object")
+      Object.assign(result, { structuredContent: null });
+  });
   on("tool_call", (event, context) => {
     if (!names.has(event.toolName)) return;
+    labels.set(event.toolCallId, sourceLabel(event.toolName, event.input));
     const input: Record<string, unknown> = { ...event.input };
     try {
       for (const field of sourceFields[event.toolName] ?? []) {
@@ -288,30 +270,20 @@ export function createIdeTextResults(
     names.add(definition.name);
     const publicDefinition = {} as typeof definition;
     const descriptors = Object.getOwnPropertyDescriptors(definition);
-    // Keep readable composition strings except for explicitly declared public script values.
-    delete descriptors.outputSchema;
-    if (searchTools.has(definition.name))
-      descriptors.outputSchema = {
-        value: searchFactsSchema,
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      };
-    if (definition.name === "read")
-      descriptors.outputSchema = {
-        value: readValueSchema,
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      };
-    if (providerValueTools.has(definition.name))
-      descriptors.outputSchema = {
-        value: providerValueSchema,
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      };
+    // Scripts get the tool's declared value, or null when the call failed. Private records stay hidden.
+    descriptors.outputSchema = {
+      value: nullableValueSchema(scriptValueOf(definition.name)),
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    };
     const execute: typeof definition.execute = async (...args) => {
+      const refusal = refusals.get(args[0]);
+      if (refusal !== undefined) {
+        refusals.delete(args[0]);
+        // A refusal has no tool details, like a call that Pi blocks.
+        return { content: [{ type: "text", text: refusal }], details: {} as never, isError: true };
+      }
       // A Read issued by another tool, such as a Codemode script, returns its whole text there.
       const limitText = !(definition.name === "read" && parents.has(args[0]));
       const result = await definition.execute(...args).catch(async (error: unknown) => {
@@ -363,10 +335,7 @@ export function createIdeTextResults(
               block.type === "text"
                 ? {
                     ...block,
-                    text: block.text.replace(
-                      /^<system-result\b[^>]*><uuid>[a-f\d-]{36}<\/uuid><\/system-result>\n/u,
-                      "",
-                    ),
+                    text: block.text.replace(envelopePattern, ""),
                   }
                 : block,
             ),
@@ -423,8 +392,19 @@ export function createIdeTextResults(
         const metadata = event.content.filter(
           (block) => block.type === "text" && block.text.startsWith("\n\n---\n\n# Guide:"),
         );
+        ledger.recordBatch(
+          event.toolCallId,
+          batchOperations(event.details, (source) => displayPath(source, context.cwd)),
+        );
+        const failures = ledger.take(event.toolCallId);
         const content = event.content.filter((block) => !metadata.includes(block));
         const limited = await limitIdeOutput([...content, ...generated], "", saveFullOutput);
+        // Whether the script completed or threw, the result ends with its failed IDE calls, after
+        // any guides, within its own output limit.
+        const block =
+          failures === undefined
+            ? undefined
+            : await limitIdeOutput([{ type: "text", text: failures }], "", saveFullOutput);
         return {
           content: [
             ...(limited.textTruncated
@@ -435,6 +415,14 @@ export function createIdeTextResults(
               ? [{ type: "text" as const, text: `\n\n${limited.notices.join("\n")}` }]
               : []),
             ...metadata,
+            ...(block === undefined
+              ? []
+              : [
+                  {
+                    type: "text" as const,
+                    text: `\n\n${block.text}${block.notices.length ? `\n\n${block.notices.join("\n")}` : ""}`,
+                  },
+                ]),
           ],
         };
       }
@@ -464,32 +452,50 @@ export function createIdeTextResults(
           ? original
           : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
-      const succeeded = !event.isError && outcome.status !== "error";
+      // An edit that changed only some files, or whose effect is unknown, failed as a whole.
+      const failed = event.isError || outcome.status === "error" || outcome.status === "partial";
       const shown = store.publish(outcome, readable, context.cwd, resources);
       resultImages.keep(
         shown,
         context.cwd,
-        event.toolName === "read" && succeeded
+        event.toolName === "read" && !failed
           ? event.content.filter((block): block is ImageBlock => block.type === "image")
           : [],
       );
-      const value =
-        searchTools.has(event.toolName) && succeeded
-          ? searchFacts(outcome, shown)
-          : event.toolName === "read"
-            ? succeeded
-              ? readValue(event.content, shown)
-              : readFailure(record)
-            : providerValue(event.details);
+      const valueInput = { shown, outcome, content: event.content, details: event.details };
+      const scriptValue = scriptValueOf(event.toolName);
+      const projected = failed ? scriptValue.failed?.(valueInput) : scriptValue.project(valueInput);
+      // A value that is the readable text stays off the record: Pi gives scripts the text then,
+      // and direct results keep their shape.
+      const value = projected === shown ? undefined : projected;
       const parent = parents.get(event.toolCallId);
       parents.delete(event.toolCallId);
+      const label = labels.get(event.toolCallId);
+      labels.delete(event.toolCallId);
+      // Error text carries no envelope: a failed result selects nothing to compose with.
+      const reason = readable.replace(envelopePattern, "");
       if (parent !== undefined) {
         const generated = event.content.filter((block) => block.type === "image");
         if (generated.length) images.set(parent, [...(images.get(parent) ?? []), ...generated]);
+        ledger.record(
+          parent,
+          {
+            id: event.toolCallId,
+            tool: event.toolName,
+            ...(label === undefined ? {} : { source: label }),
+          },
+          failed
+            ? {
+                reason,
+                ...fileEffects(outcome, (source) => displayPath(source, context.cwd)),
+              }
+            : undefined,
+        );
+        if (failed && value === undefined) failedNested.add(event.toolCallId);
       }
       return {
         content: [
-          { type: "text" as const, text: shown },
+          { type: "text" as const, text: failed ? reason : shown },
           ...event.content.filter((block) => block.type !== "text"),
         ],
         // Keep private records hidden; only the declared public script value survives.
@@ -521,8 +527,7 @@ function displaySources<Args extends Record<string, unknown>>(name: string, args
   const label = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(label);
     if (typeof value !== "string") return value;
-    const uuid = /^<system-result\b[^>]*><uuid>([a-f\d-]{36})<\/uuid>/u.exec(value)?.[1];
-    return uuid ? `RESULT#${uuid}` : value;
+    return resultReference(value) ?? value;
   };
   const shown = { ...args };
   for (const field of sourceFields[name] ?? [])

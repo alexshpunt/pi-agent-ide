@@ -46,7 +46,7 @@ add(
 add(
   "semantic-write-receipts",
   ["edit.semantic-write-receipt"],
-  "Use Write once each on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode catch the expected failed calls so the remaining distinct actions can run. Report unknown for the uncertain action; do not call it a failed file save.",
+  "Use Write once each on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode a failed call resolves to null, so the remaining distinct actions still run. Report unknown for the uncertain action; do not call it a failed file save.",
   [
     {
       tool: "write",
@@ -183,7 +183,7 @@ add(
 add(
   "docs-search-status",
   ["search.docs-limit", "search.docs-empty", "search.docs-unknown", "search.docs-bare"],
-  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:terminal with query regex:(?!) and confirm a successful empty result. Search bare docs: and observe an error directing you to docs:all. Finally search docs:lpt-723-missing and observe an unknown-documentation-ID error, not a filesystem search or zero matches. Catch the expected error in Codemode. Do not change files.",
+  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:terminal with query regex:(?!) and confirm a successful empty result. Search bare docs: and observe an error directing you to docs:all. Finally search docs:lpt-723-missing and observe an unknown-documentation-ID error, not a filesystem search or zero matches. In Codemode the failed call resolves to null. Do not change files.",
   [
     {
       tool: "search",
@@ -243,7 +243,7 @@ add(
 add(
   "filesystem-yolo",
   ["edit.approval-yolo-delete", "edit.approval-yolo-move", "compose.yolo-protected-target"],
-  "This fixture explicitly enables filesystem YOLO. Delete the tracked directory delete-tree and Move the tracked directory move-tree to moved-tree without a user UI. YOLO skips approval only: deleting .git/config must still be refused. Read moved-tree/data to confirm MOVE. In Codemode catch the protected-target refusal so the read still runs.",
+  "This fixture explicitly enables filesystem YOLO. Delete the tracked directory delete-tree and Move the tracked directory move-tree to moved-tree without a user UI. YOLO skips approval only: deleting .git/config must still be refused. Read moved-tree/data to confirm MOVE. In Codemode the protected-target refusal resolves to null and the read still runs.",
   [
     { tool: "delete", args: { path: "delete-tree" }, contains: "delete: applied" },
     { tool: "move", args: { path: "move-tree", target: "moved-tree" }, contains: "move: applied" },
@@ -282,7 +282,7 @@ add(
     "edit.approval-headless-delete",
     "compose.approval-refusal-read",
   ],
-  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Tracked deletion requires a host approval dialog; there is no user UI here, so it must fail closed rather than treating the prompt as permission. Then Read tracked/data and check its unchanged KEEP content. Keep all fixture bytes unchanged and report the refusal reasons. In Codemode catch each refusal so the following calls run.",
+  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Tracked deletion requires a host approval dialog; there is no user UI here, so it must fail closed rather than treating the prompt as permission. Then Read tracked/data and check its unchanged KEEP content. Keep all fixture bytes unchanged and report the refusal reasons. In Codemode each refusal resolves to null and the following calls still run.",
   [
     {
       tool: "delete",
@@ -313,7 +313,7 @@ add(
     "edit.move-replace-directory",
     "compose.object-transfer-refusal",
   ],
-  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. Search the unchanged first Copy receipt for BAD and observe that it has no reusable text selection; catch that expected error in Codemode. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
+  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. Search the unchanged first Copy receipt for BAD and observe that it has no reusable text selection; in Codemode that call resolves to null. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
   [
     {
       tool: "copy",
@@ -378,7 +378,7 @@ add(
     "edit.approval-headless-move",
     "compose.approval-refusal-read",
   ],
-  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data to check unchanged KEEP content; new-target must not exist. Report the refusals and leave all fixture bytes unchanged. In Codemode catch each failure so all checks run.",
+  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data to check unchanged KEEP content; new-target must not exist. Report the refusals and leave all fixture bytes unchanged. In Codemode each failure resolves to null and all checks still run.",
   [
     {
       tool: "copy",
@@ -453,7 +453,7 @@ add(
 add(
   "delete-temporary-config",
   ["edit.delete-temporary-config", "edit.move-temporary-config"],
-  "Delete the custom root itself. The project deletion setting replaces default temporary roots with custom. Request Delete and Move on nested/tmp too: both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode catch the expected refusals.",
+  "Delete the custom root itself. The project deletion setting replaces default temporary roots with custom. Request Delete and Move on nested/tmp too: both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode the expected refusals resolve to null.",
   [
     { tool: "delete", args: { path: "custom" }, contains: "delete: applied" },
     {
@@ -528,7 +528,7 @@ function add(
 add(
   "search-script-facts",
   ["search.script-facts", "compose.search-script-result"],
-  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call rejects. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
+  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call fails. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
   [
     {
       tool: "search",
@@ -565,7 +565,7 @@ add(
 add(
   "binary-copy-move",
   ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
-  "Copy source.bin to copy.bin without decoding it. Report the Copy receipt. Search the unchanged Copy result for BAD and observe that it has no text selection; catch that expected rejection in Codemode. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",
+  "Copy source.bin to copy.bin without decoding it. Report the Copy receipt. Search the unchanged Copy result for BAD and observe that it has no text selection; in Codemode that call resolves to null. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",
   [
     {
       tool: "copy",
@@ -602,26 +602,28 @@ for (const mode of both)
   add(
     `read-error-${mode}`,
     mode === "codemode"
-      ? ["read.failure", "read.provider-failure-ownership", "compose.read-error-value"]
+      ? [
+          "read.failure",
+          "read.provider-failure-ownership",
+          "codemode.failed-call-null",
+          "codemode.failed-call-summary",
+        ]
       : ["read.failure", "read.provider-failure-ownership"],
-    "Read absent.txt once, then fixture:read-provider#metadata once, then read task.txt. The synthetic provider declares the fragmented resource unavailable; do not retry its bare source or interpret metadata as text. Keep existing files unchanged and report the first line of task.txt. In Codemode, inspect each failed Read's status and errors fields and pass each returned error object unchanged to text(); a completed Read failure resolves to an error value. Continue with the independent task.txt read. Do not parse readable error text.",
+    "Read absent.txt once, then fixture:read-provider#metadata once, then read task.txt. The synthetic provider declares the fragmented resource unavailable; do not retry its bare source or interpret metadata as text. Keep existing files unchanged and report the first line of task.txt. In Codemode, run the three Reads in one script: a failed Read resolves to null, so check each value for null and continue with the independent task.txt read. Do not catch errors or parse readable error text; the Codemode result lists the failed Reads.",
     [
       {
         tool: "read",
         args: { path: "absent.txt" },
         error: true,
-        scriptResult: { status: "error" },
-        ...(mode === "codemode" ? { parentStructuredValue: true } : {}),
+        contains: "absent.txt",
+        ...(mode === "codemode" ? { parentContains: "- read absent.txt" } : {}),
       },
       {
         tool: "read",
         args: { path: "fixture:read-provider#metadata" },
         error: true,
-        scriptResult: {
-          status: "error",
-          errors: [{ code: "FIXTURE_FIELD_UNAVAILABLE", source: "fixture:read-provider#metadata" }],
-        },
-        ...(mode === "codemode" ? { parentStructuredValue: true } : {}),
+        contains: "fixture:read-provider#metadata",
+        ...(mode === "codemode" ? { parentContains: "- read fixture:read-provider#metadata" } : {}),
       },
       { tool: "read", args: { path: "task.txt" }, contains: "keep" },
     ],
@@ -1816,7 +1818,7 @@ add(
 add(
   "write-confirmed-readback",
   ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
-  "Write changed plus a newline once to fixture://saved-canonicalized/content. This provider stores uppercase text, so the successful result and a fresh Read must expose CHANGED rather than the submitted text. Then Write updated plus a newline once to fixture://saved-readback/content. This provider acknowledges persistence but cannot read the saved body on that resource instance. Preserve its applied effect, catch the post-write readback error in Codemode, and Read the explicit resource freshly to inspect updated. Never replay either write; report saved for the second one, not unknown delivery.",
+  "Write changed plus a newline once to fixture://saved-canonicalized/content. This provider stores uppercase text, so the successful result and a fresh Read must expose CHANGED rather than the submitted text. Then Write updated plus a newline once to fixture://saved-readback/content. This provider acknowledges persistence but cannot read the saved body on that resource instance. Preserve its applied effect, expect the post-write readback error (null in Codemode), and Read the explicit resource freshly to inspect updated. Never replay either write; report saved for the second one, not unknown delivery.",
   [
     {
       tool: "write",
@@ -1848,7 +1850,7 @@ add(
 add(
   "write-unknown-effects",
   ["edit.write-failure-recovery", "compose.uncertain-write-read"],
-  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, catch the failed Write so the Read still runs. This headless case checks recovery, not the TUI failure panel.",
+  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, the failed Write resolves to null and the Read still runs. This headless case checks recovery, not the TUI failure panel.",
   [
     {
       tool: "write",
@@ -1873,7 +1875,7 @@ add(
 add(
   "move-unknown-effects",
   ["edit.move-effects"],
-  "Use whole-file move on .tmp/move-effects/unknown-after.txt to .tmp/move-effects/unknown-after-target.txt. This isolated fixture deliberately fails after execution starts. Preserve the unknown effect: do not call it not-applied and do not retry. Read the destination by its ordinary path to inspect the bytes and report that the Move effect is unknown. In Codemode, catch the failed call so the inspection still runs.",
+  "Use whole-file move on .tmp/move-effects/unknown-after.txt to .tmp/move-effects/unknown-after-target.txt. This isolated fixture deliberately fails after execution starts. Preserve the unknown effect: do not call it not-applied and do not retry. Read the destination by its ordinary path to inspect the bytes and report that the Move effect is unknown. In Codemode, the failed call resolves to null and the inspection still runs.",
   [
     {
       tool: "move",

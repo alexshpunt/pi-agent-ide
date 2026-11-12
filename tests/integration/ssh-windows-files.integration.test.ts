@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 import { remotePython } from "#src/backend/ssh-transport.ts";
 
@@ -105,13 +106,10 @@ const undoRead = await tools.read({ path: root + "/undone.txt" });
 const written = await tools.write({ path: undoRead, content: "delta\\r\\nbeta\\r\\n" });
 const saved = await tools.read({ path: written });
 text(await tools.undo({ file: saved, change: "last" }));
-// A read-only file is refused, not changed.
-let refused = "";
-try {
-  const target = await tools.read({ path: root + "/locked.txt" });
-  await tools.write({ path: target, content: "overwritten" });
-} catch (error) { refused = String(error); }
-if (!/FILE_READ_ONLY/.test(refused) || !/no file was written/i.test(refused)) throw Error("Read-only file was not refused clearly: " + refused);
+// A read-only file is refused, not changed: the Write resolves to null and the result lists why.
+const target = await tools.read({ path: root + "/locked.txt" });
+const refused = (await tools.write({ path: target, content: "overwritten" })) === null;
+if (!refused) throw Error("Read-only file was not refused");
 text({ refused });
 // Whole-file operations on the target.
 text(await tools.copy({ path: root + "/note.txt", target: root + "/copy.txt" }));
@@ -136,6 +134,11 @@ text(await tools.copy({ path: root + "/tree", target: local + "/tree-back" }));
         getToolExecution(run, "windows-files").isError,
         getToolResultText(run, "windows-files"),
       ).toBe(false);
+      // The read-only file was refused clearly, and nothing else failed.
+      const refusal = codemodeFailures(getToolResultText(run, "windows-files"));
+      expect(refusal).toMatch(/^1 of \d+ IDE calls failed:\n- write RESULT#\S+\n/u);
+      expect(refusal).toContain("FILE_READ_ONLY");
+      expect(refusal).toMatch(/no file was written/iu);
       const read = async (name: string) => (await backend.read(`${remoteDirectory}/${name}`)).bytes;
       expect((await read("note.txt")).toString("latin1")).toBe("alpha\r\ngamma\r\n");
       expect((await read("undone.txt")).toString("latin1")).toBe(original);

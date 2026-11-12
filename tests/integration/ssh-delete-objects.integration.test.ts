@@ -15,6 +15,7 @@ import {
   withTempWorkspace,
   enableNativeCodemode,
 } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 
@@ -89,7 +90,7 @@ subprocess.run(['git','-C',str(p),'add','direct-tracked-no','direct-tracked-yes'
             name: "codemode",
             arguments: {
               code: `
-let denied=false; try { await tools.delete({path:${JSON.stringify(`${root}/script-tracked-no`)}}); } catch (error) { if(!String(error).includes("DELETE_NOT_APPROVED")) throw error; denied=true; }
+const denied = (await tools.delete({path:${JSON.stringify(`${root}/script-tracked-no`)}})) === null;
 if(!denied) throw Error("Host refusal must block SSH removal");
 text(await tools.delete({path:${JSON.stringify(`${root}/script-tracked-yes`)}}));
 text(await tools.delete({path:${JSON.stringify(`${root}/script-untracked`)}}));
@@ -129,6 +130,10 @@ text(await tools.delete({path:${JSON.stringify(`${root}/script-untracked`)}}));
           if (ids.has(id))
             expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
         }
+        if (ids.has("native"))
+          expect(codemodeFailures(getToolResultText(run, "native"))).toMatch(
+            /- delete \S*script-tracked-no\n[\s\S]*DELETE_NOT_APPROVED/u,
+          );
         for (const [id, code] of [
           ["locked", "DELETE_HOOK_REJECTED"],
           ["protected", "DELETE_PROTECTED_TARGET"],

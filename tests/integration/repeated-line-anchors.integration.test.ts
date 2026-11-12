@@ -12,6 +12,7 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 test("Anchors of repeated lines survive another session moving the block above", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -42,8 +43,7 @@ const blankAfterFirst=nth("",1);
 await tools.bash({command:${JSON.stringify(moveFirst)}+file});
 check(body(await tools.read({path:file})).endsWith("// end\\n${block("one")}\\n"),"The block was not moved");
 await tools.delete({path:file,start:secondTemplate,end:secondClose});
-const stale=await rejects(()=>tools.insert({path:file,anchor:blankAfterFirst,text:"X\\n"}),/stale/);
-text(stale);`;
+await rejects(()=>tools.insert({path:file,anchor:blankAfterFirst,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({
       testName: "repeated-line-anchors-block-move",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -58,8 +58,10 @@ text(stale);`;
         assistantMessage([text("Targets checked.")]),
       ],
     }).run("Edit by anchors after another session moved the block above");
-    expect(getToolExecution(run, "composed").isError, getToolResultText(run, "composed")).toBe(
-      false,
+    const output = getToolResultText(run, "composed");
+    expect(getToolExecution(run, "composed").isError, output).toBe(false);
+    expect(codemodeFailures(output)).toMatch(
+      /^1 of \d+ IDE calls failed:\n- insert \.tmp\/shared\/blocks\.cpp\n[\s\S]*stale/u,
     );
     // The second definition is gone; the blank line whose neighbour moved was not guessed.
     expect(await readFile(path.join(cwd, source), "utf8")).toBe(

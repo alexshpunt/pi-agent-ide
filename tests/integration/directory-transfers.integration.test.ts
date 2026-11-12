@@ -15,6 +15,7 @@ import {
   enableNativeCodemode,
   withTempWorkspace,
 } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 test("temporary directory roots transfer and delete without host dialogs on both routes", async () => {
   await withTempWorkspace(async (external) => {
@@ -228,7 +229,7 @@ test("Move source and replacement gates cannot be bypassed through native Codemo
                 arguments: {
                   code:
                     decision === "no"
-                      ? `let refused=false; try { await tools.move(${JSON.stringify(args)}); } catch { refused=true; } if(!refused) throw Error("Move bypassed refusal"); text("refused");`
+                      ? `if((await tools.move(${JSON.stringify(args)}))!==null) throw Error("Move bypassed refusal"); text("refused");`
                       : `text(await tools.move(${JSON.stringify(args)}));`,
                 },
               }),
@@ -335,7 +336,7 @@ test("transfer refusals and deletion hooks leave both paths unchanged on both ro
           code: transfers
             .map(
               ({ name, arguments: args }) =>
-                `try { await tools.${name}(${JSON.stringify(args)}); throw Error("Unexpected transfer success"); } catch(e) { if(String(e).includes("Unexpected transfer success")) throw e; text(String(e)); }`,
+                `if ((await tools.${name}(${JSON.stringify(args)})) !== null) throw Error("Unexpected transfer success");`,
             )
             .join("\n"),
         },
@@ -346,7 +347,7 @@ test("transfer refusals and deletion hooks leave both paths unchanged on both ro
         id: "listing-refusal",
         name: "codemode",
         arguments: {
-          code: 'const listing=await tools.read({path:"source"}); let refused=false; try { await tools.copy({path:listing,target:"listing-copy"}); } catch { refused=true; } if(!refused) throw Error("Directory listing granted transfer authority"); text("refused listing");',
+          code: 'const listing=await tools.read({path:"source"}); if((await tools.copy({path:listing,target:"listing-copy"}))!==null) throw Error("Directory listing granted transfer authority"); text("refused listing");',
         },
       }),
     );
@@ -369,7 +370,16 @@ test("transfer refusals and deletion hooks leave both paths unchanged on both ro
     for (let i = 0; i < transfers.length; i++)
       expect(getToolExecution(run, `refusal-${i}`).isError).toBe(true);
     expect(getToolExecution(run, "script-refusals").isError).toBe(false);
+    // Each refusal resolves to null in the script and is listed with its reason.
+    const refusals = codemodeFailures(getToolResultText(run, "script-refusals"));
+    expect(refusals).toMatch(/^7 of 7 IDE calls failed:\n/u);
+    for (const { name, arguments: args } of transfers)
+      expect(refusals).toContain(`- ${name} ${args.path} → ${args.target}\n`);
+    expect(refusals).toContain("fixture deletion lock");
     expect(getToolExecution(run, "listing-refusal").isError).toBe(false);
+    expect(codemodeFailures(getToolResultText(run, "listing-refusal"))).toMatch(
+      /^1 of 2 IDE calls failed:\n- copy RESULT#[a-f\d-]{36} → listing-copy\n/u,
+    );
     for (const name of ["source", "locked-delete", "throw-delete", "target-locked-delete"])
       expect(await readFile(path.join(cwd, name, "data"), "utf8")).toBe("keep");
     expect(await readFile(path.join(cwd, "sentinel"), "utf8")).toBe("untouched");

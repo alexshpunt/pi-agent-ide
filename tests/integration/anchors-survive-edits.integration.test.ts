@@ -12,6 +12,14 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+
+/** Each failed IDE call of a Codemode result: its tool and source line, then its reason. */
+function failedCalls(output: string): string[] {
+  // Guides that a call delivers on first use follow the block; they are not failures.
+  const [block = ""] = codemodeFailures(output).split("\n\n---\n\n# Guide:");
+  return block.split("\n- ").slice(1);
+}
 
 test("Search results and line anchors survive edits made elsewhere in the file", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -42,10 +50,9 @@ await tools.replace({path:matches(four)[0],text:"FOUR"});
 await tools.replace({path:file,start:five,text:"LAST\\n"});
 check(body(await tools.read({path:file})).startsWith("zero\\none\\ntwo\\nthree\\nFOUR\\nLAST"),"Edits above did not keep the targets");
 await tools.bash({command:"sed -i 's/two/2/' "+file});
-const changedResult=await rejects(()=>tools.replace({path:matches(two)[0],text:"X"}),/expired|stale/);
+await rejects(()=>tools.replace({path:matches(two)[0],text:"X"}));
 await tools.bash({command:"sed -i 's/three/3/' "+file});
-const changedAnchor=await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}),/stale/);
-text(changedResult); text(changedAnchor);`;
+await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-survive-edits",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -60,9 +67,12 @@ text(changedResult); text(changedAnchor);`;
         assistantMessage([text("Targets checked.")]),
       ],
     }).run("Edit the file after another session changed it elsewhere");
-    expect(getToolExecution(run, "composed").isError, getToolResultText(run, "composed")).toBe(
-      false,
-    );
+    const output = getToolResultText(run, "composed");
+    expect(getToolExecution(run, "composed").isError, output).toBe(false);
+    const [changedResult, changedAnchor, ...others] = failedCalls(output);
+    expect(others, output).toEqual([]);
+    expect(changedResult).toMatch(/^replace SEARCH#[A-F\d]+:1:match\n[\s\S]*(?:expired|stale)/u);
+    expect(changedAnchor).toMatch(/^replace \.tmp\/shared\/main\.txt\n[\s\S]*stale/u);
     expect(await readFile(path.join(cwd, source), "utf8")).toBe("zero\none\n2\n3\nFOUR\nLAST\n");
   });
 });
@@ -96,9 +106,8 @@ const after=await tools.read({path:file});
 check(body(String(after)).includes("v_2 = renamed(a_2)")&&body(String(after)).includes("v_109 = renamed(a_109)")&&body(String(after)).includes("v_111 = renamed(a_111)"),"Targets were not applied at their new lines: "+String(after).slice(0,500));
 // Two matches change their own text: one call names both and leaves the file untouched.
 await tools.bash({command:"sed -i '116s/rename_me/x_me/;118s/rename_me/y_me/' "+file});
-const message=await rejects(()=>tools.replace({path:[r115,r117,r120],text:"renamed"}),/2 of 3 references/);
-check(message.includes(r115)&&message.includes(r117)&&!message.includes(r120),"Error did not name exactly the unusable items: "+message);
-text(message);`;
+await rejects(()=>tools.replace({path:[r115,r117,r120],text:"renamed"}));
+text("REFS "+JSON.stringify([r115,r117,r120]));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-list-concurrent",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -113,9 +122,20 @@ text(message);`;
         assistantMessage([text("Targets checked.")]),
       ],
     }).run("Rename matches by a list of references while another session edits the file");
-    expect(getToolExecution(run, "composed").isError, getToolResultText(run, "composed")).toBe(
-      false,
-    );
+    const output = getToolResultText(run, "composed");
+    expect(getToolExecution(run, "composed").isError, output).toBe(false);
+    const [r115, r117, r120] = JSON.parse(
+      /^REFS (\[.*\])$/mu.exec(output)?.[1] ?? "[]",
+    ) as string[];
+    const [failure, ...others] = failedCalls(output);
+    expect(others, output).toEqual([]);
+    // The first line names the call's sources; the reason below it names only unusable items.
+    const reason = failure?.slice(failure.indexOf("\n") + 1) ?? "";
+    expect(failure).toMatch(/^replace /u);
+    expect(reason).toContain("2 of 3 references");
+    expect(reason).toContain(r115);
+    expect(reason).toContain(r117);
+    expect(reason).not.toContain(r120);
   });
 });
 
@@ -228,8 +248,7 @@ check(after.startsWith("zero\\n}\\n// a"),"Lines above changed: "+after);
 // A changed landmark makes the anchors of its repeated lines stale.
 await tools.bash({command:"sed -i 's|// c|// C|' "+file});
 const thirdTemplate=rows.filter((row)=>row.text==="template <typename T>")[2].anchor;
-const stale=await rejects(()=>tools.delete({path:file,start:thirdTemplate}),/stale/);
-text(stale);`;
+await rejects(()=>tools.delete({path:file,start:thirdTemplate}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-repeated-lines-shift",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -244,9 +263,11 @@ text(stale);`;
         assistantMessage([text("Targets checked.")]),
       ],
     }).run("Delete a block by anchors after another session inserted lines above");
-    expect(getToolExecution(run, "composed").isError, getToolResultText(run, "composed")).toBe(
-      false,
-    );
+    const output = getToolResultText(run, "composed");
+    expect(getToolExecution(run, "composed").isError, output).toBe(false);
+    const [stale, ...others] = failedCalls(output);
+    expect(others, output).toEqual([]);
+    expect(stale).toMatch(/^delete \.tmp\/shared\/repeated\.cpp\n[\s\S]*stale/u);
     expect(await readFile(path.join(cwd, source), "utf8")).toBe(
       "zero\n}\n// a\ntemplate <typename T>\nT a(T v) {\n  return v;\n}\n// b\n// C\ntemplate <typename T>\nT c(T v) {\n  return v;\n}\n",
     );

@@ -12,6 +12,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const initial = "alpha\nbeta\ngamma\nomega\n";
@@ -35,6 +36,7 @@ interface BatchEvent {
   parent?: string;
   id?: string;
   content?: string;
+  isError?: boolean;
   before?: string;
   after?: string;
 }
@@ -281,7 +283,8 @@ test.each([
   },
   {
     name: "stale-anchor",
-    tail: `await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(2, "wrong"))},text:"wrong"});`,
+    // The stale edit resolves to null; the script stops on it and its reason ends the result.
+    tail: `if ((await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(2, "wrong"))},text:"wrong"})) === null) throw new Error("stale edit failed");`,
     message: "is stale",
   },
   {
@@ -312,10 +315,13 @@ test("overlapping accepted-snapshot edits reject the second operation", async ()
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-overlap", [
-      'text(await tools.replace({path:"note.txt",start:"alpha",text:"FIRST"})); await tools.replace({path:"note.txt",start:"alpha",text:"SECOND"});',
+      'text(await tools.replace({path:"note.txt",start:"alpha",text:"FIRST"})); text("second:" + (await tools.replace({path:"note.txt",start:"alpha",text:"SECOND"})));',
     ]);
-    expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toContain("overlaps an earlier successful mutation");
+    // The rejected second edit resolves to null; the first one is still committed.
+    const output = getToolResultText(run, "script-0");
+    expect(getToolExecution(run, "script-0").isError, output).toBe(false);
+    expect(output).toContain("second:null");
+    expect(codemodeFailures(output)).toContain("overlaps an earlier successful mutation");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("FIRST\nbeta\ngamma\nomega\n");
   });
 });
@@ -327,7 +333,12 @@ test("a rejected combined write fails the parent and blocks the next read", asyn
       'text(await tools.replace({path:"note.txt",start:"alpha",text:"GUARDED"})); text(await tools.read({path:"note.txt"}));',
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toContain("fixture rejected the combined write");
+    const output = getToolResultText(run, "script-0");
+    expect(output).toContain("fixture rejected the combined write");
+    // The Read after the failed batch is refused in execution: it resolves to null and is listed.
+    expect(codemodeFailures(output)).toContain(
+      "- read note.txt\n  Editor batch failed before this tool.",
+    );
     expect(batchDetails(run).editorBatches).toEqual([
       { applied: false, calls: [{ id: "script-0/1", state: "failed-not-applied" }] },
     ]);
@@ -335,9 +346,11 @@ test("a rejected combined write fails the parent and blocks the next read", asyn
     const recorded = await events(cwd);
     expect(recorded.filter((event) => event.type === "guard")).toHaveLength(1);
     expect(recorded.filter((event) => event.type === "edit")).toHaveLength(0);
-    expect(recorded.filter((event) => event.type === "call" && event.name === "read")).toHaveLength(
-      0,
-    );
+    expect(
+      recorded
+        .filter((event) => event.type === "result" && event.name === "read")
+        .map((event) => event.isError),
+    ).toEqual([true]);
   });
 });
 
@@ -549,10 +562,12 @@ test("resource-owning search anchors keep their normal stale-snapshot protection
         "const selection = found.match(/SEARCH#[A-F0-9]+:1:match/)?.[0];\n" +
         'if (!selection) throw new Error("missing search selection");\n' +
         'text(await tools.replace({path:"note.txt",start:"beta",text:"changed"}));\n' +
-        'await tools.replace({path:selection,text:"wrong"});',
+        'if ((await tools.replace({path:selection,text:"wrong"})) !== null) throw new Error("stale selection was edited");',
     ]);
-    expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toMatch(/stale|changed|expired/iu);
+    // The stale selection resolves to null and its reason ends the Codemode result.
+    const output = getToolResultText(run, "script-0");
+    expect(getToolExecution(run, "script-0").isError, output).toBe(false);
+    expect(codemodeFailures(output)).toMatch(/stale|changed|expired/iu);
     expect(batchDetails(run).editorBatches).toHaveLength(1);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
       initial.replace("beta", "changed"),

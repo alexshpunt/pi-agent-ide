@@ -136,15 +136,16 @@ test.each(["alone", "before", "after"] as const)(
       const extensions =
         order === "alone" ? [provider] : order === "before" ? [ide, provider] : [provider, ide];
       const code = [
-        'async function refused(action) { let failed = false; try { await action(); } catch { failed = true; } if (!failed) throw new Error("Expected boundary refusal"); }',
+        // A refused IDE call, including the host's own boundary refusal, resolves to null.
+        'async function refused(action) { if ((await action()) !== null) throw new Error("Expected boundary refusal"); }',
         'const original = await tools.demo_read({path: "memory://demo/note", offset: 1, limit: 1});',
         'const sibling = await tools.other_read({path: "memory://other/note"});',
         'await refused(() => tools.other_replace({path: original, text: "wrong"}));',
         'await refused(() => tools.demo_replace({path: sibling, text: "wrong"}));',
         'await refused(() => tools.demo_read({path: "memory://other/note"}));',
-        // A completed Read failure resolves to its public error value instead of throwing.
+        // A failed Read resolves to null instead of throwing.
         'const missing = await tools.demo_read({path: "memory://demo/missing"});',
-        'if (missing?.status !== "error" || !missing.errors.length) throw new Error("Missing resource looked readable");',
+        'if (missing !== null) throw new Error("Missing resource looked readable");',
         'await refused(() => tools.demo_move({path: original, target: "local.txt"}));',
         'await tools.demo_write({path: "memory://demo/note", content: "temporary\\nomega\\n"});',
         'await tools.demo_write({path: "memory://demo/note", content: "alpha\\nomega\\n"});',

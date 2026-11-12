@@ -10,6 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("warns about inherited incomplete coverage for empty and non-empty searches", async () => {
@@ -35,9 +36,8 @@ for (const result of [seed, zero, found]) {
 }
 if (!zero.includes("No matches found.")) throw Error(zero);
 if (!found.includes("1+ match")) throw Error(found);
-let blocked = false;
-try { await tools.replace({path:zero,text:"BAD"}); }
-catch (error) { if (!/incomplete/i.test(String(error))) throw error; blocked = true; }
+// A refused edit resolves to null; the test checks its reason in the Codemode result.
+const blocked = (await tools.replace({path:zero,text:"BAD"})) === null;
 if (!blocked) throw Error("Incomplete zero result authorized an edit");
 text(zero);
 text(found);`;
@@ -63,6 +63,9 @@ text(found);`;
       getToolExecution(run, "incomplete-searches").isError,
       getToolResultText(run, "incomplete-searches"),
     ).toBe(false);
+    const refusal = codemodeFailures(getToolResultText(run, "incomplete-searches"));
+    expect(refusal).toMatch(/^1 of 4 IDE calls failed:\n- replace RESULT#/u);
+    expect(refusal).toMatch(/incomplete/iu);
     expect(run.tuiRenderedOutput).toContain("incomplete");
     expect(await readFile(path.join(cwd, "sample.ts"), "utf8")).toBe(source);
   });

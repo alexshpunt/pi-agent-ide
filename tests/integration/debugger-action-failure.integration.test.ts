@@ -12,6 +12,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("a failed debugger start shows the adapter's reason and keeps the session usable", async () => {
@@ -28,18 +29,14 @@ test("a failed debugger start shows the adapter's reason and keeps the session u
     await writeFile(path.join(cwd, "app.exe"), "not an executable\n");
     // The VS Code backend refuses an executable without a launch configuration before any launch.
     const code = `
-const created = await tools.debug({ backend: "vscode", program: "app.exe" }).catch((error) => String(error));
-const native = await tools.debug({ adapter: "debugpy", program: "missing-module.py" }).catch((error) => String(error));
+const created = await tools.debug({ backend: "vscode", program: "app.exe" });
+const native = await tools.debug({ adapter: "debugpy", program: "missing-module.py" });
 const session = /debug:[a-f\\d]{12}/u.exec(String(native))?.[0];
-let started;
-try {
-  started = await tools.insert({ path: session, text: "start" });
-} catch (error) {
-  started = "rejected: " + String(error);
-}
+// Failed IDE calls resolve to null; their reasons end the Codemode result.
+const started = await tools.insert({ path: session, text: "start" });
 const after = await tools.read({ path: session });
 await tools.delete({ path: session });
-return { created: String(created).slice(0, 300), started: String(started), after: String(after) };
+return { created: String(created), started: String(started), after: String(after) };
 `;
     await writeFile(path.join(cwd, "missing-module.py"), "import module_that_does_not_exist\n");
     const run = await new PiIntegrationTest({
@@ -62,10 +59,15 @@ return { created: String(created).slice(0, 300), started: String(started), after
 
     expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
     const result = getToolResultText(run, "script");
+    const failures = codemodeFailures(result);
+    expect(result).toContain('"created":"null"');
+    expect(result).toContain('"started":"null"');
     // An executable needs a launch configuration; the backend says so instead of launching it as Python.
-    expect(result).toContain("VS Code backend unavailable");
+    expect(failures).toMatch(/- debug app\.exe\n[\s\S]*VS Code backend unavailable/u);
     // The failed start reports the adapter's reason as an error and leaves the session restartable.
-    expect(result).toMatch(/rejected: .*start failed: spawn \S*missing-python ENOENT/u);
+    expect(failures).toMatch(
+      /- insert debug:[a-f\d]{12}\n[\s\S]*start failed: spawn \S*missing-python ENOENT/u,
+    );
     expect(result).toContain("Status: configured");
     expect(result).not.toContain("file operation failed");
     const screen = await readFile(

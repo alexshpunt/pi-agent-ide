@@ -40,7 +40,7 @@ const calls =
           id: "compose",
           name: "codemode",
           arguments: {
-            code: 'let rejected=false; try { await tools.replace({path:"symbol:task.ts#count#name",text:""}); } catch { rejected=true; } if(!rejected) throw Error("Invalid rename succeeded"); text(await tools.read({path:"task.ts"})); await tools.lsp_search({declaration:"task.ts#count"}); text(await tools.replace({path:"symbol:task.ts#count#name",text:"total"}));',
+            code: 'const rejected = (await tools.replace({path:"symbol:task.ts#count#name",text:""})) === null; if(!rejected) throw Error("Invalid rename succeeded"); text(await tools.read({path:"task.ts"})); await tools.lsp_search({declaration:"task.ts#count"}); text(await tools.replace({path:"symbol:task.ts#count#name",text:"total"}));',
           },
         }),
       ];

@@ -12,6 +12,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 const tokens = [
   ["uuid", "$issued-uuid:source"],
@@ -123,23 +124,17 @@ for (const [index, form] of ["uuid", "text", "prefix"].entries()) {
   const id = /<uuid>([^<]+)<\/uuid>/u.exec(shown)?.[1];
   if (!id) throw Error("Read did not issue a reference");
   const source = form === "text" ? shown : form === "uuid" ? id : "RESULT#" + id;
-  for (const selector of [{ start: "beta" }, { start: "beta", end: "beta" }]) {
-    let rejected = false;
-    try { await tools.replace({ path: source, ...selector, text: "BAD" }); }
-    catch (error) { rejected = String(error).includes("RESULT_INPUT_REJECTED"); }
-    if (!rejected) throw Error("Unsupported reference-plus-selector call was not rejected");
-  }
+  // A refused call resolves to null; the Codemode result lists each reason.
+  for (const selector of [{ start: "beta" }, { start: "beta", end: "beta" }])
+    if ((await tools.replace({ path: source, ...selector, text: "BAD" })) !== null)
+      throw Error("Unsupported reference-plus-selector call was not rejected");
   await tools.replace({ path: source, text: "BETA" + index + "\n" });
   await tools.read({ path: "note.txt" });
-  let stale = false;
-  try { await tools.replace({ path: source, text: "STALE" }); }
-  catch { stale = true; }
-  if (!stale) throw Error("A changed snapshot still authorized an edit");
+  if ((await tools.replace({ path: source, text: "STALE" })) !== null)
+    throw Error("A changed snapshot still authorized an edit");
 }
-let unknown = false;
-try { await tools.replace({ path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" }); }
-catch { unknown = true; }
-if (!unknown) throw Error("An unknown reference authorized an edit");
+if ((await tools.replace({ path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" })) !== null)
+  throw Error("An unknown reference authorized an edit");
 await tools.replace({ path: "note.txt", start: "gamma", text: "GAMMA" });
 text("Reference boundaries verified");
 `,
@@ -148,7 +143,14 @@ text("Reference boundaries verified");
       ],
       true,
     );
-    expect(getToolExecution(run, "code").isError, getToolResultText(run, "code")).toBe(false);
+    const output = getToolResultText(run, "code");
+    expect(getToolExecution(run, "code").isError, output).toBe(false);
+    const failures = codemodeFailures(output).split("\n- ").slice(1);
+    expect(failures, output).toHaveLength(10);
+    for (const [index, failure] of failures.slice(0, 9).entries())
+      if (index % 3 < 2) expect(failure).toContain("RESULT_INPUT_REJECTED");
+      else expect(failure).toContain("expired after its snapshot changed");
+    expect(failures[9]).toMatch(/^replace 00000000-0000-0000-0000-000000000000\n/u);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA2\nGAMMA\n");
   });
 });

@@ -10,6 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("pending native results gain exact authority only after their original-snapshot batch commits", async () => {
@@ -103,7 +104,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
             id: "rejected",
             name: "codemode",
             arguments: {
-              code: 'const target = "owned-cancelled-target"; const failure = await tools.read({path:target}); const rejected = failure?.status === "error" ? failure.errors.map((error) => error.message).join("\\n") : undefined; if(!rejected || !rejected.includes("interrupted before writing")) throw Error("Cancelled result gained authority or lost its rejection reason: "+JSON.stringify(failure)); text(rejected);',
+              code: 'const target = "owned-cancelled-target"; const failure = await tools.read({path:target}); if(failure !== null) throw Error("Cancelled result gained authority: "+JSON.stringify(failure)); text("rejected");',
             },
           }),
         ]),
@@ -113,6 +114,10 @@ test("cancelled pending results are rejected rather than becoming editable autho
     expect(getToolExecution(run, "cancel").isError).toBe(true);
     expect(getToolExecution(run, "rejected").isError, getToolResultText(run, "rejected")).toBe(
       false,
+    );
+    // The rejected Read resolves to null; its reason ends the Codemode result.
+    expect(codemodeFailures(getToolResultText(run, "rejected"))).toContain(
+      "interrupted before writing",
     );
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha café\n");
   });

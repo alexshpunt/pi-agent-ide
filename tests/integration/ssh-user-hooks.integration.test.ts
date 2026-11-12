@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import {
   SSH_HOOK_TEXT_FILES,
@@ -93,7 +94,7 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
                 id: "script",
                 name: "codemode",
                 arguments: {
-                  code: `const failure = await tools.read({path:${JSON.stringify(secret)}}); if (failure?.status !== "error") throw Error("Guarded Read returned content"); text(failure.errors.map((error) => error.message).join("\\n"));`,
+                  code: `const failure = await tools.read({path:${JSON.stringify(secret)}}); if (failure !== null) throw Error("Guarded Read returned content"); text("guarded read failed");`,
                 },
               },
               { id: "throw", name: "read", arguments: { path: `${root}/throw.txt` } },
@@ -157,11 +158,16 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
           expect(getToolResultText(run, id)).toContain("Owned remote content is blocked");
           expect(getToolResultText(run, id)).not.toContain("PRIVATE_OWNED_READ_CONTENT");
         }
-        // A guard denial is a completed Read failure: Codemode receives it as a value.
+        // A guard denial is a failed Read: Codemode gets null and its result lists the reason.
         expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(
           false,
         );
-        expect(getToolResultText(run, "script")).toContain("Owned remote content is blocked");
+        expect(codemodeFailures(getToolResultText(run, "script"))).toMatch(
+          new RegExp(
+            `^1 of 1 IDE call failed:\\n- read ${secret.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\n[\\s\\S]*Owned remote content is blocked`,
+            "u",
+          ),
+        );
         expect(getToolResultText(run, "script")).not.toContain("PRIVATE_OWNED_READ_CONTENT");
         expect(getToolExecution(run, "throw").isError).toBe(true);
         expect(getToolResultText(run, "throw")).toContain("Owned read hook refused");
@@ -180,8 +186,9 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
       }
       if (scenario === "move guards") {
         expect(getToolResultText(run, "mixed")).toContain("Owned remote destination is locked");
-        expect(getToolResultText(run, "code-mixed")).toContain(
-          "Owned remote destination is locked",
+        // The guarded Move resolves to null in Codemode; its result lists the refusal.
+        expect(codemodeFailures(getToolResultText(run, "code-mixed"))).toMatch(
+          /^1 of 1 IDE call failed:\n- move [^\n]+\n[\s\S]*Owned remote destination is locked/u,
         );
         expect(await readFile(local, "utf8")).toBe("local café source\n");
         expect((await backend.read(`${fixture.workspace}/locked.txt`)).bytes.toString("utf8")).toBe(

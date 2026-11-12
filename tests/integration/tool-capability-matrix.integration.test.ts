@@ -105,9 +105,8 @@ test("the capability validator checks Search facts and unchanged result provenan
 if (empty.hasMatches !== false || empty.complete !== true) throw Error("Empty facts missing");
 const limited = await tools.ast_search({path:"scope.ts",pattern:"probe($ARG)",limit:1});
 if (limited.hasMatches !== true || limited.complete !== false) throw Error("Incomplete facts missing");
-let failed = false;
-try { await tools.search({path:"task.txt",query:"regex:("}); } catch { failed = true; }
-if (!failed) throw Error("Invalid Search did not reject");
+const failed = (await tools.search({path:"task.txt",query:"regex:("})) === null;
+if (!failed) throw Error("Invalid Search did not fail");
 const found = await tools.search({path:"task.txt",query:"OLD",limit:1000});
 if (found.hasMatches !== true || found.complete !== true || typeof found.result !== "string") throw Error("Complete facts missing");
 await tools.replace({path:found.result,text:"NEW"});

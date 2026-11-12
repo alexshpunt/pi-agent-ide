@@ -12,6 +12,7 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 async function runAstComposition(
   cwd: string,
@@ -103,10 +104,13 @@ check(/changed after it was issued/.test(found) && found.includes("calls.ts:3-5"
 check(matches(found).length===2 && found.includes("calls.ts:3:1") && found.includes("calls.ts:5:1"),"Wrong matches for the current region");
 const stale=await tools.search({path:window,query:"changed"}).then(value => value.result);
 check(matches(stale).length===1 && /changed after it was issued/.test(stale),"Search lost the changed region");
-await rejects(()=>tools.replace({path:window,text:"BAD"}),/expired/);
+await rejects(()=>tools.replace({path:window,text:"BAD"}));
 text(await tools.replace({path:matches(found)[1],text:"legacyRequest(z)"}));`,
     ]);
     expectScriptsPassed(run, 1);
+    expect(codemodeFailures(getToolResultText(run, "ast-0"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace RESULT#[a-f\d-]{36}\n[\s\S]*expired/u,
+    );
     expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(
       "legacyRequest(top);\nlegacyRequest(a);\nlegacyRequest(b);\nchanged();\nlegacyRequest(z);\nlegacyRequest(d);\n",
     );
@@ -130,10 +134,13 @@ check(groups.length===3 && found.split("3 node(s)").length-1===3,"Multi-capture 
 for(const group of groups) check(matches(await tools.search({path:group,query:"ignored"}).then(value => value.result)).length===0,"Capture escaped");
 const partial=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)",limit:1}).then(value => value.result);
 check(matches(partial).length===1 && /[Ii]ncomplete/.test(partial),"Limited Search must report one match and incomplete coverage");
-await rejects(()=>tools.replace({path:partial,text:"BAD"}),/[Ii]ncomplete/);
+await rejects(()=>tools.replace({path:partial,text:"BAD"}));
 text({groups:3,complete:true});`,
     ]);
     expectScriptsPassed(run, 1);
+    expect(codemodeFailures(getToolResultText(run, "ast-0"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace RESULT#[a-f\d-]{36}\n[\s\S]*[Ii]ncomplete/u,
+    );
     expect(await readFile(path.join(cwd, "a.ts"), "utf8")).toContain("legacyRequest(ignored)");
   });
 });
@@ -231,10 +238,13 @@ const found=await tools.ast_search({path:changed,pattern:"{ timeout: $VALUE }"})
 check(matches(found).length===1,"AST cannot consume mutation");
 const values=await tools.search({path:capture(found,"VALUE"),query:"99"}).then(value => value.result);
 check(matches(values).length===1,"Capture VALUE lost authority");
-await rejects(()=>tools.replace({path:old,text:"BAD"}),/expired|stale/);
+await rejects(()=>tools.replace({path:old,text:"BAD"}));
 text({pendingAst:1,staleRejected:true});`,
     ]);
     expectScriptsPassed(run, 2);
+    expect(codemodeFailures(getToolResultText(run, "ast-1"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace [\s\S]*(?:expired|stale)/u,
+    );
     expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(source.replace("20", "99"));
   });
 });

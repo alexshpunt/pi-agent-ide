@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import {
   assistantMessage,
   getToolResultMessage,
@@ -72,12 +73,9 @@ test("reads complete saved text through line and byte windows after direct and n
           if (!tail.includes("RETAINED_ROW_5999")) throw new Error("Saved nested Read tail was lost");
           const bytes = await tools.read({path:"raw:"+file,offset:-200,limit:200});
           if (!bytes.includes("Bytes")) throw new Error("Saved nested Read does not support byte reads");
-          try { await tools.replace({path:"missing/"+"😀".repeat(30000),start:"x",text:"y"}); }
-          catch (error) {
-            const source = savedPath(String(error));
-            const piece = await tools.read({path:"raw:"+source,offset:-100,limit:100});
-            if (!piece.includes("Bytes")) throw new Error("Saved blocked error is not readable");
-          }
+          // The failed replace resolves to null; its bounded error and saved path end the result.
+          const refused = await tools.replace({path:"missing/"+"😀".repeat(30000),start:"x",text:"y"});
+          if (refused !== null) throw new Error("Replace of a missing file succeeded");
           text("Saved text, tail and bytes recovered.");
         `,
               },
@@ -118,6 +116,11 @@ test("reads complete saved text through line and byte windows after direct and n
     expect(getToolResultText(result, "nested-recovery")).toContain(
       "Saved text, tail and bytes recovered",
     );
+    // The oversized replace error is bounded in the failure block and names its saved full text.
+    const failures = codemodeFailures(getToolResultText(result, "nested-recovery"));
+    expect(failures).toContain("1 of 5 IDE calls failed:\n- replace missing/");
+    expect(failures).toMatch(/Full output: "[^"]+"/u);
+    expect(failures.length).toBeLessThan(51200);
     expect(getToolResultMessage(result, "parent-output").isError).toBe(false);
     expect(getToolResultMessage(result, "invalid-read").isError).toBe(true);
     const audit: unknown = JSON.parse(

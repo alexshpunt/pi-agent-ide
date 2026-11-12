@@ -169,6 +169,8 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
         (await handler({ ...value }, context)) as ToolCallEventResult | undefined,
     );
   // Run before provider hooks: local fallbacks and foreign references never reach an executor.
+  // A refused call fails in execution instead of being blocked, so a Codemode script gets null.
+  const refusals = new Map<string, string>();
   unsubscribes.push(
     subscribe("tool_call", async (event, context) => {
       const name = localName(event.toolName);
@@ -176,8 +178,11 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       try {
         await validate(name, event.input, context);
       } catch (error) {
-        return { block: true, reason: error instanceof Error ? error.message : String(error) };
+        if (typeof event.toolCallId === "string")
+          refusals.set(event.toolCallId, error instanceof Error ? error.message : String(error));
+        else return { block: true, reason: error instanceof Error ? error.message : String(error) };
       }
+      return;
     }),
   );
   const on: ExtensionAPI["on"] = (event: string, original: unknown) => {
@@ -190,6 +195,13 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
     }
     const off = subscribe(event, async (raw, context) => {
       if (closed) return;
+      // A refused call runs no provider hooks; its execution returns the refusal.
+      if (
+        event === "tool_call" &&
+        typeof raw.toolCallId === "string" &&
+        refusals.has(raw.toolCallId)
+      )
+        return;
       let input = raw;
       if (event.startsWith("tool_")) {
         const name = localName(raw.toolName);
@@ -342,6 +354,11 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
     };
     const execute: typeof definition.execute = async (id, args, signal, update, context) => {
       if (closed) throw new Error("Standalone resource host is closed.");
+      const refusal = refusals.get(id);
+      if (refusal !== undefined) {
+        refusals.delete(id);
+        throw new Error(refusal);
+      }
       const controller = new AbortController();
       let finish: () => void = () => {};
       const completion = new Promise<void>((resolve) => {
@@ -413,6 +430,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
   unsubscribes.push(
     subscribe("session_start", () => {
       parents.clear();
+      refusals.clear();
       if (
         !(pi.getSettings().defaultTools ?? []).includes("-tool_search") &&
         pi
@@ -426,6 +444,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
   unsubscribes.push(
     subscribe("agent_end", () => {
       parents.clear();
+      refusals.clear();
     }),
   );
   async function dispose(context?: ExtensionContext, hideTools = true): Promise<void> {
@@ -442,6 +461,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
     listeners.clear();
     shutdown.clear();
     parents.clear();
+    refusals.clear();
     if (hideTools) for (const hide of definitions.values()) hide();
     definitions.clear();
     const failed = outcomes.find((outcome) => outcome.status === "rejected");
