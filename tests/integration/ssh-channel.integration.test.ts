@@ -3,7 +3,7 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { SshBackend } from "#src/backend/ssh.ts";
-import { startSshProcess } from "#src/backend/ssh-channel.ts";
+import { startSshProcess, type SshProcessChannel } from "#src/backend/ssh-channel.ts";
 import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.ts";
 
 let fixture: SshFixture;
@@ -22,7 +22,7 @@ afterAll(async () => {
 });
 
 /** Kill only the local SSH client of a channel, as a crash or a dropped network would. */
-function killTransport(channel: object): void {
+function killTransport(channel: SshProcessChannel): void {
   const child = "child" in channel ? channel.child : undefined;
   if (!(child instanceof ChildProcess)) throw new Error("Missing local SSH transport");
   child.kill("SIGKILL");
