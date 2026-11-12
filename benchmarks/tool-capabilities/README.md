@@ -158,6 +158,8 @@ A text Read inside Codemode returns the whole requested text, so the AST overvie
 
 The `read-error-direct` and `read-error-codemode` cases also check a declared failure for a complete fragmented provider address. They require a failed Read and exactly one full-address acquisition, even though its bare source is readable. In Codemode, each failed Read resolves to `null` and the script result lists it with its source; the task tells the model not to catch errors. The independent missing-file error and successful file read remain controls. These direct and Codemode routes remain unverified until paid execution.
 
+The `diff-script-complete` case diffs a file with more lines than a tool result shows in a Codemode script and requires the complete unified diff as the script value, then an empty string for equal sources; `read-diff` and `diff-omission` also check the diff value. These routes remain unverified until paid execution.
+
 The `write-json-text` case checks that Write saves JSON text byte for byte, including `1.0`, spacing and escaped quotes. Its direct route matters most on Anthropic models: their tool-call layer converts parameter text by the declared schema, so a field that also accepts objects would receive JSON text as an object. Providers that pass the model's JSON arguments unchanged do not exercise that conversion. `read-image-write` passes the image through Write `image`, not `content`.
 
 ## Required maintenance
