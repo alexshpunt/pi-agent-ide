@@ -16,6 +16,7 @@ import {
   enableNativeCodemode,
   withTempWorkspace,
 } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 test("cleans external system temp without dialogs while tracked temp still prompts on both routes", async () => {
   const scratch = await mkdtemp(path.join(os.tmpdir(), "ide-live-temp-delete-"));
@@ -80,7 +81,7 @@ test("cleans external system temp without dialogs while tracked temp still promp
                 id: "script-tracked-temp",
                 name: "codemode",
                 arguments: {
-                  code: 'let denied=false; try { await tools.delete({path:"tmp/script-tracked-no"}); } catch { denied=true; } if(!denied) throw Error("Tracked temp must prompt"); text("refused");',
+                  code: 'if((await tools.delete({path:"tmp/script-tracked-no"}))!==null) throw Error("Tracked temp must prompt"); text("refused");',
                 },
               }),
             ],
@@ -95,6 +96,9 @@ test("cleans external system temp without dialogs while tracked temp still promp
       }
       expect(getToolExecution(run, "direct-tracked-temp").isError).toBe(true);
       expect(getToolExecution(run, "script-tracked-temp").isError).toBe(false);
+      expect(codemodeFailures(getToolResultText(run, "script-tracked-temp"))).toMatch(
+        /^1 of 1 IDE call failed:\n- delete tmp\/script-tracked-no\n/u,
+      );
       for (const name of ["direct", "script"]) {
         await expect(lstat(path.join(scratch, name))).rejects.toMatchObject({ code: "ENOENT" });
         expect(await readFile(path.join(cwd, "tmp", `${name}-tracked-no`, "data"), "utf8")).toBe(
@@ -156,7 +160,7 @@ test("requires host user decisions for tracked deletion through direct and nativ
               id: "script-no",
               name: "codemode",
               arguments: {
-                code: 'let denied=false; try { await tools.delete({path:"script-tracked-no"}); } catch { denied=true; } if(!denied) throw Error("User refused"); text("refused");',
+                code: 'if((await tools.delete({path:"script-tracked-no"}))!==null) throw Error("User refused"); text("refused");',
               },
             }),
           ],
@@ -178,6 +182,9 @@ test("requires host user decisions for tracked deletion through direct and nativ
     expect(getToolExecution(run, "direct-no").isError).toBe(true);
     for (const id of ["direct-yes", "script-no", "script-yes"])
       expect(getToolExecution(run, id).isError).toBe(false);
+    expect(codemodeFailures(getToolResultText(run, "script-no"))).toMatch(
+      /^1 of 1 IDE call failed:\n- delete script-tracked-no\n/u,
+    );
     for (const target of ["direct-tracked-no", "script-tracked-no"])
       expect(await readFile(path.join(cwd, target, "data"), "utf8")).toBe("tracked");
     for (const target of ["direct-tracked-yes", "script-tracked-yes"])
@@ -240,7 +247,7 @@ test("deletes filesystem objects and fails closed on deletion hooks through both
         id: "script-deletion",
         name: "codemode",
         arguments: {
-          code: 'for (const path of ["locked-delete", "throw-delete", ".git"]) { let rejected=false; try { await tools.delete({path}); } catch { rejected=true; } if(!rejected) throw Error("Delete must reject " + path); } text(await tools.delete({path:"script-untracked"}));',
+          code: 'for (const path of ["locked-delete", "throw-delete", ".git"]) if((await tools.delete({path}))!==null) throw Error("Delete must reject " + path); text(await tools.delete({path:"script-untracked"}));',
         },
       }),
       toolCall({
@@ -280,6 +287,11 @@ test("deletes filesystem objects and fails closed on deletion hooks through both
     expect(getToolResultText(run, "delete-locked")).toContain("fixture deletion lock");
     expect(getToolResultText(run, "delete-throws")).toContain("delete hook exploded");
     expect(getToolResultText(run, "delete-protected")).toContain("DELETE_PROTECTED_TARGET");
+    const scriptRefusals = codemodeFailures(getToolResultText(run, "script-deletion"));
+    expect(scriptRefusals).toMatch(/^3 of 4 IDE calls failed:\n/u);
+    expect(scriptRefusals).toMatch(/- delete locked-delete\n[\s\S]*fixture deletion lock/u);
+    expect(scriptRefusals).toMatch(/- delete throw-delete\n[\s\S]*delete hook exploded/u);
+    expect(scriptRefusals).toMatch(/- delete \.git\n/u);
     for (const name of ["untracked", "script-untracked", "link", "broken"])
       await expect(lstat(path.join(cwd, name))).rejects.toMatchObject({ code: "ENOENT" });
     for (const name of ["locked-delete", "throw-delete"])

@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 
@@ -78,8 +79,8 @@ test("registered whole-file and paired text mutations preserve native identity a
 const file = ${JSON.stringify(`${root}/note.txt`)};
 const whole = await tools.read({ path: file });
 const partial = await tools.search({ path: whole, query: "café" }).then(value => value.result);
-let refused;
-try { await tools.write({path:partial,content:"must not widen"}); } catch(error) { refused = String(error); }
+// A refused IDE call resolves to null; the Codemode result lists its reason.
+const refused = (await tools.write({path:partial,content:"must not widen"})) === null;
 if (!refused) throw Error("Partial write widened to whole-file authority");
 text({refused});
 const written = await tools.write({ path: whole, content: "after café\\r\\n" });
@@ -118,6 +119,9 @@ if (!/no changes/i.test(empty)) throw Error("Empty deletion is a no-op: " + empt
     }).run("Use registered source results without widening any source or destination.");
     expect(getToolExecution(run, "mutations").isError, getToolResultText(run, "mutations")).toBe(
       false,
+    );
+    expect(codemodeFailures(getToolResultText(run, "mutations"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- write RESULT#\S+\n/u,
     );
     expect((await backend.read(`${fixture.workspace}/note.txt`)).bytes.toString("utf8")).toBe("");
     expect(

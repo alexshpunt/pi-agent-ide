@@ -157,10 +157,9 @@ for(let i=0;i<sources.length;i++) {
  text(found);
 }
 async function inspect(request) {
- try {
-  const value=await tools.read(request);
-  return value?.status==="error" ? {error:value.errors.map(error=>error.code).join(",")} : {text:value};
- } catch(error) { return {error:String(error)}; }
+ // A failed Read resolves to null; the Codemode result lists its reason.
+ const value=await tools.read(request);
+ return value === null ? {error:true} : {text:value};
 }
 const local=await inspect({path:"invalid.txt"});
 const remote=await inspect({path:${JSON.stringify(invalidSource)}});

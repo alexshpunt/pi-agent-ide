@@ -77,7 +77,7 @@ if (typeof note !== "string") throw Error("Text Read must stay a string");
 const found = await tools.search({path:note, query:"beta"});
 text("composed:" + found.hasMatches);
 const missing = await tools.read({path:"missing.png"});
-text("missing:" + (missing?.status === "error" && missing.errors.length > 0 && missing.type === undefined));
+text("missing:" + (missing === null));
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(

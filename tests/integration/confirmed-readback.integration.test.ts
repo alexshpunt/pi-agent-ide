@@ -10,6 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
@@ -57,7 +58,7 @@ test.each([
                 id: "chain",
                 name: "codemode",
                 arguments: {
-                  code: `text(await tools.write({path:${JSON.stringify(canonical)},content:"changed\\n"}));\ntext(await tools.read({path:${JSON.stringify(canonical)}}));\ntry { await tools.write({path:${JSON.stringify(unavailable)},content:"updated\\n"}); } catch (error) { text(String(error)); }\ntext(await tools.read({path:${JSON.stringify(unavailable)}}));`,
+                  code: `text(await tools.write({path:${JSON.stringify(canonical)},content:"changed\\n"}));\ntext(await tools.read({path:${JSON.stringify(canonical)}}));\ntext("unavailable:" + (await tools.write({path:${JSON.stringify(unavailable)},content:"updated\\n"})));\ntext(await tools.read({path:${JSON.stringify(unavailable)}}));`,
                 },
               }),
             ];
@@ -100,7 +101,9 @@ test.each([
         expect(getToolExecution(run, "chain").isError).toBe(false);
         const result = getToolResultText(run, "chain");
         expect(result).toContain("CHANGED");
-        expect(result).toContain("READBACK");
+        // The failed readback resolves to null; its reason ends the result.
+        expect(result).toContain("unavailable:null");
+        expect(codemodeFailures(result)).toContain("READBACK");
         expect(result).toContain("updated");
       }
       const terminal = run.tuiRenderedOutput.replaceAll(/\s+/gu, " ");

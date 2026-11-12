@@ -12,6 +12,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("Read preserves public failures for direct calls and native scripts without private diagnostics", async () => {
@@ -51,16 +52,11 @@ test("Read preserves public failures for direct calls and native scripts without
               name: "codemode",
               arguments: {
                 code: String.raw`
+// A failed Read resolves to null; its readable failure is listed in the Codemode result.
 const failure = await tools.read({path:"fixture-rate-limited:"});
-if(failure.status !== "error" || failure.errors.length !== 1) throw Error("Failure contract absent");
-const error = failure.errors[0];
-if(error.code !== "FIXTURE_RATE_LIMITED" || error.source !== "fixture-rate-limited:") throw Error("Failure identity lost");
-const expected = {rateLimit:{retryAfterMs:1250,resetAt:2000000000000,requestsRemaining:0,endpoint:"core"}};
-if(JSON.stringify(error.metadata) !== JSON.stringify(expected)) throw Error("Metadata changed");
-if(Object.keys(failure).sort().join(",") !== "errors,status" || Object.keys(error).sort().join(",") !== "code,message,metadata,source") throw Error("Private fields leaked");
-text(failure);
+if(failure !== null) throw Error("Failure contract absent");
 const missing = await tools.read({path:"absent.txt"});
-if(missing.status !== "error" || !missing.errors.length || missing.errors[0].metadata !== undefined) throw Error("Plain failure contract absent");
+if(missing !== null) throw Error("Plain failure contract absent");
 const kept = await tools.read({path:"note.txt"});
 if(typeof kept !== "string" || !kept.includes("fixture-kept")) throw Error("Text success changed");
 const image = await tools.read({path:"fixture-image:"});
@@ -76,27 +72,17 @@ if(image.type !== "image" || image.mimeType !== "image/png" || typeof image.data
     }).run("Inspect safe Read failures and continue with independent readable resources");
     const direct = getToolResultMessage(run, "limited-direct");
     expect(direct.isError).toBe(true);
-    expect(getToolExecutionResult(run, "limited-direct")).toMatchObject({
-      structuredContent: {
-        status: "error",
-        errors: [
-          {
-            code: "FIXTURE_RATE_LIMITED",
-            message: expect.any(String) as unknown,
-            source: "fixture-rate-limited:",
-            metadata: {
-              rateLimit: {
-                retryAfterMs: 1250,
-                resetAt: 2_000_000_000_000,
-                requestsRemaining: 0,
-                endpoint: "core",
-              },
-            },
-          },
-        ],
-      },
-    });
+    // A failed call has no structured value; its public failure is the readable text.
+    expect(
+      (getToolExecutionResult(run, "limited-direct") as { structuredContent?: unknown })
+        .structuredContent,
+    ).toBeUndefined();
+    expect(getToolResultText(run, "limited-direct")).toContain("FIXTURE_RATE_LIMITED");
     expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
+    const failures = codemodeFailures(getToolResultText(run, "script"));
+    expect(failures).toMatch(/^2 of 4 IDE calls failed:\n- read fixture-rate-limited:\n/u);
+    expect(failures).toContain("FIXTURE_RATE_LIMITED");
+    expect(failures).toContain("- read absent.txt\n");
     for (const id of ["limited-direct", "script"])
       expect(getToolResultText(run, id)).not.toContain("fixture-private-");
   });

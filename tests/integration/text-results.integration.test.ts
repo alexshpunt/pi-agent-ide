@@ -12,6 +12,14 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+
+/** Each failed IDE call of a Codemode result: its tool and source line, then its reason. */
+function failedCalls(output: string): string[] {
+  // Guides that a call delivers on first use follow the block; they are not failures.
+  const [block = ""] = codemodeFailures(output).split("\n\n---\n\n# Guide:");
+  return block.split("\n- ").slice(1);
+}
 
 async function runText(cwd: string, name: string, scripts: string[]) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -173,18 +181,17 @@ const copied = await tools.copy({path:"source.txt",target:"copied.txt"});
 if (!(await tools.read({path:copied})).endsWith("fresh\\n")) throw Error("Copy did not replace the destination");
 const moved = await tools.move({path:copied,target:"moved.txt"});
 text(await tools.read({path:moved}));
-for (const old of [oldCopy,oldMove]) {
-  let rejected = false;
-  // A retired result is refused either before the read runs or as a failed read.
-  try { rejected = /expired|unknown/.test(JSON.stringify(await tools.read({path:old}))); }
-  catch (error) { rejected = /expired|unknown/.test(String(error)); }
-  if (!rejected) throw Error("Old destination result survived replacement");
-}
+// A retired result is refused; the Codemode result lists the reason of each refusal.
+for (const old of [oldCopy,oldMove])
+  if ((await tools.read({path:old})) !== null) throw Error("Old destination result survived replacement");
 `,
     ]);
-    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
-      false,
-    );
+    const output = getToolResultText(run, "script-0");
+    expect(getToolExecution(run, "script-0").isError, output).toBe(false);
+    const refusals = failedCalls(output);
+    expect(refusals, output).toHaveLength(2);
+    for (const refusal of refusals)
+      expect(refusal).toMatch(/^read RESULT#[\s\S]*(?:expired|unknown)/u);
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("fresh\n");
     expect(await readFile(path.join(cwd, "moved.txt"), "utf8")).toBe("fresh\n");
     await expect(readFile(path.join(cwd, "copied.txt"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -243,14 +250,18 @@ const saved = load("emptyWindow");
 const found = await tools.search({path:saved,query:"alpha"}).then(value => value.result);
 if (!found.includes("No matches found")) throw Error("Stored empty selection widened to the source");
 const emptyRead = await tools.read({path:saved});
-if (emptyRead.status !== "error" || !emptyRead.errors.length) throw Error("Read widened an empty target set");
+if (emptyRead !== null) throw Error("Read widened an empty target set");
 const failed = await tools.read({path:"missing.txt"});
-if (failed.status !== "error" || !failed.errors.length) throw Error("Missing source became an empty success");
+if (failed !== null) throw Error("Missing source became an empty success");
 text(found);
 `,
     ]);
     for (const id of ["script-0", "script-1"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    const [emptyRead, missing, ...others] = failedCalls(getToolResultText(run, "script-1"));
+    expect(others).toEqual([]);
+    expect(emptyRead).toMatch(/^read RESULT#/u);
+    expect(missing).toMatch(/^read missing\.txt\n/u);
     expect(await readFile(path.join(cwd, "empty.txt"), "utf8")).toBe("");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\ngamma\n");
   });
@@ -383,13 +394,16 @@ test("store/load retains text and UUID composition; Search reads a changed file'
     const run = await runText(cwd, "text-result-store", [
       `store("source", await tools.read({path:"note.txt"}));`,
       `const source=load("source"); const uuid=/<uuid>([^<]+)<\\/uuid>/.exec(source)[1]; const found=await tools.search({path:uuid,query:"beta"}).then(value => value.result); text(await tools.replace({path:found,text:"BETA"}));`,
-      `const current=await tools.search({path:load("source"),query:"alpha"}).then(value => value.result); if(!current.includes("alpha")) throw Error("Search did not read the changed result's current text: "+current); let rejected=false, failure=""; try { await tools.replace({path:load("source"),text:"ALPHA\\nBETA\\n"}); } catch(error) { failure=String(error); rejected=failure.includes("expired"); } if(!rejected) throw Error("An edit on the stored old result survived a write: "+failure); text("Old result searched, edit rejected");`,
+      `const current=await tools.search({path:load("source"),query:"alpha"}).then(value => value.result); if(!current.includes("alpha")) throw Error("Search did not read the changed result's current text: "+current); if((await tools.replace({path:load("source"),text:"ALPHA\\nBETA\\n"}))!==null) throw Error("An edit on the stored old result survived a write"); text("Old result searched, edit rejected");`,
     ]);
     for (let i = 0; i < 3; i++)
       expect(
         getToolExecution(run, `script-${i}`).isError,
         getToolResultText(run, `script-${i}`),
       ).toBe(false);
+    expect(codemodeFailures(getToolResultText(run, "script-2"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace RESULT#[\s\S]*expired/u,
+    );
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\n");
   });
 });
@@ -399,13 +413,10 @@ test("explicit-text errors require a current anchor, then allow explicit text ag
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runText(cwd, "text-result-anchor-recovery", [
       `
-let failed=""; try { await tools.replace({path:"note.txt",start:"betx",text:"BETA"}); } catch(error) { failed=String(error); }
-if(!failed.includes("anchor")) throw Error("Missing recovery anchors");
-let blocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { blocked=String(error); }
-if(!blocked.includes("blocked")) throw Error("Explicit text retried without an anchor");
+if((await tools.replace({path:"note.txt",start:"betx",text:"BETA"}))!==null) throw Error("A missing exact text was applied");
+if((await tools.replace({path:"note.txt",start:"beta",text:"BETA"}))!==null) throw Error("Explicit text retried without an anchor");
 await tools.write({path:"note.txt",content:"ALPHA\\nbeta\\ngamma\\n"});
-let stillBlocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { stillBlocked=String(error); }
-if(!stillBlocked.includes("blocked")) throw Error("An unanchored write bypassed recovery");
+if((await tools.replace({path:"note.txt",start:"beta",text:"BETA"}))!==null) throw Error("An unanchored write bypassed recovery");
 const current=await tools.read({path:"note.txt",views:["anchors"]});
 const anchor=/^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|beta/m.exec(current)?.[1];
 if(!anchor) throw Error("Read did not show beta's anchor: "+current);
@@ -415,9 +426,13 @@ if(!recovered.includes("BETA")) throw Error("Anchored recovery was not applied")
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
 `,
     ]);
-    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
-      false,
-    );
+    const output = getToolResultText(run, "script-0");
+    expect(getToolExecution(run, "script-0").isError, output).toBe(false);
+    const [failed, blocked, stillBlocked, ...others] = failedCalls(output);
+    expect(others, output).toEqual([]);
+    expect(failed).toMatch(/^replace note\.txt\n[\s\S]*anchor/u);
+    expect(blocked).toMatch(/^replace note\.txt\n[\s\S]*blocked/u);
+    expect(stillBlocked).toMatch(/^replace note\.txt\n[\s\S]*blocked/u);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\nGAMMA\n");
   });
 });
@@ -475,7 +490,7 @@ test("a registered Search selection restores exact-text editing after a selector
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runText(cwd, "text-result-search-recovery", [
       String.raw`
-let failed=false; try { await tools.replace({path:"note.txt",start:"missing",text:"BAD"}); } catch { failed=true; }
+const failed=(await tools.replace({path:"note.txt",start:"missing",text:"BAD"}))===null;
 if(!failed) throw Error("Expected exact-text failure");
 const found=await tools.search({path:"note.txt",query:"beta"}).then(value => value.result);
 await tools.replace({path:found,text:"BETA"});
@@ -504,7 +519,7 @@ const entered=await tools.insert({path:started,text:"Enter"});
 if(!entered.includes("Sent keys Enter") || entered.includes("no verified text selection")) throw Error("Terminal Insert was treated as a file: "+entered);
 const shown=await tools.read({path:started});
 if(!shown.includes("resource:hello")) throw Error("Shell output lost: "+shown);
-let rejected=false; try { await tools.replace({path:shown,start:"hello",text:"BAD"}); } catch { rejected=true; }
+const rejected=(await tools.replace({path:shown,start:"hello",text:"BAD"}))===null;
 if(!rejected) throw Error("Shell output granted text-edit authority");
 text(await tools.delete({path:shown}));
 `,
@@ -525,13 +540,15 @@ test("system envelopes cannot be inserted into file contents", async () => {
     const run = await runText(cwd, "text-result-payload-guard", [
       `
 const shown=await tools.read({path:"note.txt"});
-let rejected=false; try { await tools.write({path:"copy.txt",content:shown}); } catch(error) { rejected=String(error).includes("system result"); }
-if(!rejected) throw Error("A system envelope was written to a file");
+if((await tools.write({path:"copy.txt",content:shown}))!==null) throw Error("A system envelope was written to a file");
 text("System marker rejected");
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
       false,
+    );
+    expect(codemodeFailures(getToolResultText(run, "script-0"))).toMatch(
+      /^1 of 2 IDE calls failed:\n- write copy\.txt\n {2}A system result reference is not file content\./u,
     );
     await expect(readFile(path.join(cwd, "copy.txt"), "utf8")).rejects.toThrow("ENOENT");
   });

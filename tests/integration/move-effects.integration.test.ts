@@ -13,6 +13,7 @@ import {
 import { expect, test } from "vitest";
 import { capabilityCases } from "#capabilities/cases.ts";
 import { validateRoute, type RunEvent } from "#capabilities/validation.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
@@ -161,7 +162,7 @@ test.each(["direct", "codemode"])(
                       id: "inspect-failed-move",
                       name: "codemode",
                       arguments: {
-                        code: 'try { await tools.move({path:".tmp/move-effects/unknown-after.txt",target:".tmp/move-effects/unknown-after-target.txt"}); } catch (error) { text(String(error)); } text(await tools.read({path:".tmp/move-effects/unknown-after-target.txt"}));',
+                        code: 'text("move:" + (await tools.move({path:".tmp/move-effects/unknown-after.txt",target:".tmp/move-effects/unknown-after-target.txt"}))); text(await tools.read({path:".tmp/move-effects/unknown-after-target.txt"}));',
                       },
                     }),
                   ],
@@ -171,8 +172,15 @@ test.each(["direct", "codemode"])(
           assistantMessage([text("Move effects remain unknown; the destination was inspected.")]),
         ],
       }).run(task.prompt ?? "Inspect the failed fixture Move");
-      if (mode === "codemode")
+      if (mode === "codemode") {
         expect(getToolExecution(run, "inspect-failed-move").isError).toBe(false);
+        // The failed Move resolves to null and the failure block names its uncertain files.
+        const output = getToolResultText(run, "inspect-failed-move");
+        expect(output).toContain("move:null");
+        expect(codemodeFailures(output)).toMatch(
+          /- move \.tmp\/move-effects\/unknown-after\.txt → \.tmp\/move-effects\/unknown-after-target\.txt\n {2}.*Do not repeat this edit blindly/u,
+        );
+      }
       const events = run.traceEvents.flatMap((entry) =>
         "event" in entry && entry.event && typeof entry.event === "object"
           ? [entry.event as RunEvent]

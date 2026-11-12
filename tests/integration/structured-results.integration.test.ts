@@ -15,6 +15,14 @@ import {
 import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+
+/** Each failed IDE call of a Codemode result: its tool and source line, then its reason. */
+function failedCalls(output: string): string[] {
+  // Guides that a call delivers on first use follow the block; they are not failures.
+  const [block = ""] = codemodeFailures(output).split("\n\n---\n\n# Guide:");
+  return block.split("\n- ").slice(1);
+}
 
 async function runContract(cwd: string, name: string, code: string) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -81,12 +89,10 @@ if(!bytes.includes("Bytes 2..4")||!bytes.includes("c3 28")) throw Error("Raw byt
 text(await tools.read({path:"fixture-image:"}));
 for(const args of [{path:"absent.txt"}]) {
   const failed = await tools.read(args);
-  if(failed.status !== "error" || !failed.errors.length) throw Error("Missing source looked empty");
+  if(failed !== null) throw Error("Missing source looked empty");
 }
-for(const query of ["missing-adapter:value","invalid-adapter:value"]) {
-  let rejected=false; try { await tools.search({query}); } catch(error) { rejected=String(error).length>0; }
-  if(!rejected) throw Error("Invalid adapter accepted");
-}
+for(const query of ["missing-adapter:value","invalid-adapter:value"])
+  if((await tools.search({query})) !== null) throw Error("Invalid adapter accepted");
 const long=await tools.read({path:"long.txt"});
 if(!/offset|temp:/i.test(long)) throw Error("Clipping was hidden");
 const next=await tools.read({path:"long.txt",offset:2001,limit:1});
@@ -94,7 +100,12 @@ if(!next.includes("line 2000")) throw Error("Continuation skipped data");
 text(bytes);
 `,
     );
-    expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
+    const output = getToolResultText(run, "script");
+    expect(getToolExecution(run, "script").isError, output).toBe(false);
+    const [missing, ...adapters] = failedCalls(output);
+    expect(missing).toMatch(/^read absent\.txt\n/u);
+    expect(adapters, output).toHaveLength(2);
+    for (const adapter of adapters) expect(adapter).toMatch(/^search\n {2}\S/u);
     expect(
       getToolResultMessage(run, "script").content.some((block) => block.type === "image"),
     ).toBe(true);
@@ -136,8 +147,7 @@ for(const args of [{path:"raw:data.json"},{path:"data.json",views:["jq:.value"]}
   const value=await tools.read(args);
   const shown=typeof value==="string" ? value : value.note;
   if(typeof shown!=="string") throw Error("View result leaked internals");
-  let rejected=false; try { await tools.replace({path:shown,text:"BAD"}); } catch(error) { rejected=String(error).includes("selection"); }
-  if(!rejected) throw Error("Transformed output gained edit authority: "+shown);
+  if((await tools.replace({path:shown,text:"BAD"})) !== null) throw Error("Transformed output gained edit authority: "+shown);
   const again=await tools.read({path:shown});
   text(typeof again==="string" ? again : again.note);
 }
@@ -146,7 +156,11 @@ const selected=(await tools.search({path:anchored,query:"regex:\\S.*\\S"})).resu
 text(await tools.replace({path:selected,text:'{"value":"changed"}'}));
 `,
     );
-    expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
+    const output = getToolResultText(run, "script");
+    expect(getToolExecution(run, "script").isError, output).toBe(false);
+    const refusals = failedCalls(output);
+    expect(refusals, output).toHaveLength(4);
+    for (const refusal of refusals) expect(refusal).toMatch(/^replace RESULT#[\s\S]*selection/u);
     expect(await readFile(path.join(cwd, "data.json"), "utf8")).toBe('{"value":"changed"}\n');
     expect(
       getToolResultMessage(run, "script").content.some((block) => block.type === "image"),
@@ -163,15 +177,16 @@ test("automatic commits report partial writes and do not replay failed batches",
       `
 await tools.receipt_edit({path:"a.txt",text:"A\\n",fail:true});
 await tools.receipt_edit({path:"b.txt",text:"B\\n"});
-let failed=""; try { await tools.read({path:"a.txt"}); } catch(error) { failed=String(error); }
-if(!failed.includes("Editor batch failed")) throw Error("Failed commit did not block dependent work");
-text(failed);
+if((await tools.read({path:"a.txt"})) !== null) throw Error("Failed commit did not block dependent work");
 text(await tools.read({path:"a.txt"}));
 text(await tools.read({path:"b.txt"}));
 `,
     );
     expect(getToolExecution(run, "script").isError).toBe(true);
     expect(getToolResultText(run, "script")).toContain("Editor batches: 1 committed");
+    expect(codemodeFailures(getToolResultText(run, "script"))).toContain(
+      "- read a.txt\n  Editor batch failed before this tool.",
+    );
     const details = getToolExecutionDetails(getToolExecution(run, "script")) as {
       editorBatchResults: {
         status: string;
@@ -284,6 +299,7 @@ test("Diff returns readable comparison without publishing its private record", a
       ],
     }).run("Compare files without exposing internal records");
     expect(getToolExecution(run, "diff").isError, getToolResultText(run, "diff")).toBe(false);
+    // Scripts get the readable string as text; the private diff record stays hidden.
     expect(getToolExecutionResult(run, "diff")).not.toHaveProperty("structuredContent");
     expect(getToolResultMessage(run, "diff")).not.toHaveProperty("structuredContent");
     expect(getToolResultText(run, "diff")).toContain("-alpha");

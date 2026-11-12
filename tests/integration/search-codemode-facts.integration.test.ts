@@ -10,6 +10,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const coverageCode = `
@@ -20,8 +21,7 @@ const zero = await tools.search({path:seed.result,query:"regex:absent"});
 const some = await tools.search({path:seed.result,query:"regex:probe"});
 check(zero.hasMatches === false && zero.complete === false,"Incomplete empty scope became absence");
 check(some.hasMatches === true && some.complete === false,"Inherited incomplete coverage was lost");
-let blocked = false;
-try { await tools.replace({path:zero.result,text:"BAD"}); } catch { blocked = true; }
+const blocked = (await tools.replace({path:zero.result,text:"BAD"})) === null;
 check(blocked,"Incomplete scope authorized an edit");
 const clipped = await tools.search({path:"large.txt",query:"regex:entry",limit:1000});
 check(clipped.hasMatches === true && clipped.complete === true,"Presentation clipping changed coverage");
@@ -31,11 +31,11 @@ check(files.hasMatches === true && files.complete === true,"File search lost fac
 const custom = await tools.search({query:"facts:custom"});
 check(custom.hasMatches === null && custom.complete === null,"Custom payload was interpreted as match facts");
 check(Object.keys(custom).sort().join(",") === "complete,hasMatches,result","Private fields leaked");
-for (const args of [{query:"facts:failed"}, {query:"entry",limit:1001}]) {
-  let failed = false;
-  try { await tools.search(args); } catch { failed = true; }
-  check(failed,"Failed search became a successful value");
-}
+// A failed Search resolves to null; arguments outside the schema are still rejected by Pi.
+check((await tools.search({query:"facts:failed"})) === null,"Failed search became a successful value");
+let invalid = false;
+try { await tools.search({query:"entry",limit:1001}); } catch { invalid = true; }
+check(invalid,"Invalid search arguments became a successful value");
 text("Coverage, clipping, unknown facts and failures verified");`;
 
 test("Search separates incomplete coverage, clipped presentation, unknown facts and rejected calls", async () => {
@@ -82,6 +82,10 @@ test("Search separates incomplete coverage, clipped presentation, unknown facts 
     expect(getToolExecution(run, "coverage").isError, getToolResultText(run, "coverage")).toBe(
       false,
     );
+    const failures = codemodeFailures(getToolResultText(run, "coverage"));
+    expect(failures).toMatch(/^2 of \d+ IDE calls failed:\n/u);
+    expect(failures).toContain("- replace RESULT#");
+    expect(failures).toContain("- search\n");
     expect(await readFile(path.join(cwd, "sample.ts"), "utf8")).toBe(
       "probe(first);\nprobe(second);\n",
     );

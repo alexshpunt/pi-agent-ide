@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 
@@ -73,9 +74,9 @@ test("whole-file transfers and last text undo publish only present native destin
             arguments: {
               code: `
 const source = await tools.read({path:${JSON.stringify(local)}});
-let transferRefusal;
-try { await tools.copy({path:source,target:${JSON.stringify(copied)}}); } catch(error) { transferRefusal = String(error); }
-if (!transferRefusal?.includes("no reusable text selection")) throw Error("BOM conversion must not grant source coordinates: " + transferRefusal);
+// A refused IDE call resolves to null; the Codemode result lists its reason.
+const transferRefused = (await tools.copy({path:source,target:${JSON.stringify(copied)}})) === null;
+if (!transferRefused) throw Error("BOM conversion must not grant source coordinates");
 const copied = await tools.copy({path:${JSON.stringify(local)},target:${JSON.stringify(copied)}});
 const copiedBytes = await tools.read({path:${JSON.stringify("raw:" + copied)},limit:3});
 if (!copiedBytes.includes("ef bb bf")) throw Error("Copy lost the UTF-8 BOM: " + copiedBytes);
@@ -99,8 +100,7 @@ const emptyFile = await tools.read({path:${JSON.stringify(created)}});
 if (!emptyFile.includes("Empty source")) throw Error("Deleting a selection must leave the file present: " + emptyFile);
 const removed = await tools.delete({path:${JSON.stringify(created)}});
 text(cleared);
-let refusal;
-try { await tools.read({path:removed}); } catch(error) { refusal = String(error); }
+const refusal = (await tools.read({path:removed})) === null;
 if (!refusal) throw Error("Restored absence must not grant text authority");
 text({removed,refusal});
 `,
@@ -126,7 +126,12 @@ text({removed,refusal});
     });
     expect(await readFile(local, "utf8")).toBe(original);
     expect(getToolResultText(run, "transfers")).toContain("prior");
-    expect(getToolResultText(run, "transfers")).toContain("refusal");
+    expect(getToolResultText(run, "transfers")).toContain('"refusal":true');
+    // The two refused calls resolved to null and are listed with their reasons.
+    const refusals = codemodeFailures(getToolResultText(run, "transfers"));
+    expect(refusals).toMatch(/^2 of \d+ IDE calls failed:\n- copy RESULT#[^\n]+\n/u);
+    expect(refusals).toContain("no reusable text selection");
+    expect(refusals).toMatch(/\n- read RESULT#\S+\n/u);
     expect(run.tuiRenderedOutput).toContain(root);
   } finally {
     await fixture.stop();

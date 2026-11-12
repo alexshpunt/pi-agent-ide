@@ -12,6 +12,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import {
   selectedDirections,
   sourcePlatform,
@@ -149,10 +150,10 @@ await tools.replace({ path: (await tools.search({ path: note, query: "beta" })).
 // A change made outside the IDE after the read refuses the edit.
 const stale = await tools.read({ path: root + "/stale.txt" });
 await shell({ command: ${JSON.stringify(commands.modify)}, cwd: root });
-let refused = false;
-try {
-  await tools.replace({ path: (await tools.search({ path: stale, query: "one" })).result, text: "two" });
-} catch { refused = true; }
+// A failed IDE call resolves to null; the Codemode result lists it.
+const staleMatch = await tools.search({ path: stale, query: "one" });
+const refused =
+  staleMatch === null || (await tools.replace({ path: staleMatch.result, text: "two" })) === null;
 if (!refused) throw Error("A stale edit was applied");
 await tools.copy({ path: root + "/note.txt", target: root + "/copy.txt" });
 await tools.move({ path: root + "/copy.txt", target: root + "/moved.txt" });
@@ -220,6 +221,10 @@ text("STATUS:" + String(await shell({ command: "git -C repo status --porcelain",
       expect((await fixture.get("note.txt")).toString("latin1")).toBe("alpha\r\ngamma\r\n");
       expect((await fixture.get("moved.txt")).toString("latin1")).toBe("alpha\r\ngamma\r\n");
       expect((await fixture.get("stale.txt")).toString("latin1").trim()).toBe("changed");
+      // The refused stale edit is the only failed IDE call of the file script.
+      expect(codemodeFailures(getToolResultText(run, "files"))).toMatch(
+        /^1 of \d+ IDE calls failed:\n- (?:search|replace) /u,
+      );
       expect(await exists(() => fixture.get("doomed.txt"))).toBe(false);
       expect(await exists(() => fixture.get("copy.txt"))).toBe(false);
       expect(await fixture.get("up.bin")).toEqual(binary);

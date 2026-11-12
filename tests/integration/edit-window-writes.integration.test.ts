@@ -12,6 +12,7 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 const source = ".tmp/shared/main.cpp";
 
@@ -113,13 +114,14 @@ const refs=matches(found);
 const keeps=matches(String(await tools.search({path:file,query:'"keep(4)"'}).then((value)=>value.result)));
 check(refs.length===6&&keeps.length===1,"Unexpected references: "+found.slice(0,400));
 await window({replace:["rename_me(2)","rename_ME(2)"]});
-const refused=await rejects(()=>tools.replace({path:[refs[1],refs[2]],text:"renamed"}));
-check(refused.includes("rename_ME(2)"),"The refusal does not show the current line: "+refused);
+await rejects(()=>tools.replace({path:[refs[1],refs[2]],text:"renamed"}));
 await tools.replace({path:[refs[0],refs[3]],text:"renamed"});
-await tools.replace({path:keeps,text:"kept"});
-text("REFUSED "+refused);`,
+await tools.replace({path:keeps,text:"kept"});`,
     );
-    expect(output).toContain("REFUSED");
+    // The refusal shows the current line of the changed reference.
+    const failures = codemodeFailures(output);
+    expect(failures, output).toMatch(/^1 of \d+ IDE calls failed:\n- replace /u);
+    expect(failures).toContain("rename_ME(2)");
     const expected = rows.map((line, index) =>
       index === 0 || index === 3
         ? row(index, "renamed")

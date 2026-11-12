@@ -13,6 +13,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { afterAll, afterEach, expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
@@ -414,7 +415,8 @@ test.each(["direct", "codemode"] as const)(
                       id: call.id,
                       name: "codemode",
                       arguments: {
-                        code: `try { text(await tools.search(${JSON.stringify(call.arguments)}).then(value => value.result)); } catch (error) { text(String(error)); }`,
+                        // A failed Search resolves to null; its reason ends the Codemode result.
+                        code: `const value = await tools.search(${JSON.stringify(call.arguments)}); text(value === null ? "search failed" : value.result);`,
                       },
                     },
               ),
@@ -443,6 +445,13 @@ test.each(["direct", "codemode"] as const)(
     expect(resultText("docs-empty")).toContain("No matches");
     expect(resultText("docs-missing")).toContain("Unknown documentation ID");
     expect(resultText("docs-bare")).toContain("Use docs:all");
+    if (mode === "codemode")
+      for (const id of ["docs-missing", "docs-bare"]) {
+        expect(resultText(id)).toContain("search failed");
+        expect(codemodeFailures(resultText(id))).toMatch(
+          /^1 of 1 IDE call failed:\n- search docs:/u,
+        );
+      }
     expect(resultText("docs-all")).not.toContain("SEARCH#");
     const attached = documentationDetails(result, "after-docs-search") as {
       kind: string;

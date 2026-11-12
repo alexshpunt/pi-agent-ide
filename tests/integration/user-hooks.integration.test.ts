@@ -10,6 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import {
   enableNativeCodemode,
   withTempWorkspace,
@@ -54,7 +55,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
               id: "read-script-secret",
               name: "codemode",
               arguments: {
-                code: 'const failure = await tools.read({path:"secret.txt"}); const blocked = failure?.status === "error" ? failure.errors.map((error) => error.message).join("\\n") : ""; if(!blocked.includes("fixture secret") || JSON.stringify(failure).includes("do not expose")) throw Error("Blocked read must return its denial without content"); text(blocked);',
+                code: 'const failure = await tools.read({path:"secret.txt"}); if(failure !== null) throw Error("Blocked read must resolve to null without content");',
               },
             }),
           ],
@@ -117,10 +118,14 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
     expect(getToolExecution(run, "read-raw-secret").isError).toBe(true);
     expect(getToolResultText(run, "read-raw-secret")).toContain("fixture secret");
     expect(getToolExecution(run, "read-script-secret").isError).toBe(false);
-    expect(getToolResultText(run, "read-script-secret")).toContain("fixture secret");
+    // The denial reaches the model in the script's failure block, without the file content.
+    const denial = codemodeFailures(getToolResultText(run, "read-script-secret"));
+    expect(denial).toMatch(/^1 of 1 IDE call failed:\n- read secret\.txt\n/u);
+    expect(denial).toContain("fixture secret");
+    expect(getToolResultText(run, "read-script-secret")).not.toContain("do not expose");
     expect(getToolExecution(run, "read-throw").isError).toBe(true);
     expect(getToolResultText(run, "read-throw")).toContain("read hook exploded");
-    // A denied Read resolves to its failure value and can continue; a blocked batch commit fails the parent script.
+    // A denied Read resolves to null and can continue; a blocked batch commit fails the parent script.
     expect(getToolExecution(run, "edit-locked").isError).toBe(true);
     expect(getToolResultText(run, "edit-locked")).toContain("fixture lock");
     expect(await readFile(path.join(cwd, "locked.txt"), "utf8")).toBe("unchanged");

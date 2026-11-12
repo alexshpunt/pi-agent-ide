@@ -14,6 +14,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { PiIntegrationTest as NativePiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 
@@ -105,7 +106,8 @@ for (const mode of ["standalone", "codemode"] as const) {
               id: "failed",
               name: "codemode",
               arguments: {
-                code: `try { await tools.write({path:${JSON.stringify(source)},content:"changed\\n"}); throw Error("Unsafe success"); } catch(error) { if (String(error).includes("Unsafe success")) throw error; text(String(error)); }`,
+                // A failed write resolves to null; the Codemode result lists its reason.
+                code: `if ((await tools.write({path:${JSON.stringify(source)},content:"changed\\n"})) !== null) throw Error("Unsafe success");`,
               },
             });
       const run = await new PiIntegrationTest({
@@ -127,6 +129,10 @@ for (const mode of ["standalone", "codemode"] as const) {
         "Report rollback consequences without claiming an unchanged file or replaying the write",
       );
       expect(getToolExecution(run, "failed").isError).toBe(mode === "standalone");
+      if (mode === "codemode")
+        expect(codemodeFailures(getToolResultText(run, "failed"))).toContain(
+          `1 of 1 IDE call failed:\n- write ${source}\n`,
+        );
       expect(await readFile(path.join(cwd, source), "utf8")).toBe(fixture.after);
       if (mode === "standalone")
         expect(getToolExecutionDetails(getToolExecution(run, "failed"))).toMatchObject({
@@ -183,7 +189,8 @@ test.each([
               id: "mismatch",
               name: "codemode",
               arguments: {
-                code: `try { await tools.write({path:${JSON.stringify(source)},content:"changed\\n"}); throw Error("Unsafe success"); } catch(error) { if (String(error).includes("Unsafe success")) throw error; text(String(error)); }`,
+                // A failed write resolves to null; the Codemode result lists its reason.
+                code: `if ((await tools.write({path:${JSON.stringify(source)},content:"changed\\n"})) !== null) throw Error("Unsafe success");`,
               },
             });
       const run = await new NativePiIntegrationTest({
@@ -212,6 +219,10 @@ test.each([
       expect(getToolExecution(run, "mismatch").isError).toBe(mode === "standalone");
       await runtime.record(run.artifacts.directory);
       expect(getToolResultText(run, "mismatch")).toContain("PROVIDER_SAVE_VERIFICATION_FAILED");
+      if (mode === "codemode")
+        expect(codemodeFailures(getToolResultText(run, "mismatch"))).toContain(
+          `1 of 1 IDE call failed:\n- write ${source}\n`,
+        );
       const terminal = run.tuiRenderedOutput.replaceAll(/\s+/gu, " ");
       expect(terminal).toContain("Effects unknown · edit failed");
       expect(terminal).toContain("Reason: resource write failed");

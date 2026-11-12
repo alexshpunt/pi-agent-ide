@@ -6,6 +6,7 @@ import {
   assistantMessage,
   getToolExecution,
   getToolResultMessage,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -492,7 +493,7 @@ test("nested terminal and debugger calls retain their custom panels and a child 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'const background = await tools.bash({command:"sleep 0.2; printf nested-background",background:true}); await tools.bash({command:"sleep 0.3; printf nested-terminal"}); await tools.read({path:background}); await tools.debug({adapter:"debugpy",program:"example.py"}); const missing = await tools.read({path:"missing.txt"}); if (missing?.status !== "error" || !missing.errors.some((error) => error.source.endsWith("missing.txt"))) throw Error("Missing Read succeeded: " + JSON.stringify(missing));',
+                code: 'const background = await tools.bash({command:"sleep 0.2; printf nested-background",background:true}); await tools.bash({command:"sleep 0.3; printf nested-terminal"}); await tools.read({path:background}); await tools.debug({adapter:"debugpy",program:"example.py"}); const missing = await tools.read({path:"missing.txt"}); if (missing !== null) throw Error("Missing Read succeeded: " + JSON.stringify(missing));',
               },
             }),
           ],
@@ -508,6 +509,9 @@ test("nested terminal and debugger calls retain their custom panels and a child 
     expect(panels).toContain("debugpy");
     expect(panels).toContain("configure debugger");
     expect(panels).toContain("missing.txt");
+    expect(getToolResultText(run, "parent")).toContain(
+      "1 of 5 IDE calls failed:\n- read missing.txt",
+    );
     const saved = await PiRun.open(run.artifacts.run);
     const panelLine = saved.session
       ?.split("\n")

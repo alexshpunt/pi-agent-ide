@@ -12,6 +12,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackendRegistry } from "#src/backend/registry.ts";
 
@@ -96,7 +97,7 @@ test("ordinary and batched Git follow-up loss stays unknown after confirmed text
             id: "batched",
             name: "codemode",
             arguments: {
-              code: `let failure; try { await tools.restore_with_lost_reply({path:${JSON.stringify(file)}}); } catch(error) { failure = String(error); } if (!failure) throw Error("Lost publication receipt must reject"); text(failure);`,
+              code: `const value = await tools.restore_with_lost_reply({path:${JSON.stringify(file)}}); if (value !== null) throw Error("Lost publication receipt must fail"); text("restore failed");`,
             },
           }),
         ]),
@@ -116,8 +117,12 @@ test("ordinary and batched Git follow-up loss stays unknown after confirmed text
     expect(getToolResultText(run, "ordinary")).toContain("Completed writes:");
     expect(getToolResultText(run, "ordinary")).not.toContain("No file was changed.");
     expect(getToolExecution(run, "batched").isError).toBe(false);
-    expect(getToolResultText(run, "batched")).toContain("effects are unknown");
-    expect(getToolResultText(run, "batched")).toContain("Completed writes:");
+    // The script got null; the Codemode result lists the failed call with its readable reason.
+    const batched = codemodeFailures(getToolResultText(run, "batched"));
+    expect(batched).toContain("- restore_with_lost_reply");
+    expect(batched).toContain("effects are unknown");
+    expect(batched).toContain("Completed writes:");
+    expect(batched).toContain("Do not repeat this edit blindly");
     expect(getToolResultText(run, "batched")).not.toContain("No file was changed.");
     expect(getToolResultText(run, "read-restored")).toContain("before");
     expect(await git(["show", ":loss-owned.txt"])).toBe("before\n");

@@ -15,6 +15,7 @@ import {
   enableNativeCodemode,
 } from "#integration/support/pi-runtime/fixtures.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 
@@ -98,8 +99,8 @@ subprocess.run(['git','-C',str(p),'add',sys.argv[2]],check=True)
               arguments: {
                 code:
                   expectedError === undefined
-                    ? `const result=await tools.move(${JSON.stringify(args)});text(result);let refused=false;try{await tools.search({path:result,query:'data'});}catch(error){if(!String(error).includes('no reusable text selection'))throw error;refused=true;}if(!refused)throw Error('Object receipt granted text authority');`
-                    : `let refused=false;try{await tools.move(${JSON.stringify(args)});}catch(error){if(!String(error).includes(${JSON.stringify(expectedError)}))throw error;text(String(error));refused=true;}if(!refused)throw Error('Removal bypassed owner policy');`,
+                    ? `const result=await tools.move(${JSON.stringify(args)});text(result);const searched=await tools.search({path:result,query:'data'});if(searched!==null)throw Error('Object receipt granted text authority');`
+                    : `const moved=await tools.move(${JSON.stringify(args)});if(moved!==null)throw Error('Removal bypassed owner policy');`,
               },
             });
         const run = await new PiIntegrationTest({
@@ -133,6 +134,11 @@ subprocess.run(['git','-C',str(p),'add',sys.argv[2]],check=True)
             ).bytes.toString(),
           ).toBe("source");
           expect(getToolResultText(run, "transfer")).toContain("move: applied");
+          // In Codemode the refused Search resolves to null and the result lists its reason.
+          if (!scenario.startsWith("direct"))
+            expect(codemodeFailures(getToolResultText(run, "transfer"))).toMatch(
+              /^1 of 2 IDE calls failed:\n- search RESULT#\S+\n[\s\S]*no reusable text selection/u,
+            );
           expect(getToolResultText(run, "transfer")).not.toContain("Post-processing failed");
           expect(run.tuiRenderedOutput).toContain("Applied");
         } else {
@@ -147,6 +153,13 @@ subprocess.run(['git','-C',str(p),'add',sys.argv[2]],check=True)
             ).bytes.toString(),
           ).toBe("target");
           expect(getToolResultText(run, "transfer")).toContain(expectedError);
+          if (!scenario.startsWith("direct"))
+            expect(codemodeFailures(getToolResultText(run, "transfer"))).toMatch(
+              new RegExp(
+                `^1 of 1 IDE call failed:\\n- move [^\\n]+\\n[\\s\\S]*${expectedError}`,
+                "u",
+              ),
+            );
         }
         const hooks = (await readFile(path.join(cwd, "transfer-hooks.jsonl"), "utf8"))
           .trim()

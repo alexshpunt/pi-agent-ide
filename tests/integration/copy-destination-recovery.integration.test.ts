@@ -12,6 +12,7 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 const initial = "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n";
 const copy = {
@@ -43,7 +44,7 @@ test.each([
       );
       const request =
         field === "targetStart" ? copy : { ...copy, targetStart: "gap", targetEnd: "});" };
-      const rejectCopy = `await rejects(()=>tools.copy(${JSON.stringify(request)}),/ambiguous/);`;
+      const rejectCopy = `await rejects(()=>tools.copy(${JSON.stringify(request)}));`;
       const corrected =
         field === "targetStart"
           ? '{path:"same.txt",start:"alpha",end:"beta",targetStart:destination}'
@@ -93,6 +94,10 @@ text(await tools.copy(${corrected}));
       if (surface === "standalone") {
         expect(getToolExecution(run, "ambiguous-copy").isError).toBe(true);
         expect(getToolResultText(run, "ambiguous-copy")).toContain("ambiguous");
+      } else {
+        const failures = codemodeFailures(getToolResultText(run, "corrected-copy"));
+        expect(failures).toMatch(/^1 of 3 IDE calls failed:\n- copy same\.txt\n/u);
+        expect(failures).toContain("ambiguous");
       }
       expect(
         getToolExecution(run, "corrected-copy").isError,
