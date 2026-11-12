@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { readUnchanged, type FileGenerationReader } from "pi-agent-resource";
 import { URI } from "vscode-uri";
 
 import { LspClient } from "./client.ts";
@@ -40,6 +41,8 @@ export interface LspManagerOptions {
   readonly idleTimeoutMs?: number;
   /** Share local servers with other Pi sessions on this machine. Omitted: every server is own. */
   readonly sharedServers?: LspSharedServers;
+  /** Reads file metadata for source snapshots; tests supply the timestamps of a coarse clock. */
+  readonly fileGeneration?: FileGenerationReader;
 }
 
 /**
@@ -470,15 +473,21 @@ export class LspManager {
     if (source.startsWith("ssh://")) return this.requireOwner().readSnapshot(source, signal);
     if (source.includes("://"))
       throw Object.assign(new Error("Unsupported rename source"), { code: "UNSUPPORTED_SOURCE" });
-    const identity = (info: Awaited<ReturnType<typeof stat>>) =>
-      `${info.dev}:${info.ino}:${info.mode}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
-    const before = identity(await stat(source));
-    const content = await this.readSourceText(source, signal);
-    if (before !== identity(await stat(source)))
+    const read = await readUnchanged(
+      source,
+      () => this.readSourceText(source, signal),
+      (first, second) => first === second,
+      this._options.fileGeneration,
+    );
+    if (read === undefined)
       throw sourceChanged("A rename source changed while reading it. No edits applied.");
     return {
-      content,
-      version: createHash("sha256").update(before).update("\0").update(content).digest("hex"),
+      content: read.value,
+      version: createHash("sha256")
+        .update(read.stamp)
+        .update("\0")
+        .update(read.value)
+        .digest("hex"),
     };
   }
   /** Preserve original bytes for code-view size and binary checks. */

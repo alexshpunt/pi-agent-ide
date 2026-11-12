@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLineMap, describeLostRange, moveRange, type LineMap } from "./line-map.ts";
+import { isRacyTimestamp } from "./unchanged-read.ts";
 
 /** Serializable source coordinates. Lines are one-based; columns are UTF-16 offsets. */
 export interface ResultRange {
@@ -49,14 +50,6 @@ export const RESULT_TARGET_STORE_VERSION = 2;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
-/**
- * How long after a file's last change its stamp cannot prove that the file stayed the same. A
- * filesystem timestamp advances in ticks: a few milliseconds on Linux before 6.13, one or two
- * seconds on filesystems that store whole seconds. A rewrite of the same size within one tick keeps
- * the stamp, so the text of such a file is compared too.
- */
-const racyWindowNs = 100_000_000n;
-const racyWholeSecondWindowNs = 2_000_000_000n;
 /** Reads a file's metadata, throwing when the file is missing. */
 export type FileStatReader = (file: string) => BigIntStats;
 const localStat: FileStatReader = (file) => statSync(file, { bigint: true });
@@ -687,9 +680,7 @@ function fileStamp(
     return undefined;
   }
   const changedNs = stat.mtimeNs > stat.ctimeNs ? stat.mtimeNs : stat.ctimeNs;
-  const window = changedNs % 1_000_000_000n === 0n ? racyWholeSecondWindowNs : racyWindowNs;
-  // A timestamp ahead of this clock, such as one from a network share, is racy too.
-  const racy = BigInt(Date.now()) * 1_000_000n - changedNs < window;
+  const racy = isRacyTimestamp(changedNs);
   return { stamp: `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`, racy };
 }
 /** Whether a file whose stamp could not prove it unchanged now holds other text than its snapshot. */
