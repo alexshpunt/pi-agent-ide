@@ -5,7 +5,11 @@ import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 
 import { remoteLocation, type SshTargetOs } from "./identity.ts";
-import type { SshProcessChannel, SshProcessContext } from "./ssh-channel.ts";
+// Static imports: a running Pi keeps the code it loaded. A lazy import after the checkout or
+// package changes could pair a newer module with this one and the workers it already read.
+import { runOwnedSshCommand } from "./owned-command.ts";
+import { startSshProcess, type SshProcessChannel, type SshProcessContext } from "./ssh-channel.ts";
+import { readSshFileStream } from "./ssh-file-stream.ts";
 import {
   neutralDirectory,
   remotePython,
@@ -300,7 +304,6 @@ export class SshBackend {
     )
       throw new TypeError("Byte offset and limit must be safe integers; limit must be nonnegative");
     const chunks: Buffer[] = [];
-    const { readSshFileStream } = await import("./ssh-file-stream.ts");
     const window = await readSshFileStream(
       this.target,
       filePath,
@@ -328,7 +331,6 @@ export class SshBackend {
     consume: (bytes: Buffer) => Promise<void>,
     context: BackendOperationContext = {},
   ): Promise<{ readonly totalBytes: number; readonly sha256: string }> {
-    const { readSshFileStream } = await import("./ssh-file-stream.ts");
     const sent = await readSshFileStream(this.target, filePath, { revision }, consume, context);
     return { totalBytes: sent.length, sha256: sent.sha256 };
   }
@@ -550,7 +552,6 @@ export class SshBackend {
     cwd: string,
     context: BackendOperationContext = {},
   ) {
-    const { runOwnedSshCommand } = await import("./owned-command.ts");
     return runOwnedSshCommand(
       { ...this.target, workspace: cwd },
       command,
@@ -574,7 +575,6 @@ export class SshBackend {
     cwd: string,
     context: SshProcessContext = {},
   ): Promise<SshProcessChannel> {
-    const { startSshProcess } = await import("./ssh-channel.ts");
     return startSshProcess(this.target, command, args, cwd, context);
   }
 
@@ -608,7 +608,6 @@ export class SshBackend {
     if (!Number.isFinite(deadline) || deadline <= 0)
       throw new TypeError("SSH operation deadline must be positive");
     context.signal?.throwIfAborted();
-    const { runOwnedSshCommand } = await import("./owned-command.ts");
     const program = await sshWorkerBundle(targetOs(this.target), "file");
     // Filesystem operands are absolute. A neutral existing cwd must not turn the workspace
     // into a sandbox or prevent creation beneath a missing parent.

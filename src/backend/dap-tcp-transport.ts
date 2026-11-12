@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
 import type { SshBackendRegistry } from "./registry.ts";
 import { startSshDapTransport, type SshDapTransport } from "./dap-transport.ts";
 import { SshBackendError } from "./ssh.ts";
+import { packagedSource } from "./packaged-source.ts";
 
-let worker: Promise<string> | undefined;
+const worker = packagedSource(new URL("./dap-tcp-worker.py", import.meta.url));
 
 /** Relay an owned TCP-only adapter through target-loopback, never a controller/public socket. */
 export async function startSshTcpDapTransport(
@@ -21,7 +21,6 @@ export async function startSshTcpDapTransport(
     JSON.stringify({ kind: input.kind, program: input.program, args: input.args }) + "\n",
   );
   if (configuration.byteLength > 65536) throw new SshBackendError("BYTE_LIMIT", cwd, "not-applied");
-  worker ??= readFile(new URL("./dap-tcp-worker.py", import.meta.url), "utf8");
   const transport = await startSshDapTransport(registry, cwd, {
     command: "python3",
     args: ["-c", await worker],

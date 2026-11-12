@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
 import type { SshTarget } from "./ssh.ts";
 import { remoteLocation, type SshTargetOs } from "./identity.ts";
+import { packagedSource } from "./packaged-source.ts";
 
 /** The declared OS family of a target; records without `os` are Linux targets. */
 export function targetOs(target: Pick<SshTarget, "os">): SshTargetOs {
@@ -35,13 +35,28 @@ export function remotePython(source: string): RemotePythonProgram {
   return { python: source };
 }
 
-const sources = new Map<string, Promise<string>>();
-function workerSource(name: string): Promise<string> {
-  let source = sources.get(name);
-  if (!source) {
-    source = readFile(new URL(`./${name}`, import.meta.url), "utf8");
-    sources.set(name, source);
-  }
+const workerFiles = [
+  "ssh-channel-worker.py",
+  "ssh_channel_common.py",
+  "ssh_channel_posix.py",
+  "ssh_channel_windows.py",
+  "ssh-worker.py",
+  "ssh_worker_common.py",
+  "ssh_worker_posix.py",
+  "ssh_worker_windows.py",
+  "ssh_paths.py",
+  "ssh_windows_files.py",
+  "ssh-transfer-worker.py",
+  "ssh-transfer-worker-windows.py",
+] as const;
+type WorkerFile = (typeof workerFiles)[number];
+// Every worker is read with this module, so the workers always match the loaded TypeScript.
+const sources = new Map(
+  workerFiles.map((name) => [name, packagedSource(new URL(`./${name}`, import.meta.url))] as const),
+);
+function workerSource(name: WorkerFile): Promise<string> {
+  const source = sources.get(name);
+  if (source === undefined) throw new Error(`Unknown SSH worker source: ${name}`);
   return source;
 }
 
@@ -87,7 +102,7 @@ export function sshWorkerBundle(os: SshTargetOs, kind: keyof typeof workers): Pr
   let bundle = bundles.get(key);
   if (!bundle) {
     const worker = workers[kind];
-    const platform = `${worker.platform}_${os === "windows" ? "windows" : "posix"}.py`;
+    const platform: WorkerFile = `${worker.platform}_${os === "windows" ? "windows" : "posix"}.py`;
     // Only the Windows file worker needs the shared Windows primitives.
     const files =
       os === "windows" && kind === "file" ? workerSource(`${windowsFiles}.py`) : undefined;

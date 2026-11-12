@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import type {
@@ -7,6 +6,7 @@ import type {
 } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/browser-loader.ts";
 import { readOwnedSshCommand } from "./owned-read-command.ts";
 import { SshBackendError, type SshTarget } from "./ssh.ts";
+import { packagedSource } from "./packaged-source.ts";
 
 const pageSchema = Type.Object({ html: Type.String(), source: Type.String() });
 const refusalCodes = new Set([
@@ -18,7 +18,7 @@ const refusalCodes = new Set([
   "BROWSER_FAILED",
   "CANCELLED",
 ]);
-let worker: Promise<string> | undefined;
+const worker = packagedSource(new URL("./web-browser-worker.mjs", import.meta.url));
 
 /** Render a page using target-installed Playwright and Chromium, never a controller browser. */
 export async function readSshBrowserPage(
@@ -61,7 +61,6 @@ async function runBrowser(
   kind: "html" | "probe",
 ): Promise<unknown> {
   options.signal?.throwIfAborted();
-  worker ??= readFile(new URL("./web-browser-worker.mjs", import.meta.url), "utf8");
   try {
     const result = await readOwnedSshCommand(
       target,

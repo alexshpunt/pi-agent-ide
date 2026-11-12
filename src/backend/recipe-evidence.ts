@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
@@ -7,6 +6,9 @@ import { inspectRecipeEvidence, type RecipeEvidence } from "pi-agent-doctor/api/
 import type { SshBackend } from "./ssh.ts";
 import { SshBackendError } from "./ssh.ts";
 import { remotePython } from "./ssh-transport.ts";
+import { packagedSource } from "./packaged-source.ts";
+
+const evidenceWorker = packagedSource(new URL("./recipe-evidence-worker.py", import.meta.url));
 
 const snapshotSchema = Type.Object({
   content: Type.Record(Type.String(), Type.Union([Type.String(), Type.Null()])),
@@ -36,10 +38,8 @@ export async function inspectSshRecipeEvidence(
     if (relative === ".." || relative.startsWith("../") || path.posix.isAbsolute(name))
       throw new SshBackendError("UNSUPPORTED_SOURCE", cwd, "not-applied");
   }
-  const script = await readFile(new URL("./recipe-evidence-worker.py", import.meta.url), {
-    encoding: "utf8",
-    signal,
-  });
+  signal?.throwIfAborted();
+  const script = await evidenceWorker;
   const result = await backend.execute(
     remotePython(script),
     [

@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { SshBackendError, type SshTarget } from "./ssh.ts";
 import { readOwnedSshCommand } from "./owned-read-command.ts";
 import { remotePython } from "./ssh-transport.ts";
+import { packagedSource } from "./packaged-source.ts";
 
 const responseSchema = Type.Object({
   url: Type.String(),
@@ -13,7 +13,7 @@ const responseSchema = Type.Object({
   body: Type.String(),
 });
 const refusalCodes = new Set(["INVALID_SOURCE", "BYTE_LIMIT", "TIMEOUT", "HTTP_FAILED"]);
-let worker: Promise<string> | undefined;
+const worker = packagedSource(new URL("./web-http-worker.py", import.meta.url));
 
 /** GET one URL on its configured target; callers reuse the ordinary local conversion pipeline. */
 export async function fetchSshWebResponse(
@@ -23,7 +23,6 @@ export async function fetchSshWebResponse(
   signal?: AbortSignal,
 ): Promise<Response> {
   signal?.throwIfAborted();
-  worker ??= readFile(new URL("./web-http-worker.py", import.meta.url), "utf8");
   try {
     const result = await readOwnedSshCommand(
       target,
