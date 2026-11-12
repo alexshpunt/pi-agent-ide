@@ -96,17 +96,23 @@ async function inspectDeletion(
   const access = files ?? localFiles;
   const paths = files === undefined || files.pathStyle === "native" ? path : path.posix;
   signal?.throwIfAborted();
-  // Resolve ancestors without dereferencing the link that will be unlinked.
-  const resolvedPath = paths.join(
-    await access.realpath(paths.dirname(source)),
-    paths.basename(source),
-  );
-  const stat = await access.inspect(resolvedPath);
-  const kind = stat.kind;
-  if (kind === "other")
-    fail("INVALID_FILE_TYPE", "Delete supports regular files, directories, and symlinks.");
-  const project = await findProject(cwd, signal, files);
-  const boundary = project.root ?? (await access.realpath(cwd));
+  const target = (async () => {
+    // Resolve ancestors without dereferencing the link that will be unlinked.
+    const resolvedPath = paths.join(
+      await access.realpath(paths.dirname(source)),
+      paths.basename(source),
+    );
+    const stat = await access.inspect(resolvedPath);
+    const kind = stat.kind;
+    if (kind === "other")
+      fail("INVALID_FILE_TYPE", "Delete supports regular files, directories, and symlinks.");
+    return { resolvedPath, kind, revision: stat.revision };
+  })();
+  // The project lookup runs beside the target's own checks, whose failure still comes first.
+  const scope = projectScope(cwd, signal, files);
+  await settleInOrder([target, scope]);
+  const { resolvedPath, kind, revision } = await target;
+  const { project, boundary } = await scope;
   assertUnprotected(resolvedPath, boundary, project.controls, paths);
 
   const temporaryRoots =
@@ -152,11 +158,11 @@ async function inspectDeletion(
   return {
     event,
     reason,
-    revision: stat.revision,
+    revision,
     snapshot: JSON.stringify({
       resolvedPath,
       kind,
-      revision: stat.revision,
+      revision,
       boundary,
       controls: project.controls,
       temporaryRoots,
@@ -166,22 +172,60 @@ async function inspectDeletion(
   };
 }
 
+/** The Git project of a cwd and the boundary that protects it. */
+interface ProjectScope {
+  readonly project: Project;
+  readonly boundary: string;
+}
+
+/** Look up each owner's project once for the checks of one preflight pass.
+ * Every SSH lookup costs round trips; a later pass creates a new lookup and sees changes.
+ */
+export type ProjectLookup = (cwd: string, files?: DeleteFileAccess) => Promise<ProjectScope>;
+
+/** Create a project lookup that shares results until the caller drops it. */
+export function projectLookup(signal?: AbortSignal): ProjectLookup {
+  const scopes = new Map<DeleteFileAccess | undefined, Map<string, Promise<ProjectScope>>>();
+  return (cwd, files) => {
+    const owner = scopes.get(files) ?? new Map<string, Promise<ProjectScope>>();
+    scopes.set(files, owner);
+    let scope = owner.get(cwd);
+    if (scope === undefined) {
+      scope = projectScope(cwd, signal, files);
+      owner.set(cwd, scope);
+    }
+    return scope;
+  };
+}
+
+async function projectScope(
+  cwd: string,
+  signal: AbortSignal | undefined,
+  files: DeleteFileAccess | undefined,
+): Promise<ProjectScope> {
+  const project = await findProject(cwd, signal, files);
+  return { project, boundary: project.root ?? (await (files ?? localFiles).realpath(cwd)) };
+}
+
 /** Protect recursive transfer destinations, including paths that do not exist yet. */
 export async function assertUnprotectedTransferPath(
   resolvedPath: string,
   cwd: string,
   signal?: AbortSignal,
   files?: DeleteFileAccess,
+  projects: ProjectLookup = projectLookup(signal),
 ): Promise<void> {
-  const access = files ?? localFiles;
   const paths = files === undefined || files.pathStyle === "native" ? path : path.posix;
-  const project = await findProject(cwd, signal, files);
-  assertUnprotected(
-    resolvedPath,
-    project.root ?? (await access.realpath(cwd)),
-    project.controls,
-    paths,
-  );
+  const { project, boundary } = await projects(cwd, files);
+  assertUnprotected(resolvedPath, boundary, project.controls, paths);
+}
+
+/** Wait for every check, then report the first failure in argument order.
+ * Concurrent checks save round trips without changing which failure a caller sees.
+ */
+export async function settleInOrder(checks: readonly Promise<unknown>[]): Promise<void> {
+  for (const result of await Promise.allSettled(checks))
+    if (result.status === "rejected") throw result.reason;
 }
 
 function assertUnprotected(

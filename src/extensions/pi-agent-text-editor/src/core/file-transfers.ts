@@ -9,6 +9,8 @@ import type {
 import {
   assertUnprotectedTransferPath,
   prepareDeletionGuard,
+  projectLookup,
+  settleInOrder,
   type DeletePolicyContext,
   type DeletionGuard,
 } from "./delete-policy.ts";
@@ -66,8 +68,10 @@ export async function prepareObjectTransfer(
         ),
       );
   }
-  for (const guard of guards) await guard.verify();
-  const after = await inspectTransfer(operation, source, target, signal);
+  // Rechecks only read, so they run together; a guard failure still comes first.
+  const recheck = inspectTransfer(operation, source, target, signal);
+  await settleInOrder([...guards.map((guard) => guard.verify()), recheck]);
+  const after = await recheck;
   if (JSON.stringify(before) !== JSON.stringify(after))
     fail(
       "TRANSFER_TARGET_CHANGED",
@@ -80,11 +84,9 @@ export async function prepareObjectTransfer(
     sourceKind: before.sourceKind,
     async verifySource() {
       signal?.throwIfAborted();
-      await sourceGuard?.verify();
-      if (
-        JSON.stringify(await source.files.snapshot(source.path, signal)) !==
-        JSON.stringify(before.source)
-      )
+      const snapshot = source.files.snapshot(source.path, signal);
+      await settleInOrder([sourceGuard?.verify() ?? Promise.resolve(), snapshot]);
+      if (JSON.stringify(await snapshot) !== JSON.stringify(before.source))
         fail(
           "TRANSFER_TARGET_CHANGED",
           "Transfer source changed before removal; inspect both endpoints before retrying.",
@@ -100,12 +102,17 @@ async function inspectTransfer(
   signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
-  // Reject protected roots before walking a potentially large tree.
-  const root = await source.files.inspect(source.path);
-  if (operation === "move")
-    await assertUnprotectedTransferPath(source.path, source.cwd, signal, source.files);
-  if (operation === "move" || root.kind !== "file")
-    await assertUnprotectedTransferPath(target.path, target.cwd, signal, target.files);
+  // One lookup per owner serves all four protection checks of this pass.
+  const projects = projectLookup(signal);
+  const protect = (endpoint: FileTransferEndpoint, file: string) =>
+    assertUnprotectedTransferPath(file, endpoint.cwd, signal, endpoint.files, projects);
+  // Reject protected roots before walking a potentially large tree. A Move checks both roots
+  // beside the source inspection; a Copy checks its target only when the source is a tree.
+  const inspection = source.files.inspect(source.path);
+  const roots = operation === "move" ? [protect(source, source.path), protect(target, target.path)] : [];
+  await settleInOrder([inspection, ...roots]);
+  const root = await inspection;
+  if (operation === "copy" && root.kind !== "file") await protect(target, target.path);
   const nativePaths = source.files.pathStyle === "native" ? path : path.posix;
   if (
     source.files.owner === target.files.owner &&
@@ -141,10 +148,8 @@ async function inspectTransfer(
       contains(targetSnapshot.path, sourceSnapshot.path, paths))
   )
     fail("OVERLAPPING_PATHS", "Source and target directory trees overlap.");
-  if (operation === "move")
-    await assertUnprotectedTransferPath(sourceSnapshot.path, source.cwd, signal, source.files);
-  if (operation === "move" || sourceRoot.kind !== "file")
-    await assertUnprotectedTransferPath(targetSnapshot.path, target.cwd, signal, target.files);
+  if (operation === "move") await protect(source, sourceSnapshot.path);
+  if (operation === "move" || sourceRoot.kind !== "file") await protect(target, targetSnapshot.path);
   if (operation === "copy") {
     const destination = new Map(targetSnapshot.entries.map((entry) => [entry.relativePath, entry]));
     for (const entry of sourceSnapshot.entries)
