@@ -93,24 +93,16 @@ import {
   type DebugSessionOptions,
 } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
-/** Keep Pi's provider-friendly `{ type: "string", enum }` schema with a TypeBox literal type. */
-function stringEnum<const T extends readonly string[]>(
-  values: T,
-  options: { description: string },
-) {
-  return Type.Unsafe<T[number]>(StringEnum(values, options));
-}
-
 const debugParameters = Type.Object(
   {
     backend: Type.Optional(
-      stringEnum(["auto", "vscode", "native"] as const, {
+      StringEnum(["auto", "vscode", "native"] as const, {
         description:
           "Select the debugger backend. auto (default) debugs through VS Code when the local program is inside a workspace open in VS Code with the DebugMCP extension, that window has no active debug session, and args and mainClass are omitted; otherwise it uses the native adapter. vscode fails with the unmet condition instead of falling back. native always launches the selected adapter.",
       }),
     ),
     adapter: Type.Optional(
-      stringEnum(
+      StringEnum(
         [
           "dart",
           "debugpy",
