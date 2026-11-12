@@ -505,19 +505,18 @@ await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
 });
 
 test.runIf(process.platform !== "win32")(
-  "live terminal results compose through IDs without granting filesystem authority",
+  "live terminal sessions compose through their source without granting filesystem authority",
   async () => {
     await withTempWorkspace(async (cwd) => {
       const run = await runText(cwd, "text-result-live-shell", [
         String.raw`
 const started=await tools.bash({command:"IFS= read -r answer; printf 'resource:%s' \"$answer\"",background:true});
-const uuid=/<uuid>([^<]+)<\/uuid>/.exec(started)?.[1];
-if(!uuid) throw Error("Missing shell result ID");
-const written=await tools.write({path:uuid,content:"hello"});
+if(!started.session) throw Error("Missing shell session");
+const written=await tools.write({path:started.session,content:"hello"});
 if(!written.includes('Sent text "hello"') || written.includes("no verified text selection") || written.includes("ENOENT")) throw Error("Terminal Write was treated as a file: "+written);
-const entered=await tools.insert({path:started,text:"Enter"});
+const entered=await tools.insert({path:started.session,text:"Enter"});
 if(!entered.includes("Sent keys Enter") || entered.includes("no verified text selection")) throw Error("Terminal Insert was treated as a file: "+entered);
-const shown=await tools.read({path:started});
+const shown=await tools.read({path:entered});
 if(!shown.includes("resource:hello")) throw Error("Shell output lost: "+shown);
 const rejected=(await tools.replace({path:shown,start:"hello",text:"BAD"}))===null;
 if(!rejected) throw Error("Shell output granted text-edit authority");

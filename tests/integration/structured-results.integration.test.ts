@@ -192,12 +192,27 @@ text(await tools.read({path:"b.txt"}));
     const details = getToolExecutionDetails(getToolExecution(run, "script")) as {
       editorBatchResults: {
         status: string;
-        data: { operation: string; effect: string; files: { source: string; effect: string }[] };
+        data: {
+          operation: string;
+          effect: string;
+          files: { source: string; effect: string }[];
+          operations: { effect: string; files: { source: string; effect: string }[] }[];
+        };
       }[];
     };
     expect(details.editorBatchResults).toHaveLength(1);
     const receipt = details.editorBatchResults[0];
     if (!receipt) throw new Error("Missing automatic commit receipt");
+    // Each edit lists only its own file. The failed edit's effect is unknown, its written file applied.
+    expect(
+      receipt.data.operations.map(({ effect, files }) => ({
+        effect,
+        files: files.map((file) => ({ source: path.basename(file.source), effect: file.effect })),
+      })),
+    ).toEqual([
+      { effect: "unknown", files: [{ source: "a.txt", effect: "applied" }] },
+      { effect: "applied", files: [{ source: "b.txt", effect: "applied" }] },
+    ]);
     expect(receipt.status).toBe("partial");
     expect(receipt.data.operation).toBe("batch");
     expect(receipt.data.effect).toBe("applied");

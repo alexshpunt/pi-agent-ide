@@ -13,7 +13,9 @@ import {
   splitGlobList,
 } from "pi-agent-search/api/search";
 import {
+  readUnchanged,
   verifyResultTargets,
+  type FileGenerationReader,
   type ResolvedResultTargets,
   type ResultSourceTarget,
 } from "pi-agent-resource";
@@ -454,11 +456,7 @@ async function selectionMatches(
     if (environment !== undefined) {
       bytes = Buffer.from(await environment.readText(source, signal));
     } else {
-      const before = await stat(source);
-      bytes = await readFile(source, { signal });
-      const after = await stat(source);
-      if (before.mtimeMs !== after.mtimeMs || before.size !== after.size)
-        throw sourceChanged("AST source changed during search. Run the structural query again.");
+      bytes = await readSearchedSource(source, signal);
     }
     sources.set(source, bytes);
     snapshots?.set(source, bytes);
@@ -495,6 +493,26 @@ async function selectionMatches(
         .replace(/\r$/u, ""),
     };
   });
+}
+
+/**
+ * The bytes of a searched file, read so that a write during the read is noticed even when the
+ * filesystem timestamps cannot tell. `fileGeneration` is for tests, which supply coarse timestamps.
+ */
+export async function readSearchedSource(
+  source: string,
+  signal?: AbortSignal,
+  fileGeneration?: FileGenerationReader,
+): Promise<Buffer> {
+  const read = await readUnchanged(
+    source,
+    () => readFile(source, { signal }),
+    (first, second) => first.equals(second),
+    fileGeneration,
+  );
+  if (read === undefined)
+    throw sourceChanged("AST source changed during search. Run the structural query again.");
+  return read.value;
 }
 
 /** Byte offsets where each line of a searched file starts, computed once per snapshot. */

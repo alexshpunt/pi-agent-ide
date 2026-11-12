@@ -79,6 +79,7 @@ for (const native of [false, true]) {
                     operations: [
                       {
                         effect,
+                        files: [{ effect }],
                         errors: [
                           {
                             code: "WRITE_FAILED",

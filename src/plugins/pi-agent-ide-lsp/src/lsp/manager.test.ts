@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -40,6 +40,46 @@ test("a source written while its snapshot is read is reported as a changed sourc
     code: "SOURCE_CHANGED",
   });
 });
+
+// A kernel before 6.13 advances file timestamps every few milliseconds, so a same-size write within
+// one tick keeps the stamp. A fine-grained kernel cannot produce that on demand, so the manager reads
+// the real file with pinned timestamps.
+test.each([
+  { changed: "just now", ageNs: 0n, reported: true },
+  { changed: "long ago", ageNs: 10_000_000_123n, reported: false },
+])(
+  "a same-size source write during the snapshot read of a file that changed $changed is reported only when its timestamps cannot tell",
+  async ({ ageNs, reported }) => {
+    const root = path.resolve(".agents/tmp/lsp-source-snapshot");
+    await mkdir(root, { recursive: true });
+    const cwd = await mkdtemp(path.join(root, "case-"));
+    directories.push(cwd);
+    const source = path.join(cwd, "main.cpp");
+    await writeFile(source, "int a;\n");
+    const changedNs = BigInt(Date.now()) * 1_000_000n - ageNs;
+    const manager = LspManager.init(
+      LspServerRegistry.fromConfig({ version: 1, servers: {} }, cwd),
+      undefined,
+      {
+        fileGeneration: async (file) => {
+          const { dev, ino, mode, size } = await stat(file, { bigint: true });
+          return { dev, ino, mode, size, mtimeNs: changedNs, ctimeNs: changedNs };
+        },
+      },
+    );
+    const read = manager.readSourceText.bind(manager);
+    let reads = 0;
+    vi.spyOn(manager, "readSourceText").mockImplementation(async (file, signal) => {
+      const content = await read(file, signal);
+      // Another session rewrites the file with text of the same size during the first read.
+      if (reads++ === 0) await writeFile(source, "int b;\n");
+      return content;
+    });
+    const snapshot = manager.readSourceSnapshot(source);
+    if (reported) await expect(snapshot).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
+    else await expect(snapshot).resolves.toMatchObject({ content: "int a;\n" });
+  },
+);
 
 test.each([false, true])(
   "workspace symbols start only servers for present source files (source=%s)",

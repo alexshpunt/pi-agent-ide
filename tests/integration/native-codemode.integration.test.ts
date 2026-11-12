@@ -456,6 +456,9 @@ test("a script deadline discards pending edits and the next script gets a fresh 
     const interruption = getToolExecutionDetails(getToolExecution(run, "script-0"));
     expect(interruption).toHaveProperty("editorBatchResults.0.data.effect", "not-applied");
     expect(interruption).toHaveProperty("editorBatchResults.0.errors.0.code", "CANCELLED");
+    expect(interruption).toHaveProperty("editorBatchResults.0.data.operations.0.files", [
+      { source: expect.stringMatching(/\/note\.txt$/u) as unknown, effect: "not-applied" },
+    ]);
     expect(getToolExecution(run, "script-1").isError, getToolResultText(run, "script-1")).toBe(
       false,
     );

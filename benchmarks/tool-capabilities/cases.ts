@@ -2689,6 +2689,24 @@ add(
 );
 
 add(
+  "shell-script-value",
+  ["shell.script-value"],
+  "Use native Codemode. Run the Bash command printf partial; exit 3 and take its exit code and output from the returned object, not from display text. A non-zero exit code is a value, not a failure; do not catch errors. Then start a background Bash command that prints READY and sleeps 30 seconds, and delete its session using the session field of its returned object. Report the exit code and output of the first command. Do not edit files.",
+  [
+    {
+      tool: "bash",
+      args: { command: /exit 3/ },
+      // A direct call still reports the non-zero exit as an error.
+      error: true,
+      scriptResult: { exit_code: 3, output: /partial/, truncated: false },
+    },
+    { tool: "bash", args: { background: true }, scriptResult: { session: /^shell:/ } },
+    { tool: "delete", reuse: reuse(1, "path", "shell") },
+  ],
+  { modes: ["codemode"], expected: textFile, answer: "partial" },
+);
+
+add(
   "debug-roundtrip",
   [
     "debug.create",

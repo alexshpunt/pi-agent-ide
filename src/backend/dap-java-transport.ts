@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
@@ -7,6 +6,9 @@ import type { OwnedDebugAdapter } from "#src/plugins/pi-agent-ide-debugger/src/w
 import type { SshBackendRegistry } from "./registry.ts";
 import { startSshDapTransport, type SshDapTransport } from "./dap-transport.ts";
 import { SshBackendError } from "./ssh.ts";
+import { packagedSource } from "./packaged-source.ts";
+
+const javaWorker = packagedSource(new URL("./dap-java-worker.py", import.meta.url));
 
 const readySchema = Type.Object(
   { port: Type.Integer({ minimum: 1, maximum: 65535 }), sourceRoot: Type.String() },
@@ -22,7 +24,7 @@ export async function prepareSshJavaDebugger(
 ): Promise<OwnedDebugAdapter> {
   if (options.mainClass === undefined)
     throw new SshBackendError("INVALID_REQUEST", cwd, "not-applied");
-  const worker = await readFile(new URL("./dap-java-worker.py", import.meta.url), "utf8");
+  const worker = await javaWorker;
   const startup = AbortSignal.any([
     ...(signal === undefined ? [] : [signal]),
     AbortSignal.timeout(40_000),

@@ -5,6 +5,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { ReadOutputReducer, ReadPostReadHandler } from "pi-agent-read/api/tools/read";
 import type { SourceViewBlock } from "pi-agent-ide/api/code-view";
+// A static import keeps the outline code from the version this Pi loaded.
+import { AstOutlineManager, isSupportedOutlinePath } from "./ast/outline.ts";
 
 /** Builds a compact source view from recorded text, never from a newer filesystem snapshot. */
 export const reduceAstReadOutput: ReadOutputReducer = async (result, context, budget) => {
@@ -18,7 +20,6 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
   )
     return undefined;
   try {
-    const { AstOutlineManager, isSupportedOutlinePath } = await import("./ast/outline.ts");
     if (!isSupportedOutlinePath(source)) return undefined;
     const format = (outline: SourceViewBlock): string =>
       [

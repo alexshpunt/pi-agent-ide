@@ -244,7 +244,7 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
             id: "cancel-startup",
             name: "codemode",
             arguments: {
-              code: `const pending = tools.lsp_search({ query: "label", path: ${JSON.stringify(root)}, include: "*.ts" }); pending.catch(() => undefined); const observed = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} }); text(observed); const session = observed.match(/^session: (shell:[^\\s]+)/m)?.[1]; if (!session) throw new Error("Bash did not publish its session"); store("startupPollSession", session);`,
+              code: `const pending = tools.lsp_search({ query: "label", path: ${JSON.stringify(root)}, include: "*.ts" }); pending.catch(() => undefined); const observed = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} }); text(observed.output); if (observed.exit_code !== 0) throw new Error("Bash failed: " + JSON.stringify(observed)); store("startupPollSession", observed.session);`,
             },
           }),
         ]),
@@ -253,7 +253,7 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
             id: "check-reaped",
             name: "codemode",
             arguments: {
-              code: `const checked = await tools.bash({ command: ${JSON.stringify(`python3 -c ${quote("import os,sys; pid=open(sys.argv[1]).read().strip(); print(os.path.exists('/proc/'+pid))")} ${quote(marker)}`)}, cwd: ${JSON.stringify(root)} }); text(checked); const session = checked.match(/^session: (shell:[^\\s]+)/m)?.[1]; if (!session) throw new Error("Bash did not publish its session"); await tools.delete({ path: session }); await tools.delete({ path: load("startupPollSession") });`,
+              code: `const checked = await tools.bash({ command: ${JSON.stringify(`python3 -c ${quote("import os,sys; pid=open(sys.argv[1]).read().strip(); print(os.path.exists('/proc/'+pid))")} ${quote(marker)}`)}, cwd: ${JSON.stringify(root)} }); text(checked.output); if (checked.exit_code !== 0) throw new Error("Bash failed: " + JSON.stringify(checked)); await tools.delete({ path: checked.session }); await tools.delete({ path: load("startupPollSession") });`,
             },
           }),
         ]),
@@ -264,9 +264,7 @@ test("ending a native script cancels an ordinary SSH symbol startup and reaps it
       getToolExecution(run, "cancel-startup").isError,
       getToolResultText(run, "cancel-startup"),
     ).toBe(false);
-    expect(getToolResultText(run, "cancel-startup")).toContain("exitCode: 0");
     expect(getToolExecution(run, "check-reaped").isError).toBe(false);
-    expect(getToolResultText(run, "check-reaped")).toContain("exitCode: 0");
     expect(getToolResultText(run, "check-reaped")).toContain("False");
     const pid = Number((await backend.read(marker)).bytes.toString("utf8"));
     expect(Number.isSafeInteger(pid)).toBe(true);
