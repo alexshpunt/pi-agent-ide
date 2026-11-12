@@ -278,7 +278,10 @@ export class SearchSessionStore {
     return session;
   }
 
-  /** Registers anchors when every match still describes the current files. */
+  /**
+   * Registers anchors when every match still describes its text: the `searched` text when it is
+   * given, otherwise the current files.
+   */
   public async registerIfCurrent(
     query: string,
     sourceMatches: readonly TextSearchMatch[],
@@ -289,6 +292,7 @@ export class SearchSessionStore {
     refresh?: SearchSelectionRegistration["refresh"],
     snapshotByteBudget?: number,
     environment?: SearchEnvironment,
+    searched?: ReadonlyMap<string, string>,
   ): Promise<TextSearchSession | undefined> {
     try {
       return await this.register(
@@ -301,6 +305,7 @@ export class SearchSessionStore {
         refresh,
         snapshotByteBudget,
         environment,
+        searched,
       );
     } catch (error) {
       if (error instanceof SearchSnapshotChangedError) return undefined;
@@ -363,15 +368,32 @@ export class SearchSessionStore {
    * Reads a source exactly as a registration snapshot does, through the owner Read provides. A
    * caller that captures text to register with its matches must read it the same way, or its
    * snapshot would differ from what this store reads later.
+   *
+   * With a byte budget, the reader bounds its reads as a registration with that budget does: all
+   * its reads share the budget, run one at a time, and a source that would exceed what is left
+   * fails without being read whole.
    */
   public snapshotReader(
     cwd: string,
     environment?: SearchEnvironment,
+    byteBudget?: number,
   ): (source: string, signal?: AbortSignal) => Promise<string> {
     const readSource = this.readSource;
     const read: SnapshotReader | undefined =
       readSource === undefined ? undefined : (source, abort) => readSource(source, cwd, abort);
-    return (source, signal) => readOwnedText(source, signal, environment, read);
+    if (byteBudget === undefined)
+      return (source, signal) => readOwnedText(source, signal, environment, read);
+    let remaining = byteBudget;
+    let previous: Promise<unknown> = Promise.resolve();
+    return (source, signal) => {
+      const next = previous.then(async () => {
+        const content = await readBoundedSnapshot(source, remaining, signal, environment, read);
+        remaining -= Buffer.byteLength(content);
+        return content;
+      });
+      previous = next.catch(() => undefined);
+      return next;
+    };
   }
 
   public anchorResolver(): TextAnchorResolver {
@@ -1182,7 +1204,8 @@ function isWithin(directory: string, source: string): boolean {
   return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-function compareMatches(left: TextSearchMatch, right: TextSearchMatch): number {
+/** The order a registration stores its matches in: by source, then by position. */
+export function compareMatches(left: TextSearchMatch, right: TextSearchMatch): number {
   return (
     left.source.localeCompare(right.source) ||
     left.lineNumber - right.lineNumber ||

@@ -3,7 +3,11 @@ import { pathToFileURL } from "node:url";
 import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.ts";
 
-import { captureCurrentMatches } from "#src/current-matches.ts";
+import {
+  captureCurrentMatches,
+  type CaptureOptions,
+  type CapturedMatches,
+} from "#src/current-matches.ts";
 import { searchFiles } from "#src/file-search.ts";
 import type { TextSearchRequest } from "#src/search-backend.ts";
 import {
@@ -20,10 +24,11 @@ import {
 } from "#src/search-result.ts";
 import { planSearchPresentation } from "#src/search-presentation.ts";
 
-import type {
-  SearchSessionStore,
-  TextSearchMatch,
-  TextSearchSession,
+import {
+  compareMatches,
+  type SearchSessionStore,
+  type TextSearchMatch,
+  type TextSearchSession,
 } from "#src/search-session.ts";
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 import {
@@ -33,10 +38,11 @@ import {
   isFuzzyQuery,
   fuzzyCandidateData,
   formatFuzzyCandidate,
+  type FuzzyCandidate,
   type FuzzyResult,
 } from "pi-agent-search/api/search";
 import type { SearchToolDetails } from "#src/search-result.ts";
-import { searchFuzzy, searchFuzzyAlternative } from "#src/fuzzy-search.ts";
+import { isWholeIdentifierMatch, searchFuzzy, searchFuzzyAlternative } from "#src/fuzzy-search.ts";
 
 const SEARCH_ANCHOR_LEGEND =
   "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)";
@@ -74,6 +80,34 @@ function effectiveRequest(result: TextPayload): TextSearchRequest {
   return fallback?.condition === undefined
     ? { ...options, query, regex: true }
     : { ...options, query, regex: true, condition: fallback.condition };
+}
+
+/**
+ * A possible-name candidate's matches with the text they describe, ready to register without
+ * reading its files again. Searching that text again keeps the candidate's own rules: whole
+ * identifiers only, and no more matches than a candidate captures. A candidate registers all its
+ * matches or none, so a source that cannot be read, or that exceeds the byte budget of `read`,
+ * fails it.
+ */
+async function captureCandidate(
+  candidate: FuzzyCandidate,
+  request: TextSearchRequest,
+  cwd: string,
+  options: Pick<CaptureOptions, "read" | "signal">,
+): Promise<CapturedMatches> {
+  const captured = await captureCurrentMatches(candidate, cwd, {
+    ...options,
+    request,
+    inContent: true,
+    accept: isWholeIdentifierMatch,
+    requireEverySource: true,
+  });
+  if (captured.matches.length <= fuzzyLimits.matchesPerCandidate) return captured;
+  return {
+    ...captured,
+    matches: [...captured.matches].sort(compareMatches).slice(0, fuzzyLimits.matchesPerCandidate),
+    complete: false,
+  };
 }
 
 /** Search unhandled requests with literal-first hybrid matching. */
@@ -290,6 +324,8 @@ function createMatchResolver(
           context.cwd,
         );
         const groups = [];
+        // What each candidate shows: the matches it registered, or the backend's when it could not.
+        const shown: FuzzyCandidate[] = [];
         let registrationLimited = false;
         const deadline = AbortSignal.timeout(fuzzyLimits.timeoutMs);
         const registrationSignal =
@@ -304,22 +340,38 @@ function createMatchResolver(
           };
           let session: TextSearchSession | undefined;
           try {
+            // Another session may write a candidate file after the search, as on the main path:
+            // the captured text is the snapshot, with the candidate's matches in that text.
+            const captured = await captureCandidate(candidate, recipe, context.cwd, {
+              read: sessions.snapshotReader(
+                context.cwd,
+                context.environment,
+                fuzzyLimits.vocabularyBytes,
+              ),
+              signal: registrationSignal,
+            });
             session = await sessions.registerIfCurrent(
               candidate.identifier,
-              candidate.matches,
-              candidate.complete,
+              captured.matches,
+              captured.complete,
               context.cwd,
               registrationSignal,
               recipe,
               (signal) => searchFuzzyAlternative(recipe, context.cwd, signal, context.environment),
               fuzzyLimits.vocabularyBytes,
               context.environment,
+              captured.contents,
             );
           } catch {
             context.signal?.throwIfAborted();
           }
           if (session === undefined) registrationLimited = true;
-          groups.push(fuzzyCandidateData(candidate, session?.id, session));
+          const registeredCandidate =
+            session === undefined
+              ? candidate
+              : { ...candidate, matches: session.matches, complete: session.complete };
+          shown.push(registeredCandidate);
+          groups.push(fuzzyCandidateData(registeredCandidate, session?.id, session));
         }
         const message = registrationLimited
           ? "Some candidate files changed or could not be registered; locations are shown without stable references."
@@ -345,7 +397,7 @@ function createMatchResolver(
           details: {
             ...details,
             ...(session.target === undefined ? {} : { target: session.target, matchTargets: [] }),
-            fuzzyPresentation: createFuzzyPresentation(result.fuzzy.candidates, context.cwd),
+            fuzzyPresentation: createFuzzyPresentation(shown, context.cwd),
             fuzzy,
           } satisfies SearchToolDetails,
         };

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { createTextResolver } from "#src/resolvers.ts";
@@ -19,8 +19,11 @@ interface FuzzyData {
       readonly fileCount: number;
       readonly selection: {
         readonly complete: boolean;
-        readonly matches: readonly { readonly references?: { readonly line?: string } }[];
-        readonly all?: { readonly line?: string };
+        readonly matches: readonly {
+          readonly range: { readonly startLine: number };
+          readonly references?: { readonly line?: string; readonly match?: string };
+        }[];
+        readonly all?: { readonly line?: string; readonly match?: string };
       };
     }[];
   };
@@ -91,6 +94,118 @@ test("offers real candidate groups and readable exact selections after a scoped 
   expect(reference).toMatch(/^SEARCH#[A-F0-9]+:all:line$/u);
   if (!reference) throw new Error("Missing readable candidate selection");
   expect((await sessions.resourceResolver().tryResolve(reference, { cwd })).kind).toBe("resolved");
+});
+
+/**
+ * Runs the search, lets another session write a file between the search and the registration of
+ * its anchors, and returns what the agent and a script receive.
+ */
+async function resolveWhileWriting(
+  request: SearchRequest,
+  cwd: string,
+  write: () => Promise<void>,
+  sessions = new SearchSessionStore(),
+) {
+  const resolver = createTextResolver(sessions);
+  const context = { cwd };
+  const attempt = await resolver.tryResolve(request, context);
+  if (attempt.kind !== "resolved") throw new Error("Expected a resolved local search");
+  await write();
+  const formatted = await resolver.format(attempt.payload, context);
+  const data = resolver.toScriptData?.(attempt.payload, formatted.details) as FuzzyData;
+  const text = formatted.content
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("\n");
+  return { data, text };
+}
+
+/** Line number and selected text of each range a reference resolves to in the current file. */
+async function selected(sessions: SearchSessionStore, reference: string, cwd: string) {
+  const attempt = await sessions.resourceResolver().tryResolve(reference, { cwd });
+  if (attempt.kind !== "resolved") throw new Error(JSON.stringify(attempt));
+  return attempt.targets.flatMap((target) => {
+    const rows = (target.expectedContent ?? "").split("\n");
+    return (target.ranges ?? []).map(
+      (range) =>
+        `${String(range.start.lineNumber)}:${(rows[range.start.lineNumber - 1] ?? "").slice(range.start.column, range.end.column)}`,
+    );
+  });
+}
+
+test("a candidate keeps its anchors when another session moves its lines before registration", async () => {
+  const cwd = await fixture();
+  const source = path.join(cwd, "src/hints.js");
+  const sessions = new SearchSessionStore();
+  const result = await resolveWhileWriting(
+    { query: "generateHintStrings", path: "src" },
+    cwd,
+    async () => writeFile(source, `// peer 1\n${await readFile(source, "utf8")}`),
+    sessions,
+  );
+
+  expect(result.text).not.toContain("without stable references");
+  expect(result.data.fuzzy?.message ?? "").not.toContain("without stable references");
+  const [names, spelling] = result.data.fuzzy?.candidates ?? [];
+  expect(names).toMatchObject({ identifier: "hintStrings", matchCount: 5, fileCount: 1 });
+  expect(spelling).toMatchObject({ identifier: "generateHintString", matchCount: 2 });
+  // The candidates show the lines as they are now, one below where the search found them.
+  expect(names?.selection.matches.map((match) => match.range.startLine)).toEqual([2, 2, 3]);
+  expect(spelling?.selection.matches.map((match) => match.range.startLine)).toEqual([5, 6]);
+  const all = names?.selection.all?.match;
+  const first = spelling?.selection.matches[0]?.references?.match;
+  if (all === undefined || first === undefined) throw new Error("Missing candidate anchors");
+  expect(result.text).toContain(names?.selection.all?.line ?? "missing all line");
+  expect(await selected(sessions, all, cwd)).toEqual([
+    "2:hintStrings",
+    "2:hintStrings",
+    "3:hintStrings",
+    "3:hintStrings",
+    "4:hintStrings",
+  ]);
+  expect(await selected(sessions, first, cwd)).toEqual(["5:generateHintString"]);
+});
+
+test("a candidate found again in newer text keeps the whole-identifier rule", async () => {
+  const cwd = await fixture();
+  const source = path.join(cwd, "src/hints.js");
+  const result = await resolveWhileWriting(
+    { query: "generateHintStrings", path: "src" },
+    cwd,
+    async () =>
+      writeFile(source, `$hintStrings(); hintStrings$();\n${await readFile(source, "utf8")}`),
+  );
+
+  expect(result.data.fuzzy?.candidates[0]).toMatchObject({
+    identifier: "hintStrings",
+    matchCount: 5,
+    selection: { complete: true },
+  });
+  expect(result.data.fuzzy?.candidates[0]?.selection.all?.line).toMatch(/^SEARCH#/u);
+});
+
+test("a candidate found again in newer text stays within its match limit", async () => {
+  const cwd = await fixture();
+  const source = path.join(cwd, "src/hints.js");
+  const result = await resolveWhileWriting(
+    { query: "generateHintStrings", path: "src" },
+    cwd,
+    async () =>
+      writeFile(
+        source,
+        `${"hintStrings();\n".repeat(fuzzyLimits.matchesPerCandidate)}${await readFile(source, "utf8")}`,
+      ),
+  );
+
+  const candidate = result.data.fuzzy?.candidates[0];
+  expect(candidate).toMatchObject({
+    identifier: "hintStrings",
+    matchCount: fuzzyLimits.matchesPerCandidate,
+    selection: { complete: false },
+  });
+  expect(candidate?.selection.all).toBeUndefined();
+  expect(candidate?.selection.matches[0]?.references?.line).toMatch(/^SEARCH#/u);
+  expect(candidate?.selection.matches[0]?.range.startLine).toBe(1);
+  expect(result.text).toContain("Capture limit reached");
 });
 
 test("keeps the ordinary zero usable if candidate files vanish before registration", async () => {
