@@ -29,6 +29,16 @@ export interface CaptureOptions {
     readonly matches: readonly TextSearchMatch[];
     readonly complete: boolean;
   }>;
+  /**
+   * Keeps only the matches the backend itself would keep when the captured text is searched
+   * again; a backend that filters ripgrep's matches passes the same filter.
+   */
+  readonly accept?: (match: TextSearchMatch) => boolean;
+  /**
+   * Fail when a source cannot be read instead of leaving its matches out. For a result whose
+   * matches must be registered together or not at all.
+   */
+  readonly requireEverySource?: boolean;
   /** Reads a source the way the registration snapshot does; see `SearchSessionStore.snapshotReader`. */
   readonly read: (source: string, signal?: AbortSignal) => Promise<string>;
   readonly signal?: AbortSignal;
@@ -57,7 +67,8 @@ export async function captureCurrentMatches(
   for (let attempt = 1; ; attempt += 1) {
     const { contents, unreadable } = await readSources(matches, options);
     const kept = matches.filter((match) => !unreadable.has(match.source));
-    if (kept.length === 0 && unreadable.size > 0) throw unreadableSources(unreadable, cwd);
+    if (unreadable.size > 0 && (kept.length === 0 || options.requireEverySource === true))
+      throw unreadableSources(unreadable, cwd);
     // A source left out can hold matches of its own, so the result no longer covers the search.
     const covered = complete && unreadable.size === 0;
     const notices = unreadableNotices(unreadable, cwd);
@@ -156,7 +167,8 @@ async function matchesInCapturedText(
     const document = createTextDocument(source, content);
     const searchedLines = lineFeedStarts(content);
     const documentLines = documentStarts(document);
-    for (const match of found.matches)
+    for (const match of found.matches) {
+      if (options.accept?.(match) === false) continue;
       current.push(
         inDocument(
           source,
@@ -167,6 +179,7 @@ async function matchesInCapturedText(
           (searchedLines[(match.endLineNumber ?? match.lineNumber) - 1] ?? 0) + match.endColumn,
         ),
       );
+    }
   }
   // Unordered: the registration sorts the matches it stores.
   return current;
