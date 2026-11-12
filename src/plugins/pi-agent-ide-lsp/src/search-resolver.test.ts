@@ -270,6 +270,76 @@ test("resolves a declaration again when the file changes before its anchor is re
   expect(sessions[0]?.matches).toMatchObject([{ lineNumber: 2, matchedText: "class App {}\n" }]);
 });
 
+test("a declaration anchor registers from the text the declaration was found in while another session writes the file", async () => {
+  await mkdir(".tmp/lsp-search-resolver", { recursive: true });
+  const workspace = await mkdtemp(path.resolve(".tmp/lsp-search-resolver/declaration-"));
+  onTestFinished(() => rm(workspace, { recursive: true, force: true }));
+  const source = path.join(workspace, "app.ts");
+  const content = "const a = 1;\nclass App {}\n";
+  await writeFile(source, content);
+  // The server finds the declaration in the file as it is when asked.
+  backend.resolveLspDeclaration.mockImplementation(async () => {
+    const found = await readFile(source, "utf8");
+    const line = found.split("\n").indexOf("class App {}");
+    return {
+      source,
+      content: found,
+      range: { start: { line, character: 0 }, end: { line, character: 12 } },
+    };
+  });
+  const targets = new ResultTargetStore();
+  const sessions = new SearchSessionStore(undefined, targets, (file) => readFile(file, "utf8"));
+  let writes = 0;
+  let selected: SearchSelectionRegistration | undefined;
+  const resolving = createLspSearchResolver(
+    async () => manager,
+    async (selection, context) => {
+      // Another session inserts a line at the top of the file after the server answered and
+      // before the anchor registers; the declaration keeps its text and only moves down.
+      writes += 1;
+      await writeFile(source, `${"// peer\n".repeat(writes)}${content}`);
+      selected = selection;
+      return sessions.register(
+        selection.request.query,
+        selection.matches,
+        selection.complete,
+        context.cwd,
+        context.signal,
+        selection.request,
+        selection.refresh,
+        undefined,
+        context.environment,
+        selection.contents,
+      );
+    },
+    backend,
+  );
+
+  const result = await resolving.tryResolve(request({ declaration: "app.ts#App" }), {
+    cwd: workspace,
+  });
+
+  if (result.kind !== "resolved") throw Error("declaration failed");
+  // One server lookup and one registration: no second read of the file disagreed with it.
+  expect(backend.resolveLspDeclaration).toHaveBeenCalledTimes(1);
+  expect(writes).toBe(1);
+  const data = resolving.toScriptData?.(result.payload, {}) as {
+    matches: { target?: string; matchedText?: string }[];
+  };
+  expect(data.matches.map((match) => match.matchedText)).toEqual(["class App {}\n"]);
+  // The anchor describes the file as it is now, with the declaration where the writer moved it.
+  const anchored = targets.resolve(data.matches[0]?.target, workspace);
+  expect(anchored.targets[0]?.expectedContent).toBe(await readFile(source, "utf8"));
+  expect(anchored.targets[0]?.ranges).toEqual([
+    { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 4, column: 0 } },
+  ]);
+  await targets.verify(anchored);
+  // A refresh also returns the text it found the declaration in.
+  const refreshed = await selected?.refresh();
+  expect(refreshed?.contents?.get(source)).toBe(await readFile(source, "utf8"));
+  expect(refreshed?.matches.map((match) => match.lineNumber)).toEqual([3]);
+});
+
 test("symbol anchors register from the text the hits were mapped onto while another session writes the file", async () => {
   await mkdir(".tmp/lsp-search-resolver", { recursive: true });
   const workspace = await mkdtemp(path.resolve(".tmp/lsp-search-resolver/writer-"));

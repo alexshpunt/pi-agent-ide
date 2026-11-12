@@ -154,20 +154,27 @@ export function createLspSearchResolver(
               context.cwd,
               signal,
             );
-            // Keep only the declaration text, not the whole file it was cut from.
-            return structuredClone(declarationMatch(found.source, found.content, found.range));
+            // Keep only the declaration text, not the whole file it was cut from. The file text
+            // is used once to register or refresh the anchor and is not retained.
+            return {
+              match: structuredClone(declarationMatch(found.source, found.content, found.range)),
+              contents: new Map([[found.source, found.content]]),
+            };
           };
           const { match, session } = await retryWhileSourceChanges(async () => {
-            const match = await resolve(context.signal);
+            const { match, contents } = await resolve(context.signal);
             const session = await register({
               request,
               matches: [match],
               complete: true,
+              // The text the declaration was found in: a second read could find another
+              // session's write and no longer fit it.
+              contents,
               refresh: (signal) =>
-                withLspDocuments(async () => ({
-                  matches: [await resolve(signal)],
-                  complete: true,
-                })),
+                withLspDocuments(async () => {
+                  const next = await resolve(signal);
+                  return { matches: [next.match], complete: true, contents: next.contents };
+                }),
             });
             return { match, session };
           }, context.signal);
