@@ -198,7 +198,12 @@ export class SshBackend {
       true,
       context,
     );
-    this.checked(Type.Object({ device: Type.String(), inode: Type.String() }), data, filePath, true);
+    this.checked(
+      Type.Object({ device: Type.String(), inode: Type.String() }),
+      data,
+      filePath,
+      true,
+    );
     return data;
   }
 

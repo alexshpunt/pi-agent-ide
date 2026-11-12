@@ -55,7 +55,13 @@ export async function prepareObjectTransfer(
             { source: source.path, cwd: source.cwd, context: { ...context, files: source.files } },
             // A case-only rename's target is the source itself; it is never removed.
             ...(before.target.entries.length > 0 && !before.caseRename
-              ? [{ source: target.path, cwd: target.cwd, context: { ...context, files: target.files } }]
+              ? [
+                  {
+                    source: target.path,
+                    cwd: target.cwd,
+                    context: { ...context, files: target.files },
+                  },
+                ]
               : []),
           ],
           signal,
@@ -103,7 +109,8 @@ async function inspectTransfer(
   // Reject protected roots before walking a potentially large tree. A Move checks both roots
   // beside the source inspection; a Copy checks its target only when the source is a tree.
   const inspection = source.files.inspect(source.path);
-  const roots = operation === "move" ? [protect(source, source.path), protect(target, target.path)] : [];
+  const roots =
+    operation === "move" ? [protect(source, source.path), protect(target, target.path)] : [];
   await settleInOrder([inspection, ...roots]);
   const root = await inspection;
   if (operation === "copy" && root.kind !== "file") await protect(target, target.path);
@@ -143,7 +150,8 @@ async function inspectTransfer(
   )
     fail("OVERLAPPING_PATHS", "Source and target directory trees overlap.");
   if (operation === "move") await protect(source, sourceSnapshot.path);
-  if (operation === "move" || sourceRoot.kind !== "file") await protect(target, targetSnapshot.path);
+  if (operation === "move" || sourceRoot.kind !== "file")
+    await protect(target, targetSnapshot.path);
   if (operation === "copy") {
     const destination = new Map(targetSnapshot.entries.map((entry) => [entry.relativePath, entry]));
     for (const entry of sourceSnapshot.entries)
