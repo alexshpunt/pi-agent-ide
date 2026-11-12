@@ -290,17 +290,21 @@ test("keeps saved file effects and the custom error panel after a post-write fai
     });
   });
 });
-test("Diff returns readable comparison without publishing its private record", async () => {
+test("Diff shows readable text directly and gives scripts the complete unified diff", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\n");
     await writeFile(path.join(cwd, "other.txt"), "beta\n");
+    // Longer than the 2000 lines a direct call shows.
+    const rows = Array.from({ length: 2205 }, (_, index) => `row ${index}\n`).join("");
+    await writeFile(path.join(cwd, "long-before.txt"), "head\n");
+    await writeFile(path.join(cwd, "long-after.txt"), `head\n${rows}`);
     const run = await new PiIntegrationTest({
       testName: "text-diff",
       artifactsDir: testArtifactsDir(import.meta.filename),
       rawMode: false,
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["diff"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["diff", "codemode"],
       conversation: [
         assistantMessage(
           [
@@ -312,15 +316,55 @@ test("Diff returns readable comparison without publishing its private record", a
           ],
           { stopReason: "toolUse" },
         ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "script",
+              name: "codemode",
+              arguments: {
+                code: `
+const changed = await tools.diff({ before: "note.txt", after: "other.txt" });
+const equal = await tools.diff({ before: "note.txt", after: { path: "note.txt" } });
+const long = (await tools.diff({ before: "long-before.txt", after: "long-after.txt" })).split("\\n");
+// The script checks the whole diff itself; the Codemode output limit would clip it.
+const rows = long.slice(4);
+const complete = long[3] === " head" && rows.length === 2205 &&
+  rows.every((row, index) => row === "+row " + index);
+text(JSON.stringify({ changed, equal, head: long.slice(0, 3), complete }));
+`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
         assistantMessage([text("Done")]),
       ],
     }).run("Compare files without exposing internal records");
     expect(getToolExecution(run, "diff").isError, getToolResultText(run, "diff")).toBe(false);
-    // Scripts get the readable string as text; the private diff record stays hidden.
-    expect(getToolExecutionResult(run, "diff")).not.toHaveProperty("structuredContent");
+    const changed = /^--- \S*note\.txt\n\+\+\+ \S*other\.txt\n@@ [^\n]+ @@\n-alpha\n\+beta$/u;
+    // A direct call keeps its readable text. Its script value replaces the private diff record and
+    // stays out of the session message.
+    expect(getToolResultText(run, "diff")).toContain("-alpha\n+beta");
+    expect(getToolExecutionResult(run, "diff")).toHaveProperty(
+      "structuredContent",
+      expect.stringMatching(changed),
+    );
     expect(getToolResultMessage(run, "diff")).not.toHaveProperty("structuredContent");
-    expect(getToolResultText(run, "diff")).toContain("-alpha");
-    expect(getToolResultText(run, "diff")).toContain("+beta");
+
+    const output = getToolResultText(run, "script");
+    expect(getToolExecution(run, "script").isError, output).toBe(false);
+    const [line = ""] = output.slice(output.indexOf('{"changed"')).split("\n");
+    const values: unknown = JSON.parse(line);
+    expect(values).toEqual({
+      changed: expect.stringMatching(changed) as unknown,
+      equal: "",
+      head: [
+        expect.stringMatching(/^--- \S*long-before\.txt$/u),
+        expect.stringMatching(/^\+\+\+ \S*long-after\.txt$/u),
+        "@@ -1,1 +1,2206 @@",
+      ],
+      complete: true,
+    });
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\n");
     expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("beta\n");
   });

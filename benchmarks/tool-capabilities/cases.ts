@@ -2114,7 +2114,12 @@ add(
   [
     { tool: "read", args: { path: "a.txt" } },
     { tool: "read", args: { path: "b.txt" } },
-    { tool: "diff", reuse: [reuse(0, "before"), reuse(1, "after")], contains: "NEW" },
+    {
+      tool: "diff",
+      reuse: [reuse(0, "before"), reuse(1, "after")],
+      contains: "NEW",
+      scriptResult: /\n-OLD\n\+NEW$/u,
+    },
   ],
   { files: { "a.txt": "OLD\n", "b.txt": "NEW\n" }, answer: "NEW" },
 );
@@ -2131,6 +2136,7 @@ add(
         after: { path: "b.txt", offset: undefined, limit: undefined },
       },
       contains: "NEW",
+      scriptResult: /\n-OLD\n\+NEW$/u,
     },
     {
       tool: "diff",
@@ -2147,6 +2153,28 @@ add(
     answer: "NEW",
   },
 );
+
+const addedRows = Array.from({ length: 2500 }, (_, index) => `row ${index}\n`).join("");
+add(
+  "diff-script-complete",
+  ["codemode.diff-complete"],
+  'In one Codemode script, diff before.txt against after.txt; after.txt has more lines than a tool result shows. Without printing the diff, count the lines of the returned string that start with "+" but not with "+++", and report that count. Then diff before.txt against itself and check that the result is an empty string. Do not use Bash, the raw: prefix or temporary results, and do not edit files.',
+  [
+    {
+      tool: "diff",
+      scriptResult:
+        /^--- \S*before\.txt\n\+\+\+ \S*after\.txt\n@@ -1,1 \+1,2501 @@\n head\n\+row 0\n[\s\S]*\n\+row 2499$/u,
+    },
+    { tool: "diff", scriptResult: "" },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "before.txt": "head\n", "after.txt": `head\n${addedRows}` },
+    expected: { "before.txt": "head\n", "after.txt": `head\n${addedRows}` },
+    answer: "2500",
+  },
+);
+
 for (const [name, eol] of [
   ["lf", "\n"],
   ["crlf", "\r\n"],
