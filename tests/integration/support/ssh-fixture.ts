@@ -222,26 +222,29 @@ async function startMaster(config: string, socket: string): Promise<ChildProcess
     ["-F", config, "-M", "-N", "-o", `ControlPath=${socket}`, "-o", "ControlPersist=no", "fixture"],
     { stdio: "ignore" },
   );
-  const failed = new Promise<never>((_resolve, reject) => {
-    master.once("error", reject);
-    master.once("exit", () => reject(new Error("Fixture SSH master exited")));
+  let failure: Error | undefined;
+  master.once("error", (error) => {
+    failure = error;
   });
-  await Promise.race([
-    (async () => {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await run("ssh", ["-F", config, "-O", "check", "-o", `ControlPath=${socket}`, "fixture"]);
-          return;
-        } catch (error) {
-          if (attempt >= 200)
-            throw new Error("Fixture SSH master did not answer", { cause: error });
-        }
-        await new Promise((resolve) => setTimeout(resolve, 20));
+  master.once("exit", () => {
+    failure ??= new Error("Fixture SSH master exited");
+  });
+  try {
+    for (let attempt = 0; ; attempt++) {
+      if (failure) throw failure;
+      try {
+        await run("ssh", ["-F", config, "-O", "check", "-o", `ControlPath=${socket}`, "fixture"]);
+        return master;
+      } catch (error) {
+        if (attempt >= 200) throw new Error("Fixture SSH master did not answer", { cause: error });
       }
-    })(),
-    failed,
-  ]);
-  return master;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  } catch (error) {
+    // The caller only stops a master it received; one that never answered is stopped here.
+    if (master.exitCode === null && master.signalCode === null) master.kill("SIGTERM");
+    throw error;
+  }
 }
 
 function quote(value: string): string {
