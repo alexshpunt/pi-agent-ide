@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { readdir } from "node:fs/promises";
 import { promisify } from "node:util";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { SshBackend } from "#src/backend/ssh.ts";
 import { stopSshMasters } from "#src/backend/ssh-master.ts";
 import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.ts";
@@ -99,5 +99,26 @@ test("concurrent requests beyond one master's sessions open more masters", async
 test("a user's own ControlPath is used instead of a Pi master", async () => {
   const { fixture, backend } = await backendFor({ multiplex: true });
   await backend.lstat(fixture.workspace);
+  expect(await ownSockets()).toEqual([]);
+}, 60_000);
+
+test("a reloaded module starts its own masters without touching earlier ones", async () => {
+  const { fixture, backend } = await backendFor();
+  await backend.lstat(fixture.workspace);
+  const [first = ""] = await ownSockets();
+  const pid = await masterPid(fixture.config, first);
+  // Pi loads extension modules anew on every reload.
+  vi.resetModules();
+  const reloaded = await import("#src/backend/ssh.ts");
+  await new reloaded.SshBackend({
+    id: "fixture",
+    host: "fixture",
+    workspace: fixture.workspace,
+    configFile: fixture.config,
+  }).lstat(fixture.workspace);
+  expect(await ownSockets()).toHaveLength(2);
+  expect(await masterPid(fixture.config, first)).toBe(pid);
+  stopSshMasters();
+  await expect.poll(() => running(pid), { timeout: 5000 }).toBe(false);
   expect(await ownSockets()).toEqual([]);
 }, 60_000);

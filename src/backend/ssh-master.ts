@@ -1,5 +1,5 @@
 import { execFile, spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, unlink } from "node:fs/promises";
 import net from "node:net";
@@ -52,9 +52,12 @@ interface Pool {
 
 /** Undefined when the user's own configuration multiplexes or no private socket directory exists. */
 const pools = new Map<string, Promise<Pool | undefined>>();
-/** The socket and target of every master this process started, for the stop at exit. */
-const ownSockets = new Map<string, SshTarget>();
-let stopRegistered = false;
+/** Distinguishes this load of the module: Pi loads extension modules anew on every reload. */
+const instance = randomUUID();
+const ownSocketsKey = Symbol.for("pi-agent-ide.ssh-master.own-sockets");
+type GlobalWithSshMasters = typeof globalThis & {
+  [ownSocketsKey]?: Map<string, SshTarget>;
+};
 let socketDirectory: Promise<string | undefined> | undefined;
 
 /** Route a new SSH process through one of this Pi's masters for the target.
@@ -110,7 +113,8 @@ export async function sshRoute(
 
 /** Stop every master this process started and remove their sockets. Safe to call repeatedly. */
 export function stopSshMasters(): void {
-  for (const [socket, target] of ownSockets) {
+  const sockets = ownSockets();
+  for (const [socket, target] of sockets) {
     if (existsSync(socket))
       spawnSync(
         "ssh",
@@ -126,7 +130,7 @@ export function stopSshMasters(): void {
         { stdio: "ignore", timeout: 2000 },
       );
   }
-  ownSockets.clear();
+  sockets.clear();
   pools.clear();
 }
 
@@ -137,18 +141,14 @@ async function createPool(key: string, target: SshTarget): Promise<Pool | undefi
   if (directory === undefined) return undefined;
   const name = path.join(
     directory,
-    `${process.pid}-${createHash("sha256").update(key).digest("hex").slice(0, 16)}`,
+    `${process.pid}-${createHash("sha256").update(`${instance}\0${key}`).digest("hex").slice(0, 16)}`,
   );
   return { target, name, members: [], waiters: [], launched: 0 };
 }
 
 function launchMember(pool: Pool): void {
   const socket = `${pool.name}-${pool.launched++}`;
-  if (!stopRegistered) {
-    stopRegistered = true;
-    process.once("exit", stopSshMasters);
-  }
-  ownSockets.set(socket, pool.target);
+  ownSockets().set(socket, pool.target);
   const member: Master = {
     socket,
     sessions: 0,
@@ -183,8 +183,23 @@ function take(pool: Pool, member: Master): SshRoute {
 function remove(pool: Pool, member: Master): void {
   const index = pool.members.indexOf(member);
   if (index >= 0) pool.members.splice(index, 1);
-  ownSockets.delete(member.socket);
+  ownSockets().delete(member.socket);
   void unlink(member.socket).catch(() => {});
+}
+
+/** The socket and target of every master this process started, shared by every load of this
+ * module. Masters of an earlier load keep serving its open channels and stop at exit with the rest.
+ * Socket names differ per load: a master removes its socket when it exits.
+ */
+function ownSockets(): Map<string, SshTarget> {
+  const shared = globalThis as GlobalWithSshMasters;
+  let sockets = shared[ownSocketsKey];
+  if (sockets === undefined) {
+    sockets = new Map();
+    shared[ownSocketsKey] = sockets;
+    process.once("exit", stopSshMasters);
+  }
+  return sockets;
 }
 
 /** Wait until a session of the pool ends; false after `waitMs` or an abort. */
