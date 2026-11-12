@@ -17,6 +17,7 @@ import {
   WORKER_HANDSHAKE,
   type SshCommand,
 } from "./ssh-transport.ts";
+import { sshRoute } from "./ssh-master.ts";
 
 const handshakeMarker = Buffer.from(WORKER_HANDSHAKE, "ascii");
 const handshakeSchema = Type.Object({ platform: Type.String(), accepted: Type.Boolean() });
@@ -113,13 +114,28 @@ export async function startSshProcess(
     ...(known === undefined ? [] : [known]),
     ...interpreterCandidates(os).filter((candidate) => candidate !== known),
   ];
-  for (const [index, interpreter] of candidates.entries()) {
+  // Waiting for the target's master is the connection this process would otherwise make,
+  // so it counts against the startup deadline of the first attempt.
+  const started = Date.now();
+  let route = await sshRoute(target, timeout, context.signal);
+  if (context.signal?.aborted) {
+    route.release();
+    context.signal.throwIfAborted();
+  }
+  let budget = Math.max(1, timeout - (Date.now() - started));
+  for (let index = 0; index < candidates.length;) {
+    const interpreter = candidates[index] ?? "";
+    const attempt = route;
     // Windows OpenSSH blocks on synchronous pipes when it runs outside an interactive desktop
     // session, for example under another SSH server: it stalls at startup or never exits.
     // Overlapped pipes avoid that; on other platforms they are ordinary pipes.
-    const child = spawn("ssh", systemSshArguments(target, sshBootstrapCommand(interpreter)), {
-      stdio: "overlapped",
-    });
+    const child = spawn(
+      "ssh",
+      systemSshArguments(target, sshBootstrapCommand(interpreter), attempt.options),
+      { stdio: "overlapped" },
+    );
+    child.once("close", () => attempt.release());
+    child.once("error", () => attempt.release());
     const channel = new ProcessChannel(
       child,
       source,
@@ -127,7 +143,7 @@ export async function startSshProcess(
       interpreter,
       context.signal,
     );
-    const timer = setTimeout(() => channel.cancel("TIMEOUT"), timeout);
+    const timer = setTimeout(() => channel.cancel("TIMEOUT"), budget);
     try {
       const sent = channel.sendInitial(bootstrap, request);
       void sent.catch(() => {});
@@ -137,10 +153,17 @@ export async function startSshProcess(
       interpreters.set(destination, interpreter);
       return channel;
     } catch (error) {
-      // Nothing ran before the handshake, so another interpreter cannot repeat an effect.
+      // Nothing ran before the handshake, so a new connection or another interpreter cannot
+      // repeat an effect. A master that failed mid-start is retried once directly.
+      if (attempt.options.length > 0 && channel.transportLost && !context.signal?.aborted) {
+        route = { options: [], release() {} };
+        continue;
+      }
       if (!channel.interpreterMissing || index === candidates.length - 1) throw error;
+      index++;
     } finally {
       clearTimeout(timer);
+      budget = timeout;
     }
   }
   throw new SshBackendError("DEPENDENCY_UNAVAILABLE", source, "not-applied");
@@ -264,6 +287,15 @@ class ProcessChannel implements SshProcessChannel {
   }
   get identity(): string | undefined {
     return this.#identity;
+  }
+  /** True when OpenSSH itself failed before the worker started, not a cancel or a timeout. */
+  get transportLost(): boolean {
+    return (
+      this.#closed &&
+      !this.#handshake &&
+      this.#failure === undefined &&
+      this.#transportCode === "TRANSPORT_FAILED"
+    );
   }
   /** True when the remote shell could not start this interpreter; nothing ran on the target. */
   get interpreterMissing(): boolean {

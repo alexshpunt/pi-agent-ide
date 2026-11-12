@@ -8,6 +8,14 @@ Each target declares `os` (`linux` by default, or `windows`). The OS selects pat
 
 `ssh.ts` runs short framed operations with system OpenSSH and transient Python code. Authentication stays in SSH config, known_hosts and the user's agent. Requests travel on stdin, not inside interpolated shell commands. Raw SSH diagnostics never become public errors. A nonzero application exit remains an application result.
 
+## Connection reuse
+
+On Linux and macOS controllers, every SSH process goes through an OpenSSH master that Pi starts for the target (`ssh-master.ts`), so a request costs no handshake. A master carries up to 8 sessions (OpenSSH servers refuse the 11th by default); when all are busy, Pi starts another, up to 4 per target, or a process waits up to 2 s for a free session and then connects directly. The first process to a target waits for its master within its own startup deadline.
+
+A master runs in the background (`ssh -f -N` with `ControlPersist`) behind a socket in `/tmp/pi-ssh-<uid>`, a directory only this user may own and use; a socket path must stay under about 104 bytes. Pi stops its masters with `ssh -O exit` when its process exits. A master left by a crashed Pi exits 60 s after its last session, and the next Pi removes sockets nobody listens on. A master whose socket stops answering is replaced; a dead network ends a master within 15 s (`ServerAliveInterval=5`). OpenSSH connects directly when a socket refuses a session, and a process that loses its master before the worker handshake is retried once directly, because nothing ran on the target yet.
+
+A user whose SSH configuration sets `ControlMaster` or `ControlPath` keeps that setup; Pi starts no master then. A master that fails to start, for example on an authentication error, makes processes connect directly for 30 s, so they report the same classified error as before. Windows OpenSSH cannot multiplex, so a Windows controller opens a new connection for each process.
+
 ## Remote bootstrap
 
 Every operation starts with one fixed remote command, `<interpreter> -c "import sys;exec(sys.stdin.buffer.raw.readline())"`. It contains no characters that bash, fish, sh, cmd.exe, Windows PowerShell or pwsh would expand, so the target's login shell does not matter. The interpreter is `python3` on Linux; on Windows it is `py -3`, then `python`, because `python3` there is often the Microsoft Store alias. The interpreter that reaches the handshake is remembered per destination.

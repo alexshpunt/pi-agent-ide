@@ -182,10 +182,9 @@ export function sshBootstrapInput(os: SshTargetOs, program: string): Buffer {
   ]);
 }
 
-/** Safe system OpenSSH options shared by short operations and service channels. */
-export function systemSshArguments(target: SshTarget, command: string): string[] {
+/** Safe system OpenSSH options shared by short operations, service channels and masters. */
+export function sshSecurityOptions(target: SshTarget): string[] {
   const args = [
-    "-T",
     "-o",
     "BatchMode=yes",
     "-o",
@@ -198,8 +197,16 @@ export function systemSshArguments(target: SshTarget, command: string): string[]
     "ClearAllForwardings=yes",
   ];
   if (target.configFile !== undefined) args.push("-F", target.configFile);
-  args.push("--", target.host, command);
   return args;
+}
+
+/** Arguments of one OpenSSH process; `route` options select a connection, such as a master. */
+export function systemSshArguments(
+  target: SshTarget,
+  command: string,
+  route: readonly string[] = [],
+): string[] {
+  return ["-T", ...sshSecurityOptions(target), ...route, "--", target.host, command];
 }
 
 /** Classify bounded SSH diagnostics without returning their text or credential paths.
