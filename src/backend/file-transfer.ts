@@ -100,6 +100,15 @@ async function prepareTransfer(
   const target =
     remoteTarget?.location.source ?? localTransferSource(input.target ?? "", context.cwd);
   if (source === target) throw new SshBackendError("SAME_FILE", source, "not-applied");
+  // Inspect both endpoints together. A target failure still surfaces only after the source checks.
+  const targetLookup = (
+    remoteTarget
+      ? remoteTarget.backend.lstat(remoteTarget.location.path, context)
+      : localEntry(target)
+  ).then(
+    (info) => ({ info }),
+    (error: unknown) => ({ error }),
+  );
   const sourceInfo = remoteSource
     ? await remoteSource.backend.lstat(remoteSource.location.path, context)
     : await localEntry(source);
@@ -109,14 +118,9 @@ async function prepareTransfer(
   const mode = "kind" in sourceInfo ? sourceInfo.mode : localObjectMode(sourceInfo);
   const sourceRevision = "revision" in sourceInfo ? sourceInfo.revision : localRevision(sourceInfo);
   checkCapturedRevision(source, sourceRevision, captured);
-  let targetInfo;
-  try {
-    targetInfo = remoteTarget
-      ? await remoteTarget.backend.lstat(remoteTarget.location.path, context)
-      : await localEntry(target);
-  } catch (error) {
-    if (!missing(error)) throw error;
-  }
+  const lookup = await targetLookup;
+  if ("error" in lookup && !missing(lookup.error)) throw lookup.error;
+  const targetInfo = "info" in lookup ? lookup.info : undefined;
   if (targetInfo !== undefined) {
     if ("kind" in targetInfo && targetInfo.kind !== "file")
       throw new SshBackendError("INVALID_FILE_TYPE", target, "not-applied");
@@ -147,6 +151,14 @@ async function prepareTransfer(
   return { source, target, remoteSource, remoteTarget, size, mode, sourceRevision, targetRevision };
 }
 
+/** Wait for checks that run together; each SSH check costs a round trip.
+ * The first failure in argument order is reported, as if the checks ran in sequence.
+ */
+export async function settleInOrder(checks: readonly Promise<unknown>[]): Promise<void> {
+  for (const result of await Promise.allSettled(checks))
+    if (result.status === "rejected") throw result.reason;
+}
+
 /** Check transfer endpoints without creating staging files or changing either endpoint. */
 export async function validateTransferFile(
   registry: SshBackendRegistry,
@@ -168,9 +180,11 @@ export async function transferFile(
   captured?: ReadonlyMap<string, string | null>,
   verifyApprovedEntries?: () => Promise<void>,
 ): Promise<{ readonly source: string; readonly target: string }> {
+  // Both checks only read; together they cost one round trip instead of two.
+  const preparation = prepareTransfer(registry, input, context, captured);
+  await settleInOrder([preparation, verifyApprovedEntries?.() ?? Promise.resolve()]);
   const { source, target, remoteSource, remoteTarget, size, mode, sourceRevision, targetRevision } =
-    await prepareTransfer(registry, input, context, captured);
-  await verifyApprovedEntries?.();
+    await preparation;
   const descriptor = remoteSource
     ? undefined
     : await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);

@@ -535,10 +535,11 @@ def operate(request):
         return object_snapshot(path)
     if operation in ("mkdir-object", "symlink-object"):
         info = check_object_revision(path, request["revision"])
+        # A directory reply carries its identity, so the controller needs no extra lstat.
         if operation == "mkdir-object" and info is not None:
             if kind_of(info) != "directory":
                 raise OperationError("INVALID_FILE_TYPE")
-            return None
+            return {"device": str(info.st_dev), "inode": str(info.st_ino)}
         if info is not None:
             raise OperationError("TRANSFER_TARGET_CHANGED")
         make_object_parents(os.path.dirname(path))
@@ -546,6 +547,8 @@ def operate(request):
             check_object_revision(path, None)
             if operation == "mkdir-object":
                 mutate(os.mkdir, path)
+                created = os.lstat(path)
+                return {"device": str(created.st_dev), "inode": str(created.st_ino)}
             else:
                 # Links from a POSIX source use `/`; Windows links use `\`.
                 link = os.fsdecode(base64.b64decode(request["link"], validate=True)).replace("/", "\\")
