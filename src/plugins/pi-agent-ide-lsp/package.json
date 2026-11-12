@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
+    "pi-agent-search-text": "workspace:^",
     "pi-coding-agent-test": "^0.1.1",
     "vitest": "^4.1.10"
   },

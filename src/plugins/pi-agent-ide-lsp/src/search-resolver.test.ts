@@ -1,7 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, expect, test, vi } from "vitest";
+import { pathToFileURL } from "node:url";
+import { afterEach, expect, onTestFinished, test, vi } from "vitest";
+import { ResultTargetStore } from "pi-agent-resource";
 import type { SearchRequest, SearchSelectionRegistration } from "pi-agent-search/api/search";
+import { SearchSessionStore } from "pi-agent-search-text/search-session";
+import { LspClient } from "./lsp/client.ts";
 import { coverageNotes } from "./lsp/clang-coverage.ts";
 import { LspManager } from "./lsp/manager.ts";
 import { LspServerRegistry } from "./lsp/registry.ts";
@@ -149,7 +153,7 @@ test("reads symbol and file call graphs as text without selections", async () =>
 });
 
 test("follows references only when requested", async () => {
-  backend.searchSymbols.mockResolvedValue({ hits: [], complete: true });
+  backend.searchSymbols.mockResolvedValue({ hits: [], contents: new Map(), complete: true });
 
   await resolver.tryResolve(request({ query: "label" }, { path: "src" }), { cwd });
   await resolver.tryResolve(request({ query: "label", references: true }, { path: "src" }), {
@@ -180,7 +184,7 @@ test("a result-scoped symbol search survives a write to its file while the serve
     backend.searchSymbols.mockImplementation(async () => {
       // Another session writes elsewhere in the file before the server's answer arrives.
       await writeFile(source, `// peer\n${content}`);
-      return { hits: [], complete: true };
+      return { hits: [], contents: new Map(), complete: true };
     });
 
     const result = await resolver.tryResolve(request({ query: "label" }), { cwd, scope });
@@ -234,8 +238,8 @@ test("searches again when the file changes before a symbol search registers its 
     },
   });
   backend.searchSymbols
-    .mockResolvedValueOnce({ hits: [hit(1)], complete: true })
-    .mockResolvedValueOnce({ hits: [hit(2)], complete: true });
+    .mockResolvedValueOnce({ hits: [hit(1)], contents: new Map(), complete: true })
+    .mockResolvedValueOnce({ hits: [hit(2)], contents: new Map(), complete: true });
   const { changing, sessions } = resolverWithOneChangedRegistration();
 
   const result = await changing.tryResolve(request({ query: "label" }), { cwd });
@@ -266,13 +270,118 @@ test("resolves a declaration again when the file changes before its anchor is re
   expect(sessions[0]?.matches).toMatchObject([{ lineNumber: 2, matchedText: "class App {}\n" }]);
 });
 
+test("symbol anchors register from the text the hits were mapped onto while another session writes the file", async () => {
+  await mkdir(".tmp/lsp-search-resolver", { recursive: true });
+  const workspace = await mkdtemp(path.resolve(".tmp/lsp-search-resolver/writer-"));
+  onTestFinished(async () => {
+    await LspManager.resetForTest();
+    await rm(workspace, { recursive: true, force: true });
+  });
+  const source = path.join(workspace, "app.ts");
+  const content = "const label = 1;\nlabel;\n";
+  await writeFile(source, content);
+  const uri = pathToFileURL(source).href;
+  // The server answers for the file as it is when asked, below the lines the writer inserted.
+  const at = async (line: number, from: number, to: number) => {
+    const shift = (await readFile(source, "utf8")).split("\n").indexOf("const label = 1;");
+    return {
+      uri,
+      range: {
+        start: { line: line + shift, character: from },
+        end: { line: line + shift, character: to },
+      },
+    };
+  };
+  const client = new LspClient({
+    serverId: "fixture",
+    rootUri: pathToFileURL(workspace).href,
+    command: ["fixture"],
+  });
+  vi.spyOn(client, "sendRequest").mockImplementation(async (method) => {
+    if (method === "workspace/symbol")
+      return [{ name: "label", kind: 13, location: await at(0, 6, 11) }];
+    if (method === "textDocument/documentSymbol") return [];
+    if (method === "textDocument/references") return [await at(0, 6, 11), await at(1, 0, 5)];
+    throw Error(`Unexpected request ${method}`);
+  });
+  const lsp = LspManager.init(LspServerRegistry.fromConfig({ version: 1, servers: {} }, workspace));
+  const searches = vi.spyOn(lsp, "prepareWorkspaceSymbols").mockResolvedValue([client]);
+  vi.spyOn(lsp, "openFile").mockResolvedValue({ client, uri, languageId: "typescript" });
+  const targets = new ResultTargetStore();
+  const sessions = new SearchSessionStore(undefined, targets, (file) => readFile(file, "utf8"));
+  let writes = 0;
+  let selected: SearchSelectionRegistration | undefined;
+  const searching = createLspSearchResolver(
+    async () => lsp,
+    async (selection, context) => {
+      // Another session inserts a line at the top of the file after the server answered and
+      // before the anchors register; the lines of the hits keep their text and only move down.
+      writes += 1;
+      await writeFile(source, `${"// peer\n".repeat(writes)}${content}`);
+      selected = selection;
+      return sessions.register(
+        selection.request.query,
+        selection.matches,
+        selection.complete,
+        context.cwd,
+        context.signal,
+        selection.request,
+        selection.refresh,
+        undefined,
+        context.environment,
+        selection.contents,
+      );
+    },
+  );
+
+  const result = await searching.tryResolve(request({ query: "label" }), { cwd: workspace });
+
+  if (result.kind !== "resolved") throw Error("search failed");
+  const data = searching.toScriptData?.(result.payload, {}) as {
+    target?: string;
+    matches: { target?: string; matchedText?: string; range: { startLine: number } }[];
+  };
+  expect(data.matches.map((match) => [match.range.startLine, match.matchedText])).toEqual([
+    [1, "label"],
+    [2, "label"],
+  ]);
+  // One server search and one registration: no second read of the file disagreed with the hits.
+  expect(searches).toHaveBeenCalledTimes(1);
+  expect(writes).toBe(1);
+  // The anchors describe the file as it is now, with the hits where the writer moved them.
+  const current = await readFile(source, "utf8");
+  const ranges = [
+    { start: { lineNumber: 2, column: 6 }, end: { lineNumber: 2, column: 11 } },
+    { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 5 } },
+  ];
+  for (const [index, match] of data.matches.entries()) {
+    const anchored = targets.resolve(match.target, workspace);
+    expect(anchored.targets[0]?.expectedContent).toBe(current);
+    expect(anchored.targets[0]?.ranges).toEqual([ranges[index]]);
+    await targets.verify(anchored);
+  }
+  const all = targets.resolve(data.target, workspace);
+  expect(all.targets[0]?.ranges).toEqual(ranges);
+  await targets.verify(all);
+  // A refresh, such as for an all-anchor after other edits, also returns the text its hits
+  // were mapped onto, so it needs no second read either.
+  const refreshed = await selected?.refresh();
+  expect(refreshed?.contents?.get(source)).toBe(current);
+  expect(refreshed?.matches.map((match) => match.lineNumber)).toEqual([2, 3]);
+});
+
 test("names the fatal compiler errors that can hide references", async () => {
   const coverage = {
     fatal: [{ source: path.join(cwd, "src/main.cpp"), line: 3, message: "'x.h' file not found" }],
     unchecked: 2,
     unlisted: false,
   };
-  backend.searchSymbols.mockResolvedValue({ hits: [], complete: false, coverage });
+  backend.searchSymbols.mockResolvedValue({
+    hits: [],
+    contents: new Map(),
+    complete: false,
+    coverage,
+  });
 
   const result = await resolver.tryResolve(request({ query: "label" }), { cwd });
 

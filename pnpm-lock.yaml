@@ -1024,6 +1024,9 @@ importers:
       '@types/cross-spawn':
         specifier: ^6.0.6
         version: 6.0.6
+      pi-agent-search-text:
+        specifier: workspace:^
+        version: link:../../extensions/pi-agent-search/plugins/pi-agent-search-text
       pi-coding-agent-test:
         specifier: ^0.1.1
         version: 0.1.5(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3)
