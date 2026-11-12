@@ -275,7 +275,7 @@ function createRenderer(
             typeof result.details.metadata?.targetUnavailable === "string"
             ? theme.fg(
                 "muted",
-                  result.details.metadata.targetUnavailable === NO_TEXT_TARGET
+                result.details.metadata.targetUnavailable === NO_TEXT_TARGET
                   ? `No verified text selection. ${NO_TEXT_TARGET}`
                   : "No verified text selection. Read the destination before further edits.",
               )
