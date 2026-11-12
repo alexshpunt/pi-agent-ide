@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { expect, test } from "vitest";
 import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
@@ -11,6 +12,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/pi-coding-agent-test.ts";
+import replaceFormatted from "#pi-agent-text-editor-renderer/test/fixtures/replace-formatted.json" with { type: "json" };
 
 const extension = path.resolve(import.meta.dirname, "register-extension.ts");
 const extensions = createExtensionSet();
@@ -55,6 +57,45 @@ test("keeps a write diff visible when detailed line pairing is bounded", async (
     expect(result.terminalOutput).toContain("~0");
     expect(result.terminalOutput).toContain("-200");
     expect(result.terminalOutput).not.toContain("+0 ~0 -0");
+  });
+});
+
+test("shows the final diff of a declaration rewrite in a mid-size file", async () => {
+  await withTempWorkspace(async (directory) => {
+    // A 721-line file: the size where the previous line alignment ran out of budget.
+    const { before, after } = replaceFormatted;
+    await createFixture(directory, "code-views.txt", before);
+    const result = await new PiIntegrationTest({
+      testName: "native-diff-mid-size",
+      cwd: directory,
+      extensions: extensions.paths.map((item) => (item === defaultEditor ? extension : item)),
+      tools: ["write"],
+      rawMode: false,
+      environment: { PI_AGENT_IDE_TEST_EXPANDED: "1" },
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "rewrite",
+              name: "write",
+              arguments: { path: "code-views.txt", content: after },
+              // Large chunks keep the 50 KB argument stream within the run timeout.
+              chunks: { kind: "fixed", size: 4_096 },
+              delayMs: 0,
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")], { delayMs: 500 }),
+      ],
+    }).run("Rewrite the declaration and keep its line changes visible");
+    expect(getToolExecution(result, "rewrite").isError).toBe(false);
+    await expect(readFile(path.join(directory, "code-views.txt"), "utf8")).resolves.toBe(after);
+    expect(result.terminalOutput).not.toContain("Local diff unavailable");
+    // The final panel shows the edit's own rows and counts the rest of the file's changes.
+    expect(stripVTControlCharacters(result.terminalOutput)).toContain(
+      "+27 ~8 -13 · 6 changed rows outside this area",
+    );
   });
 });
 
