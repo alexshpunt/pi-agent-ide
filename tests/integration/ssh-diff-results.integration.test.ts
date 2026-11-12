@@ -99,6 +99,9 @@ test("remote Diff keeps full snapshots, bounded output and session-owned tempora
           }),
         ]),
         assistantMessage([
+          toolCall({ id: "full", name: "diff", arguments: { before: left, after: right } }),
+        ]),
+        assistantMessage([
           toolCall({
             id: "snapshots",
             name: "codemode",
@@ -107,37 +110,15 @@ test("remote Diff keeps full snapshots, bounded output and session-owned tempora
 const left = ${JSON.stringify(left)}, right = ${JSON.stringify(right)};
 function check(value, message) { if (!value) throw Error(message); }
 const mixed = await tools.diff({before:${JSON.stringify(local)},after:left});
-
-check(mixed.includes("No differences"),"Equal local/remote bytes changed meaning");
-const result=await tools.diff({before:left,after:right});
-check(result.includes(left) && result.includes(right),"Comparison lost owner identities");
-const source=/temp:[a-zA-Z0-9-]+/.exec(result)?.[0];
-check(source && result.includes("truncated"),"Full comparison lost continuation");
-const tail=await tools.read({path:source,offset:-3,limit:3});
-check(tail.includes("right café row 2204"),"Full diff lost final source row");
-const rejected = (await tools.replace({path:result,text:"BAD"})) === null;
-check(rejected,"Diff gained edit authority");
+check(mixed === "","Equal local/remote bytes changed meaning");
+const lines=(await tools.diff({before:left,after:right})).split("\\n");
+check(lines[0]==="--- "+left && lines[1]==="+++ "+right,"Comparison lost owner identities");
+const rows=lines.slice(3).map((row)=>row.replace(/\\r$/,""));
+check(rows.length===4410 && rows.every((row,index)=>row===(index<2205?"-left café row "+index:"+right café row "+(index-2205))),"Script diff is not complete");
 text(await tools.write({path:right,content:"new remote snapshot\\r\\n"}));
-store("diff-result",{source,tail:tail.replace(/^<system-result[^\\n]*>\\n/,"")});
-text({temporary:source,before:left,after:right});
-`,
-            },
-          }),
-        ]),
-        assistantMessage([
-          toolCall({
-            id: "retained",
-            name: "codemode",
-            arguments: {
-              code: `
-const saved = load("diff-result");
-if (!saved) throw Error("Missing exact saved result");
-const repeated = await tools.read({path:saved.source,offset:-3,limit:3});
-
-if(repeated.replace(/^<system-result[^\\n]*>\\n/,"")!==saved.tail) throw Error("Temporary snapshot followed file change");
-const current=await tools.read({path:${JSON.stringify(right)}});
-if(!current.includes("new remote snapshot")) throw Error("Owner file was not changed");
-text({retained:saved.source,readonly:true,current});
+const current=await tools.read({path:right});
+check(current.includes("new remote snapshot"),"Owner file was not changed");
+text({before:left,after:right,rows:rows.length});
 `,
             },
           }),
@@ -152,20 +133,21 @@ text({retained:saved.source,readonly:true,current});
             },
           }),
         ]),
-        assistantMessage([text("Full source comparison and frozen temporary result verified.")]),
+        assistantMessage([text("Full source comparison and temporary result verified.")]),
       ],
     }).run(
       "Compare the two configured SSH sources without losing their identities or saved full output.",
     );
-    for (const id of ["ordinary", "snapshots", "retained", "final-window"])
+    for (const id of ["ordinary", "full", "snapshots", "final-window"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
-    expect(codemodeFailures(getToolResultText(run, "snapshots"))).toMatch(
-      /^1 of \d+ IDE calls failed:\n- replace RESULT#/u,
-    );
+    expect(codemodeFailures(getToolResultText(run, "snapshots"))).toBe("");
     expect(getToolResultText(run, "ordinary")).toContain(left);
     expect(getToolResultText(run, "ordinary")).toContain(right);
     expect(getToolResultText(run, "ordinary")).toContain("row 2204");
-    const reference = getToolResultText(run, "snapshots").match(/temp:[a-zA-Z0-9-]+/u)?.[0];
+    // A direct call shows a bounded diff and saves the full one as a session-owned temporary result.
+    const full = getToolResultText(run, "full");
+    expect(full).toContain("Diff output is truncated");
+    const reference = full.match(/temp:[a-zA-Z0-9-]+/u)?.[0];
     if (!reference) throw Error("Missing actual temporary result receipt");
     const next = await new PiIntegrationTest({
       ...options,

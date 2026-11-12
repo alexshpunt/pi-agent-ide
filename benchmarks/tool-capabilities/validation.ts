@@ -119,8 +119,11 @@ export interface RouteStep {
   argsAny?: Record<string, unknown>[];
   args?: Record<string, unknown>;
   contains?: string;
-  /** Match the public value delivered to a Codemode script, not human-facing text. */
-  scriptResult?: Record<string, unknown>;
+  /**
+   * Match the public value delivered to a Codemode script, not human-facing text: an object's
+   * fields, a string, or a RegExp that a string value must match.
+   */
+  scriptResult?: Record<string, unknown> | string | RegExp;
   /** Reject copied file text in this tool's own agent-facing result. */
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */

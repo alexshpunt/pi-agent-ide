@@ -204,6 +204,7 @@ const groups: [string[], string[]][] = [
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["read.diff-omission"], ["diff-omission"]],
+  [["codemode.diff-complete"], ["diff-script-complete"]],
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
   [
     ["edit.exact-eof", "edit.delete-empty-replace"],
