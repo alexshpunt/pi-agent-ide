@@ -172,17 +172,23 @@ test("a Read of a search reference shows the matched lines while another session
       `// @options: {"timeout_ms": 150000}
 await tools.bash({command:${JSON.stringify(peer.command)},background:true,name:${JSON.stringify(peer.session)}});
 let rounds = 0;
-for (let round = 1; round <= ${String(readRounds)}; round += 1) {
-  const result = await tools.search({path:"names.cpp",query:"alphaTokenValue"}).then(value=>value.result);
-  const all = /SEARCH#[A-F0-9]+:all:line/u.exec(result)?.[0];
-  check(all !== undefined, "Round " + round + ": the search shows no all reference: " + result);
-  // Each selected line is a line of the identifier; the peer only moves them down.
-  const shown = body(await tools.read({path:all}));
-  check((shown.match(/alphaTokenValue/gu) ?? []).length === ${String(source.tokenOccurrences)} && !shown.includes("total += compute("),
-    "Round " + round + ": the Read of " + all + " shows other lines: " + shown);
-  rounds += 1;
+// A failed round still stops the peer, so it cannot write into the next run's workspace.
+try {
+  for (let round = 1; round <= ${String(readRounds)}; round += 1) {
+    const result = await tools.search({path:"names.cpp",query:"alphaTokenValue"}).then(value=>value.result);
+    const all = /SEARCH#[A-F0-9]+:all:line/u.exec(result)?.[0];
+    check(all !== undefined, "Round " + round + ": the search shows no all reference: " + result);
+    // Each selected line is a line of the identifier; the peer only moves them down.
+    const read = await tools.read({path:all});
+    check(typeof read === "string", "Round " + round + ": the Read of " + all + " failed: " + JSON.stringify(read));
+    const shown = body(read);
+    check((shown.match(/alphaTokenValue/gu) ?? []).length === ${String(source.tokenOccurrences)} && !shown.includes("total += compute("),
+      "Round " + round + ": the Read of " + all + " shows other lines: " + shown);
+    rounds += 1;
+  }
+} finally {
+  await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
 }
-await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
 text("read rounds " + rounds);`,
     );
 
