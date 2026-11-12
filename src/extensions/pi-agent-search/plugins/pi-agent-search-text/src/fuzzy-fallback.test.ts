@@ -208,6 +208,23 @@ test("a candidate found again in newer text stays within its match limit", async
   expect(result.text).toContain("Capture limit reached");
 });
 
+test("a candidate whose name another session removed before registration is not offered", async () => {
+  const cwd = await fixture();
+  const source = path.join(cwd, "src/hints.js");
+  const result = await resolveWhileWriting(
+    { query: "generateHintStrings", path: "src" },
+    cwd,
+    async () =>
+      writeFile(source, (await readFile(source, "utf8")).replaceAll(/\bhintStrings\b/gu, "hints")),
+  );
+
+  expect(result.data.fuzzy?.candidates.map((candidate) => candidate.identifier)).toEqual([
+    "generateHintString",
+  ]);
+  expect(result.text).not.toContain("Possible name: hintStrings");
+  expect(result.text).not.toContain("without stable references");
+});
+
 test("keeps the ordinary zero usable if candidate files vanish before registration", async () => {
   const cwd = await fixture();
   const resolver = createTextResolver(new SearchSessionStore());

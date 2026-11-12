@@ -350,6 +350,8 @@ function createMatchResolver(
               ),
               signal: registrationSignal,
             });
+            // The name is gone from every file it was found in, so it is no longer a possible name.
+            if (captured.matches.length === 0) continue;
             session = await sessions.registerIfCurrent(
               candidate.identifier,
               captured.matches,
