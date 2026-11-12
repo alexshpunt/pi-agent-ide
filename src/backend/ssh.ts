@@ -304,6 +304,20 @@ export class SshBackend {
     };
   }
 
+  /** Stream a whole regular file through one channel while it keeps an lstat `revision`.
+   * `consume` gets ordered chunks and paces the stream. Only startup has a deadline; callers
+   * that need to detect a stalled transfer abort through `context.signal`.
+   */
+  async readStream(
+    filePath: string,
+    revision: string,
+    consume: (bytes: Buffer) => Promise<void>,
+    context: BackendOperationContext = {},
+  ): Promise<{ readonly totalBytes: number; readonly sha256: string }> {
+    const { readSshFileStream } = await import("./ssh-file-stream.ts");
+    return readSshFileStream(this.target, filePath, revision, consume, context);
+  }
+
   /** List directory entries without following symlinks or losing their names. */
   async list(directory: string, context: BackendOperationContext = {}) {
     const data = await this.request({ operation: "list", path: directory }, false, context);

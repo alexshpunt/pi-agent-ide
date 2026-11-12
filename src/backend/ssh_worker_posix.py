@@ -34,6 +34,21 @@ def fingerprint(path, data, info):
     return hashlib.sha256(json.dumps(identity).encode("utf8") + b"\0" + data).hexdigest()
 
 
+@contextmanager
+def stream_source(path):
+    """Open a regular file to stream: its size, revision, a reader and a current-revision check."""
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise OperationError("INVALID_FILE_TYPE")
+        with os.fdopen(fd, "rb", closefd=False) as source:
+            yield (info.st_size, fingerprint(path, b"", info), source.read,
+                   lambda: fingerprint(path, b"", os.fstat(fd)))
+    finally:
+        os.close(fd)
+
+
 def read_snapshot(path):
     # O_NONBLOCK prevents a raced FIFO from turning a file read into a hang.
     fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
