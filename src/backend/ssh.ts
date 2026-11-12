@@ -68,12 +68,6 @@ const journalSchema = Type.Object({
   sourceRevision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
   sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
 });
-const rangeSchema = Type.Object({
-  revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
-  bytes: Type.String(),
-  offset: Type.Integer({ minimum: 0 }),
-  totalBytes: Type.Integer({ minimum: 0 }),
-});
 const entriesSchema = Type.Array(
   Type.Object({
     name: Type.String(),
@@ -281,26 +275,38 @@ export class SshBackend {
     return { bytes: Buffer.from(data.bytes, "base64"), version: data.version };
   }
 
-  /** Read original bytes; revision fingerprints inode/metadata, not a guarded write snapshot. */
+  /** Read an original byte window through one stream; the file must keep its revision meanwhile.
+   * A negative offset counts from the end, both clamp to the file, and an omitted limit reads to
+   * the end. The revision fingerprints inode and metadata, not a guarded write snapshot.
+   * `context.timeoutMs` (default 30 s) bounds startup and each wait for the target's bytes.
+   */
   async readRange(
     filePath: string,
     offset: number,
-    limit: number,
+    limit: number | undefined,
     context: BackendOperationContext = {},
   ) {
-    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(limit) || limit < 0)
+    if (
+      !Number.isSafeInteger(offset) ||
+      (limit !== undefined && !(Number.isSafeInteger(limit) && limit >= 0))
+    )
       throw new TypeError("Byte offset and limit must be safe integers; limit must be nonnegative");
-    const data = await this.request(
-      { operation: "range", path: filePath, offset, limit },
-      false,
+    const chunks: Buffer[] = [];
+    const { readSshFileStream } = await import("./ssh-file-stream.ts");
+    const window = await readSshFileStream(
+      this.target,
+      filePath,
+      { offset, limit, idleMs: context.timeoutMs ?? 30_000 },
+      async (bytes) => {
+        chunks.push(bytes);
+      },
       context,
     );
-    this.checked(rangeSchema, data, filePath, false);
     return {
-      bytes: Buffer.from(data.bytes, "base64"),
-      offset: data.offset,
-      totalBytes: data.totalBytes,
-      revision: data.revision,
+      bytes: Buffer.concat(chunks, window.length),
+      offset: window.offset,
+      totalBytes: window.size,
+      revision: window.revision,
     };
   }
 
@@ -315,7 +321,8 @@ export class SshBackend {
     context: BackendOperationContext = {},
   ): Promise<{ readonly totalBytes: number; readonly sha256: string }> {
     const { readSshFileStream } = await import("./ssh-file-stream.ts");
-    return readSshFileStream(this.target, filePath, revision, consume, context);
+    const sent = await readSshFileStream(this.target, filePath, { revision }, consume, context);
+    return { totalBytes: sent.length, sha256: sent.sha256 };
   }
 
   /** List directory entries without following symlinks or losing their names. */

@@ -1,10 +1,12 @@
+import { randomBytes } from "node:crypto";
 import { chmod, link, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, expect, test, vi } from "vitest";
+import { afterAll, beforeAll, expect, test } from "vitest";
 import { createContentRunner } from "pi-agent-resource";
 import { createTextContentConverter } from "pi-agent-text";
 
 import { SshBackend } from "#src/backend/ssh.ts";
+import { readSshFileStream } from "#src/backend/ssh-file-stream.ts";
 import { SshBackendRegistry } from "#src/backend/registry.ts";
 import { createSshResourceResolver } from "#src/backend/resource-resolver.ts";
 import { startSshFixture, type SshFixture } from "#integration/support/ssh-fixture.ts";
@@ -245,7 +247,7 @@ test("SSH original byte reads cross the snapshot limit without invoking conversi
   const host = createContentRunner({ provider: "filesystem", capability: "read" });
   const resolver = createSshResourceResolver(registry, host, "read");
   const filename = path.join(fixture.workspace, "large-bytes.bin");
-  const expected = Buffer.alloc(33 * 1024 * 1024 + 3, 255);
+  const expected = randomBytes(33 * 1024 * 1024 + 3);
   expected.set([0, 13, 10], expected.length - 3);
   await writeFile(filename, expected);
   const resolved = await resolver.tryResolve(`ssh://fixture${filename}`, { cwd: "/local" });
@@ -255,6 +257,13 @@ test("SSH original byte reads cross the snapshot limit without invoking conversi
   expect(full.byteOffset).toBe(0);
   expect(full.totalBytes).toBe(expected.length);
   expect(Buffer.from(full.bytes).equals(expected)).toBe(true);
+  // A window that starts and ends inside streamed chunks keeps exact byte coordinates.
+  const start = 1024 * 1024 - 5;
+  const length = 3 * 1024 * 1024 + 10;
+  const middle = await resolved.resource.readBytes(start, length, {});
+  expect(middle.byteOffset).toBe(start);
+  expect(middle.totalBytes).toBe(expected.length);
+  expect(Buffer.from(middle.bytes).equals(expected.subarray(start, start + length))).toBe(true);
   const tail = await resolved.resource.readBytes(-3, 2, {});
   expect(Array.from(tail.bytes)).toEqual([0, 13]);
   expect(tail.byteOffset).toBe(expected.length - 3);
@@ -263,40 +272,38 @@ test("SSH original byte reads cross the snapshot limit without invoking conversi
   expect(empty.byteOffset).toBe(expected.length);
 });
 
-test("SSH byte reads reject a same-size external change between chunks", async () => {
-  const registry = new SshBackendRegistry([backend.target]);
-  const host = createContentRunner({ provider: "filesystem", capability: "read" });
-  const resolver = createSshResourceResolver(registry, host, "read");
+test("an SSH byte window rejects a same-size external change while it streams", async () => {
   const filename = path.join(fixture.workspace, "changing-bytes.bin");
-  const source = `ssh://fixture${filename}`;
-  const owner = registry.resolve(source);
-  if (!owner) throw new Error("Missing SSH target");
   await writeFile(filename, Buffer.alloc(5 * 1024 * 1024, 65));
-  const originalRead = owner.backend.readRange.bind(owner.backend);
   let changed = false;
-  const intercepted = vi.spyOn(owner.backend, "readRange").mockImplementation(async (...args) => {
-    const range = await originalRead(...args);
-    if (!changed) {
+  // Rewrite the file after the first chunk, while the rest of the window is still in flight.
+  const outcome = await readSshFileStream(
+    backend.target,
+    filename,
+    { offset: 1024 * 1024, limit: 3 * 1024 * 1024 },
+    async () => {
+      if (changed) return;
       changed = true;
       await writeFile(filename, Buffer.alloc(5 * 1024 * 1024, 66));
-    }
-    return range;
+    },
+  ).then(
+    () => ({ kind: "resolved" }),
+    (error: unknown) => ({ kind: "rejected", error }),
+  );
+  expect(changed).toBe(true);
+  expect(outcome).toMatchObject({
+    kind: "rejected",
+    error: { code: "CONFLICT", effect: "not-applied" },
   });
-  try {
-    const resolved = await resolver.tryResolve(source, { cwd: "/local" });
-    if (resolved.kind !== "resolved" || !resolved.resource.readBytes)
-      throw new Error("Missing original byte reader");
-    const outcome = await resolved.resource.readBytes(0, undefined, {}).then(
-      () => ({ kind: "resolved" }),
-      (error: unknown) => ({ kind: "rejected", error }),
-    );
-    expect(outcome).toMatchObject({
-      kind: "rejected",
-      error: { code: "SOURCE_CHANGED", effect: "not-applied" },
-    });
-  } finally {
-    intercepted.mockRestore();
-  }
+});
+
+test("an SSH byte stream that waits too long for target bytes fails as a timeout", async () => {
+  const filename = path.join(fixture.workspace, "idle-bytes.bin");
+  await writeFile(filename, Buffer.alloc(1024 * 1024, 67));
+  // No reply crosses SSH within a millisecond of the request.
+  await expect(
+    readSshFileStream(backend.target, filename, { idleMs: 1 }, async () => {}),
+  ).rejects.toMatchObject({ code: "TIMEOUT", effect: "not-applied" });
 });
 
 test("parallel SSH commits serialize and only one can consume the same snapshot", async () => {
