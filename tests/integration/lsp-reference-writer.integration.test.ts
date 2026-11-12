@@ -31,14 +31,31 @@ function sourceFile(): string {
 }
 
 /**
+ * The peer writer: it prepends a line every 300 ms through a temp file and a rename, so existing
+ * lines keep their text and only their numbers move. It is a script run by `sh`, since the bash
+ * tool runs commands in the user's shell, which can be fish.
+ */
+const PEER_WRITER = String.raw`i=0
+while [ ! -f stop ]; do
+  i=$((i + 1))
+  { printf '// peer %s\n' "$i"; cat main.cpp; } > peer.tmp && mv peer.tmp main.cpp
+  sleep 0.3
+done
+`;
+
+/** Peer lines the writer must add while the searches run, so that it overlaps several of them. */
+const MIN_WRITES = 10;
+
+/**
  * Every round lists the references of one function while another session keeps writing the file,
  * with a path scope and with a Search result as the scope, and finally renames the whole list.
- * The writer runs inside the Pi workspace, like another agent editing the same file: it prepends
- * a line every 300 ms through a temp file and a rename, so existing lines keep their text and
- * only their numbers move.
+ * The writer runs inside the Pi workspace, like another agent editing the same file. Rounds go on
+ * until the writer has written more than {@link MIN_WRITES} times, however fast the searches are.
  */
 const script = String.raw`
 const expected = ${String(CALLS)} + 1;
+const peerWrites = async () =>
+  Number(/^\d+$/mu.exec(String(await tools.bash({ command: "grep -c '// peer' main.cpp || true" })))?.[0] ?? 0);
 // clangd answers symbol searches from an index it fills after parsing the opened file.
 let warm = "";
 for (let attempt = 1; attempt <= 15; attempt += 1) {
@@ -47,11 +64,7 @@ for (let attempt = 1; attempt <= 15; attempt += 1) {
   await tools.bash({ command: "sleep 2" });
 }
 check(matches(warm).length === expected, "Without a writer the list is already short: " + warm.slice(0, 600));
-await tools.bash({
-  name: "peer-writer",
-  background: true,
-  command: "i=0; while [ ! -f stop ]; do i=$((i+1)); { printf '// peer %s\\n' \"$i\"; cat main.cpp; } > peer.tmp && mv peer.tmp main.cpp; sleep 0.3; done",
-});
+await tools.bash({ name: "peer-writer", background: true, command: "sh peer-writer.sh" });
 const report = [];
 const failures = [];
 const note = (label, result) => {
@@ -64,7 +77,9 @@ const note = (label, result) => {
 let listed;
 let scoped = 0;
 try {
-  for (let round = 1; round <= 3; round += 1) {
+  let round = 0;
+  do {
+    round += 1;
     note("round " + round + " path scope", await tools.lsp_search({ query: "handle", path: "main.cpp", references: true }));
     // A search under a writer sometimes returns a result without anchors; that is LPT-1382, so
     // this round asks again instead of failing, and the run needs one scoped call to count.
@@ -74,7 +89,7 @@ try {
     if (scope === undefined) { report.push("round " + round + " result scope: the search result has no anchor (LPT-1382)"); continue; }
     scoped += 1;
     note("round " + round + " result scope", await tools.lsp_search({ query: "handle", path: scope.ref, references: true }));
-  }
+  } while (round < 3 || (round < 30 && (await peerWrites()) <= ${String(MIN_WRITES)}));
   // An agent renames from the list it got under the writer: every call must move with it.
   listed = note("rename list", await tools.lsp_search({ query: "handle", path: "main.cpp", references: true }));
 } finally {
@@ -86,9 +101,9 @@ for (let attempt = 1; attempt <= 20; attempt += 1) {
   if (!String(await tools.read({ path: "shell:peer-writer" })).includes("status: running")) break;
   await tools.bash({ command: "sleep 0.3" });
 }
-const writes = String(await tools.bash({ command: "grep -c '// peer' main.cpp" })).match(/^\d+$/mu);
-check(writes && Number(writes[0]) > 10, "The concurrent writer did not run: " + report.join("\n"));
-report.push("writes=" + writes[0]);
+const writes = await peerWrites();
+report.push("writes=" + writes);
+check(writes > ${String(MIN_WRITES)}, "The concurrent writer did not run: " + report.join("\n"));
 check(failures.length === 0, failures.join("\n") + "\n" + report.join("\n"));
 check(scoped > 0, "No round could use a result scope: " + report.join("\n"));
 const all = /SEARCH#[A-F\d]+:all:match/.exec(String(listed.result));
@@ -108,6 +123,7 @@ test("lsp_search lists every reference of a function while another session write
       JSON.stringify({ codemode: { mode: "on" } }),
     );
     await writeFile(path.join(cwd, "main.cpp"), sourceFile());
+    await writeFile(path.join(cwd, "peer-writer.sh"), PEER_WRITER);
     const run = await new PiIntegrationTest({
       testName: "lsp-reference-writer",
       artifactsDir: testArtifactsDir(import.meta.filename),
