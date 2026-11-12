@@ -104,6 +104,12 @@ function sourceOf(uri: string, cwd: string): string {
   return path.resolve(parsed.fsPath);
 }
 
+/** A file's text as one pass of {@link searchSymbols} read it. */
+interface Snapshot {
+  readonly document: ReturnType<typeof createTextDocument>;
+  readonly version: string;
+}
+
 /** Symbols found by {@link searchSymbols}. */
 export interface SymbolSearchResult {
   readonly hits: SymbolHit[];
@@ -157,6 +163,23 @@ async function searchSymbolsOnce(
     (await manager.isSourceFile(scope.path, cwd, signal))
   )
     return { hits: [], contents: new Map(), complete: true };
+  // Each file is read once per pass. The server is opened with that text, so its answers and the
+  // hits name the same text unless something else publishes another one meanwhile.
+  const contents = new Map<string, Snapshot>();
+  const reads = new Map<string, Promise<Snapshot>>();
+  const snapshotOf = (source: string): Promise<Snapshot> => {
+    let read = reads.get(source);
+    if (read === undefined) {
+      read = manager.readSourceSnapshot(source, signal).then(({ content, version }) => {
+        const snapshot = { document: createTextDocument(source, content), version };
+        contents.set(source, snapshot);
+        return snapshot;
+      });
+      reads.set(source, read);
+    }
+    return read;
+  };
+  const readText = async (file: string) => (await snapshotOf(sourceOf(file, cwd))).document.content;
   const roots = resultScope?.targets.map((target) => target.source) ??
     scope.paths ?? [scope.path ?? cwd];
   const clients = new Set(
@@ -168,6 +191,7 @@ async function searchSymbolsOnce(
             root,
             (source) => withinScope(source, cwd, scope),
             signal,
+            readText,
           ),
         ),
       )
@@ -177,10 +201,6 @@ async function searchSymbolsOnce(
     throw new Error(
       "LSP symbol search is unavailable: no provider supports workspace/symbol in this scope.",
     );
-  const contents = new Map<
-    string,
-    { document: ReturnType<typeof createTextDocument>; version: string }
-  >();
   // The result scope as the text each hit was read from. Another session may have written the file
   // since the scope was resolved, before or while the server answered; the scope follows its
   // region through unchanged lines, and the call fails when the region is gone.
@@ -214,24 +234,18 @@ async function searchSymbolsOnce(
   ): Promise<SearchSelectionMatch> => {
     signal?.throwIfAborted();
     const source = sourceOf(location.uri, cwd);
-    let snapshot = contents.get(source);
-    if (snapshot === undefined) {
-      const { content, version } = await manager.readSourceSnapshot(source, signal);
-      snapshot = { document: createTextDocument(source, content), version };
-      contents.set(source, snapshot);
-      if (resultScope !== undefined)
-        scopeIn.set(
-          source,
-          resultTargetsInText(
-            {
-              targets: resultScope.targets.filter((target) => target.source === source),
-              complete: resultScope.complete,
-            },
-            new Map([[source, content]]),
-          ),
-        );
-    }
-    const { document } = snapshot;
+    const { document } = await snapshotOf(source);
+    if (resultScope !== undefined && !scopeIn.has(source))
+      scopeIn.set(
+        source,
+        resultTargetsInText(
+          {
+            targets: resultScope.targets.filter((target) => target.source === source),
+            complete: resultScope.complete,
+          },
+          new Map([[source, document.content]]),
+        ),
+      );
     const served = client?.documentContent(location.uri);
     const range =
       served === undefined || served === document.content
@@ -270,11 +284,11 @@ async function searchSymbolsOnce(
     };
   };
   /**
-   * The declaration's position in the text the server holds now. Our own reads keep the server in
-   * step with the file, so a position of the text a declaration was read from can name another
-   * line in the server's text after another session wrote the file; the server then reports no
-   * references there. The position follows its unchanged line into the served text instead, and
-   * the call runs again when that line is gone.
+   * The declaration's position in the text the server holds now. Another search or edit in this
+   * process can publish a newer text of the file than the one this pass read, so a position of the
+   * text a declaration was read from can name another line in the server's text after another
+   * session wrote the file; the server then reports no references there. The position follows its
+   * unchanged line into the served text instead, and the call runs again when that line is gone.
    */
   const servedPosition = (
     client: { documentContent(uri: string): string | undefined },
@@ -310,7 +324,7 @@ async function searchSymbolsOnce(
   const hits: SymbolHit[] = [];
   const seen = new Set<string>();
   const errorsOf = diagnosticErrors(
-    (uri) => manager.openFile(sourceOf(uri, cwd), cwd, "symbols", signal),
+    (uri) => manager.openFile(sourceOf(uri, cwd), cwd, "symbols", signal, readText),
     signal,
   );
   // A search with references can leave its scope; without them it lists only hits inside it.
@@ -358,6 +372,7 @@ async function searchSymbolsOnce(
         cwd,
         "symbols",
         signal,
+        readText,
       );
       if (opened === null)
         throw new Error("LSP references are unavailable for a discovered declaration.");
@@ -484,7 +499,8 @@ async function searchSymbolsOnce(
   const moved = new Map<string, LinePositionMap>();
   // The text each source's hits end up on: the last text read of it.
   const mappedOnto = new Map<string, string>();
-  for (const [source, snapshot] of contents) {
+  for (const source of new Set(hits.map((hit) => hit.source))) {
+    const snapshot = requiredValue(contents.get(source));
     const current = await manager.readSourceSnapshot(source, signal);
     mappedOnto.set(source, current.content);
     if (current.version !== snapshot.version && current.content !== snapshot.document.content)
