@@ -80,12 +80,14 @@ Other push-only servers return a `snapshot`: the latest publication, with no pro
 
 ## Terminal sessions
 
-Codemode receives the same readable shell status and output as direct calls. The result includes its session source and a reference to the complete log when output is shortened. A wait timeout leaves a running session, not a failed command. Inspect the reported exit status and effects; failed tools can reject.
+Codemode receives the same readable shell status and output as direct calls. The result includes its session source and a reference to the complete log when output is shortened. A wait timeout leaves a running session, not a failed command. Inspect the reported exit status and effects. A command that fails, including one with a non-zero exit status, resolves to `null`, and the Codemode result lists it with its output.
 
 ```ts
 const result = await tools.bash({ command: "your-command" });
-text(result);
-text(await tools.read({ path: result }));
+if (result !== null) {
+  text(result);
+  text(await tools.read({ path: result }));
+}
 ```
 
 `bash` (Linux/WSL) or `powershell` (Windows) starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.

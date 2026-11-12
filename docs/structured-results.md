@@ -1,6 +1,6 @@
 # Readable IDE results and private records
 
-IDE tools expose readable text in direct calls. In native Codemode, Search returns `{ result, hasMatches, complete }`. `result` is the unchanged readable Search string used for composition. The two nullable facts describe original matches and query coverage, independently of display truncation. Unknown facts are `null`; a failed call still rejects.
+IDE tools expose readable text in direct calls. In native Codemode, Search returns `{ result, hasMatches, complete }`. `result` is the unchanged readable Search string used for composition. The two nullable facts describe original matches and query coverage, independently of display truncation. Unknown facts are `null`.
 
 An image Read in Codemode returns the native image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames, so scripts can pass it to `image()`, `models.classify()` or Write `image` to save it as a file. Its `note` is the readable result string used for composition. Successful text Reads and other text tools return strings. Private result records remain hidden.
 
@@ -12,9 +12,7 @@ Each readable result string starts with a labelled system-result envelope contai
 const source = await tools.read({ path: "notes.txt", offset: 10, limit: 20 });
 if (typeof source === "string") {
   const matches = await tools.search({ path: source, query: "regex:old\\w*" });
-  text(await tools.replace({ path: matches.result, text: "new" }));
-} else if ("status" in source && source.status === "error") {
-  text(source.errors);
+  if (matches !== null) text(await tools.replace({ path: matches.result, text: "new" }));
 }
 ```
 
@@ -40,7 +38,7 @@ Each tool owns its validated record. Read, Search, Diff, terminals, Git and debu
 
 The text registry stores only ownership, a digest of the issued text, source references, resource identities and whether the result can be consumed. It does not copy line arrays, removed file contents, image bytes or debugger records into a second ledger. Source ranges and snapshots remain in the source-target store.
 
-The unified registration adapter declares the small public Codemode schemas of Search and Read and hides their private domain records. Public tool_result hooks register the source metadata, preserve readable content for direct calls, and attach only the public script value as structuredContent. Other text tools keep their existing return behavior, including resource-provider values. This does not modify Pi, rewrite scripts, add VM methods, or recognize JSON in Codemode output.
+The unified registration adapter declares a Codemode output schema for every IDE tool, the tool's value or `null`, and hides private domain records. Each tool's value, its schema and its projection from a successful result, lives in that tool's own module in `src/composite/script-values/`, so a change to one tool's value touches one module. A tool without its own module resolves to its readable string. `match.ts` holds the one match type reserved for the values of Search, ast_search and lsp_search; today all three resolve to `{ result, hasMatches, complete }`. Public tool_result hooks register the source metadata, preserve readable content for direct calls, and attach only the public script value as structuredContent. Edit tools keep resource-provider values. This does not modify Pi, rewrite scripts, add VM methods, or recognize JSON in Codemode output.
 
 Nested image blocks are delivered on the parent Codemode result once; an image the script already showed with `image()` is not attached again. Their bytes are not printed as text. Images remain ordinary native image content.
 Read's private native record contains image type and MIME metadata, not another copy of the image bytes. Large images therefore do not overflow the JSON-record budget while their native content stays unchanged.
@@ -65,11 +63,19 @@ Metadata does not change an operation's effect or authorize a retry. A renderer 
 
 ## Errors and writes
 
-A completed failed Read resolves to `{ status: "error", errors }` in Codemode. The nonempty `errors` array contains public errors with `code`, `message`, optional `source` and permitted `metadata`. Private Read data and diagnostics are excluded. An error `message` carries the same recovery steps a direct call shows, such as the anchors Read to repeat or exact path candidates. This value supplies no usable source selection; inspect it before composing another tool call. Direct calls keep readable failure text and the error flag.
+In Codemode, every IDE tool resolves to `null` when its call fails, and the script continues. Failures include refusals such as an expired or unknown result reference and system-result text passed as file content, an edit that changed only some files or whose effect is unknown, and a call after a failed editor batch. Each tool declares its value or `null` as its output schema. Calls that already succeeded stay applied. A resource provider's action that is refused or has an unknown effect keeps its object receipt instead of `null`, because the receipt says what happened.
+
+The Codemode result ends with a block that lists every failed IDE call, both when the script completes and when it throws. It starts with a count such as `2 of 300 IDE calls failed:`. Each entry names the tool and the source it was given, followed by the readable error text a direct call shows, including its recovery steps and anchors. A failed edit that changed files, or whose effect is unknown, names those files and says not to repeat the edit blindly. Edits that a batch accepted and that failed when the batch was saved are listed as well; their value was already returned when they were accepted.
+
+Error text carries no system-result envelope, so a failed result cannot be passed on as a selection. Direct calls keep readable failure text and the error flag.
+
+Pi still rejects calls that never reach an IDE tool: arguments that do not match the tool's schema, unknown tools, and calls blocked by another extension's `tool_call` handler. Use try/catch or `Promise.allSettled` for those.
+
+Pi 1.5.2 drops a `null` `structuredContent` that a `tool_result` handler returns. The IDE therefore sets the failure value on the nested result in `tool_execution_end`, which Pi emits before it hands that result to the script.
 
 For a fragmented address, a declared `ResourceError` owns the failure of that complete resource. Read preserves its public code and source without retrying the bare address or interpreting the fragment as a text anchor. Ordinary unclaimed addresses can still use text-anchor fallback.
 
-Other failure paths, including blocked calls and pending-edit commit failures, can still reject. Use try/catch or Promise.allSettled when independent calls may fail, and inspect fulfilled Read values for `status: "error"`. Check the readable operation effects and final parent result before retrying. An error does not prove rollback.
+Check the readable operation effects and the failure block of the parent result before retrying. An error does not prove rollback.
 
 Automatic batch boundaries save pending edits, not their final formatting. Write finishes its own post-edit processing before returning. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
 
