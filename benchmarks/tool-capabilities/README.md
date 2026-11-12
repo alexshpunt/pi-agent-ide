@@ -45,6 +45,8 @@ IDE filesystem, GitHub and Linear approvals use the shared operation dialog. Ter
 
 The `ssh-guide` case checks that Read exposes SSH setup guidance before any target is configured. It does not verify connection setup, reload, or remote operations. Its direct and Codemode routes remain unverified until a paid run.
 
+The Codemode-only `shell-script-value` case checks that a script reads `exit_code` and `output` of a command that exits non-zero from the returned object, and deletes a background session through its `session` field. Truncation of long output and a command that cannot start are covered by `shell-result.integration.test.ts`, not a paid route. `powershell`, `remote_bash` and `remote_powershell` share the same value; only `bash` has a paid route. Its route remains unverified until paid execution.
+
 `remote_powershell` and `remote_bash` exist only when an SSH target of the other OS is configured, so the free inventory never lists them and no paid case covers them. The free inventory loads the IDE from an empty agent directory and project, so your own `ssh.json` targets and IDE settings do not change the gate. Registration and working-directory rules are checked by focused unit tests, and execution on a Windows target by live checks. Their direct and Codemode routes remain unverified.
 
 The `debug-backend-fallback` case checks the explicit VS Code refusal and recovery through the native backend; the sandbox has no VS Code. Debugging through VS Code and DebugMCP needs the user's running VS Code window, so it is checked live, not by a paid route.

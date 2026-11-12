@@ -55,7 +55,7 @@ const MIN_WRITES = 10;
 const script = String.raw`
 const expected = ${String(CALLS)} + 1;
 const peerWrites = async () =>
-  Number(/^\d+$/mu.exec(String(await tools.bash({ command: "grep -c '// peer' main.cpp || true" })))?.[0] ?? 0);
+  Number(/^\d+$/mu.exec((await tools.bash({ command: "grep -c '// peer' main.cpp || true" })).output)?.[0] ?? 0);
 // clangd answers symbol searches from an index it fills after parsing the opened file.
 let warm = "";
 for (let attempt = 1; attempt <= 15; attempt += 1) {
@@ -109,7 +109,7 @@ check(scoped > 0, "No round could use a result scope: " + report.join("\n"));
 const all = /SEARCH#[A-F\d]+:all:match/.exec(String(listed.result));
 check(all, "The reference list has no all-match anchor: " + String(listed.result).slice(0, 400));
 await tools.replace({ path: all[0], text: "dispatch" });
-const counted = String(await tools.bash({ command: "grep -c dispatch main.cpp; grep -c handle main.cpp || true" }));
+const counted = (await tools.bash({ command: "grep -c dispatch main.cpp; grep -c handle main.cpp || true" })).output;
 const counts = (counted.match(/^\d+$/gm) ?? []).map(Number);
 report.push("renamed=" + counts[0] + " left=" + counts[1]);
 check(counts[0] === expected && counts[1] === 0, "The rename left calls behind: " + report.join("\n"));

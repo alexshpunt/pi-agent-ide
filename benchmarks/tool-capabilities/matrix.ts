@@ -254,6 +254,8 @@ const groups: [string[], string[]][] = [
   [["shell.image", "shell.sequence"], ["shell-screen"]],
   // The process list sent after compaction has deterministic registry and live checks.
   [["shell.name", "shell.list", "shell.search-all", "shell.rename"], ["shell-catalog"]],
+  // Scripts get Pi's bash fields; a non-zero exit is a value, so the Codemode result lists no failure.
+  [["shell.script-value"], ["shell-script-value"]],
   [
     [
       "debug.create",

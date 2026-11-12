@@ -110,7 +110,7 @@ try {
 } finally {
   await tools.delete({ path: ${JSON.stringify(`shell:${peer.session}`)} });
 }
-const writes = String(await tools.bash({ command: "grep -c '// peer' main.cpp" })).match(/^\d+$/mu);
+const writes = (await tools.bash({ command: "grep -c '// peer' main.cpp" })).output.match(/^\d+$/mu);
 check(writes && Number(writes[0]) > ${String(ROUNDS)}, "The concurrent writer did not run: " + report.join("\n"));
 report.push("writes=" + writes[0]);
 check(failures.length === 0, failures.join("\n") + "\n" + report.join("\n"));

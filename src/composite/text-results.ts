@@ -202,7 +202,7 @@ export function createIdeTextResults(
   pi.on("agent_end", clearCalls);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
-      "Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. A failed IDE call returns null (a resource provider's action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
+      "Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. Terminal tools return { output, exit_code, truncated, full_output_path, wall_time_seconds, session }; a non-zero exit_code is a value, not a failure. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. A failed IDE call returns null (a resource provider's action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -464,7 +464,11 @@ export function createIdeTextResults(
       );
       const valueInput = { shown, outcome, content: event.content, details: event.details };
       const scriptValue = scriptValueOf(event.toolName);
-      const projected = failed ? scriptValue.failed?.(valueInput) : scriptValue.project(valueInput);
+      // An error that scripts receive as a value, such as a non-zero exit code, is not a failure.
+      const scriptFailed = failed && scriptValue.succeeded?.(valueInput) !== true;
+      const projected = scriptFailed
+        ? scriptValue.failed?.(valueInput)
+        : scriptValue.project(valueInput);
       // A value that is the readable text stays off the record: Pi gives scripts the text then,
       // and direct results keep their shape.
       const value = projected === shown ? undefined : projected;
@@ -484,14 +488,14 @@ export function createIdeTextResults(
             tool: event.toolName,
             ...(label === undefined ? {} : { source: label }),
           },
-          failed
+          scriptFailed
             ? {
                 reason,
                 ...fileEffects(outcome, (source) => displayPath(source, context.cwd)),
               }
             : undefined,
         );
-        if (failed && value === undefined) failedNested.add(event.toolCallId);
+        if (scriptFailed && value === undefined) failedNested.add(event.toolCallId);
       }
       return {
         content: [

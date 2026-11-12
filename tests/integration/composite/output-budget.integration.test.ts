@@ -437,7 +437,7 @@ test("stresses write-result scopes, verified anchors and annotation views withou
 test("bounds terminal images and maximum-length sequences even with non-cropping offsets", async () => {
   const cwd = await workspace();
   const scripts = [
-    'const launched = await tools.bash({command:"printf budget-frame; sleep 60",background:true,cols:300,rows:120}); const source=/session: (shell:[a-f\\d]+)/u.exec(launched)?.[1]; if (!source) throw new Error("Missing terminal source"); store("terminal",source); text(source);',
+    'const launched = await tools.bash({command:"printf budget-frame; sleep 60",background:true,cols:300,rows:120}); const source=launched.session; if (!source) throw new Error("Missing terminal source"); store("terminal",source); text(source);',
     'text(await tools.read({path:load("terminal"),views:["image:scale=1"],offset:0,limit:1}));',
     'text(await tools.read({path:load("terminal"),views:["sequence:duration=0.019,interval=0.001,scale=1"],offset:0,limit:1}));',
     'text(await tools.delete({path:load("terminal")}));',
@@ -836,8 +836,8 @@ test("stresses limits on HTTP text and terminal search", async () => {
               name: "codemode",
               arguments: {
                 code: `const started = await tools.bash({command:"for i in $(seq 1 4000); do echo needle-$i; done",timeoutSeconds:10});
-          const source = /shell:[a-f\\d]+/.exec(started)?.[0];
-          if (!source) throw new Error(started);
+          const source = started.session;
+          if (!source) throw new Error(JSON.stringify(started));
           for (const limit of [1,80,1000]) {
             const result = await tools.search({query:"needle",path:source,limit}).then(value => value.result);
             const count = /(\\d+)\\+? match(?:es)? in/.exec(result)?.[1];

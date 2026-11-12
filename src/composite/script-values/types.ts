@@ -26,4 +26,10 @@ export interface ScriptValue {
    * receipt of a refused computer action. Without one, a failed call resolves to `null`.
    */
   failed?(input: ScriptValueInput): JsonValue | undefined;
+  /**
+   * Whether a call that a direct result reports as an error succeeded for scripts, such as a
+   * command that exited with a non-zero code. It then resolves to `project` and the Codemode result
+   * does not list it as failed.
+   */
+  succeeded?(input: ScriptValueInput): boolean;
 }
