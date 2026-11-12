@@ -9,6 +9,9 @@ import { LspServerRegistry } from "./registry.ts";
 import { LspSharedServers } from "./shared-servers.ts";
 import { searchSymbols } from "./symbol-search.ts";
 
+/** Startup timeout of a server that exits during startup; reporting the exit must not wait for it. */
+const STARTUP_TIMEOUT_MS = 10_000;
+
 const directories: string[] = [];
 afterEach(async () => {
   await LspManager.resetForTest();
@@ -143,6 +146,7 @@ test.each([false, true])(
           servers: {
             fixture: {
               command: [process.execPath, proxy],
+              timeoutMs: STARTUP_TIMEOUT_MS,
               rootMarkers: [],
               languages: { fixture: { extensions: [".fx"] } },
               capabilities: ["diagnostics"],
@@ -159,12 +163,15 @@ test.each([false, true])(
     await expect(manager.getOrStart(".fx", cwd, "symbols")).rejects.toThrow(
       "[lsp] fixture exited during startup with code 1: error: Unknown binary 'fixture-server' in official toolchain",
     );
-    expect(Date.now() - started).toBeLessThan(1000);
+    // Starting the process (and the shared host) can take seconds on a busy machine; the exit must
+    // still be reported well before the startup timeout would end the wait.
+    expect(Date.now() - started).toBeLessThan(STARTUP_TIMEOUT_MS / 2);
 
     await writeFile(installed, "");
     const client = await manager.getOrStart(".fx", cwd, "symbols");
     expect(client?.ready).toBe(true);
   },
+  STARTUP_TIMEOUT_MS * 2,
 );
 
 test.each([false, true])(
@@ -224,6 +231,8 @@ test.each([false, true])(
         "[lsp] stuck is still loading the project (Loading); its results would be incomplete. Try again later.",
     });
   },
+  // The wait for the stuck server alone takes its 3 s timeout, after two server starts.
+  20_000,
 );
 
 async function workspaceProviderFixture(
