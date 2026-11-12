@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, type BigIntStats } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -45,16 +45,29 @@ const event = "pi-agent-resource:result-targets";
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 1;
+export const RESULT_TARGET_STORE_VERSION = 2;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
+/**
+ * How long after a file's last change its stamp cannot prove that the file stayed the same. A
+ * filesystem timestamp advances in ticks: a few milliseconds on Linux before 6.13, one or two
+ * seconds on filesystems that store whole seconds. A rewrite of the same size within one tick keeps
+ * the stamp, so the text of such a file is compared too.
+ */
+const racyWindowNs = 100_000_000n;
+const racyWholeSecondWindowNs = 2_000_000_000n;
+/** Reads a file's metadata, throwing when the file is missing. */
+export type FileStatReader = (file: string) => BigIntStats;
+const localStat: FileStatReader = (file) => statSync(file, { bigint: true });
 /** What the store knows about one file of one worktree. */
 interface FileSnapshot {
   readonly source: string;
   readonly cwd: string;
   /** Filesystem generation; `undefined` for a missing file or a source without one. */
   readonly stamp: string | undefined;
+  /** The file changed within one timestamp tick of `stamp`: a later change may keep the stamp. */
+  readonly racy?: boolean;
   /** The file's text at `stamp`, once read. Every selection of the file is kept on this text. */
   content?: string;
   /** Another string object with the same text as `content`, so repeated comparisons stay cheap. */
@@ -82,6 +95,12 @@ export class ResultTargetStore {
   >();
   /** One retained copy of each current source text, shared by every entry that snapshots it. */
   readonly #contents = new Map<string, { identity: string; content: string }>();
+  readonly #stat: FileStatReader;
+
+  /** `stat` reads the metadata that detects file changes; it defaults to the local filesystem. */
+  public constructor(options: { readonly stat?: FileStatReader } = {}) {
+    this.#stat = options.stat ?? localStat;
+  }
 
   /** Forget results when the session closes or the extensions reload. */
   public clear(): void {
@@ -394,19 +413,22 @@ export class ResultTargetStore {
   public refresh(source: string, cwd: string, changed = false): void {
     const identity = sourcePath(source, cwd);
     const key = JSON.stringify([path.resolve(cwd), identity]);
-    const stamp = fileStamp(source, cwd);
+    const observed = fileStamp(source, cwd, this.#stat);
+    const stamp = observed?.stamp;
     const previous = this.#snapshots.get(key);
     // Live session results stay current by design, so input sent to them never retires the result.
     const edited = changed && !liveResource.test(source);
-    if (edited || (previous && previous.stamp !== stamp)) {
+    let snapshot: FileSnapshot;
+    if (
+      edited ||
+      (previous && (previous.stamp !== stamp || changedWithinTick(previous, identity)))
+    ) {
       const content = this.#retire(identity, stamp);
-      this.#snapshots.set(key, {
-        source,
-        cwd,
-        stamp,
-        ...(content === undefined ? {} : { content }),
-      });
-    } else this.#snapshots.set(key, { ...previous, source, cwd, stamp });
+      snapshot = { source, cwd, stamp, ...(content === undefined ? {} : { content }) };
+    } else snapshot = { ...previous, source, cwd, stamp };
+    // A later change may keep this stamp, so keep the text it is compared with.
+    if (observed?.racy === true) snapshot.content ??= readLocalText(identity);
+    this.#snapshots.set(key, { ...snapshot, racy: observed?.racy === true });
   }
 
   /** Check surviving snapshots at a script boundary, including final formatting. */
@@ -649,13 +671,31 @@ function readLocalText(file: string): string | undefined {
     return undefined;
   }
 }
-function fileStamp(source: string, cwd: string): string | undefined {
+/**
+ * A file's generation, and whether it changed so recently that a same-size rewrite in the same
+ * timestamp tick would keep it.
+ */
+function fileStamp(
+  source: string,
+  cwd: string,
+  readStat: FileStatReader = localStat,
+): { readonly stamp: string; readonly racy: boolean } | undefined {
+  let stat;
   try {
-    const stat = statSync(sourcePath(source, cwd), { bigint: true });
-    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    stat = readStat(sourcePath(source, cwd));
   } catch {
     return undefined;
   }
+  const changedNs = stat.mtimeNs > stat.ctimeNs ? stat.mtimeNs : stat.ctimeNs;
+  const window = changedNs % 1_000_000_000n === 0n ? racyWholeSecondWindowNs : racyWindowNs;
+  // A timestamp ahead of this clock, such as one from a network share, is racy too.
+  const racy = BigInt(Date.now()) * 1_000_000n - changedNs < window;
+  return { stamp: `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`, racy };
+}
+/** Whether a file whose stamp could not prove it unchanged now holds other text than its snapshot. */
+function changedWithinTick(snapshot: FileSnapshot, identity: string): boolean {
+  if (snapshot.racy !== true || snapshot.content === undefined) return false;
+  return readLocalText(identity) !== snapshot.content;
 }
 /** Verify retained source snapshots for tools and provider refresh operations. */
 export async function verifyResultTargets(
