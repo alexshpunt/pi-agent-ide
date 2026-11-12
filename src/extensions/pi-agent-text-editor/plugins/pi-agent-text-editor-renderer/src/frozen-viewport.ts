@@ -30,9 +30,12 @@ export function freezeMutationViewports(
 ): FrozenMutationViewports {
   return {
     resources: resources.flatMap((resource) => {
+      // Windows depend only on where the changed blocks are, so line pairing would be wasted work.
       const model =
         resource.model ??
-        createDiffModel(resource.beforeContent, resource.afterContent, resource.ranges);
+        createDiffModel(resource.beforeContent, resource.afterContent, resource.ranges, {
+          pairLines: false,
+        });
       const windows = freezeWindows(model, resource);
       const focusAfterLine = model.rows[model.focusRow]?.afterLine;
       return windows.length === 0

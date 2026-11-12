@@ -55,7 +55,13 @@ interface HunkWindow {
 const LINE_PAIR_THRESHOLD = 0.5;
 const DIFF_BUDGET_MS = 100;
 const MAX_ALIGNMENT_CELLS = 16_000;
-const MAX_DIFF_CHARACTERS = 1_000_000;
+/**
+ * Combined size of the two documents a diff accepts. Splitting and comparing lines is linear work
+ * outside the time budget; two 2 MB files still finish well inside it.
+ */
+const MAX_DIFF_CHARACTERS = 4_000_000;
+/** Combined size of two lines compared character by character. */
+const MAX_INLINE_CHARACTERS = 1_000_000;
 
 const NON_SEMANTIC_TOKENS = new Set([
   "async",
@@ -87,6 +93,11 @@ export interface DiffModelOptions {
   readonly afterLineOffset?: number;
   readonly project?: boolean;
   readonly focusAfterLine?: number;
+  /**
+   * false leaves each changed block as removed rows followed by added rows, the shape a block takes
+   * when pairing runs out of budget. Callers that need only where the changes are skip its cost.
+   */
+  readonly pairLines?: boolean;
 }
 
 export function createDiffModel(
@@ -100,6 +111,7 @@ export function createDiffModel(
     afterContent,
     (options.beforeLineOffset ?? 0) + 1,
     (options.afterLineOffset ?? 0) + 1,
+    options.pairLines ?? true,
   );
   if (fullRows === undefined) {
     return {
@@ -133,6 +145,7 @@ function createSemanticRows(
   afterContent: string,
   beforeStartLine = 1,
   afterStartLine = 1,
+  pairLines = true,
 ): readonly DiffRow[] | undefined {
   if (beforeContent.length + afterContent.length > MAX_DIFF_CHARACTERS) return undefined;
   const deadline = performance.now() + DIFF_BUDGET_MS;
@@ -178,7 +191,7 @@ function createSemanticRows(
     const added = after
       .slice(change.newStart, change.newEnd)
       .map((text, index) => ({ text, line: afterStartLine + newIndex + index }));
-    const aligned = alignChangedLines(removed, added, deadline);
+    const aligned = pairLines ? alignChangedLines(removed, added, deadline) : undefined;
     // Detailed pairing is optional: the line comparison already identified this changed block.
     rows.push(
       ...(aligned ?? [
@@ -444,7 +457,7 @@ export function compareInlineText(
   | { readonly addedRanges: readonly DiffTextRange[]; readonly deletedOffsets: readonly number[] }
   | undefined {
   const timeout = deadline - performance.now();
-  if (timeout <= 0 || before.length + after.length > MAX_DIFF_CHARACTERS) return undefined;
+  if (timeout <= 0 || before.length + after.length > MAX_INLINE_CHARACTERS) return undefined;
   const parts = diffChars(before.trim(), after.trim(), { timeout, maxEditLength: 5_000 });
   if (parts === undefined) return undefined;
   const addedRanges: DiffTextRange[] = [];
