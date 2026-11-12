@@ -27,8 +27,8 @@ importers:
         specifier: 1.12.0
         version: 1.12.0
       node-pty:
-        specifier: ^1.1.0
-        version: 1.1.0
+        specifier: 1.2.0-beta.18
+        version: 1.2.0-beta.18
       pi-agent-doctor:
         specifier: workspace:^
         version: link:packages/pi-agent-doctor
@@ -3111,6 +3111,9 @@ packages:
   node-pty@1.1.0:
     resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
 
+  node-pty@1.2.0-beta.18:
+    resolution: {integrity: sha512-3Rej3788OnasAwoSmTZhlCeUraJ9CQldtL5b571b9+3Nv47+PaxA5VPIGOOs+16OYQePTrC1Lrs8a9/df5WPRg==}
+
   nth-check@3.0.1:
     resolution: {integrity: sha512-GX0gsdbGVCgnRgbeGaubfjpBXyYRWOOCVeYh08bSQvDZqxz5ndXs1OTfAt/h36G1xvI94YIspsI0sVFqAV9+RQ==}
     engines: {node: '>=20.19.0'}
@@ -5436,6 +5439,10 @@ snapshots:
   node-gyp-build@4.8.4: {}
 
   node-pty@1.1.0:
+    dependencies:
+      node-addon-api: 7.1.1
+
+  node-pty@1.2.0-beta.18:
     dependencies:
       node-addon-api: 7.1.1
 
