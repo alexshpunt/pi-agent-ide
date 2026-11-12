@@ -168,9 +168,9 @@ text("files done");
           call("terminal", "codemode", {
             code: `
 const shell = tools[${JSON.stringify(shell)}];
-const started = String(await shell({ command: ${JSON.stringify(commands.greet)}, cwd: ${JSON.stringify(root)}, background: true }));
-const session = started.match(/shell:[0-9a-f]{12}/)?.[0];
-if (!session) throw Error("No terminal session: " + started);
+const started = await shell({ command: ${JSON.stringify(commands.greet)}, cwd: ${JSON.stringify(root)}, background: true });
+const session = started?.session;
+if (!session) throw Error("No terminal session: " + JSON.stringify(started));
 await shell({ command: ${JSON.stringify(commands.pause)}, cwd: ${JSON.stringify(root)} });
 await tools.write({ path: session, content: "verifier" });
 await tools.insert({ path: session, text: "Enter" });
@@ -190,10 +190,10 @@ await tools.write({ path: committed, content: "one\\nTWO\\nthree\\n" });
 const anchor = (value) => String(value).match(/CHANGE#[0-9A-F]{4,64}/)?.[0];
 const change = anchor(await tools.read({ path: root + "/repo/a.txt", views: ["changes"] }));
 await tools.stage({ file: root + "/repo/a.txt", change });
-text("STAGED:" + String(await shell({ command: "git -C repo diff --cached --name-only", cwd: root })));
+text("STAGED:" + JSON.stringify((await shell({ command: "git -C repo diff --cached --name-only", cwd: root })).output));
 const staged = anchor(await tools.read({ path: root + "/repo/a.txt", views: ["changes"] }));
 await tools.undo({ file: root + "/repo/a.txt", change: staged });
-text("STATUS:" + String(await shell({ command: "git -C repo status --porcelain", cwd: root })));
+text("STATUS:" + JSON.stringify((await shell({ command: "git -C repo status --porcelain", cwd: root })).output));
 `,
           }),
           assistantMessage([text("SSH tools finished.")]),
@@ -233,12 +233,19 @@ text("STATUS:" + String(await shell({ command: "git -C repo status --porcelain",
       expect(await readFile(path.join(cwd, "tree-back/inner/leaf.txt"), "utf8")).toBe("leaf\r\n");
 
       const git = getToolResultText(run, "git");
-      expect(outputLines(git.slice(git.indexOf("STAGED:"), git.indexOf("STATUS:")))).toContain(
-        "a.txt",
-      );
-      expect(outputLines(git.slice(git.indexOf("STATUS:"))).filter((line) => line.trim())).toEqual(
-        [],
-      );
+      // The script prints each command's output as JSON after its label.
+      const output = (label: string): string => {
+        const printed = new RegExp(`^${label}:(".*")$`, "mu").exec(git)?.[1];
+        if (printed === undefined) throw new Error(`No ${label} output in ${git}`);
+        return JSON.parse(printed) as string;
+      };
+      // Terminal output keeps the pseudo-terminal's carriage returns.
+      expect(
+        output("STAGED")
+          .split("\n")
+          .map((line) => line.trim()),
+      ).toContain("a.txt");
+      expect(output("STATUS").trim()).toBe("");
       expect((await fixture.get("repo/a.txt")).toString("utf8").replaceAll("\r", "")).toBe(
         "one\ntwo\nthree\n",
       );
