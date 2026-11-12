@@ -160,6 +160,8 @@ The `read-error-direct` and `read-error-codemode` cases also check a declared fa
 
 The `diff-script-complete` case diffs a file with more lines than a tool result shows in a Codemode script and requires the complete unified diff as the script value, then an empty string for equal sources; `read-diff` and `diff-omission` also check the diff value. These routes remain unverified until paid execution.
 
+The `value-id-source` case passes objects with an `id` as Search's and Replace's `path` in one Codemode call; a route reuses a result when an object's `id` is `RESULT#` with that result's UUID. Until Read and Search values carry an `id`, the task tells the model to build the object from the result envelope. Direct calls with such an object, arrays of them, ignored fields and unknown ids are covered by the focused `source-value-schemas` and `codemode-source-values` tests, not a paid route. Its Codemode route remains unverified until paid execution.
+
 The `write-json-text` case checks that Write saves JSON text byte for byte, including `1.0`, spacing and escaped quotes. Its direct route matters most on Anthropic models: their tool-call layer converts parameter text by the declared schema, so a field that also accepts objects would receive JSON text as an object. Providers that pass the model's JSON arguments unchanged do not exercise that conversion. `read-image-write` passes the image through Write `image`, not `content`.
 
 ## Required maintenance

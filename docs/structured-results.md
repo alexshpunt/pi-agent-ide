@@ -16,7 +16,7 @@ if (typeof source === "string") {
 }
 ```
 
-Pass the unchanged result string to a supported source parameter. Use Search's `result` field inside Codemode. Direct calls also accept the issued UUID. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
+Pass the unchanged result string to a supported source parameter. Use Search's `result` field inside Codemode. Direct calls also accept the issued UUID. A source parameter also accepts an object whose `id` holds a `RESULT#` reference, alone or in a list, such as a value a tool returned to the script; the IDE resolves the id and ignores the object's other fields. An id the IDE did not issue fails like an unknown reference, even when it names a file. `file_search` and `semantic_search` take paths only, not results or values. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
 
 A result identifies its backend-owned ranges, not the text in its preview. Shortened output does not clip a complete selection or make an incomplete selection complete. Read around a selection may show context without granting authority to edit it.
 
