@@ -17,7 +17,7 @@ import {
   WORKER_HANDSHAKE,
   type SshCommand,
 } from "./ssh-transport.ts";
-import { sshRoute } from "./ssh-master.ts";
+import { directSshRoute, sshRoute } from "./ssh-master.ts";
 
 const handshakeMarker = Buffer.from(WORKER_HANDSHAKE, "ascii");
 const handshakeSchema = Type.Object({ platform: Type.String(), accepted: Type.Boolean() });
@@ -114,18 +114,18 @@ export async function startSshProcess(
     ...(known === undefined ? [] : [known]),
     ...interpreterCandidates(os).filter((candidate) => candidate !== known),
   ];
-  // Waiting for the target's master is the connection this process would otherwise make,
-  // so it counts against the startup deadline of the first attempt.
-  const started = Date.now();
-  let route = await sshRoute(target, timeout, context.signal);
-  if (context.signal?.aborted) {
-    route.release();
-    context.signal.throwIfAborted();
-  }
-  let budget = Math.max(1, timeout - (Date.now() - started));
+  let multiplex = true;
   for (let index = 0; index < candidates.length;) {
     const interpreter = candidates[index] ?? "";
-    const attempt = route;
+    // Waiting for the target's master is the connection this process would otherwise make,
+    // so it counts against the attempt's startup deadline.
+    const started = Date.now();
+    const attempt = multiplex ? await sshRoute(target, timeout, context.signal) : directSshRoute;
+    if (context.signal?.aborted) {
+      attempt.release();
+      context.signal.throwIfAborted();
+    }
+    const budget = Math.max(1, timeout - (Date.now() - started));
     // Windows OpenSSH blocks on synchronous pipes when it runs outside an interactive desktop
     // session, for example under another SSH server: it stalls at startup or never exits.
     // Overlapped pipes avoid that; on other platforms they are ordinary pipes.
@@ -156,14 +156,13 @@ export async function startSshProcess(
       // Nothing ran before the handshake, so a new connection or another interpreter cannot
       // repeat an effect. A master that failed mid-start is retried once directly.
       if (attempt.options.length > 0 && channel.transportLost && !context.signal?.aborted) {
-        route = { options: [], release() {} };
+        multiplex = false;
         continue;
       }
       if (!channel.interpreterMissing || index === candidates.length - 1) throw error;
       index++;
     } finally {
       clearTimeout(timer);
-      budget = timeout;
     }
   }
   throw new SshBackendError("DEPENDENCY_UNAVAILABLE", source, "not-applied");

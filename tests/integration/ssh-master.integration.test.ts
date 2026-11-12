@@ -84,6 +84,17 @@ test("a killed master is replaced and no request fails", async () => {
   expect(sockets[0]).not.toBe(first);
 }, 60_000);
 
+test("stopping removes the socket of a master that died unnoticed", async () => {
+  const { fixture, backend } = await backendFor();
+  await backend.lstat(fixture.workspace);
+  const [socket = ""] = await ownSockets();
+  const pid = await masterPid(fixture.config, socket);
+  process.kill(pid, "SIGKILL");
+  await expect.poll(() => running(pid), { timeout: 5000 }).toBe(false);
+  stopSshMasters();
+  expect(await ownSockets()).toEqual([]);
+}, 60_000);
+
 test("concurrent requests beyond one master's sessions open more masters", async () => {
   const { fixture, backend } = await backendFor();
   await backend.lstat(fixture.workspace);

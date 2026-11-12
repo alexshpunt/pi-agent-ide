@@ -1,6 +1,6 @@
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { lstat, mkdir, readdir, unlink } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
@@ -28,7 +28,8 @@ export interface SshRoute {
   release(): void;
 }
 
-const direct: SshRoute = { options: [], release() {} };
+/** A new connection of its own, without a master. */
+export const directSshRoute: SshRoute = { options: [], release() {} };
 
 interface Master {
   readonly socket: string;
@@ -72,7 +73,7 @@ export async function sshRoute(
   signal?: AbortSignal,
 ): Promise<SshRoute> {
   // Windows OpenSSH has no connection multiplexing.
-  if (process.platform === "win32") return direct;
+  if (process.platform === "win32") return directSshRoute;
   const deadline = Date.now() + waitMs;
   const key = `${target.host}\0${target.configFile ?? ""}`;
   let pool = pools.get(key);
@@ -81,9 +82,9 @@ export async function sshRoute(
     pools.set(key, pool);
   }
   const masters = await pool;
-  if (masters === undefined) return direct;
+  if (masters === undefined) return directSshRoute;
   for (;;) {
-    if (signal?.aborted) return direct;
+    if (signal?.aborted) return directSshRoute;
     const free = masters.members.find((member) => member.started && member.sessions < MAX_SESSIONS);
     if (free !== undefined) {
       const route = take(masters, free);
@@ -95,7 +96,7 @@ export async function sshRoute(
     }
     const starting = masters.members.find((member) => !member.started);
     if (starting !== undefined) {
-      if (!(await settled(starting.ready, deadline - Date.now(), signal))) return direct;
+      if (!(await settled(starting.ready, deadline - Date.now(), signal))) return directSshRoute;
       continue;
     }
     const failedRecently =
@@ -107,7 +108,7 @@ export async function sshRoute(
     // Short requests free a session within moments; a long wait means long-lived channels hold them.
     const wait = Math.min(SLOT_WAIT_MS, deadline - Date.now());
     if (masters.members.length === 0 || wait <= 0 || !(await slot(masters, wait, signal)))
-      return direct;
+      return directSshRoute;
   }
 }
 
@@ -115,20 +116,22 @@ export async function sshRoute(
 export function stopSshMasters(): void {
   const sockets = ownSockets();
   for (const [socket, target] of sockets) {
-    if (existsSync(socket))
-      spawnSync(
-        "ssh",
-        [
-          ...sshSecurityOptions(target),
-          "-o",
-          `ControlPath=${socket}`,
-          "-O",
-          "exit",
-          "--",
-          target.host,
-        ],
-        { stdio: "ignore", timeout: 2000 },
-      );
+    if (!existsSync(socket)) continue;
+    spawnSync(
+      "ssh",
+      [
+        ...sshSecurityOptions(target),
+        "-o",
+        `ControlPath=${socket}`,
+        "-O",
+        "exit",
+        "--",
+        target.host,
+      ],
+      { stdio: "ignore", timeout: 2000 },
+    );
+    // A master that died unnoticed leaves its socket behind.
+    rmSync(socket, { force: true });
   }
   sockets.clear();
   pools.clear();
