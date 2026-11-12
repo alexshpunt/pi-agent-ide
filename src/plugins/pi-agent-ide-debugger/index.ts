@@ -2,7 +2,6 @@ import path from "node:path";
 import { registerIdeCapability } from "#src/api/capabilities.ts";
 import { access } from "node:fs/promises";
 
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import { textLineAnchors } from "pi-agent-text";
@@ -55,6 +54,7 @@ import {
 } from "#src/core/reload-resource-store.ts";
 import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
 import { createBreakpointPresenter } from "#src/plugins/pi-agent-ide-debugger/src/breakpoint-view.ts";
+import { StringEnum } from "#src/plugins/pi-agent-ide-debugger/src/string-enum.ts";
 import {
   renderDebugActionCall,
   renderDebugCall,
@@ -93,24 +93,16 @@ import {
   type DebugSessionOptions,
 } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
-/** Keep Pi's provider-friendly `{ type: "string", enum }` schema with a TypeBox literal type. */
-function stringEnum<const T extends readonly string[]>(
-  values: T,
-  options: { description: string },
-) {
-  return Type.Unsafe<T[number]>(StringEnum(values, options));
-}
-
 const debugParameters = Type.Object(
   {
     backend: Type.Optional(
-      stringEnum(["auto", "vscode", "native"] as const, {
+      StringEnum(["auto", "vscode", "native"] as const, {
         description:
           "Select the debugger backend. auto (default) debugs through VS Code when the local program is inside a workspace open in VS Code with the DebugMCP extension, that window has no active debug session, and args and mainClass are omitted; otherwise it uses the native adapter. vscode fails with the unmet condition instead of falling back. native always launches the selected adapter.",
       }),
     ),
     adapter: Type.Optional(
-      stringEnum(
+      StringEnum(
         [
           "dart",
           "debugpy",
