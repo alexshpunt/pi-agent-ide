@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promis
 import path from "node:path";
 import { expect, test } from "vitest";
 import { createSshFileOperationResolver } from "#src/backend/file-operation-resolver.ts";
+import { TRANSFER_STALL_MS } from "#src/backend/file-transfer.ts";
 import { SshBackendRegistry } from "#src/backend/registry.ts";
 import { remoteLocation } from "#src/backend/identity.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
@@ -67,6 +68,121 @@ test("streamed transfers preserve external edits and clean unpublished staging f
     await fixture.stop();
   }
 }, 60000);
+
+test.each(["download", "targets"] as const)(
+  "a cancelled %s transfer reports the bytes it wrote and keeps the target file",
+  async (route) => {
+    const fixture = await startSshFixture();
+    const registry = new SshBackendRegistry(
+      ["left", "right"].map((id) => ({
+        id,
+        host: "fixture",
+        workspace: fixture.workspace,
+        configFile: fixture.config,
+      })),
+    );
+    const operate = createSshFileOperationResolver(registry);
+    const remote = path.join(fixture.workspace, "source.bin");
+    const actualTarget =
+      route === "download"
+        ? path.join(fixture.root, "target.bin")
+        : path.join(fixture.workspace, "target.bin");
+    const source = remoteLocation("left", remote).source;
+    const target =
+      route === "download" ? actualTarget : remoteLocation("right", actualTarget).source;
+    const owned = registry.resolve(source);
+    if (owned === undefined) throw new Error("Missing source owner");
+    const originalRead = owned.backend.readStream.bind(owned.backend);
+    const controller = new AbortController();
+    // Cancel once the first 1 MiB chunk has reached the destination.
+    owned.backend.readStream = (filePath, revision, consume, context) =>
+      originalRead(
+        filePath,
+        revision,
+        async (bytes) => {
+          await consume(bytes);
+          controller.abort();
+        },
+        context,
+      );
+    try {
+      await writeFile(remote, Buffer.alloc(3 * 1024 * 1024, 7));
+      await writeFile(actualTarget, "old destination");
+      const failure = operate(
+        "copy",
+        { path: source, target },
+        { cwd: fixture.root, signal: controller.signal },
+        sshTransferPolicy,
+      );
+      await expect(failure).rejects.toMatchObject({
+        code: "CANCELLED",
+        effect: "not-applied",
+        transferredBytes: 1024 * 1024,
+        totalBytes: 3 * 1024 * 1024,
+      });
+      // The visible message carries the progress, not only the structured fields.
+      await expect(failure).rejects.toThrow(/\b1048576 of 3145728 bytes\b/u);
+      expect(await readFile(actualTarget, "utf8")).toBe("old destination");
+      expect(
+        (await readdir(path.dirname(actualTarget))).some((name) =>
+          name.startsWith(".pi-ide-transfer-"),
+        ),
+      ).toBe(false);
+    } finally {
+      owned.backend.readStream = originalRead;
+      await fixture.stop();
+    }
+  },
+  90000,
+);
+
+test("a transfer that stops moving data fails as stalled with the bytes it wrote", async () => {
+  const fixture = await startSshFixture();
+  const registry = new SshBackendRegistry([
+    { id: "left", host: "fixture", workspace: fixture.workspace, configFile: fixture.config },
+  ]);
+  const operate = createSshFileOperationResolver(registry);
+  const remote = path.join(fixture.workspace, "source.bin");
+  const local = path.join(fixture.root, "target.bin");
+  const source = remoteLocation("left", remote).source;
+  const owned = registry.resolve(source);
+  if (owned === undefined) throw new Error("Missing source owner");
+  const originalRead = owned.backend.readStream.bind(owned.backend);
+  // Hold the stream after the first 1 MiB chunk for longer than the stall window.
+  owned.backend.readStream = (filePath, revision, consume, context) =>
+    originalRead(
+      filePath,
+      revision,
+      async (bytes) => {
+        await consume(bytes);
+        await new Promise((resolve) => setTimeout(resolve, TRANSFER_STALL_MS + 2000));
+      },
+      context,
+    );
+  try {
+    await writeFile(remote, Buffer.alloc(3 * 1024 * 1024, 7));
+    await writeFile(local, "old destination");
+    const failure = operate(
+      "copy",
+      { path: source, target: local },
+      { cwd: fixture.root },
+      sshTransferPolicy,
+    );
+    await expect(failure).rejects.toMatchObject({
+      code: "TRANSFER_STALLED",
+      effect: "not-applied",
+      transferredBytes: 1024 * 1024,
+      totalBytes: 3 * 1024 * 1024,
+    });
+    await expect(failure).rejects.toThrow(
+      /no data moved for 30 s; wrote 1048576 of 3145728 bytes/u,
+    );
+    expect(await readFile(local, "utf8")).toBe("old destination");
+  } finally {
+    owned.backend.readStream = originalRead;
+    await fixture.stop();
+  }
+}, 90000);
 
 test.each(
   (["copy", "move"] as const).flatMap((operation) =>

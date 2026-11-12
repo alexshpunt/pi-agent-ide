@@ -50,6 +50,35 @@ test("SSH service channel keeps binary streams separate and program exit 255 dis
   }
 });
 
+test("SSH service channel delivers consecutive full input windows in order", async () => {
+  const channel = await startSshProcess(
+    backend.target,
+    "python3",
+    [
+      "-c",
+      "import os\nwhile True:\n data=os.read(0,65536)\n if not data: break\n os.write(1,data)",
+    ],
+    fixture.workspace,
+  );
+  const stdout: Buffer[] = [];
+  channel.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+  channel.stderr.resume();
+  try {
+    // Each 1 MiB write fills the worker's whole window of unacknowledged frames.
+    const writes = Array.from({ length: 3 }, (_, round) => {
+      const bytes = Buffer.alloc(1024 * 1024);
+      for (let index = 0; index < bytes.length; index++) bytes[index] = (index + round * 7) % 251;
+      return bytes;
+    });
+    for (const bytes of writes) await channel.write(bytes);
+    await channel.end();
+    expect(await channel.completion).toEqual({ exitCode: 0 });
+    expect(Buffer.concat(stdout).equals(Buffer.concat(writes))).toBe(true);
+  } finally {
+    await channel.stop().catch(() => {});
+  }
+});
+
 test("SSH service channel can be stopped while stdin is blocked", async () => {
   const channel = await startSshProcess(
     backend.target,
