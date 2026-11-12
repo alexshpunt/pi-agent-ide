@@ -8,8 +8,7 @@ import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.ts";
 import { searchSymbols } from "#src/plugins/pi-agent-ide-lsp/src/lsp/symbol-search.ts";
 
 test("owned symbol search includes references and never treats a server error as empty", async () => {
-  // Five symbol searches over this fixture need about 40 remote operations. With a fixture-owned
-  // SSH master they cost about 0.45 s each at load average 35 instead of about 2.1 s.
+  // Five symbol searches make about 40 remote operations; reuse one SSH connection for them.
   const fixture = await startSshFixture({}, {}, undefined, { multiplex: true });
   const root = `ssh://fixture${fixture.workspace}`;
   const registry = new SshBackendRegistry([
