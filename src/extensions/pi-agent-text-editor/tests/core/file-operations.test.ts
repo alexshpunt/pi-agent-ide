@@ -2,7 +2,8 @@ import { mkdtemp, readFile, writeFile, mkdir, symlink, rm, lstat } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { executeFileOperation } from "#src/core/file-operations.ts";
+import { ResourceError } from "pi-agent-resource";
+import { executeFileOperation, formatFileOperation } from "#src/core/file-operations.ts";
 import { isWholeFileInvocation } from "#src/core/file-operation-tools.ts";
 
 const roots: string[] = [];
@@ -165,6 +166,28 @@ test("copies bytes, moves the copy, and removes only the moved file", async () =
   expect((await executeFileOperation("delete", { path: "moved" }, cwd)).ok).toBe(true);
   await expect(lstat(path.join(cwd, "moved"))).rejects.toMatchObject({ code: "ENOENT" });
   expect(await readFile(path.join(cwd, "source"))).toEqual(Buffer.from([0, 255, 10]));
+});
+
+test("failures name their code once when the message already starts with it", async () => {
+  const cwd = await fixture();
+  const local = await executeFileOperation("copy", { path: "missing", target: "copy" }, cwd);
+  const remote = await executeFileOperation(
+    "copy",
+    { path: "ssh://sandbox/missing", target: "copy" },
+    cwd,
+    undefined,
+    {},
+    [
+      async () => {
+        throw new ResourceError("ENOENT", "ssh://sandbox/missing", "not-applied");
+      },
+    ],
+  );
+  for (const result of [local, remote]) {
+    expect(result.error?.code).toBe("ENOENT");
+    const line = formatFileOperation(result).split("\n").at(-1) ?? "";
+    expect(line.match(/ENOENT/gu)).toHaveLength(1);
+  }
 });
 
 for (const operation of ["copy", "move"] as const) {

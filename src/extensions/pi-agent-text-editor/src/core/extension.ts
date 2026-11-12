@@ -1,5 +1,10 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectResultImages, connectResultTargets } from "pi-agent-resource";
+import {
+  connectResultImages,
+  connectResultTargets,
+  UnsupportedContentError,
+} from "pi-agent-resource";
+import { NoTextTargetError } from "./file-result-targets.ts";
 import { setMutationSnapshotReader } from "./mutation-result-targets.ts";
 import { registerTextEditOrigins } from "./text-edit-origin.ts";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -115,6 +120,8 @@ export default async function registerTextEditorCore(
   setMutationSnapshotReader(core, async (source, cwd, signal) => {
     if (readApi === undefined) throw Error("Mutation targets require pi-agent-read.");
     const result = await readApi.read({ path: source }, { cwd, signal }, "script");
+    if (result.details.failure?.cause instanceof UnsupportedContentError)
+      throw new NoTextTargetError();
     if (result.isError || result.script?.kind !== "text" || result.script.target === undefined)
       throw Error("Saved resource did not provide guarded text authority.");
     const selected = resultTargets.resolve(result.script.target, cwd);

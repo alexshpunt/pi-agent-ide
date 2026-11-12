@@ -31,3 +31,4 @@ export {
   structuredMutation,
   type MutationData,
 } from "#src/core/structured-result.ts";
+export { NO_TEXT_TARGET } from "#src/core/file-result-targets.ts";

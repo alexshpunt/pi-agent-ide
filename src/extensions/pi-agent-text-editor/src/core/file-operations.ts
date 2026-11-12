@@ -196,6 +196,11 @@ export async function executeFileOperation(
       ...(sourceKind === undefined ? {} : { sourceKind }),
     };
   } catch (error) {
+    const code =
+      error !== null && typeof error === "object" && "code" in error
+        ? String(error.code)
+        : "FILE_OPERATION_FAILED";
+    const message = error instanceof Error ? error.message : String(error);
     return {
       kind: "file-operation",
       operation,
@@ -203,12 +208,10 @@ export async function executeFileOperation(
       effect: failureEffect(error, started),
       ...(source === undefined ? {} : { path: source }),
       ...(target === undefined ? {} : { target }),
+      // Node and ResourceError messages already begin with the code; results show it once.
       error: {
-        code:
-          error !== null && typeof error === "object" && "code" in error
-            ? String(error.code)
-            : "FILE_OPERATION_FAILED",
-        message: error instanceof Error ? error.message : String(error),
+        code,
+        message: message.startsWith(`${code}: `) ? message.slice(code.length + 2) : message,
       },
     };
   }

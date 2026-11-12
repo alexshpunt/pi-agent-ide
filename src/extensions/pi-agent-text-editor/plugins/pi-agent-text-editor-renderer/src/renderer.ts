@@ -24,7 +24,10 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 
 import { isLineAnchor } from "pi-agent-text";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
-import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
+import {
+  NO_TEXT_TARGET,
+  type FileMutationBatchResult,
+} from "pi-agent-text-editor/api/mutation-result";
 import { isDiffStatusContribution } from "pi-agent-text-editor/api/post-edit";
 import type { MutationDiffStatus } from "pi-agent-text-editor/api/mutation-result";
 import type { AnyTextMutationToolRegistration } from "pi-agent-text-editor/api/mutation-tool";
@@ -272,7 +275,9 @@ function createRenderer(
             typeof result.details.metadata?.targetUnavailable === "string"
             ? theme.fg(
                 "muted",
-                "No verified text selection. Read the destination before further edits.",
+                  result.details.metadata.targetUnavailable === NO_TEXT_TARGET
+                  ? `No verified text selection. ${NO_TEXT_TARGET}`
+                  : "No verified text selection. Read the destination before further edits.",
               )
             : "",
           0,
@@ -312,9 +317,11 @@ function createRenderer(
       const summary = wholeFileOperationSummary(result.details);
       if (summary !== undefined) {
         const unavailable =
-          typeof result.details.metadata?.targetUnavailable === "string"
-            ? " · no verified text selection; read destination before further edits"
-            : "";
+          result.details.metadata?.targetUnavailable === NO_TEXT_TARGET
+            ? " · no verified text selection; not a text file"
+            : typeof result.details.metadata?.targetUnavailable === "string"
+              ? " · no verified text selection; read destination before further edits"
+              : "";
         return new Text(
           [
             theme.fg(summary.color, summary.text + unavailable),

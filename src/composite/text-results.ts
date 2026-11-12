@@ -458,8 +458,9 @@ export function createIdeTextResults(
         typeof data.targetUnavailable === "string"
           ? data.targetUnavailable
           : undefined;
+      // A tool that already states the reason, such as Copy of a binary file, needs no second notice.
       const readable =
-        targetUnavailable === undefined
+        targetUnavailable === undefined || original.includes(targetUnavailable)
           ? original
           : `${original}\n\nThis result has no verified text selection: ${targetUnavailable}\nRead/Search the file before the next edit; do not repeat the applied edit.`;
       const resources = resultResources(outcome);
