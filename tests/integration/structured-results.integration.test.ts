@@ -327,13 +327,14 @@ text(JSON.stringify({ changed, equal, head: long.slice(0, 3), complete }));
     }).run("Compare files without exposing internal records");
     expect(getToolExecution(run, "diff").isError, getToolResultText(run, "diff")).toBe(false);
     const changed = /^--- \S*note\.txt\n\+\+\+ \S*other\.txt\n@@ [^\n]+ @@\n-alpha\n\+beta$/u;
-    // A direct call keeps its readable text; its script value replaces the private diff record.
+    // A direct call keeps its readable text. Its script value replaces the private diff record and
+    // stays out of the session message.
     expect(getToolResultText(run, "diff")).toContain("-alpha\n+beta");
     expect(getToolExecutionResult(run, "diff")).toHaveProperty(
       "structuredContent",
       expect.stringMatching(changed),
     );
-    expect(getToolResultMessage(run, "diff")).not.toHaveProperty("structuredContent.status");
+    expect(getToolResultMessage(run, "diff")).not.toHaveProperty("structuredContent");
 
     const output = getToolResultText(run, "script");
     expect(getToolExecution(run, "script").isError, output).toBe(false);
