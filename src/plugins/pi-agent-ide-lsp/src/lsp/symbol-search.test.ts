@@ -8,6 +8,7 @@ import { LspClient } from "./client.ts";
 import { LspManager } from "./manager.ts";
 import { LspServerRegistry } from "./registry.ts";
 import { searchSymbols } from "./symbol-search.ts";
+import type { LspWorkspaceOwner } from "./workspace-owner.ts";
 
 const workspaces: string[] = [];
 afterEach(async () => {
@@ -369,8 +370,9 @@ test("asks for references at the position of the text the server holds, not of t
   const source = path.join(cwd, "a.ts");
   const uri = pathToFileURL(source).href;
   const original = '"😀"; same();\r\nsame();\r\n';
-  // Our own reads publish the file as it is now, so the server's text runs ahead of the text a
-  // declaration was read from while another session keeps writing.
+  // Each open here publishes the file as it is now, as another search or edit in this process
+  // does, so the server's text runs ahead of the text a declaration was read from while another
+  // session keeps writing.
   let served = original;
   vi.spyOn(client, "documentContent").mockImplementation((target) =>
     target === uri ? served : undefined,
@@ -390,7 +392,7 @@ test("asks for references at the position of the text the server holds, not of t
     const input = parameters as { textDocument?: { uri: string }; position?: { line: number } };
     if (method === "textDocument/documentSymbol" && input.textDocument?.uri === uri) {
       // Another session inserts a line above the declaration after it was read; the coverage
-      // check's diagnostics read then publishes the new text to the server.
+      // check's diagnostics open then publishes the new text to the server.
       await writeFile(source, `// peer\r\n${original}`);
       return [
         {
@@ -510,4 +512,117 @@ test("rejects a scope whose own text changed and cancelled searches before creat
   await expect(searchSymbols("same", cwd, 100, AbortSignal.abort(), {}, manager)).rejects.toThrow(
     /abort/iu,
   );
+});
+
+/**
+ * A workspace on an owner such as an SSH host, where every read is a remote operation, with a
+ * server that finds `label` declared in `note.ts` and used in `reference.ts`.
+ */
+function ownedWorkspace() {
+  const root = "ssh://fixture/workspace";
+  const files = new Map([
+    ["/workspace/note.ts", { content: "const label = 1;\n", version: 1 }],
+    ["/workspace/reference.ts", { content: "label;\n", version: 1 }],
+  ]);
+  const reads: string[] = [];
+  const file = (source: string) => {
+    const name = new URL(source).pathname;
+    return { name, entry: requiredValue(files.get(name)) };
+  };
+  const unused = () => {
+    throw new Error("Unexpected owner operation");
+  };
+  const owner: LspWorkspaceOwner = {
+    // The client never starts a process: its start is mocked below.
+    transport: () => ({ start: unused, toServerUri: (uri) => uri, fromServerUri: (uri) => uri }),
+    readText: async (source) => {
+      reads.push(`text ${file(source).name}`);
+      return file(source).entry.content;
+    },
+    readSnapshot: async (source) => {
+      const { name, entry } = file(source);
+      reads.push(`snapshot ${name}`);
+      return { content: entry.content, version: String(entry.version) };
+    },
+    readBytes: unused,
+    exists: async (source) => files.has(new URL(source).pathname),
+    isFile: async (source) => files.has(new URL(source).pathname),
+    entries: async () =>
+      [...files.keys()].map((name) => ({ name: path.posix.basename(name), kind: "file" as const })),
+  };
+  const manager = LspManager.init(
+    LspServerRegistry.fromConfig(
+      {
+        version: 1,
+        servers: {
+          owned: {
+            command: ["owned-server"],
+            rootMarkers: [],
+            languages: { typescript: { extensions: [".ts"] } },
+            capabilities: ["diagnostics"],
+          },
+        },
+      },
+      root,
+    ),
+    owner,
+  );
+  vi.spyOn(LspClient.prototype, "start").mockResolvedValue();
+  vi.spyOn(LspClient.prototype, "shutdown").mockResolvedValue();
+  vi.spyOn(LspClient.prototype, "sendNotification").mockImplementation(() => {});
+  vi.spyOn(LspClient.prototype, "hasWorkspaceSymbolCapability", "get").mockReturnValue(true);
+  const note = `${root}/note.ts`;
+  const reference = `${root}/reference.ts`;
+  const at = (uri: string, character: number) => ({
+    uri,
+    range: { start: { line: 0, character }, end: { line: 0, character: character + 5 } },
+  });
+  const sendRequest = vi
+    .spyOn(LspClient.prototype, "sendRequest")
+    .mockImplementation(async (method) => {
+      if (method === "workspace/symbol")
+        return [{ name: "label", kind: 13, location: at(note, 6) }];
+      if (method === "textDocument/documentSymbol") return [];
+      if (method === "textDocument/references") return [at(note, 6), at(reference, 0)];
+      throw Error(`Unexpected request ${method}`);
+    });
+  return { root, files, reads, manager, sendRequest };
+}
+
+test("an owned workspace search reads each file once, plus the final change check", async () => {
+  const { root, reads, manager } = ownedWorkspace();
+
+  const result = await searchSymbols("label", root, 100, undefined, {}, manager);
+
+  expect(result.hits.map((hit) => [hit.role, hit.source, hit.lineNumber])).toEqual([
+    ["definition", `${root}/note.ts`, 1],
+    ["reference", `${root}/reference.ts`, 1],
+  ]);
+  // The server opens `note.ts` with the text the hits are matched on, instead of reading it again.
+  expect(reads.toSorted()).toEqual([
+    "snapshot /workspace/note.ts",
+    "snapshot /workspace/note.ts",
+    "snapshot /workspace/reference.ts",
+    "snapshot /workspace/reference.ts",
+  ]);
+});
+
+test("an owned workspace search moves its hits onto a file written while the server answers", async () => {
+  const { root, files, manager, sendRequest } = ownedWorkspace();
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const answer: unknown = await next?.(method, parameters);
+    // Another session inserts a line above the declaration after this pass read the file.
+    if (method === "textDocument/references")
+      files.set("/workspace/note.ts", { content: "// peer\nconst label = 1;\n", version: 2 });
+    return answer;
+  });
+
+  const result = await searchSymbols("label", root, 100, undefined, {}, manager);
+
+  expect(result.hits.map((hit) => [hit.role, hit.source, hit.lineNumber])).toEqual([
+    ["definition", `${root}/note.ts`, 2],
+    ["reference", `${root}/reference.ts`, 1],
+  ]);
+  expect(result.contents.get(`${root}/note.ts`)).toBe("// peer\nconst label = 1;\n");
 });
