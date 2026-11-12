@@ -9,7 +9,7 @@ import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import type { TextMutation, TextMutationEdit } from "#src/api/mutation-tool.ts";
 import { applyTextChanges } from "./text-change-engine.ts";
 import { isAlreadyDone } from "./already-done.ts";
-import { attachFileMutationTargets } from "./file-result-targets.ts";
+import { attachFileMutationTargets, NO_TEXT_TARGET } from "./file-result-targets.ts";
 
 import type { TextEditorCore } from "./text-editor-core.ts";
 
@@ -176,10 +176,15 @@ export function committedMutationTargets(
 export function describeUnavailableCopyTarget(
   result: AgentToolResult<FileMutationBatchResult>,
 ): AgentToolResult<FileMutationBatchResult> {
-  const notice = "No verified text selection. Read the destination before further edits.";
+  const reason = result.details.metadata?.targetUnavailable;
+  // A destination without text needs no reading advice; the plain reason is the whole notice.
+  const notice =
+    reason === NO_TEXT_TARGET
+      ? `No verified text selection. ${NO_TEXT_TARGET}`
+      : "No verified text selection. Read the destination before further edits.";
   if (
     result.isError ||
-    typeof result.details.metadata?.targetUnavailable !== "string" ||
+    typeof reason !== "string" ||
     result.content.some((block) => block.type === "text" && block.text === notice)
   )
     return result;

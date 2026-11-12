@@ -4,6 +4,17 @@ import type { AgentToolResult } from "@earendil-works/pi-coding-agent";
 import type { ResultSourceTarget, ResultTargetStore } from "pi-agent-resource";
 import type { FileMutationBatchResult } from "#src/api/mutation-result.ts";
 
+/** The plain reason a binary file, directory or link destination has no text selection. */
+export const NO_TEXT_TARGET = "The destination is not a text file.";
+
+/** A destination with no text form, such as a binary file, a directory or a link. */
+export class NoTextTargetError extends Error {
+  constructor() {
+    super(NO_TEXT_TARGET);
+    this.name = "NoTextTargetError";
+  }
+}
+
 /** Publish whole destination/restored files only after checking their actual text bytes. */
 export async function attachFileMutationTargets(
   result: AgentToolResult<FileMutationBatchResult>,
@@ -21,10 +32,7 @@ export async function attachFileMutationTargets(
       ...result,
       details: {
         ...result.details,
-        metadata: {
-          ...result.details.metadata,
-          targetUnavailable: "Target is not a regular text file; no text selection is available.",
-        },
+        metadata: { ...result.details.metadata, targetUnavailable: NO_TEXT_TARGET },
       },
     };
   const sources =
@@ -58,11 +66,15 @@ export async function attachFileMutationTargets(
       }
       const stat = await lstat(file);
       states.push({ source: file, state: "present" });
-      if (!stat.isFile() || stat.isSymbolicLink())
-        throw new Error("Target is not a regular text file; no text selection is available.");
+      if (!stat.isFile() || stat.isSymbolicLink()) throw new NoTextTargetError();
       const bytes = await readFile(file, { signal });
-      const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
-      if (content.includes("\0")) throw new Error("Binary file has no supported text target.");
+      let content: string;
+      try {
+        content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+      } catch {
+        throw new NoTextTargetError();
+      }
+      if (content.includes("\0")) throw new NoTextTargetError();
       const lines = content.split(/\r\n|\r|\n/u);
       targets.push({
         source: file,
@@ -76,7 +88,16 @@ export async function attachFileMutationTargets(
       });
     } catch (error) {
       signal?.throwIfAborted();
-      if (error !== null && typeof error === "object" && "code" in error && error.code === "ENOENT")
+      if (error instanceof NoTextTargetError) {
+        if (!states.some((state) => state.source === file))
+          states.push({ source: file, state: "present" });
+        unavailable ??= NO_TEXT_TARGET;
+      } else if (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "ENOENT"
+      )
         states.push({ source: file, state: "absent" });
       else unavailable ??= error instanceof Error ? error.message : String(error);
     }
