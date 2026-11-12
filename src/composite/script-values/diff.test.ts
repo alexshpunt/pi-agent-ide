@@ -38,7 +38,7 @@ describe("diffValue", () => {
 
   test("the declared value is a string or null", () => {
     expect(nullableValueSchema(diffValue)).toEqual({
-      anyOf: [{ type: "string", description: expect.any(String) }, { type: "null" }],
+      anyOf: [{ type: "string", description: expect.any(String) as unknown }, { type: "null" }],
     });
   });
 });

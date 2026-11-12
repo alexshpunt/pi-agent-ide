@@ -340,7 +340,7 @@ text(JSON.stringify({ changed, equal, head: long.slice(0, 3), complete }));
     const [line = ""] = output.slice(output.indexOf('{"changed"')).split("\n");
     const values: unknown = JSON.parse(line);
     expect(values).toEqual({
-      changed: expect.stringMatching(changed),
+      changed: expect.stringMatching(changed) as unknown,
       equal: "",
       head: [
         expect.stringMatching(/^--- \S*long-before\.txt$/u),
