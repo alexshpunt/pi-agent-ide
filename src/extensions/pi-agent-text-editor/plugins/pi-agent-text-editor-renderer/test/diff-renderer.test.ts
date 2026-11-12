@@ -14,7 +14,7 @@ import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { requiredValue } from "pi-agent-invariant";
 import { createDiffModel } from "#src/diff-model.ts";
 import { COMPACT_BODY_ROWS, compactViewport, expandedViewport } from "#src/diff-viewport.ts";
-import { renderDiffPanel } from "#src/diff-renderer.ts";
+import { MAX_ROW_CHARACTERS, renderDiffPanel } from "#src/diff-renderer.ts";
 import { createDiffThemePalette } from "#src/diff-theme.ts";
 import { MutationPanel } from "#src/mutation-panel.ts";
 import {
@@ -447,6 +447,81 @@ describe("semantic text mutation diff", () => {
     expect(plain.join("\n")).toContain("alpha");
     expect(plain.join("\n")).toContain("omega");
     expect(plain.join("\n")).toContain("xxx");
+  });
+
+  test("shows a window around the change of a row too long to show in full", () => {
+    const items = Array.from(
+      { length: 10_000 },
+      (_, index) => `{"id":${index},"name":"n${index}"}`,
+    );
+    const before = `[${items.join(",")}]`;
+    const after = before.replace('"n7500"', '"changed"');
+    const model = createDiffModel(before, after);
+    const palette = createDiffThemePalette(plainTheme, false);
+    const rendered = renderDiffPanel(
+      { path: "data.json", model, highlightedRows: new Map() },
+      100,
+      plainTheme,
+      true,
+      false,
+    );
+    const text = rendered.map(stripTerminalSequences).join("\n");
+
+    expect(rendered.length).toBeLessThan(MAX_ROW_CHARACTERS / 50);
+    expect(text).toContain(
+      `${(after.length - MAX_ROW_CHARACTERS).toLocaleString("en-US")} characters not shown`,
+    );
+    expect(model.rows.map(({ kind }) => kind)).toEqual(["modified"]);
+    // The row's wrapped text without frame and gutter: "│", padding, "  1 ~ ".
+    const content = rendered
+      .slice(1, -1)
+      .map((line) => stripTerminalSequences(line).slice(8, -1).trimEnd())
+      .join("");
+    expect(content).toContain('{"id":7500,"name":"changed"}');
+    expect(content).not.toContain('"id":1,');
+    expect(content.startsWith("…")).toBe(true);
+    expect(rendered.join("")).toContain(palette.modified.emphasisBackground);
+    expect(rendered.every((line) => visibleWidth(line) === 100)).toBe(true);
+  });
+
+  test("does not syntax-highlight a row too long to show in full", () => {
+    vi.mocked(highlightCode).mockClear();
+    const long = `const data = "${"x".repeat(MAX_ROW_CHARACTERS)}";`;
+    const panel = new MutationPanel(plainTheme);
+    panel.setPreviewResources([
+      {
+        path: "data.ts",
+        beforeContent: "",
+        afterContent: `${long}\nconst next = 1;\n`,
+        ranges: [],
+      },
+    ]);
+
+    expect(vi.mocked(highlightCode).mock.calls.map(([source]) => source)).toEqual([
+      "const next = 1;",
+    ]);
+  });
+
+  test("keeps the cursor of a long typed row inside its window", () => {
+    const text = `const data = "${"x".repeat(10_000)}`;
+    const model = createDiffModel("", text);
+    const rendered = renderDiffPanel(
+      {
+        path: "data.ts",
+        model,
+        highlightedRows: new Map(),
+        cursor: { line: 1, column: text.length },
+      },
+      100,
+      plainTheme,
+      true,
+      false,
+    ).map(stripTerminalSequences);
+
+    expect(rendered.join("\n")).toContain("▌");
+    // The window starts inside the row: an ellipsis replaces its hidden start.
+    expect(rendered[1]).toMatch(/^│\s+1 \+ …x/u);
+    expect(rendered.join("\n")).not.toContain("const data");
   });
 
   test("highlights the surviving word near a deletion without markers, including tabs and wrapping", () => {
