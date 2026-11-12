@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 
 import {
   assistantMessage,
@@ -303,7 +304,7 @@ describe("pi-agent-text-editor stale anchor", () => {
                 id: blockedCallId,
                 name: "insert",
                 argumentsJson: staleArgumentsJson,
-                chunks: staleDeliveries[0].chunks,
+                chunks: requiredValue(staleDeliveries[0]).chunks,
               }),
             ],
             { stopReason: "toolUse" },

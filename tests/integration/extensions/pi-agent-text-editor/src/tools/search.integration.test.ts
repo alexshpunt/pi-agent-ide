@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 
 import {
   assistantMessage,
@@ -204,8 +205,8 @@ describe("pi-agent-text-editor search", () => {
 
       const query = "legacy(?:Name|Value)";
       const matches = [
-        searchMatch(first, 1, firstText.split("\n")[0], "legacyName"),
-        searchMatch(first, 2, firstText.split("\n")[1], "LEGACYVALUE"),
+        searchMatch(first, 1, requiredValue(firstText.split("\n")[0]), "legacyName"),
+        searchMatch(first, 2, requiredValue(firstText.split("\n")[1]), "LEGACYVALUE"),
         searchMatch(second, 1, secondText.trimEnd(), "legacyName"),
       ];
       const searchId = createSearchSessionId(query, matches, directory, {

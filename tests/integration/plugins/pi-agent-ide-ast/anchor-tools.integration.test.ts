@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 
 import { AstScopeManager } from "#src/plugins/pi-agent-ide-ast/src/api/scope.ts";
 import { getToolExecution, getToolResultText } from "pi-coding-agent-test";
@@ -99,7 +100,7 @@ describe("AST scope anchors through text editor tools", () => {
 async function runAstScenario(
   testName: string,
   tool: "insert" | "replace" | "delete" | "copy" | "move",
-  buildArguments: (scopes: readonly AstScope[]) => Record<string, unknown>,
+  buildArguments: (scopes: readonly [AstScope, AstScope]) => Record<string, unknown>,
   expectedContent: string,
 ): Promise<void> {
   await withTempWorkspace(async (directory) => {
@@ -108,7 +109,7 @@ async function runAstScenario(
     const scopes = await new AstScopeManager().getDocumentScopes(relativeFile, directory, lines);
     expect(scopes).toHaveLength(2);
 
-    const anchorArguments = buildArguments(scopes);
+    const anchorArguments = buildArguments([requiredValue(scopes[0]), requiredValue(scopes[1])]);
     const expectedAnchors = Object.entries(anchorArguments)
       .filter(
         ([key, value]) =>

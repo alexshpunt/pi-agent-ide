@@ -225,7 +225,7 @@
     "test:integration:live": "oxnode scripts/live-integration-test.ts",
     "test:integration:live:test": "oxnode scripts/live-integration-test.ts --named-test",
     "test:integration:report": "vitest run --config vitest.integration.config.mjs --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/integration.xml",
-    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts benchmarks",
+    "typecheck": "oxlint -A all --type-aware --type-check src packages scripts benchmarks tests",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "bench:tool-load": "node benchmarks/tool-load/cli.ts"

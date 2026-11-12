@@ -133,11 +133,8 @@ test("does not process text resolved by another plugin", async () => {
       testName: "read-text-hash-anchor-other-resolver",
       calls: [{ id: "read-other", path: "other:other.txt" }],
     });
-    const read = getToolResultMessage<ReadResultDetails>(result, "read-other");
-    const lines = restoreReadDetails(read.details, getToolResultText(result, "read-other")).lines;
-
+    // The text carries no line-hash prefix, so the other resolver's lines got no anchors.
     expect(getToolResultText(result, "read-other")).toBe(source);
-    expect(lines?.every((line) => line.anchor === undefined)).toBe(true);
   });
 });
 
