@@ -2,8 +2,10 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import * as ripgrep from "#src/ripgrep.ts";
+import { captureCurrentMatches } from "#src/current-matches.ts";
+import { runScopedSearch } from "#src/scoped-search.ts";
 import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
-import { searchText } from "#src/search-backend.ts";
+import { searchText, searchTextContent } from "#src/search-backend.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -32,7 +34,7 @@ if (${JSON.stringify(mode)} === 'match-limit' && args[engine + 1] === 'auto') {
  process.stderr.write('PCRE2: error matching: match limit exceeded'); process.exit(2);
 }
 if (engine >= 0) args[engine + 1] = 'default';
-const result = spawnSync(${JSON.stringify(executable)}, args, {stdio:['ignore','pipe','pipe']});
+const result = spawnSync(${JSON.stringify(executable)}, args, {input: require('node:fs').readFileSync(0), stdio:['pipe','pipe','pipe']});
 process.stdout.write(result.stdout ?? '');
 const error = (result.stderr ?? '').toString();
 process.stderr.write(error.includes('look-around') && ${JSON.stringify(mode)} === 'no-pcre2' ? 'PCRE2 is not available in this build of ripgrep' : error);
@@ -85,6 +87,8 @@ test.each(["native", "no-pcre2"] as const)(
       [7, 2, 7, "alpha"],
     ]);
   },
+  // The no-pcre2 shim spawns a wrapper script per search, which a loaded machine makes slow.
+  20_000,
 );
 test("reports a missing PCRE2 engine for an explicit regex and allows the next literal search", async () => {
   const cwd = await fixture("no-pcre2");
@@ -99,5 +103,75 @@ test("bounds a match-limit retry and preserves the original failure instead of h
   await expect(
     searchText({ query: "(?=alpha)alpha", regex: true, path: "input.txt" }, cwd),
   ).rejects.toThrow("PCRE2 match limit");
+  expect(ripgrep.resolveRipgrepExecutable).toHaveBeenCalledTimes(2);
+});
+
+const heldText = "alpha beta\ngamma\nbeta alpha\n";
+test("a scoped search retries a regex that exceeds the PCRE2 match limit with the default engine", async () => {
+  const cwd = await fixture("match-limit");
+  const source = path.join(cwd, "held.txt");
+  const result = await runScopedSearch(
+    { query: "al(pha)", regex: true },
+    {
+      complete: true,
+      targets: [
+        {
+          source,
+          expectedContent: heldText,
+          readCurrent: async () => heldText,
+          ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 4, column: 0 } }],
+        },
+      ],
+    },
+    cwd,
+  );
+  expect(result.matches.map((match) => [match.lineNumber, match.startColumn])).toEqual([
+    [1, 0],
+    [3, 5],
+  ]);
+  expect(ripgrep.resolveRipgrepExecutable).toHaveBeenCalledTimes(2);
+});
+test("the anchor capture matches a file another session wrote after a match-limit regex", async () => {
+  const cwd = await fixture("match-limit");
+  const source = path.join(cwd, "held.txt");
+  // The backend matched the file before another session inserted a line at its top.
+  const written = `new first line\n${heldText}`;
+  const captured = await captureCurrentMatches(
+    {
+      complete: true,
+      matches: [
+        {
+          source,
+          lineNumber: 1,
+          startColumn: 0,
+          endColumn: 5,
+          matchedText: "alpha",
+          lineText: "alpha beta",
+        },
+      ],
+    },
+    cwd,
+    {
+      request: { query: "al(pha)", regex: true },
+      inContent: true,
+      read: async () => written,
+    },
+  );
+  expect(captured.matches.map((match) => [match.lineNumber, match.startColumn])).toEqual([
+    [2, 0],
+    [4, 5],
+  ]);
+  expect(ripgrep.resolveRipgrepExecutable).toHaveBeenCalledTimes(2);
+});
+test("a text search reports the match-limit failure of both engines instead of hiding it", async () => {
+  const cwd = await fixture("match-limit");
+  const error = await searchTextContent(
+    { query: "(?=alpha)alpha", regex: true },
+    heldText,
+    cwd,
+  ).catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(AggregateError);
+  expect((error as AggregateError).message).toContain("PCRE2 match limit");
+  expect(((error as AggregateError).errors[0] as Error).message).toContain("match limit exceeded");
   expect(ripgrep.resolveRipgrepExecutable).toHaveBeenCalledTimes(2);
 });

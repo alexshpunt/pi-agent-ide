@@ -301,7 +301,8 @@ function isCount(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
-function displaySource(source: string, cwd: string): string {
+/** A matched source as a result shows it: relative to the search's cwd when it is inside it. */
+export function displaySource(source: string, cwd: string): string {
   if (source.includes("://")) return source;
   const relative = path.relative(cwd, source);
   // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal

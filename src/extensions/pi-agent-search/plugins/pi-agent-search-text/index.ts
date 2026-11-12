@@ -152,6 +152,9 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
             selection.refresh,
             undefined,
             context.environment,
+            // A backend that returns the text it searched needs no second read, which another
+            // session could write in between.
+            selection.contents,
           ),
         );
         if (includeFilesystem) {

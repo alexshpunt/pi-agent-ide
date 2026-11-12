@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { requiredValue } from "pi-agent-invariant";
 
 import { createChangeGroups } from "pi-agent-ide-changes/changes/change-groups";
 import {
@@ -276,7 +277,9 @@ describe("undo last text transaction", () => {
       const edited = `${baseline}\ngamma`;
       const file = await createFixture(directory, fileName, baseline);
       await initializeRepository(directory, fileName);
-      const selector = createChangeGroups(fileName, baseline, baseline, edited)[0].selector;
+      const selector = requiredValue(
+        createChangeGroups(fileName, baseline, baseline, edited)[0],
+      ).selector;
 
       const result = await runScenario(
         directory,

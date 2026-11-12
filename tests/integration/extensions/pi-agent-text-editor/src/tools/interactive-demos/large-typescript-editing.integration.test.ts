@@ -299,7 +299,7 @@ describe("interactive text editor demos", () => {
         "demo-batch-insert-imports",
         "demo-batch-replace-view",
         "demo-batch-insert-utilities",
-      ];
+      ] as const;
 
       const result = await new PiIntegrationTest({
         testName: "interactive-demo-large-typescript-editing",

@@ -183,28 +183,33 @@ export async function searchTextContent(
       },
       signal,
     );
-  const result = await runRipgrep(
-    [
-      "--json",
-      "--no-config",
-      "--color=never",
-      "--with-filename",
-      "--line-number",
-      ...(request.regex === true ? ["--engine", "auto"] : ["--fixed-strings"]),
-      request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
-      ...(request.wholeWord === true ? ["--word-regexp"] : []),
-      ...multilineArguments(request),
-      "--",
-      request.query,
-      "-",
-    ],
-    cwd,
-    signal,
-    undefined,
-    undefined,
-    // An empty source still has one position. Ripgrep excludes the record delimiter from matches.
-    content.length === 0 ? "\n" : content,
-  );
+  const search = (engine: string[]) =>
+    runRipgrep(
+      [
+        "--json",
+        "--no-config",
+        "--color=never",
+        "--with-filename",
+        "--line-number",
+        ...engine,
+        request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
+        ...(request.wholeWord === true ? ["--word-regexp"] : []),
+        ...multilineArguments(request),
+        "--",
+        request.query,
+        "-",
+      ],
+      cwd,
+      signal,
+      undefined,
+      undefined,
+      // An empty source still has one position. Ripgrep excludes the record delimiter from matches.
+      content.length === 0 ? "\n" : content,
+    );
+  const result =
+    request.regex === true
+      ? await withRegexEngineFallback(search, signal)
+      : await search(["--fixed-strings"]);
   return content.length === 0
     ? {
         ...result,
@@ -250,16 +255,31 @@ async function searchPattern(
     );
   }
 
+  return withRegexEngineFallback(
+    (engine) =>
+      runRipgrep(
+        [...engine, ...commonArguments],
+        searchCwd,
+        signal,
+        onLine,
+        budget,
+        undefined,
+        environment,
+      ),
+    signal,
+  );
+}
+
+/**
+ * Run a regex search with ripgrep's automatic engine and, when its PCRE2 engine gives up on the
+ * regex, once more with the default engine. A second failure is reported with the first.
+ */
+async function withRegexEngineFallback(
+  search: (engine: string[]) => Promise<TextSearchBackendResult>,
+  signal?: AbortSignal,
+): Promise<TextSearchBackendResult> {
   try {
-    return await runRipgrep(
-      ["--engine", "auto", ...commonArguments],
-      searchCwd,
-      signal,
-      onLine,
-      budget,
-      undefined,
-      environment,
-    );
+    return await search(["--engine", "auto"]);
   } catch (error) {
     if (!isPcre2MatchLimitError(error)) {
       if (
@@ -274,15 +294,7 @@ async function searchPattern(
       throw error;
     }
     try {
-      return await runRipgrep(
-        ["--engine", "default", ...commonArguments],
-        searchCwd,
-        signal,
-        onLine,
-        budget,
-        undefined,
-        environment,
-      );
+      return await search(["--engine", "default"]);
     } catch (fallbackError) {
       if (signal?.aborted) throw fallbackError;
       throw new AggregateError(
