@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { remotePython } from "./ssh-transport.ts";
+import { packagedSource } from "./packaged-source.ts";
 
 const rowSchema = Type.Object({
   pid: Type.Integer({ minimum: 1 }),
@@ -14,7 +14,7 @@ const rowSchema = Type.Object({
   executable: Type.Union([Type.String(), Type.Null()]),
 });
 const resultSchema = Type.Object({ processes: Type.Array(rowSchema) });
-let worker: Promise<string> | undefined;
+const worker = packagedSource(new URL("./process-metadata-worker.py", import.meta.url));
 
 type SshProcessMetadata = Static<typeof rowSchema>;
 
@@ -32,7 +32,6 @@ export async function findSshProcessMetadata(
   if (!Number.isSafeInteger(pid) || pid < 1) throw new Error("Invalid process PID");
   const owner = registry.resolve(scope);
   if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", scope, "not-applied");
-  worker ??= readFile(new URL("./process-metadata-worker.py", import.meta.url), "utf8");
   const result = await owner.backend.execute(
     remotePython(await worker),
     [String(pid)],

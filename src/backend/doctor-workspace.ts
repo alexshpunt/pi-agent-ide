@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { Type, type Static } from "typebox";
@@ -17,6 +16,14 @@ import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
 import { SshBackendError } from "./ssh.ts";
 import { probeSshBrowser } from "./web-browser.ts";
 import type { SshBackendRegistry } from "./registry.ts";
+import { packagedSource } from "./packaged-source.ts";
+
+const workers = {
+  "doctor-inventory-worker.py": packagedSource(
+    new URL("./doctor-inventory-worker.py", import.meta.url),
+  ),
+  "doctor-probe-worker.py": packagedSource(new URL("./doctor-probe-worker.py", import.meta.url)),
+};
 
 const probeSchema = Type.Object({
   directory: Type.String(),
@@ -82,10 +89,8 @@ export async function createSshDoctorWorkspace(
     args: readonly string[],
     requestSignal?: AbortSignal,
   ): Promise<unknown> => {
-    const script = await readFile(new URL(`./${name}`, import.meta.url), {
-      encoding: "utf8",
-      signal: requestSignal,
-    });
+    requestSignal?.throwIfAborted();
+    const script = await workers[name];
     const result = await readOwnedSshCommand(
       backend.target,
       remotePython(script),
@@ -104,10 +109,7 @@ export async function createSshDoctorWorkspace(
     requestSignal?: AbortSignal,
   ): Promise<void> => {
     requestSignal?.throwIfAborted();
-    const script = await readFile(new URL("./doctor-probe-worker.py", import.meta.url), {
-      encoding: "utf8",
-      signal: requestSignal,
-    });
+    const script = await workers["doctor-probe-worker.py"];
     const deadline = new AbortController();
     const operationSignal = requestSignal
       ? AbortSignal.any([requestSignal, deadline.signal])

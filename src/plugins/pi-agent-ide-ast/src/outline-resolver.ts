@@ -4,7 +4,8 @@ import {
   resolveCodeViewPath,
 } from "pi-agent-ide/api/code-view";
 
-import type * as AstOutline from "./ast/outline.ts";
+// A static import keeps the outline code from the version this Pi loaded.
+import * as AstOutline from "./ast/outline.ts";
 import { MAX_SOURCE_BYTES } from "./ast/read-text.ts";
 import type {
   ResourceResolutionAttempt,
@@ -19,7 +20,6 @@ export type AstOutlineSourceReader = (
 ) => Promise<{ source: string; lines: readonly string[] }>;
 
 let defaultManager: AstOutline.AstOutlineManager | undefined;
-let astOutlineModule: Promise<typeof AstOutline> | undefined;
 
 export function createAstOutlineResolver(
   manager?: AstOutline.AstOutlineManager,
@@ -68,8 +68,7 @@ function resolveAstOutlineSource(
       link: canonicalSource,
       async read({ signal }) {
         signal?.throwIfAborted();
-        const astOutline = await (astOutlineModule ??= import("./ast/outline.ts"));
-        const outlineManager = manager ?? (defaultManager ??= new astOutline.AstOutlineManager());
+        const outlineManager = manager ?? (defaultManager ??= new AstOutline.AstOutlineManager());
         let outline;
         if (filePath.startsWith("ssh://")) {
           if (readSource === undefined) throw new Error("No AST snapshot owner for this resource.");
@@ -87,7 +86,7 @@ function resolveAstOutlineSource(
           outline = await outlineManager.readFileOutline(filePath, context.cwd);
         }
         signal?.throwIfAborted();
-        return [astOutline.formatAstOutline(outline)];
+        return [AstOutline.formatAstOutline(outline)];
       },
     },
   };
