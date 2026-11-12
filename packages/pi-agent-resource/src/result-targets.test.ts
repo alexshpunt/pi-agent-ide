@@ -140,6 +140,39 @@ describe("source result targets", () => {
     expect(store.source(debug, "/workspace", "live")).toBe("debug:node-1");
   });
 
+  test("a script value resolves its id like the reference itself and ignores other fields", () => {
+    const store = new ResultTargetStore();
+    const selected = store.register([target], "/workspace");
+    const published = store.publish(
+      { status: "success", data: { target: selected } },
+      "Selected text",
+      "/workspace",
+    );
+    const id = `RESULT#${/<uuid>([a-f\d-]{36})<\/uuid>/u.exec(published)?.[1] ?? ""}`;
+    expect(store.source({ id }, "/workspace")).toBe(selected);
+    expect(store.source({ id, path: "/workspace/b.txt", text: "other" }, "/workspace")).toBe(
+      selected,
+    );
+    expect(store.source([{ id }, published], "/workspace")).toEqual([selected, selected]);
+    expect(store.resolve({ id }, "/workspace")).toEqual(store.resolve(id, "/workspace"));
+    store.registerSearchReference("SEARCH#ABCD:1:match", selected, "/workspace");
+    expect(store.source({ id: "SEARCH#ABCD:1:match" }, "/workspace")).toBe(selected);
+  });
+
+  test("a script value with an id the store did not issue fails like an unknown reference", () => {
+    const store = new ResultTargetStore();
+    for (const id of [
+      "RESULT#00000000-0000-4000-8000-000000000000",
+      "00000000-0000-4000-8000-000000000000",
+      "RESULT#missing",
+      "a.txt",
+      "",
+    ])
+      expect(() => store.source({ id }, "/workspace")).toThrow(
+        "Result reference expired or unknown",
+      );
+  });
+
   test("a known edit preserves pending output handles and their resulting spans", async () => {
     const store = new ResultTargetStore();
     const owned = {
