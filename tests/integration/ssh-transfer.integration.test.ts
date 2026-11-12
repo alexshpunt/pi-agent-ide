@@ -1,4 +1,4 @@
-import type { ChildProcess } from "node:child_process";
+import { ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -426,7 +426,9 @@ test("a transfer whose SSH connection is lost removes its staging file on the ta
     await channel.write(Buffer.alloc(1024 * 1024, 7));
     expect(await staged()).toHaveLength(1);
     // Kill only the local SSH client while the target still waits for bytes.
-    (channel as unknown as { readonly child: ChildProcess }).child.kill("SIGKILL");
+    const transport = "child" in channel ? channel.child : undefined;
+    if (!(transport instanceof ChildProcess)) throw new Error("Missing local SSH transport");
+    transport.kill("SIGKILL");
     await expect(channel.completion).rejects.toBeInstanceOf(Error);
     await expect.poll(staged, { timeout: 10_000 }).toEqual([]);
     await expect(readFile(destination)).rejects.toMatchObject({ code: "ENOENT" });

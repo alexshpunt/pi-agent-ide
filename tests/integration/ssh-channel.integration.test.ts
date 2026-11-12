@@ -1,4 +1,4 @@
-import type { ChildProcess } from "node:child_process";
+import { ChildProcess } from "node:child_process";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
@@ -20,6 +20,13 @@ beforeAll(async () => {
 afterAll(async () => {
   await fixture.stop();
 });
+
+/** Kill only the local SSH client of a channel, as a crash or a dropped network would. */
+function killTransport(channel: object): void {
+  const child = "child" in channel ? channel.child : undefined;
+  if (!(child instanceof ChildProcess)) throw new Error("Missing local SSH transport");
+  child.kill("SIGKILL");
+}
 
 test("SSH service channel keeps binary streams separate and program exit 255 distinct from transport loss", async () => {
   const channel = await startSshProcess(
@@ -116,16 +123,16 @@ test("SSH service channel overlaps two pending writes and holds many small ones 
 });
 
 test("a lost SSH connection sends SIGTERM before it kills the command", async () => {
-  const marker = path.join(fixture.workspace, "terminated.json");
+  const marker = path.join(fixture.workspace, "terminated.txt");
   const channel = await startSshProcess(
     backend.target,
     "python3",
     [
       "-c",
       [
-        "import json,signal,sys,time",
+        "import signal,sys,time",
         "def stopped(signum, _frame):",
-        " with open(sys.argv[1], 'w') as stream: json.dump({'signal': signum}, stream)",
+        " with open(sys.argv[1], 'w') as stream: stream.write(str(signum))",
         " sys.exit(0)",
         "signal.signal(signal.SIGTERM, stopped)",
         "print('ready', flush=True)",
@@ -138,12 +145,11 @@ test("a lost SSH connection sends SIGTERM before it kills the command", async ()
   channel.stderr.resume();
   await new Promise<void>((resolve) => channel.stdout.once("data", () => resolve()));
   try {
-    // Kill only the local SSH client, as a crash or a dropped network would.
-    (channel as unknown as { readonly child: ChildProcess }).child.kill("SIGKILL");
+    killTransport(channel);
     await expect(channel.completion).rejects.toBeInstanceOf(Error);
     await expect
       .poll(async () => readFile(marker, "utf8").catch(() => ""), { timeout: 10_000 })
-      .toBe(JSON.stringify({ signal: 15 }));
+      .toBe("15");
   } finally {
     await channel.stop().catch(() => {});
     await rm(marker, { force: true });
