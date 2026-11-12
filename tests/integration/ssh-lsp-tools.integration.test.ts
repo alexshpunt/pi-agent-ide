@@ -20,7 +20,13 @@ afterAll(restore);
 test.each(["diagnostics", "rename", "race"] as const)(
   "remote language server protects %s",
   async (mode) => {
-    const fixture = await startSshFixture({}, { PI_CODING_AGENT_DIR: "{workspace}/agent-home" });
+    // Every tool call makes several remote operations; reuse one SSH connection for them.
+    const fixture = await startSshFixture(
+      {},
+      { PI_CODING_AGENT_DIR: "{workspace}/agent-home" },
+      undefined,
+      { multiplex: true },
+    );
     const base = path.resolve(".tmp/ssh-lsp-tests");
     await mkdir(base, { recursive: true });
     const cwd = await mkdtemp(path.join(base, "workspace-"));

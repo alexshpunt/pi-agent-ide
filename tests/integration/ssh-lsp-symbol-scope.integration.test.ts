@@ -20,7 +20,13 @@ afterAll(restore);
 test.each(["scope", "mutation"] as const)(
   "native SSH symbol targets keep exact %s authority",
   async (mode) => {
-    const fixture = await startSshFixture({}, { PI_CODING_AGENT_DIR: "{workspace}/agent-home" });
+    // Every tool call makes several remote operations; reuse one SSH connection for them.
+    const fixture = await startSshFixture(
+      {},
+      { PI_CODING_AGENT_DIR: "{workspace}/agent-home" },
+      undefined,
+      { multiplex: true },
+    );
     const base = path.resolve(".tmp/ssh-lsp-scope-tests");
     await mkdir(base, { recursive: true });
     const cwd = await mkdtemp(path.join(base, "workspace-"));
@@ -86,7 +92,10 @@ test.each(["scope", "mutation"] as const)(
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
         tools: ["read", "search", "lsp_search", "replace", "codemode"],
-        timeoutMs: 90000,
+        // Pi starts here and every tool call reaches the fixture server through SSH. Measured at
+        // load average 37 with another integration suite running: 95-100 s for the whole case,
+        // so a step may take over 90 s. The cap stops a hung run, like the 150 s of ssh-lsp-tools.
+        timeoutMs: 150_000,
         conversation: [
           assistantMessage([
             toolCall({
@@ -110,8 +119,13 @@ const name=strict;
 if(${JSON.stringify(mode)} === "scope") {
  const navigation=await tools.lsp_search({query:"label",path:seed,references:true}).then(value => value.result);
  if(!navigation.includes(${JSON.stringify(`${root}/reference.ts`)}) || !navigation.includes("reference label")) throw Error(navigation);
- const declarations=[...navigation.matchAll(/declared at (.+)/g)].map(m=>m[1]);
- if(declarations.length!==2 || new Set(declarations).size!==1) throw Error("Lost declaration identity: "+navigation);
+ // One declaration behind both hits: the definition names it by its own selector, the reference
+ // by the position where it is declared, which is the definition's own position.
+ const definition=/([^ \\n]+:[0-9]+:[0-9]+) definition label · selector ([^ \\n]+)#label/.exec(navigation);
+ const references=[...navigation.matchAll(/([^ \\n]+:[0-9]+:[0-9]+) reference label · declared at ([^ \\n]+)/g)];
+ if(!definition || references.length!==1) throw Error("Lost declaration identity: "+navigation);
+ if(!definition[1].startsWith(definition[2]+":")) throw Error("Lost declaration identity: "+navigation);
+ if(references.some(match=>match[2]!==definition[1])) throw Error("Lost declaration identity: "+navigation);
  const cut=await tools.search({path:seed,query:"abel",caseSensitive:true}).then(value => value.result);
  const absent=await tools.lsp_search({query:"label",path:cut}).then(value => value.result);
  if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);
@@ -150,5 +164,5 @@ if(${JSON.stringify(mode)} === "scope") {
       await rm(cwd, { recursive: true, force: true });
     }
   },
-  120000,
+  240_000,
 );
