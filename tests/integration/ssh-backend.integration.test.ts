@@ -297,6 +297,15 @@ test("an SSH byte window rejects a same-size external change while it streams", 
   });
 });
 
+test("an SSH byte stream that waits too long for target bytes fails as a timeout", async () => {
+  const filename = path.join(fixture.workspace, "idle-bytes.bin");
+  await writeFile(filename, Buffer.alloc(1024 * 1024, 67));
+  // No reply crosses SSH within a millisecond of the request.
+  await expect(
+    readSshFileStream(backend.target, filename, { idleMs: 1 }, async () => {}),
+  ).rejects.toMatchObject({ code: "TIMEOUT", effect: "not-applied" });
+});
+
 test("parallel SSH commits serialize and only one can consume the same snapshot", async () => {
   const filename = path.join(fixture.workspace, "parallel.txt");
   const version = await backend.write(filename, Buffer.from("before"), null);

@@ -278,7 +278,7 @@ export class SshBackend {
   /** Read an original byte window through one stream; the file must keep its revision meanwhile.
    * A negative offset counts from the end, both clamp to the file, and an omitted limit reads to
    * the end. The revision fingerprints inode and metadata, not a guarded write snapshot.
-   * `context.timeoutMs` (default 30 s) bounds startup and each wait for the next chunk.
+   * `context.timeoutMs` (default 30 s) bounds startup and each wait for the target's bytes.
    */
   async readRange(
     filePath: string,
@@ -291,40 +291,23 @@ export class SshBackend {
       (limit !== undefined && !(Number.isSafeInteger(limit) && limit >= 0))
     )
       throw new TypeError("Byte offset and limit must be safe integers; limit must be nonnegative");
-    const idleMs = context.timeoutMs ?? 30_000;
-    const idle = new AbortController();
-    const timer = setTimeout(() => idle.abort(), idleMs);
-    const signal = context.signal ? AbortSignal.any([context.signal, idle.signal]) : idle.signal;
     const chunks: Buffer[] = [];
     const { readSshFileStream } = await import("./ssh-file-stream.ts");
-    try {
-      const window = await readSshFileStream(
-        this.target,
-        filePath,
-        { offset, ...(limit === undefined ? {} : { limit }) },
-        async (bytes) => {
-          chunks.push(bytes);
-          timer.refresh();
-        },
-        { ...context, signal },
-      );
-      return {
-        bytes: Buffer.concat(chunks, window.length),
-        offset: window.offset,
-        totalBytes: window.size,
-        revision: window.revision,
-      };
-    } catch (error) {
-      if (idle.signal.aborted && context.signal?.aborted !== true)
-        throw new SshBackendError(
-          "TIMEOUT",
-          remoteLocation(this.target.id, filePath, targetOs(this.target)).source,
-          "not-applied",
-        );
-      throw error;
-    } finally {
-      clearTimeout(timer);
-    }
+    const window = await readSshFileStream(
+      this.target,
+      filePath,
+      { offset, limit, idleMs: context.timeoutMs ?? 30_000 },
+      async (bytes) => {
+        chunks.push(bytes);
+      },
+      context,
+    );
+    return {
+      bytes: Buffer.concat(chunks, window.length),
+      offset: window.offset,
+      totalBytes: window.size,
+      revision: window.revision,
+    };
   }
 
   /** Stream a whole regular file through one channel while it keeps an lstat `revision`.

@@ -18,14 +18,16 @@ const headerSchema = Type.Object({
   length: Type.Integer({ minimum: 0 }),
 });
 
-/** The byte window to stream and the revision it must keep. */
-export interface SshStreamWindow {
+/** The byte window to stream, the revision it must keep and how long to wait for bytes. */
+export interface SshStreamRequest {
   /** Required file revision; omit it to stream whatever the target opens. */
   readonly revision?: string;
   /** First byte; a negative offset counts from the end. Both clamp to the file. */
   readonly offset?: number;
   /** Maximum bytes; omit it to stream to the end. */
   readonly limit?: number;
+  /** Fail with TIMEOUT when the target sends nothing for this long after startup. */
+  readonly idleMs?: number;
 }
 
 /** What a stream sent: the window's position and length within the file and their checksum. */
@@ -109,15 +111,17 @@ function parsed(line: string | undefined): unknown {
 }
 
 /** Stream a byte window of a remote regular file through one SSH channel.
- * The file must keep its revision, and `window.revision` when given, until the last byte.
+ * The file must keep its revision, and `request.revision` when given, until the last byte.
  * `consume` gets the bytes in order, in chunks of at most 1 MiB; its promise paces the stream.
+ * Startup has the `context.timeoutMs` deadline; later waits are bounded only by
+ * `request.idleMs` and `context.signal`.
  * The target rechecks the revision after the last byte. A read has no effect on the target, so
  * every failure is not-applied; `consume` failures propagate unchanged.
  */
 export async function readSshFileStream(
   target: SshTarget,
   filePath: string,
-  window: SshStreamWindow,
+  request: SshStreamRequest,
   consume: (bytes: Buffer) => Promise<void>,
   context: BackendOperationContext = {},
 ): Promise<SshStreamResult> {
@@ -132,8 +136,20 @@ export async function readSshFileStream(
   );
   channel.completion.catch(() => {});
   channel.stderr.resume();
+  // The idle limit counts only waits for target bytes, not the time `consume` takes.
+  const idle: { stalled: boolean; timer?: NodeJS.Timeout } = { stalled: false };
+  const watch = (waiting: boolean) => {
+    clearTimeout(idle.timer);
+    if (!waiting || request.idleMs === undefined) return;
+    idle.timer = setTimeout(() => {
+      idle.stalled = true;
+      channel.stdout.destroy();
+    }, request.idleMs);
+  };
+  const timedOut = () => new SshBackendError("TIMEOUT", source, "not-applied");
   // An ended or malformed stream reports the channel's own failure when it has one.
   const broken = async (): Promise<never> => {
+    if (idle.stalled) throw timedOut();
     let failure: unknown;
     channel.stdout.destroy();
     try {
@@ -145,9 +161,11 @@ export async function readSshFileStream(
       throw new SshBackendError(failure.code, source, "not-applied", { cause: failure });
     throw new SshBackendError("INVALID_RESPONSE", source, "not-applied");
   };
+  const { revision, offset, limit } = request;
   try {
+    watch(true);
     await channel.write(
-      Buffer.from(JSON.stringify({ operation: "stream", path: filePath, ...window })),
+      Buffer.from(JSON.stringify({ operation: "stream", path: filePath, revision, offset, limit })),
     );
     await channel.end();
     const reader = new ByteReader(channel.stdout);
@@ -156,7 +174,7 @@ export async function readSshFileStream(
       throw new SshBackendError(header.code, source, "not-applied");
     if (!Value.Check(headerSchema, header) || header.offset + header.length > header.size)
       return await broken();
-    if (window.revision !== undefined && header.revision !== window.revision)
+    if (revision !== undefined && header.revision !== revision)
       throw new SshBackendError("CONFLICT", source, "not-applied");
     let sent = 0;
     for (;;) {
@@ -168,7 +186,9 @@ export async function readSshFileStream(
       const bytes = await reader.exactly(length);
       if (bytes === undefined) return await broken();
       sent += length;
+      watch(false);
       await consume(bytes);
+      watch(true);
     }
     const reply = parsed(await reader.line());
     if (Value.Check(failureSchema, reply))
@@ -183,7 +203,12 @@ export async function readSshFileStream(
       length: header.length,
       sha256: reply.data.sha256,
     };
+  } catch (error) {
+    // A destroyed stdout can also end the reader with a premature-close error.
+    if (idle.stalled) throw timedOut();
+    throw error;
   } finally {
+    watch(false);
     // A stopped reader leaves output undrained; a closed consumer lets the channel discard it.
     channel.stdout.destroy();
     await channel.stop().catch(() => {});
