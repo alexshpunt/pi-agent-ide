@@ -1364,13 +1364,13 @@ text(await tools.replace({path:duplicate,text:"NEW"}));`,
   });
 });
 
-test("retains complete targets beyond both Read and Search previews", async () => {
+test("retains complete targets beyond the Search preview", async () => {
   await withTempWorkspace(async (cwd) => {
     const before = "old\n".repeat(2101);
     await writeFile(path.join(cwd, "large.txt"), before);
     const run = await runComposition(cwd, "composition-preview-is-not-scope", [
       `const read = await tools.read({path:"large.txt"});
-check(read.includes("Showing lines 1-2000 of 2101") && read.includes("offset=2001"),"Expected bounded Read preview");
+check(!read.includes("offset=2001") && read.trimEnd().split("\\n").length===2101,"Expected the whole text from a script Read");
 const found=await tools.search({path:read,query:"old",limit:1}).then(value => value.result);
 check(found.includes("2101 matches") && found.includes("(compacted)") && matches(found).length===1,"Expected compacted Search presentation with one example reference");
 store("completeSelection",found); text(found);`,
