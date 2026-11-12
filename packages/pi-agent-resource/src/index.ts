@@ -112,6 +112,12 @@ export {
 } from "./result-targets.ts";
 export { connectResultImages, ResultImageStore } from "./result-images.ts";
 export {
+  readUnchanged,
+  type FileGeneration,
+  type FileGenerationReader,
+  type UnchangedRead,
+} from "./unchanged-read.ts";
+export {
   createLineMap,
   describeLostRange,
   rangesInText,
