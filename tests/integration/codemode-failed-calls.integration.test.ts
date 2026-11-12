@@ -135,7 +135,7 @@ text("rejected:" + (rejected !== ""));`,
   });
 });
 
-test("an edit that failed after changing files is listed with the files it changed", async () => {
+test("an edit that failed after changing files is listed with only the files it changed", async () => {
   await withTempWorkspace(async (cwd) => {
     const result = await run(cwd, "codemode-partial-edit", [
       script(
@@ -152,7 +152,7 @@ text("after:" + after);`,
     const block = failureBlock(output);
     expect(block).toContain("2 of 3 IDE calls failed:");
     expect(block).toContain(
-      "- receipt_edit a.txt\n  Changed: a.txt, b.txt. Do not repeat this edit blindly; Read the files first.\n  The edit was accepted, then its editor batch failed when it was saved; the files above are those of the whole batch.\n  Fixture failed after writing\n- read a.txt\n  Editor batch failed before this tool.",
+      "- receipt_edit a.txt\n  Changed: a.txt. Do not repeat this edit blindly; Read the files first.\n  The edit was accepted, then its editor batch failed when it was saved.\n  Fixture failed after writing\n- read a.txt\n  Editor batch failed before this tool.",
     );
     expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("A\n");
   });
