@@ -224,7 +224,20 @@ pi -e npm:pi-agent-ide
 
 Pi packages run with your full system permissions. Review the package before installing it.
 
-npm 12 and newer skip the install scripts of dependencies you have not approved and list the skipped packages in an `install-scripts` notice at the end of `pi install`. npm 11.16 and later 11.x releases print the same notice but still run the scripts. All entries in that notice can stay unapproved. AST features load the grammars' bundled WebAssembly files and the prebuilt ast-grep parsers and binary directly, so they do not need the tree-sitter and `@ast-grep/*` scripts. The terminal tool loads the prebuilt `node-pty` binaries for Linux, macOS and Windows on x64 and arm64; the Linux binaries need glibc 2.28 or newer.
+npm 12 and newer skip the install scripts of dependencies you have not approved and list the skipped packages in an `install-scripts` notice at the end of `pi install`. npm 11.16 and later 11.x releases print the same notice but still run the scripts. The tree-sitter and `@ast-grep/lang-*` entries in that notice can stay unapproved: AST features load the grammars' bundled WebAssembly files and prebuilt parsers, not the native builds these scripts produce.
+
+The exception is `node-pty` on Linux. It ships no prebuilt Linux binary and compiles during installation, which needs Python, `make` and a C++ compiler. When its script is skipped, the terminal tool cannot start commands. Approve it for your user before installing:
+
+```bash
+npm config set allow-scripts=node-pty --location=user
+pi install npm:pi-agent-ide
+```
+
+For an existing installation, approve it the same way, then rebuild it in Pi's package directory:
+
+```bash
+cd ~/.pi/agent/npm && npm rebuild node-pty
+```
 
 ## Check project tools
 
