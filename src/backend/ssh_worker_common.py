@@ -20,19 +20,29 @@ def encoded(data):
 
 
 def stream(platform, request, output, started):
-    """Send a regular file whose revision matches, then return its SHA-256.
+    """Send a byte window of a regular file, then return the SHA-256 of the sent bytes.
 
-    After a header line with the size and revision, bytes follow as chunks that each start
-    with a 4-byte big-endian length. A zero length ends them, also after a failure, and the
-    usual reply line follows. `started` runs once the header is sent.
+    An optional `revision` must match the opened file. `offset` counts from the end when
+    negative and clamps to the file; `limit` caps the window, which otherwise runs to the end.
+    After a header line with the file size, revision and the window's offset and length, bytes
+    follow as chunks that each start with a 4-byte big-endian length. A zero length ends them,
+    also after a failure, and the usual reply line follows. `started` runs once the header is
+    sent. The file must keep its revision until the last byte is sent.
     """
-    with platform.stream_source(request["path"]) as (size, revision, read, current):
-        if revision != request["revision"]:
+    with platform.stream_source(request["path"]) as (size, revision, read, seek, current):
+        expected = request.get("revision")
+        if expected is not None and revision != expected:
             raise OperationError("CONFLICT")
-        output.write(json.dumps({"size": size, "revision": revision}).encode("ascii") + b"\n")
+        offset = request.get("offset", 0)
+        limit = request.get("limit")
+        start = min(size, max(0, size + offset if offset < 0 else offset))
+        length = size - start if limit is None else min(limit, size - start)
+        seek(start)
+        header = {"size": size, "revision": revision, "offset": start, "length": length}
+        output.write(json.dumps(header).encode("ascii") + b"\n")
         started()
         digest = hashlib.sha256()
-        remaining = size
+        remaining = length
         while remaining:
             chunk = read(min(STREAM_CHUNK, remaining))
             if not chunk:

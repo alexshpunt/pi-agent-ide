@@ -14,7 +14,28 @@ const revisionPattern = "^[a-f0-9]{64}$";
 const headerSchema = Type.Object({
   size: Type.Integer({ minimum: 0 }),
   revision: Type.String({ pattern: revisionPattern }),
+  offset: Type.Integer({ minimum: 0 }),
+  length: Type.Integer({ minimum: 0 }),
 });
+
+/** The byte window to stream and the revision it must keep. */
+export interface SshStreamWindow {
+  /** Required file revision; omit it to stream whatever the target opens. */
+  readonly revision?: string;
+  /** First byte; a negative offset counts from the end. Both clamp to the file. */
+  readonly offset?: number;
+  /** Maximum bytes; omit it to stream to the end. */
+  readonly limit?: number;
+}
+
+/** What a stream sent: the window's position and length within the file and their checksum. */
+export interface SshStreamResult {
+  readonly size: number;
+  readonly revision: string;
+  readonly offset: number;
+  readonly length: number;
+  readonly sha256: string;
+}
 const failureSchema = Type.Object({
   ok: Type.Literal(false),
   code: Type.String({ pattern: "^[A-Z][A-Z0-9_]*$" }),
@@ -87,7 +108,8 @@ function parsed(line: string | undefined): unknown {
   }
 }
 
-/** Stream a remote regular file through one SSH channel while it keeps `revision`.
+/** Stream a byte window of a remote regular file through one SSH channel.
+ * The file must keep its revision, and `window.revision` when given, until the last byte.
  * `consume` gets the bytes in order, in chunks of at most 1 MiB; its promise paces the stream.
  * The target rechecks the revision after the last byte. A read has no effect on the target, so
  * every failure is not-applied; `consume` failures propagate unchanged.
@@ -95,10 +117,10 @@ function parsed(line: string | undefined): unknown {
 export async function readSshFileStream(
   target: SshTarget,
   filePath: string,
-  revision: string,
+  window: SshStreamWindow,
   consume: (bytes: Buffer) => Promise<void>,
   context: BackendOperationContext = {},
-): Promise<{ readonly totalBytes: number; readonly sha256: string }> {
+): Promise<SshStreamResult> {
   const source = remoteLocation(target.id, filePath, targetOs(target)).source;
   const program = await sshWorkerBundle(targetOs(target), "file");
   const channel = await startSshProcess(
@@ -125,34 +147,42 @@ export async function readSshFileStream(
   };
   try {
     await channel.write(
-      Buffer.from(JSON.stringify({ operation: "stream", path: filePath, revision })),
+      Buffer.from(JSON.stringify({ operation: "stream", path: filePath, ...window })),
     );
     await channel.end();
     const reader = new ByteReader(channel.stdout);
     const header = parsed(await reader.line());
     if (Value.Check(failureSchema, header))
       throw new SshBackendError(header.code, source, "not-applied");
-    if (!Value.Check(headerSchema, header)) return await broken();
-    if (header.revision !== revision) throw new SshBackendError("CONFLICT", source, "not-applied");
-    let totalBytes = 0;
+    if (!Value.Check(headerSchema, header) || header.offset + header.length > header.size)
+      return await broken();
+    if (window.revision !== undefined && header.revision !== window.revision)
+      throw new SshBackendError("CONFLICT", source, "not-applied");
+    let sent = 0;
     for (;;) {
       const prefix = await reader.exactly(4);
       if (prefix === undefined) return await broken();
       const length = prefix.readUInt32BE(0);
       if (length === 0) break;
-      if (length > MAX_CHUNK_BYTES || totalBytes + length > header.size) return await broken();
+      if (length > MAX_CHUNK_BYTES || sent + length > header.length) return await broken();
       const bytes = await reader.exactly(length);
       if (bytes === undefined) return await broken();
-      totalBytes += length;
+      sent += length;
       await consume(bytes);
     }
     const reply = parsed(await reader.line());
     if (Value.Check(failureSchema, reply))
       throw new SshBackendError(reply.code, source, "not-applied");
-    if (!Value.Check(completionSchema, reply) || totalBytes !== header.size) return await broken();
+    if (!Value.Check(completionSchema, reply) || sent !== header.length) return await broken();
     const { exitCode } = await channel.completion;
     if (exitCode !== 0) throw new SshBackendError("REMOTE_OPERATION_FAILED", source, "not-applied");
-    return { totalBytes, sha256: reply.data.sha256 };
+    return {
+      size: header.size,
+      revision: header.revision,
+      offset: header.offset,
+      length: header.length,
+      sha256: reply.data.sha256,
+    };
   } finally {
     // A stopped reader leaves output undrained; a closed consumer lets the channel discard it.
     channel.stdout.destroy();

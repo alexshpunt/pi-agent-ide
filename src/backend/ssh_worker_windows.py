@@ -145,7 +145,7 @@ def read_open(source, count):
 
 @contextmanager
 def stream_source(path):
-    """Open a regular file to stream: its size, revision, a reader and a current-revision check."""
+    """Open a regular file to stream: size, revision, reader, seek and a current-revision check."""
     try:
         path = native(path)
     except Failure as failure:
@@ -157,7 +157,7 @@ def stream_source(path):
             raise OperationError("INVALID_FILE_TYPE")
         with os.fdopen(fd, "rb", closefd=False) as source:
             yield (info.st_size, fingerprint(path, b"", info), lambda count: read_open(source, count),
-                   lambda: fingerprint(path, b"", os.fstat(fd)))
+                   source.seek, lambda: fingerprint(path, b"", os.fstat(fd)))
     finally:
         os.close(fd)
 
@@ -590,27 +590,6 @@ def operate(request):
     if operation == "read":
         data, snapshot = read_snapshot(path)
         return {"bytes": encoded(data), "version": snapshot}
-    if operation == "range":
-        count = request["limit"]
-        if count < 0 or count > MAX_BYTES:
-            raise OperationError("CONTENT_LIMIT")
-        fd = os.open(path, os.O_RDONLY | os.O_BINARY)
-        try:
-            info = os.fstat(fd)
-            if not stat.S_ISREG(info.st_mode):
-                raise OperationError("INVALID_FILE_TYPE")
-            revision = fingerprint(path, b"", info)
-            offset = request["offset"]
-            offset = min(info.st_size, max(0, info.st_size + offset if offset < 0 else offset))
-            with os.fdopen(fd, "rb", closefd=False) as source:
-                source.seek(offset)
-                data = read_open(source, min(count, info.st_size - offset))
-            if revision != fingerprint(path, b"", os.fstat(fd)):
-                raise OperationError("CONFLICT")
-            return {"bytes": encoded(data), "offset": offset, "totalBytes": info.st_size,
-                    "revision": revision}
-        finally:
-            os.close(fd)
     if operation == "list":
         with os.scandir(path) as entries:
             return [{"name": item.name, "kind": kind_of(item.stat(follow_symlinks=False))}
