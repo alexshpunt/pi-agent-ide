@@ -55,10 +55,23 @@ const labelFields: Record<string, readonly string[]> = {
   unstage: ["file"],
 };
 
+/** The `id` of a Codemode value passed as a source, such as a Read or Search value. */
+function scriptValueId(value: unknown): string | undefined {
+  return value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "id" in value &&
+    typeof value.id === "string"
+    ? value.id
+    : undefined;
+}
+
 /** The sources a call names, as its title shows them; enveloped results become `RESULT#<uuid>`. */
 function sourceLabel(name: string, input: Record<string, unknown>): string | undefined {
   const labels = (field: unknown): string[] => {
     if (Array.isArray(field)) return field.flatMap(labels);
+    const id = scriptValueId(field);
+    if (id !== undefined) return labels(id);
     if (field !== null && typeof field === "object" && "path" in field) return labels(field.path);
     if (typeof field !== "string" || field === "") return [];
     // One line per entry: a multi-line command is shown on one line.
@@ -202,7 +215,7 @@ export function createIdeTextResults(
   pi.on("agent_end", clearCalls);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
-      'Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. Terminal tools return { output, exit_code, truncated, full_output_path, wall_time_seconds, session }; a non-zero exit_code is a value, not a failure. Diff returns the complete unified diff, or "" when the sources are equal. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. A failed IDE call returns null (a resource provider\'s action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.';
+      'Direct IDE calls return readable text. In Codemode, search tools return { result, hasMatches, complete }; pass its result string to other tools for composition. Terminal tools return { output, exit_code, truncated, full_output_path, wall_time_seconds, session }; a non-zero exit_code is a value, not a failure. Diff returns the complete unified diff, or "" when the sources are equal. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. A failed IDE call returns null (a resource provider\'s action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string, or a returned value that has an id, to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.';
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -227,6 +240,7 @@ export function createIdeTextResults(
         if (value === undefined) continue;
         if (
           event.toolName === "diff" &&
+          scriptValueId(value) === undefined &&
           value !== null &&
           typeof value === "object" &&
           "path" in value
@@ -530,6 +544,10 @@ function outputNotices(details: unknown): string[] {
 function displaySources<Args extends Record<string, unknown>>(name: string, args: Args): Args {
   const label = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(label);
+    const id = scriptValueId(value);
+    if (id !== undefined) return id;
+    if (value !== null && typeof value === "object" && "path" in value)
+      return { ...value, path: label(value.path) };
     if (typeof value !== "string") return value;
     return resultReference(value) ?? value;
   };

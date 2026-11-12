@@ -63,6 +63,7 @@ import {
   type readParameters,
   describeReadParameters,
   type ReadParameterText,
+  readRequestOf,
 } from "#src/api/read-parameters.ts";
 import { readRaw } from "#src/core/tools/read/raw-read.ts";
 import { readOutputSchema, structuredRead } from "./read/structured-result.ts";
@@ -233,9 +234,10 @@ export function createReadTool(
           cwd: context.cwd,
           ...(signal !== undefined && { signal }),
         };
+        const request = readRequestOf(parameters);
         try {
           const result = await executeRead(
-            parameters,
+            request,
             resolverContext,
             resolvers,
             handlers,
@@ -249,14 +251,14 @@ export function createReadTool(
             isNestedCall?.(toolCallId) === true ? "none" : "model",
           );
           return withoutScriptData(
-            structuredRead(withReadCancellation(result, parameters.path, signal)),
+            structuredRead(withReadCancellation(result, request.path, signal)),
           );
         } catch (error) {
           if (signal?.aborted) throw error;
           return structuredRead(
             failureResult({
               code: "READ_FAILED",
-              source: parameters.path,
+              source: request.path,
               message: error instanceof Error ? error.message : String(error),
             }),
           );
