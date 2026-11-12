@@ -79,7 +79,7 @@ test("an explicitly excluded file is an empty scope, not an unavailable provider
     { path: "a.ts", exclude: "a.ts" },
     manager,
   );
-  expect(result).toEqual({ hits: [], complete: true });
+  expect(result).toEqual({ hits: [], contents: new Map(), complete: true });
   expect(manager.prepareWorkspaceSymbols).not.toHaveBeenCalled();
 });
 
@@ -490,6 +490,15 @@ test("lists every reference when another session's write reaches the server whil
     ["reference", "a.ts", 3],
     ["reference", "b.ts", 1],
   ]);
+  // Each hit describes the text returned for its file, the file as it is after the write, so its
+  // anchors can register from that text without reading the file again.
+  expect(result.contents.get(source)).toBe(advanced);
+  expect(result.contents.get(path.join(cwd, "b.ts"))).toBe("same();\n");
+  for (const hit of result.hits) {
+    const line = requiredValue(result.contents.get(hit.source)).split(/\r?\n/u)[hit.lineNumber - 1];
+    expect(line).toBe(hit.lineText);
+    expect(line?.slice(hit.startColumn, hit.endColumn)).toBe(hit.matchedText);
+  }
 });
 
 test("rejects a scope whose own text changed and cancelled searches before creating targets", async () => {
