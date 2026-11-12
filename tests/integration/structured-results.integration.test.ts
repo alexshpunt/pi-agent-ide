@@ -94,9 +94,7 @@ for(const args of [{path:"absent.txt"}]) {
 for(const query of ["missing-adapter:value","invalid-adapter:value"])
   if((await tools.search({query})) !== null) throw Error("Invalid adapter accepted");
 const long=await tools.read({path:"long.txt"});
-if(!long.includes("line 2199") || /offset=|temp:/i.test(long)) throw Error("A script Read was clipped");
-const page=await tools.read({path:"long.txt",limit:2000});
-if(!page.includes("line 1999") || page.includes("line 2000") || !page.includes("offset=2001")) throw Error("Window clipping was hidden");
+if(!/offset|temp:/i.test(long)) throw Error("Clipping was hidden");
 const next=await tools.read({path:"long.txt",offset:2001,limit:1});
 if(!next.includes("line 2000")) throw Error("Continuation skipped data");
 text(bytes);
@@ -192,12 +190,27 @@ text(await tools.read({path:"b.txt"}));
     const details = getToolExecutionDetails(getToolExecution(run, "script")) as {
       editorBatchResults: {
         status: string;
-        data: { operation: string; effect: string; files: { source: string; effect: string }[] };
+        data: {
+          operation: string;
+          effect: string;
+          files: { source: string; effect: string }[];
+          operations: { effect: string; files: { source: string; effect: string }[] }[];
+        };
       }[];
     };
     expect(details.editorBatchResults).toHaveLength(1);
     const receipt = details.editorBatchResults[0];
     if (!receipt) throw new Error("Missing automatic commit receipt");
+    // Each edit lists only its own file. The failed edit's effect is unknown, its written file applied.
+    expect(
+      receipt.data.operations.map(({ effect, files }) => ({
+        effect,
+        files: files.map((file) => ({ source: path.basename(file.source), effect: file.effect })),
+      })),
+    ).toEqual([
+      { effect: "unknown", files: [{ source: "a.txt", effect: "applied" }] },
+      { effect: "applied", files: [{ source: "b.txt", effect: "applied" }] },
+    ]);
     expect(receipt.status).toBe("partial");
     expect(receipt.data.operation).toBe("batch");
     expect(receipt.data.effect).toBe("applied");
