@@ -153,7 +153,8 @@ text(results[0]); text(results[1]);
 await tools.write({path:"link_hints.js",content:"hintStrings();\nHintStrings();\nmyhintStrings();\ngenerateHintStrings();\n"});
 const after = await tools.read({path:reference});
 if (!after.includes("hintStrings();") || after.includes("HintStrings();") || after.includes("generateHintStrings();")) throw Error("Read reranked fuzzy or changed exact semantics: "+after);
-let stale=false; try { await tools.read({path:individual}); } catch { stale=true; }
+const rejected = await tools.read({path:individual}).then(value => value, () => ({status:"error",errors:[{code:"THROWN"}]}));
+const stale = rejected?.status === "error" && rejected.errors.length > 0;
 if(!stale) throw Error("Individual candidate reference failed to go stale");
 text("Exact candidate Read and refresh passed");
 `;
