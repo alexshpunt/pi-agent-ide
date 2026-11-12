@@ -36,7 +36,8 @@ export async function registerTerminalSearch(
     setup(api) {
       api.addResolver({
         resolver: terminalSearchResolver(manager, ownerSessionId),
-        priority: 100,
+        // Before the filesystem regex resolver (-10), which reads `shell:` as a file path.
+        priority: -20,
       });
     },
   } satisfies SearchPlugin;
@@ -58,6 +59,11 @@ function terminalSearchResolver(
     async tryResolve(request: SearchRequest) {
       if (request.path === undefined || !request.path.startsWith("shell:")) {
         return { kind: "not-handled" as const };
+      }
+      try {
+        terminalMatcher(request);
+      } catch (error) {
+        return { kind: "failed" as const, error };
       }
       let snapshots: readonly TerminalSessionSnapshot[];
       if (request.path === "shell:") {
@@ -137,35 +143,62 @@ function terminalSearchResolver(
   };
 }
 
-/** Find literal matches in retained output without claiming a complete source scope. */
+const REGEX_PREFIX = "regex:";
+
+/** Find line matches of a literal query, or of a `regex:` query, in a line of retained output. */
+function terminalMatcher(request: SearchRequest): (lineText: string) => Iterable<[number, number]> {
+  if (request.query.startsWith(REGEX_PREFIX)) {
+    const pattern = request.query.slice(REGEX_PREFIX.length);
+    if (pattern.length === 0) return () => [];
+    const expression = new RegExp(pattern, request.caseSensitive === true ? "gu" : "giu");
+    return function* (lineText) {
+      for (const found of lineText.matchAll(expression)) {
+        const end = found.index + found[0].length;
+        if (
+          found[0].length > 0 &&
+          (request.wholeWord !== true || isWordBoundary(lineText, found.index, end))
+        )
+          yield [found.index, end];
+      }
+    };
+  }
+  const query = request.caseSensitive === true ? request.query : request.query.toLocaleLowerCase();
+  if (query.length === 0) return () => [];
+  return function* (lineText) {
+    const haystack = request.caseSensitive === true ? lineText : lineText.toLocaleLowerCase();
+    let column = 0;
+    for (;;) {
+      const start = haystack.indexOf(query, column);
+      if (start < 0) return;
+      const end = start + query.length;
+      if (request.wholeWord !== true || isWordBoundary(haystack, start, end)) yield [start, end];
+      column = Math.max(end, start + 1);
+    }
+  };
+}
+
+/**
+ * Find matches in retained output without claiming a complete source scope. A query is literal
+ * unless it starts with `regex:`; an invalid regular expression throws.
+ */
 export function findTerminalMatches(
   snapshot: TerminalSessionSnapshot,
   request: SearchRequest,
 ): SearchSelectionMatch[] {
-  const query = request.caseSensitive === true ? request.query : request.query.toLocaleLowerCase();
-  if (query.length === 0) return [];
+  const find = terminalMatcher(request);
   const matches: SearchSelectionMatch[] = [];
   const maximum = request.limit ?? 100;
   for (const [index, lineText] of snapshot.output.replaceAll("\r", "").split("\n").entries()) {
-    const haystack = request.caseSensitive === true ? lineText : lineText.toLocaleLowerCase();
-    let column = 0;
-    while (matches.length < maximum) {
-      const startColumn = haystack.indexOf(query, column);
-      if (startColumn < 0) break;
-      const endColumn = startColumn + query.length;
-      const wholeWord =
-        request.wholeWord !== true || isWordBoundary(haystack, startColumn, endColumn);
-      if (wholeWord) {
-        matches.push({
-          source: snapshot.source,
-          lineNumber: index + 1,
-          startColumn,
-          endColumn,
-          matchedText: lineText.slice(startColumn, endColumn),
-          lineText,
-        });
-      }
-      column = Math.max(endColumn, startColumn + 1);
+    for (const [startColumn, endColumn] of find(lineText)) {
+      if (matches.length >= maximum) return matches;
+      matches.push({
+        source: snapshot.source,
+        lineNumber: index + 1,
+        startColumn,
+        endColumn,
+        matchedText: lineText.slice(startColumn, endColumn),
+        lineText,
+      });
     }
     if (matches.length >= maximum) break;
   }
