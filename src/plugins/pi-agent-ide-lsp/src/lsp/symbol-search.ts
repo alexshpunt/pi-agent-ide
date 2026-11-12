@@ -107,6 +107,11 @@ function sourceOf(uri: string, cwd: string): string {
 /** Symbols found by {@link searchSymbols}. */
 export interface SymbolSearchResult {
   readonly hits: SymbolHit[];
+  /**
+   * Text of each source with hits, as the hits were mapped onto it. Anchors register from this
+   * text, so no second read can find a file another session wrote in between.
+   */
+  readonly contents: ReadonlyMap<string, string>;
   readonly complete: boolean;
   /** Why C/C++ references can be missing; present only when they can. */
   readonly coverage?: ClangCoverage;
@@ -139,7 +144,8 @@ async function searchSymbolsOnce(
 ): Promise<SymbolSearchResult> {
   signal?.throwIfAborted();
   const resultScope = scope.resultScope;
-  if (resultScope?.targets.length === 0) return { hits: [], complete: resultScope.complete };
+  if (resultScope?.targets.length === 0)
+    return { hits: [], contents: new Map(), complete: resultScope.complete };
   if (
     resultScope === undefined &&
     scope.path !== undefined &&
@@ -150,7 +156,7 @@ async function searchSymbolsOnce(
     ) &&
     (await manager.isSourceFile(scope.path, cwd, signal))
   )
-    return { hits: [], complete: true };
+    return { hits: [], contents: new Map(), complete: true };
   const roots = resultScope?.targets.map((target) => target.source) ??
     scope.paths ?? [scope.path ?? cwd];
   const clients = new Set(
@@ -476,8 +482,11 @@ async function searchSymbolsOnce(
   signal?.throwIfAborted();
   // Files edited during the search keep the hits whose lines are unchanged, at their new lines.
   const moved = new Map<string, LinePositionMap>();
+  // The text each source's hits end up on: the last text read of it.
+  const mappedOnto = new Map<string, string>();
   for (const [source, snapshot] of contents) {
     const current = await manager.readSourceSnapshot(source, signal);
+    mappedOnto.set(source, current.content);
     if (current.version !== snapshot.version && current.content !== snapshot.document.content)
       moved.set(source, LinePositionMap.between(snapshot.document.content, current.content));
   }
@@ -499,9 +508,13 @@ async function searchSymbolsOnce(
       left.endColumn - right.endColumn ||
       left.symbol.id.localeCompare(right.symbol.id),
   );
+  const returned = hits.slice(0, limit);
   const coverage = mergeCoverage(coverages);
   return {
-    hits: hits.slice(0, limit),
+    hits: returned,
+    contents: new Map(
+      returned.map((hit) => [hit.source, requiredValue(mappedOnto.get(hit.source))]),
+    ),
     complete: (resultScope?.complete ?? true) && hits.length <= limit && coverageComplete(coverage),
     ...(coverage !== undefined && !coverageComplete(coverage) && { coverage }),
   };

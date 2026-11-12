@@ -154,20 +154,27 @@ export function createLspSearchResolver(
               context.cwd,
               signal,
             );
-            // Keep only the declaration text, not the whole file it was cut from.
-            return structuredClone(declarationMatch(found.source, found.content, found.range));
+            // Keep only the declaration text, not the whole file it was cut from. The file text
+            // is used once to register or refresh the anchor and is not retained.
+            return {
+              match: structuredClone(declarationMatch(found.source, found.content, found.range)),
+              contents: new Map([[found.source, found.content]]),
+            };
           };
           const { match, session } = await retryWhileSourceChanges(async () => {
-            const match = await resolve(context.signal);
+            const { match, contents } = await resolve(context.signal);
             const session = await register({
               request,
               matches: [match],
               complete: true,
+              // The text the declaration was found in: a second read could find another
+              // session's write and no longer fit it.
+              contents,
               refresh: (signal) =>
-                withLspDocuments(async () => ({
-                  matches: [await resolve(signal)],
-                  complete: true,
-                })),
+                withLspDocuments(async () => {
+                  const next = await resolve(signal);
+                  return { matches: [next.match], complete: true, contents: next.contents };
+                }),
             });
             return { match, session };
           }, context.signal);
@@ -220,6 +227,11 @@ export function createLspSearchResolver(
           const scope = refresh ? await currentScope(context, signal) : initialScope;
           const groups = refresh ? await groupScope(scope, signal) : initialGroups;
           const hits: SymbolHit[] = [];
+          // The text each source's hits were mapped onto, so their anchors register from it.
+          const contents = new Map<string, string>();
+          // Two language servers can read one file at different times, around another session's
+          // write. Such a file has no single text for its hits; the registration then reads it.
+          const conflicting = new Set<string>();
           let complete = scope?.complete ?? true;
           const coverages: (ClangCoverage | undefined)[] = [];
           for (const [manager, { targets, paths }] of groups) {
@@ -241,30 +253,43 @@ export function createLspSearchResolver(
               manager,
             );
             hits.push(...found.hits);
+            for (const [source, text] of found.contents) {
+              const known = contents.get(source);
+              if (known === undefined) contents.set(source, text);
+              else if (known !== text) conflicting.add(source);
+            }
             complete = complete && found.complete;
             coverages.push(found.coverage);
           }
+          for (const source of conflicting) contents.delete(source);
           // The search session keeps these hits and its refresh closure for as long as its anchors
-          // live. A copy keeps only the matched text, not each file the text was cut from.
+          // live. A copy keeps only the matched text, not each file the text was cut from. The
+          // file texts are used once to register or refresh the anchors and are not retained.
           const coverage = mergeCoverage(coverages);
-          return structuredClone({
-            hits: hits.slice(0, limit),
-            complete: complete && hits.length <= limit,
-            ...(coverage && { coverage }),
-          });
+          return {
+            ...structuredClone({
+              hits: hits.slice(0, limit),
+              complete: complete && hits.length <= limit,
+              ...(coverage && { coverage }),
+            }),
+            contents,
+          };
         };
         let attempts = 0;
         const { found, session } = await retryWhileSourceChanges(async () => {
           // A later attempt finds the scope in the current text, like a refresh.
-          const found = await collect(context.signal, attempts++ > 0);
+          const { contents, ...found } = await collect(context.signal, attempts++ > 0);
           const session = await register({
             request,
             matches: found.hits,
             complete: found.complete,
+            // The text the hits were mapped onto: a second read could find another session's
+            // write and no longer fit them.
+            contents,
             refresh: (signal) =>
               withLspDocuments(async () => {
                 const next = await collect(signal, true);
-                return { matches: next.hits, complete: next.complete };
+                return { matches: next.hits, complete: next.complete, contents: next.contents };
               }),
           });
           return { found, session };

@@ -96,6 +96,7 @@ test.each([
   expect(clients.map((client) => client.serverId)).toEqual(["typescript"]);
   await expect(searchSymbols("value", cwd, 100, undefined, {}, manager)).resolves.toEqual({
     hits: [],
+    contents: new Map(),
     complete: true,
   });
   await expect(

@@ -151,3 +151,50 @@ text("searches " + searches);`,
     expect(content.match(/beta_\d{4}/gu)?.length ?? 0).toBeLessThan(edited.markers);
   });
 }, 150_000);
+
+/**
+ * Searches that find nothing and offer possible names from a file a peer rewrites every 50 ms.
+ * The window between finding a candidate and registering its anchors is short, so the rounds are
+ * many and the peer fast: without captured text, a run of them loses a candidate's anchors.
+ */
+const candidateRounds = 40;
+
+test("every possible-name candidate keeps its anchors while another session writes the file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    // The query misspells the identifier, so the search finds nothing and offers it instead.
+    const source = createConcurrentWriterSource({ token: "alphaTokenValue" });
+    await writeFile(path.join(cwd, "names.cpp"), source.content);
+    const peer = await installConcurrentWriter(cwd, {
+      file: "names.cpp",
+      script: "peer-names.mjs",
+      intervalMs: 50,
+      lifetimeMs: 90_000,
+    });
+
+    const run = await runStress(
+      cwd,
+      "search-candidate-concurrent-writer",
+      `// @options: {"timeout_ms": 150000}
+await tools.bash({command:${JSON.stringify(peer.command)},background:true,name:${JSON.stringify(peer.session)}});
+let rounds = 0;
+for (let round = 1; round <= ${String(candidateRounds)}; round += 1) {
+  const result = await tools.search({path:"names.cpp",query:"alphaTokenValues"}).then(value=>value.result);
+  check(result.includes("Possible name: alphaTokenValue ") && result.includes("${String(source.tokenOccurrences)} matches in 1 file"),
+    "Round " + round + ": the search offers no complete candidate: " + result);
+  // A candidate without anchors shows locations an edit cannot use.
+  check(!result.includes("without stable references") && /Read: SEARCH#[A-F0-9]+:all:line/u.test(result),
+    "Round " + round + ": the candidate lost its anchors: " + result);
+  rounds += 1;
+}
+await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
+text("candidate rounds " + rounds);`,
+    );
+
+    expect(getToolExecution(run, "stress").isError, getToolResultText(run, "stress")).toBe(false);
+    expect(getToolResultText(run, "stress")).toContain(
+      `candidate rounds ${String(candidateRounds)}`,
+    );
+    // The peer really wrote the file throughout the rounds.
+    expect(await peer.writes()).toBeGreaterThan(candidateRounds);
+  });
+}, 150_000);

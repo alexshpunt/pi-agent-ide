@@ -81,14 +81,19 @@ export async function searchFuzzyAlternative(
     { matches: fuzzyLimits.matchesPerCandidate, bytes: fuzzyLimits.verificationBytes },
     environment,
   );
-  // ripgrep's word boundary includes letters/digits/underscore, but treats dollar as punctuation.
-  return {
-    ...result,
-    matches: result.matches.filter(
-      (match) =>
-        match.lineText[match.startColumn - 1] !== "$" && match.lineText[match.endColumn] !== "$",
-    ),
-  };
+  return { ...result, matches: result.matches.filter(isWholeIdentifierMatch) };
+}
+
+/**
+ * Whether an exact alternative's match is a whole identifier. Ripgrep's word boundary includes
+ * letters, digits and underscore, but treats a dollar sign as punctuation.
+ */
+export function isWholeIdentifierMatch(match: {
+  readonly lineText: string;
+  readonly startColumn: number;
+  readonly endColumn: number;
+}): boolean {
+  return match.lineText[match.startColumn - 1] !== "$" && match.lineText[match.endColumn] !== "$";
 }
 async function ownedByteSize(
   environment: SearchEnvironment,
