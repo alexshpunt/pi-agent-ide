@@ -2158,7 +2158,7 @@ const addedRows = Array.from({ length: 2500 }, (_, index) => `row ${index}\n`).j
 add(
   "diff-script-complete",
   ["codemode.diff-complete"],
-  'In one Codemode script, diff before.txt against after.txt; after.txt is larger than the model output limit. Without printing the diff, count the lines of the returned string that start with "+" but not with "+++", and report that count. Then diff before.txt against itself and check that the result is an empty string. Do not use Bash, the raw: prefix or temporary results, and do not edit files.',
+  'In one Codemode script, diff before.txt against after.txt; after.txt has more lines than a tool result shows. Without printing the diff, count the lines of the returned string that start with "+" but not with "+++", and report that count. Then diff before.txt against itself and check that the result is an empty string. Do not use Bash, the raw: prefix or temporary results, and do not edit files.',
   [
     {
       tool: "diff",
