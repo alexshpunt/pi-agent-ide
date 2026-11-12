@@ -48,6 +48,23 @@ test("a file is replaced in one step and keeps its permissions", async () => {
 });
 
 test.runIf(process.platform !== "win32")(
+  "a replaced file keeps permissions that the process umask would remove",
+  async () => {
+    const root = await directory();
+    const file = path.join(root, "source.ts");
+    await writeFile(file, "before\n");
+    await chmod(file, 0o664);
+    const previous = process.umask(0o077);
+    try {
+      await replaceFileContent(file, Buffer.from("after\n"), undefined);
+    } finally {
+      process.umask(previous);
+    }
+    expect((await stat(file)).mode & 0o777).toBe(0o664);
+  },
+);
+
+test.runIf(process.platform !== "win32")(
   "a file with another hard link and a symlinked file are written where they are",
   async () => {
     const root = await directory();
