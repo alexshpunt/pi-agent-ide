@@ -51,10 +51,7 @@ async function runReferencePlan(
     tools: ["read", "replace", ...(nativeCode ? ["codemode"] : [])],
     conversation: [
       ...steps.map((step) =>
-        assistantMessage(
-          [toolCall({ ...step, chunks: { kind: "fixed", size: 65536 }, delayMs: 0 })],
-          { stopReason: "toolUse" },
-        ),
+        assistantMessage([toolCall({ ...step, delayMs: 0 })], { stopReason: "toolUse" }),
       ),
       assistantMessage([text("Done", { delayMs: 0 })]),
     ],
