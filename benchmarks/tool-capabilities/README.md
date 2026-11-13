@@ -31,6 +31,8 @@ pnpm validate:tools:models --run --model luna-6-low \
 
 No inference happens without both `--run` and an explicit model profile. The command is separate from ordinary tests and CI. Obtain permission for the selected provider, model, thinking level, and runs before using it. Being in `models.json` is not permission to spend.
 
+Use `--concurrency N` to run up to N attempts at once (default 1). Reports are updated as attempts finish and list completed attempts in selection order. An account stop or signal cancels active attempts and prevents new ones; already-started requests may still incur cost. Web fixtures using port 8765 are serialized within an invocation. Run only one invocation at a time on a host because separate invocations share that port. TUI and mutable dedicated authentication require concurrency 1.
+
 Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 low was added by explicit task approval. New models belong in `models.json`, not in case definitions. Use the same tasks and validators for each model.
 
 Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
@@ -105,7 +107,7 @@ A run freezes the checkout's current source and dependencies in a disposable clo
 
 Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Snapshot credentials are copied into private case state and removed with it. Explicit dedicated-auth files are mounted separately and survive cleanup with their refresh rotations. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
 
-Media, browser, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Web setup uses a fixed local endpoint; do not run those cases concurrently.
+Media, browser, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Web setup uses a fixed local endpoint; the runner serializes those cases within an invocation.
 
 ## Evidence
 
