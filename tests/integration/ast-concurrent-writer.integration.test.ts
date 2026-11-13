@@ -98,19 +98,23 @@ test("ast_search keeps its matches, captures and edits while another session wri
 for (const peer of ${JSON.stringify([peers.searched, peers.edited].map((peer) => ({ command: peer.command, session: peer.session })))})
   await tools.bash({command:peer.command,background:true,name:peer.session});
 let searches = 0;
-// Every match an AST result shows must carry its anchor, and every capture its own target.
+// Every match of an AST result must carry its id, and every capture node its own id. A result
+// with a match or node without one is not a match list: ast_search then returns readable text.
+const selected = (item) => typeof item.id === "string" && item.id.startsWith("RESULT#");
 async function found(file, pattern, round, what, expected, captures) {
-  const result = await tools.ast_search({path:file,pattern}).then(value=>value.result);
+  const result = await tools.ast_search({path:file,pattern});
   searches += 1;
-  const rows = matchRows(result);
-  check(rows.length === expected,
-    "Round " + round + ": the " + what + " result of " + file + " shows " + rows.length + " anchored matches instead of " + expected + ": " + result);
+  const shown = JSON.stringify(result).slice(0, 2000);
+  check(result !== null && typeof result === "object", "Round " + round + ": the " + what + " result of " + file + " is no match list: " + shown);
+  const anchored = result.matches.filter(selected);
+  check(anchored.length === expected,
+    "Round " + round + ": the " + what + " result of " + file + " has " + anchored.length + " matches with ids instead of " + expected + ": " + shown);
   for (const name of captures ?? []) {
-    const handles = capture(result, name);
-    check(handles.length === expected,
-      "Round " + round + ": the " + what + " result shows " + handles.length + " " + name + " captures instead of " + expected + ": " + result);
+    const groups = result.matches.filter((match) => (match.captures[name] ?? []).length > 0 && match.captures[name].every(selected));
+    check(groups.length === expected,
+      "Round " + round + ": the " + what + " result has " + groups.length + " " + name + " captures instead of " + expected + ": " + shown);
   }
-  return { result, rows };
+  return result;
 }
 // A large file a peer rewrites while every structural search of it runs.
 for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
@@ -121,11 +125,11 @@ for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
 for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   // The whole result as an edit source: the matched definition is rewritten.
   const whole = await found("edit.cpp", ${JSON.stringify(definition)}, round, "definition", 1, ["NAME","ADD"]);
-  const rewritten = await tools.replace({path:whole.result,text:"int ${edited.token}(int value) { return value + " + String(round) + "; }"});
+  const rewritten = await tools.replace({path:whole,text:"int ${edited.token}(int value) { return value + " + String(round) + "; }"});
   check(typeof rewritten === "string", "Round " + round + ": whole-result rewrite returned " + JSON.stringify(rewritten));
   // A capture of a result with several matches: the argument of the first call is replaced.
   const uses = await found("edit.cpp", ${JSON.stringify(`${edited.token}($ARG)`)}, round, "call", ${String(calls)}, ["ARG"]);
-  const argument = capture(uses.result, "ARG")[0];
+  const argument = uses.matches[0].captures.ARG[0].id;
   const replaced = await tools.replace({path:argument,text:String(1000 + round)});
   check(typeof replaced === "string", "Round " + round + ": capture replace returned " + JSON.stringify(replaced));
 }

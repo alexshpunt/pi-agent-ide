@@ -184,9 +184,9 @@ for (const outcome of outcomes) {
 }
 for (const outcome of outcomes) {
   if (outcome.status !== "fulfilled") throw Error("Missing mutation result");
-  const found = await tools.search({path:outcome.value,query:"READY"}).then(value => value.result);
-  if (!found.includes("READY")) throw Error(found);
-  text(found);
+  const found = await tools.search({path:outcome.value,query:"READY"});
+  if (found.matches.length !== 1 || found.matches[0].text !== "READY") throw Error(JSON.stringify(found));
+  text(JSON.stringify(found));
 }
 `,
               },

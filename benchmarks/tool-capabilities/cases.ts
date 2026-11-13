@@ -8,6 +8,12 @@ const reuse = (from: number, field: string | string[] = "path", kind = "result")
   field,
   kind,
 });
+/**
+ * A numbered Search `:match` reference of a direct call, or in Codemode the id of a match from a
+ * Search value, which carries no numbered references.
+ */
+const matchReference = (index: number) =>
+  new RegExp(`^(?:SEARCH#[A-F0-9]+:${String(index)}:match|RESULT#[a-f\\d-]{36})$`, "u");
 const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
@@ -530,17 +536,17 @@ function add(
 add(
   "search-script-facts",
   ["search.script-facts", "compose.search-script-result"],
-  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check hasMatches and complete instead of parsing display prose: the empty search is complete, the bounded AST search is not, and the invalid regex call fails. The final search is complete. Pass that final answer's result string unchanged to Replace with NEW, replacing all issued matches and preserving keep/last. Report the observed facts without printing all matches.",
+  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check each value's matches list and complete instead of parsing display prose: the empty search is complete with no matches, the bounded AST search is not complete, and the invalid regex call fails. The final search is complete. Pass that final Search value unchanged to Replace with NEW, replacing all its matches and preserving keep/last. Report the observed facts without printing all matches.",
   [
     {
       tool: "search",
       args: { path: "task.txt", query: "regex:^ABSENT$" },
-      scriptResult: { hasMatches: false, complete: true },
+      scriptResult: { complete: true, matches: { length: 0 } },
     },
     {
       tool: "ast_search",
       args: { path: "scope.ts", pattern: "probe($ARG)", limit: 1 },
-      scriptResult: { hasMatches: true, complete: false },
+      scriptResult: { complete: false, matches: { length: 1 } },
     },
     {
       tool: "search",
@@ -550,7 +556,7 @@ add(
     {
       tool: "search",
       args: { path: "task.txt", query: "OLD", limit: 1000 },
-      scriptResult: { hasMatches: true, complete: true },
+      scriptResult: { complete: true, matches: { length: 2 } },
     },
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(3) },
   ],
@@ -561,6 +567,29 @@ add(
       "task.txt": "keep\nNEW\nNEW\nlast\n",
       "scope.ts": "probe(first);\nprobe(second);\n",
     },
+  },
+);
+const rows = Array.from({ length: 150 }, (_, index) => `row ${String(index + 1)}`);
+add(
+  "search-script-match-ids",
+  ["search.script-match-list", "compose.search-match-id"],
+  "In one Codemode call, Search list.txt for regex:^row \\d+$. The value must list all 150 matches and be complete, with the last match on line 150. Replace only that last match with LAST by passing that match or its id as Replace's path, not the whole Search value, the file path or a line anchor. Report the number of matches.",
+  [
+    {
+      tool: "search",
+      args: { path: "list.txt" },
+      scriptResult: {
+        complete: true,
+        matches: { length: 150, 149: { path: "list.txt", line: 150, text: "row 150" } },
+      },
+    },
+    { tool: "replace", args: { path: /^RESULT#[a-f\d-]{36}$/u, text: "LAST" }, reuse: reuse(0) },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "list.txt": `${rows.join("\n")}\n` },
+    expected: { "list.txt": `${[...rows.slice(0, -1), "LAST"].join("\n")}\n` },
+    answer: "150",
   },
 );
 
@@ -807,6 +836,8 @@ add(
     },
   ],
   {
+    // Numbered and :all selectors exist only in readable results; Codemode values carry ids.
+    modes: ["direct"],
     files: {
       "task.txt":
         "title first\nfeature legacyCheckout\ntitle middle\nfeature legacyCheckout\ntitle final\n",
@@ -933,6 +964,8 @@ add(
     },
   ],
   {
+    // Line references exist only in readable results; a Codemode Search value has no line ids.
+    modes: ["direct"],
     files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nTAIL\n" },
     expected: { "task.txt": "keep1\nADDED\nOLD\nkeep2\nOLD\nkeep3\nADDED\nTAIL\n" },
   },
@@ -940,14 +973,14 @@ add(
 add(
   "replace-search-anchor-list",
   ["edit.replace-search-anchor-list"],
-  "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Replace call whose path is an array of two actual issued references: the first :match reference of the OLD search and the first :match reference of the TAIL search. Replace both selected matches with NEW. Do not retype the file path, do not use start/end and do not retry. Keep every other byte.",
+  "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Replace call whose path is an array of two actual issued references: the first match of the OLD search and the first match of the TAIL search (their :match references in direct calls, the matches themselves or their ids in Codemode). Replace both selected matches with NEW. Do not retype the file path, do not use start/end and do not retry. Keep every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     { tool: "search", args: { path: "task.txt", query: "TAIL" } },
     {
       tool: "replace",
       args: {
-        path: [/^SEARCH#[A-F0-9]+:1:match$/u, /^SEARCH#[A-F0-9]+:1:match$/u],
+        path: [matchReference(1), matchReference(1)],
         text: "NEW",
       },
       reuse: [reuse(0), reuse(1)],
@@ -961,13 +994,13 @@ add(
 add(
   "replace-already-done-anchor-list",
   ["edit.already-done-targets"],
-  "Search task.txt for regex:OLD|NEW. Make ONE Replace call whose path is an array of all four actual :match references of that search, replacing each with NEW. Two selected matches already contain NEW: the call must succeed, change the other two and name the targets that already had NEW. Do not retype the file path and do not retry. Keep every other byte.",
+  "Search task.txt for regex:OLD|NEW. Make ONE Replace call whose path is an array of all four actual matches of that search (their :match references in direct calls, the matches themselves or their ids in Codemode), replacing each with NEW. Two selected matches already contain NEW: the call must succeed, change the other two and name the targets that already had NEW. Do not retype the file path and do not retry. Keep every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "regex:OLD|NEW" } },
     {
       tool: "replace",
       args: {
-        path: [1, 2, 3, 4].map((index) => new RegExp(`^SEARCH#[A-F0-9]+:${index}:match$`, "u")),
+        path: [1, 2, 3, 4].map(matchReference),
         text: "NEW",
       },
       reuse: [reuse(0), reuse(0), reuse(0), reuse(0)],
@@ -982,18 +1015,18 @@ add(
 add(
   "replace-search-anchor-list-unusable",
   ["edit.search-anchor-list-unusable"],
-  "Search task.txt for OLD. Replace its first :match reference alone with ONE. Then make ONE Replace call whose path is an array of the first and the second :match references of that same search, replacing both with TWO. The first reference was just changed, so the call must fail, name that reference and change nothing. Then call Replace once with only the second reference and TWO. Do not search again and do not retype the file path. Keep every other byte.",
+  "Search task.txt for OLD. Replace its first match alone with ONE (its :match reference in direct calls, the match or its id in Codemode). Then make ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Then call Replace once with only the second match and TWO. Do not search again and do not retype the file path. Keep every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
       tool: "replace",
-      args: { path: /^SEARCH#[A-F0-9]+:1:match$/u, text: "ONE" },
+      args: { path: matchReference(1), text: "ONE" },
       reuse: reuse(0),
     },
     {
       tool: "replace",
       args: {
-        path: [/^SEARCH#[A-F0-9]+:1:match$/u, /^SEARCH#[A-F0-9]+:2:match$/u],
+        path: [matchReference(1), matchReference(2)],
         text: "TWO",
       },
       error: true,
@@ -1001,7 +1034,7 @@ add(
     },
     {
       tool: "replace",
-      args: { path: /^SEARCH#[A-F0-9]+:2:match$/u, text: "TWO" },
+      args: { path: matchReference(2), text: "TWO" },
       reuse: reuse(0),
     },
   ],
@@ -1398,7 +1431,7 @@ add(
 add(
   "exact-range-delete",
   ["edit.delete-exact-range", "compose.search-range-endpoints"],
-  "Search sentence.txt separately for DELETE_BEGIN and DELETE_END. Use the exact :match reference from each Search as Delete start and end, respectively. Delete the inclusive span between those endpoints, retaining left, right, both surrounding spaces and the line ending. Do not use :line references, a whole-file deletion, or one combined Search result as the source.",
+  "Search sentence.txt separately for DELETE_BEGIN and DELETE_END. Use the exact :match reference from each Search (in Codemode, the id of its match) as Delete start and end, respectively. Delete the inclusive span between those endpoints, retaining left, right, both surrounding spaces and the line ending. Do not use :line references, a whole-file deletion, or one combined Search result as the source.",
   [
     { tool: "search", args: { path: "sentence.txt", query: "DELETE_BEGIN" } },
     { tool: "search", args: { path: "sentence.txt", query: "DELETE_END" } },
@@ -1406,8 +1439,8 @@ add(
       tool: "delete",
       args: {
         path: "sentence.txt",
-        start: /^SEARCH#[A-F0-9]+:1:match$/u,
-        end: /^SEARCH#[A-F0-9]+:1:match$/u,
+        start: matchReference(1),
+        end: matchReference(1),
       },
       reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
     },
@@ -1426,7 +1459,7 @@ add(
     "edit.copy-source-range",
     "compose.search-range-endpoints",
   ],
-  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references as targetStart and targetEnd. Replace only that inclusive destination span. Then select the whole line 段🙂 in whole.txt with a single start and no end. Copy that same source once over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd, and once after the whole ANCHOR line in inserted.txt, without targetEnd. Preserve the selected source's CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
+  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references (in Codemode, the ids of their matches) as targetStart and targetEnd. Replace only that inclusive destination span. Then select the whole line 段🙂 in whole.txt with a single start and no end. Copy that same source once over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd, and once after the whole ANCHOR line in inserted.txt, without targetEnd. Preserve the selected source's CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
   [
     { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
     { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
@@ -1437,8 +1470,8 @@ add(
         start: "COPY_BEGIN",
         end: "COPY_END",
         target: "target.txt",
-        targetStart: /^SEARCH#[A-F0-9]+:1:match$/u,
-        targetEnd: /^SEARCH#[A-F0-9]+:1:match$/u,
+        targetStart: matchReference(1),
+        targetEnd: matchReference(1),
       },
       reuse: [reuse(0, "targetStart", "anchor"), reuse(1, "targetEnd", "anchor")],
     },
@@ -1491,7 +1524,7 @@ add(
     "edit.move-source-range",
     "compose.search-range-endpoints",
   ],
-  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references as Move start/end. Move that inline inclusive span into target.txt using the exact strings TARGET_BEGIN and TARGET_END as targetStart/targetEnd. Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Then move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt. Use that complete block as a single start with no end, and SLOT as both targetStart and targetEnd. Preserve the block's internal CRLF when inserting into the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Move that inline inclusive span into target.txt using the exact strings TARGET_BEGIN and TARGET_END as targetStart/targetEnd. Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Then move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt. Use that complete block as a single start with no end, and SLOT as both targetStart and targetEnd. Preserve the block's internal CRLF when inserting into the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
   [
     { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
     { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
@@ -1499,8 +1532,8 @@ add(
       tool: "move",
       args: {
         path: "source.txt",
-        start: /^SEARCH#[A-F0-9]+:1:match$/u,
-        end: /^SEARCH#[A-F0-9]+:1:match$/u,
+        start: matchReference(1),
+        end: matchReference(1),
         target: "target.txt",
         targetStart: "TARGET_BEGIN",
         targetEnd: "TARGET_END",
@@ -1559,6 +1592,8 @@ add(
     },
   ],
   {
+    // Line references exist only in readable results; a Codemode Search value has no line ids.
+    modes: ["direct"],
     files: {
       "line-start.txt": "KEEP prefix START selected\nEND suffix KEEP\nlast\n",
       "line-end.txt": "KEEP prefix START selected\nEND suffix KEEP\nlast\n",
@@ -1649,7 +1684,7 @@ add(
 add(
   "insert-before",
   ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
-  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Finally Search search.txt for MATCH and use its actual :match reference as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
+  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
   [
     {
       tool: "insert",
@@ -1682,7 +1717,7 @@ add(
       tool: "insert",
       args: {
         path: "search.txt",
-        anchor: /^SEARCH#[A-F0-9]+:1:match$/u,
+        anchor: matchReference(1),
         text: "[",
         before: true,
       },
@@ -1693,7 +1728,7 @@ add(
       tool: "insert",
       args: {
         path: "search.txt",
-        anchor: /^SEARCH#[A-F0-9]+:1:match$/u,
+        anchor: matchReference(1),
         text: "]",
       },
       reuse: reuse(7, "anchor", "anchor"),
@@ -2509,7 +2544,7 @@ const syntax = { "task.ts": "function first() { return 7; }\nfunction second() {
 add(
   "ast-capture-rename",
   ["read.ast", "search.ast", "compose.ast-capture-edit"],
-  "Read ast:task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the displayed NAME capture reference with renamed. Use the actual capture reference, not a file path or anchor.",
+  "Read ast:task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the NAME capture with renamed: in a direct call its displayed capture reference, in Codemode the capture from the match's captures.NAME or its id. Use the actual capture reference, not a file path or anchor.",
   [
     { tool: "read", args: { path: "ast:task.ts" }, contains: "first" },
     // A pattern or a rule with a pattern can both capture NAME.
@@ -2529,7 +2564,7 @@ add(
 add(
   "ast-search-enclosing",
   ["ast_search.rule", "compose.ast-search-enclosing"],
-  'Search task.ts for the text "return 9". Then use ast_search with that unchanged Search result as path, relation "enclosing", language typescript and an ast-grep rule for function declarations, to select the function that contains it. Replace that whole function with function second() { return 10; }. Keep the first function unchanged.',
+  'Search task.ts for the text "return 9". Then use ast_search with that unchanged Search result (in Codemode, the Search value) as path, relation "enclosing", language typescript and an ast-grep rule for function declarations, to select the function that contains it. Replace that whole function with function second() { return 10; }. Keep the first function unchanged.',
   [
     { tool: "search", args: { path: "task.ts" }, contains: "return 9" },
     {
@@ -2583,11 +2618,11 @@ add(
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
-// Read values carry an id. Until Search values do (LPT-1398), the script builds one from Search.
+// Read and Search values carry their ids.
 add(
   "value-id-source",
   ["compose.value-id-source"],
-  "In one Codemode call, read task.txt and pass the Read value itself as Search's path to find OLD. Build an object { id } whose id is RESULT# followed by the UUID in the Search result's system-result envelope, and pass that object as Replace's path to change OLD to NEW. Do not pass result strings, the file path or a bare UUID to Search or Replace.",
+  "In one Codemode call, read task.txt and pass the Read value itself as Search's path to find OLD. Pass the returned Search value itself as Replace's path to change OLD to NEW. Do not pass result strings, the file path or a bare UUID to Search or Replace.",
   [
     { tool: "read", args: { path: "task.txt" } },
     { tool: "search", args: { query: "OLD", path: { id: /^RESULT#/u } }, reuse: reuse(0) },

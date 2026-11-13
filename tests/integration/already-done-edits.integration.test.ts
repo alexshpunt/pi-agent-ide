@@ -76,15 +76,15 @@ test("a list of anchors applies the remaining targets and names the already-done
     const result = await run(cwd, "already-done-anchor-list", [
       codemode(
         "partial",
-        `const found = (await tools.search({path:"names.cpp",query:"regex:call_a|FuncA"})).result;
-const anchors = matches(found);
-check(anchors.length===4,"Expected four name anchors: "+found);
+        `const found = await tools.search({path:"names.cpp",query:"regex:call_a|FuncA"});
+const anchors = found.matches.map((match) => match.id);
+check(anchors.length===4,"Expected four name anchors: "+JSON.stringify(found));
 text(await tools.replace({path:anchors,text:"FuncA"}));`,
       ),
       codemode(
         "all-done",
-        `const found = (await tools.search({path:"names.cpp",query:"FuncA"})).result;
-const done = await tools.replace({path:matches(found),text:"FuncA"});
+        `const found = await tools.search({path:"names.cpp",query:"FuncA"});
+const done = await tools.replace({path:found.matches,text:"FuncA"});
 // An edit whose targets already have the text succeeds and selects that text.
 check(typeof done==="string" && done.startsWith("RESULT#"),"Expected the id of the unchanged text: "+done);
 const renamed = await tools.replace({path:done,text:"FuncB"});
@@ -110,8 +110,8 @@ test("a move onto a destination that already has the text still removes its sour
     const result = await run(cwd, "already-done-move", [
       codemode(
         "move",
-        `const source = (await tools.search({path:"spare.txt",query:"FuncA"})).result;
-const target = matches((await tools.search({path:"names.cpp",query:"FuncA"})).result)[0];
+        `const source = await tools.search({path:"spare.txt",query:"FuncA"});
+const target = (await tools.search({path:"names.cpp",query:"FuncA"})).matches[0].id;
 text(await tools.move({path:source,target}));`,
       ),
     ]);

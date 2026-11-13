@@ -37,7 +37,12 @@ import type { SearchToolDetails } from "#src/api/search.ts";
 
 import { describeSearchParameters, searchSchema } from "#src/api/search-parameters.ts";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.ts";
-import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  resultError,
+  trackScriptCalls,
+  withStructuredResult,
+} from "pi-agent-resource";
 
 /** Arguments accepted by the search tool. */
 export type SearchParameters = Static<typeof searchSchema>;
@@ -97,6 +102,8 @@ export default async function registerSearchCore(
     request.accept(core.registerPlugin(request.plugin));
   });
   pi.on("session_shutdown", unsubscribe);
+  // A call from a script, such as Codemode, gets every match with its whole text.
+  const scriptCall = trackScriptCalls(pi, "search");
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
@@ -155,7 +162,7 @@ export default async function registerSearchCore(
           return fallbackResult(result, options, theme);
         },
         async execute(
-          _id,
+          id,
           parameters: SearchParameters,
           signal,
           onUpdate,
@@ -208,6 +215,7 @@ export default async function registerSearchCore(
                   ...(operationSignal !== undefined && { signal: operationSignal }),
                   ...(onUpdate !== undefined && { onUpdate }),
                 },
+                scriptCall(id) ? "script" : "agent",
               );
             });
           } catch (error) {

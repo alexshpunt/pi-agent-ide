@@ -73,9 +73,9 @@ test("A replace over a list of search references applies at the new positions wh
       "edit-window-replace-list",
       `${rows.join("\n")}\n`,
       String.raw`
-const found=String(await tools.search({path:file,query:"rename_me"}).then((value)=>value.result));
-const refs=matches(found);
-check(refs.length===12,"Expected 12 references: "+found.slice(0,400));
+const found=await tools.search({path:file,query:"rename_me"});
+const refs=found.matches.map((match)=>match.id);
+check(refs.length===12,"Expected 12 references: "+JSON.stringify(found).slice(0,400));
 await window({prepend:"// peer one\n// peer two\n"});
 await tools.replace({path:refs.filter((_,index)=>index%2===0),text:"renamed"});`,
     );
@@ -91,9 +91,10 @@ test("A move of a search result applies at the new position when another session
       "edit-window-move-result",
       "// slot\nint keep_a;\nint block_b() { return 1; }\nint keep_c;\n",
       String.raw`
-const found=String(await tools.search({path:file,query:"int block_b"}).then((value)=>value.result));
-const ref=/SEARCH#[A-F\d]+:1:line/.exec(found)?.[0];
-check(ref,"No line reference: "+found.slice(0,400));
+// The whole line with its line break, as a line reference selected it.
+const found=await tools.search({path:file,query:"regex:^int block_b[^\\n]*\\n",multiline:true});
+const ref=found.matches[0]?.id;
+check(found.matches.length===1&&ref,"No line reference: "+JSON.stringify(found).slice(0,400));
 await window({prepend:"// peer\n"});
 await tools.move({path:ref,target:file,targetStart:"// slot",targetEnd:"// slot"});`,
     );
@@ -109,10 +110,10 @@ test("A reference whose own text changed in that window is refused with its curr
       "edit-window-own-text-changed",
       `${rows.join("\n")}\n`,
       String.raw`
-const found=String(await tools.search({path:file,query:"rename_me"}).then((value)=>value.result));
-const refs=matches(found);
-const keeps=matches(String(await tools.search({path:file,query:'"keep(4)"'}).then((value)=>value.result)));
-check(refs.length===6&&keeps.length===1,"Unexpected references: "+found.slice(0,400));
+const found=await tools.search({path:file,query:"rename_me"});
+const refs=found.matches.map((match)=>match.id);
+const keeps=(await tools.search({path:file,query:'"keep(4)"'})).matches.map((match)=>match.id);
+check(refs.length===6&&keeps.length===1,"Unexpected references: "+JSON.stringify(found).slice(0,400));
 await window({replace:["rename_me(2)","rename_ME(2)"]});
 await rejects(()=>tools.replace({path:[refs[1],refs[2]],text:"renamed"}));
 await tools.replace({path:[refs[0],refs[3]],text:"renamed"});
@@ -151,9 +152,10 @@ test("A move whose source and destination references were resolved on different 
     const code =
       textResultChecks +
       String.raw`
-const slot=String(await tools.search({path:"main.cpp",query:"__SLOT__"}).then((value)=>value.result));
-const ref=/SEARCH#[A-F\d]+:1:line/.exec(slot)?.[0];
-check(ref,"No slot reference: "+slot.slice(0,300));
+// The whole slot line with its line break, as a line reference selected it.
+const slot=await tools.search({path:"main.cpp",query:"regex:^// __SLOT__\\n",multiline:true});
+const ref=slot.matches[0]?.id;
+check(slot.matches.length===1&&ref,"No slot reference: "+JSON.stringify(slot).slice(0,300));
 // The block is answered for the text before another session's write; the slot for the text after.
 // Two answers: the batch planner's and the edit's first attempt; the rerun reads the file.
 await tools.write({path:".tmp/block-targets/earlier.txt",content:JSON.stringify({text:${JSON.stringify(original)},times:2})});

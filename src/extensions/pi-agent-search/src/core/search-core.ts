@@ -7,7 +7,7 @@ import {
   type ResolvedResultTargets,
   type ResultTargetStore,
 } from "pi-agent-resource";
-import { searchDataSchema } from "#src/api/structured-result.ts";
+import { searchDataSchema, selectionPreview } from "#src/api/structured-result.ts";
 import { pathMachine, plainPathList, uniquePaths } from "#src/api/path-list.ts";
 
 import type { SearchPlugin } from "#src/api/plugin-protocol.ts";
@@ -421,8 +421,11 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
                   );
                 }
 
-                const data = resolver.toScriptData?.(attempt.payload, formatted.details);
-                const missingAdapter = data === undefined;
+                const full = resolver.toScriptData?.(attempt.payload, formatted.details);
+                const missingAdapter = full === undefined;
+                // A script gets every match with its whole text; other callers get a preview that
+                // keeps the record within the 1 MiB limit.
+                const data = audience === "script" ? full : selectionPreview(full);
                 return withStructuredResult(
                   {
                     content: [

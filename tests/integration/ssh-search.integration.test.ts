@@ -126,7 +126,7 @@ test("ordinary search retains SSH identities, recipes, selections and file scope
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r = await tools.search({query: "changed", path: ${JSON.stringify(note)}}).then(value => value.result); if (!r.includes(${JSON.stringify(note)}) || !r.includes("changed")) throw new Error(r); text(r);`,
+              code: `const r = await tools.search({query: "changed", path: ${JSON.stringify(note)}}); if (r.matches.length === 0 || !r.matches.every((match) => match.path === ${JSON.stringify(note)} && match.text === "changed")) throw new Error(JSON.stringify(r)); text(JSON.stringify(r));`,
             },
           }),
         ]),

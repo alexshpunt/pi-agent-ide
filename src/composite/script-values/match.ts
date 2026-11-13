@@ -11,8 +11,11 @@ export interface ScriptMatch {
   readonly line: number;
   /** The whole matched text. */
   readonly text: string;
-  /** `RESULT#<uuid>` reference that selects this match. */
-  readonly id: string;
+  /**
+   * `RESULT#<uuid>` reference that selects this match. Absent when the source has no selections,
+   * such as terminal output or a guide.
+   */
+  readonly id?: string;
 }
 
 export const scriptMatchSchema = {
@@ -21,18 +24,22 @@ export const scriptMatchSchema = {
     path: { type: "string" },
     line: { type: "integer" },
     text: { type: "string" },
-    id: { type: "string" },
+    id: {
+      type: "string",
+      description: "Selects this match. Absent when the source has no selections.",
+    },
   },
-  required: ["path", "line", "text", "id"],
+  required: ["path", "line", "text"],
   additionalProperties: false,
 } as const;
 
 /**
- * A matched path as a direct call shows it: relative to the session directory `cwd` when it lies
- * inside it, otherwise unchanged, such as an `ssh://` URL or a file outside the workspace.
+ * A matched path as a direct call shows it: a local file inside the session directory `cwd`
+ * relative to it, any other source unchanged, such as an `ssh://` URL, a `shell:` session or a file
+ * outside the workspace.
  */
 export function scriptMatchPath(source: string, cwd: string | undefined): string {
-  if (cwd === undefined || source.includes("://")) return source;
+  if (cwd === undefined || !path.isAbsolute(source)) return source;
   const relative = path.relative(cwd, source);
   // oxlint-disable-next-line repo/no-parent-paths -- detects a path outside cwd, not a traversal
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)

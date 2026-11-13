@@ -194,7 +194,11 @@ function fixturePath(value: string): string {
 }
 
 function matches(expected: unknown, actual: unknown, field = ""): boolean {
-  if (expected instanceof RegExp) return typeof actual === "string" && expected.test(actual);
+  if (expected instanceof RegExp)
+    // A Codemode value passed as a source, such as a Search match, counts by its id.
+    return typeof actual === "string"
+      ? expected.test(actual)
+      : values(actual).length === 1 && expected.test(values(actual)[0] ?? "");
   if (Array.isArray(expected))
     return (
       Array.isArray(actual) &&
@@ -233,6 +237,14 @@ function values(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
+/** The `id` of a Codemode value and of every value inside it, such as each Search match. */
+function valueIds(value: unknown): string[] {
+  if (Array.isArray(value)) return (value as unknown[]).flatMap(valueIds);
+  if (value === null || typeof value !== "object") return [];
+  const own = "id" in value && typeof value.id === "string" ? [value.id] : [];
+  return [...own, ...Object.values(value).flatMap(valueIds)];
+}
+
 /** A Codemode value passed on unchanged, such as a Read image block, reuses the result it came from. */
 function passesValue(value: unknown, prior: RunEvent): boolean {
   const own = prior.result?.structuredContent;
@@ -245,7 +257,12 @@ function passesValue(value: unknown, prior: RunEvent): boolean {
   );
 }
 
-function reuses(value: unknown, output: string, kind = "result"): boolean {
+function reuses(
+  value: unknown,
+  output: string,
+  kind = "result",
+  issued: readonly string[] = [],
+): boolean {
   const ids =
     kind === "result"
       ? [
@@ -275,6 +292,8 @@ function reuses(value: unknown, output: string, kind = "result"): boolean {
     (candidate) =>
       candidate === output ||
       ids.includes(candidate) ||
+      // A Codemode value issues its own ids, such as the id of each Search match.
+      (["result", "anchor"].includes(kind) && issued.includes(candidate)) ||
       // `RESULT#<uuid>` names the result whose envelope carries that UUID.
       (kind === "result" && ids.includes(candidate.replace(/^RESULT#/u, ""))),
   );
@@ -467,8 +486,12 @@ export function validateRoute(
             prior.end >= start.index ||
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
-                reuses(fieldValue(event.args, field), resultText(prior.event), reference.kind) ||
-                passesValue(fieldValue(event.args, field), prior.event),
+                reuses(
+                  fieldValue(event.args, field),
+                  resultText(prior.event),
+                  reference.kind,
+                  valueIds(prior.event.result?.structuredContent),
+                ) || passesValue(fieldValue(event.args, field), prior.event),
             ) ||
             (reference.newParent && prior.parent === execution.parent)
           );

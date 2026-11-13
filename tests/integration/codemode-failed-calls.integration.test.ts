@@ -101,8 +101,9 @@ test("IDE refusals resolve to null while Pi's own rejections still throw", async
       script(
         "refused",
         `const expired = await tools.read({ path: "RESULT#00000000-0000-4000-8000-000000000000" });
-// A Search result string still starts with its system-result envelope.
-const shown = (await tools.search({ path: "a.txt", query: "alpha" })).result;
+// A readable result string, such as lsp_search's, starts with its system-result envelope.
+const found = await tools.search({ path: "a.txt", query: "alpha" });
+const shown = '<system-result note="Internal reference; not part of the file. Do not edit."><uuid>' + found.id.slice("RESULT#".length) + "</uuid></system-result>\\nalpha";
 const pasted = await tools.replace({ path: "a.txt", start: "alpha", text: shown });
 const listed = await tools.search({ path: ["a.txt", "missing-dir"], query: "alpha" });
 text("refused:" + (expired === null) + ":" + (pasted === null) + ":" + (listed === null));`,

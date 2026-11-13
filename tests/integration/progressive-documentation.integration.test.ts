@@ -221,7 +221,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-first",
             name: "codemode",
             arguments: {
-              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); text(await tools.search({query:"marker",path:"example.ts"}).then(value => value.result)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
+              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || JSON.stringify(found).includes("# Guide:")) throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
             },
           }),
         ],
@@ -416,7 +416,8 @@ test.each(["direct", "codemode"] as const)(
                       name: "codemode",
                       arguments: {
                         // A failed Search resolves to null; its reason ends the Codemode result.
-                        code: `const value = await tools.search(${JSON.stringify(call.arguments)}); text(value === null ? "search failed" : value.result);`,
+                        // Guide matches select no text, so neither they nor the list have ids.
+                        code: `const value = await tools.search(${JSON.stringify(call.arguments)}); text(value === null ? "search failed" : value.matches.map((match) => match.path + ":" + match.line + ":" + ("id" in match ? "id" : "")).join("\\n") + "\\n" + JSON.stringify({ complete: value.complete, id: "id" in value }));`,
                       },
                     },
               ),
@@ -441,8 +442,18 @@ test.each(["direct", "codemode"] as const)(
     expect(resultText("docs-regex")).toContain("docs:search-fixture-one:2:");
     expect(resultText("docs-regex")).toContain("docs:search-fixture-two:2:");
     expect(resultText("docs-one")).not.toContain("docs:search-fixture-two");
-    expect(resultText("docs-one")).toContain("incomplete");
-    expect(resultText("docs-empty")).toContain("No matches");
+    if (mode === "direct") {
+      expect(resultText("docs-one")).toContain("incomplete");
+      expect(resultText("docs-empty")).toContain("No matches");
+    } else {
+      expect(resultText("docs-one")).toContain('{"complete":false,"id":false}');
+      expect(resultText("docs-empty")).toContain('{"complete":true,"id":false}');
+      expect(resultText("docs-empty")).not.toMatch(/^docs:/mu);
+      for (const id of ["docs-all", "docs-regex"]) {
+        expect(resultText(id)).toContain('{"complete":true,"id":false}');
+        expect(resultText(id)).not.toMatch(/:id$/mu);
+      }
+    }
     expect(resultText("docs-missing")).toContain("Unknown documentation ID");
     expect(resultText("docs-bare")).toContain("Use docs:all");
     if (mode === "codemode")

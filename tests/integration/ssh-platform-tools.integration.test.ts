@@ -146,14 +146,14 @@ const root = ${JSON.stringify(root)};
 const local = ${JSON.stringify(cwd)};
 const shell = tools[${JSON.stringify(shell)}];
 const note = await tools.read({ path: root + "/note.txt" });
-await tools.replace({ path: (await tools.search({ path: note, query: "beta" })).result, text: "gamma" });
+await tools.replace({ path: await tools.search({ path: note, query: "beta" }), text: "gamma" });
 // A change made outside the IDE after the read refuses the edit.
 const stale = await tools.read({ path: root + "/stale.txt" });
 await shell({ command: ${JSON.stringify(commands.modify)}, cwd: root });
 // A failed IDE call resolves to null; the Codemode result lists it.
 const staleMatch = await tools.search({ path: stale, query: "one" });
 const refused =
-  staleMatch === null || (await tools.replace({ path: staleMatch.result, text: "two" })) === null;
+  staleMatch === null || (await tools.replace({ path: staleMatch, text: "two" })) === null;
 if (!refused) throw Error("A stale edit was applied");
 await tools.copy({ path: root + "/note.txt", target: root + "/copy.txt" });
 await tools.move({ path: root + "/copy.txt", target: root + "/moved.txt" });

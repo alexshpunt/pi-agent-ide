@@ -34,8 +34,8 @@ test("unavailable diagnostics remain visible without entering source selections"
 const result = await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]});
 // Readiness and ignored-view notices reach the model, not the script's text.
 if(typeof result?.text !== "string" || !result.text.includes("beta") || /unavailable|lint:|lsp:|ghost/.test(result.text)) throw Error(JSON.stringify(result));
-const outside = await tools.search({path:result,query:"regex:unavailable|lint:|lsp:|ghost"}).then(value => value.result);
-if(!outside.includes("No matches found")) throw Error(outside);
+const outside = await tools.search({path:result,query:"regex:unavailable|lint:|lsp:|ghost"});
+if(outside.matches.length !== 0 || outside.complete !== true) throw Error(JSON.stringify(outside));
 store("diagnosticReadiness",result);
 `,
               },
@@ -50,7 +50,7 @@ store("diagnosticReadiness",result);
               name: "codemode",
               arguments: {
                 code: String.raw`
-const beta = await tools.search({path:load("diagnosticReadiness"),query:"beta"}).then(value => value.result);
+const beta = await tools.search({path:load("diagnosticReadiness"),query:"beta"});
 const value = await tools.read({path:beta});
 if(!value.text.includes("beta") || value.text.includes("alpha") || value.text.includes("gamma")) throw Error(value.text);
 await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]});

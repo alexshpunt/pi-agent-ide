@@ -69,8 +69,8 @@ test.each([
 const full = await tools.read({path:"large.ts"});
 if (full.text.includes("Some source text is omitted.") || !full.text.includes('consume("NEEDLE")')) throw Error("Expected the exact source text");
 for (const input of [full, full.id]) {
-  const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
-  if (!found.includes("3 matches in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
+  const found = await tools.search({path:input,query:"NEEDLE"});
+  if (found.matches.map(match => match.path + ":" + match.line + ":" + match.text).join() !== "large.ts:1:NEEDLE,large.ts:103:NEEDLE,large.ts:${rows + 5}:NEEDLE") throw Error(JSON.stringify(found));
 }
 const window = await tools.read({path:"large.ts",offset:2,limit:${rows + 3}});
 if (window.text.includes("outsideBefore") || !window.text.includes('consume("NEEDLE")')) throw Error("Expected the exact window text");
@@ -81,20 +81,21 @@ text("Exact sources saved");
           call("reuse", "codemode", {
             code: String.raw`
 const window = load("largeWindow");
+const onlyNeedle = (found) => found.matches.map(match => match.path + ":" + match.line + ":" + match.text).join() === "large.ts:103:NEEDLE";
 for (const input of [window, window.id]) {
-  const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
-  if (!found.includes("1 match in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
+  const found = await tools.search({path:input,query:"NEEDLE"});
+  if (!onlyNeedle(found)) throw Error(JSON.stringify(found));
   for (const query of ["outsideBefore","outsideAfter","regex:Code overview|scope-begin|Some source text|requested text|…"]) {
-    const empty = await tools.search({path:input,query}).then(value => value.result);
-    if (!empty.includes("No matches found")) throw Error(empty);
+    const empty = await tools.search({path:input,query});
+    if (empty.matches.length !== 0) throw Error(JSON.stringify(empty));
     await tools.replace({path:empty,text:"BAD"});
   }
 }
 const bounded = await tools.read({path:window,offset:102,limit:1});
-if (!(await tools.search({path:bounded,query:"NEEDLE"}).then(value => value.result)).includes("large.ts:103:12-18")) throw Error("Bounded Read lost its exact source position");
+if (!onlyNeedle(await tools.search({path:bounded,query:"NEEDLE"}))) throw Error("Bounded Read lost its exact source position");
 const small = await tools.read({path:"large.ts",offset:103,limit:1});
-if (!(await tools.search({path:small,query:"NEEDLE"}).then(value => value.result)).includes("large.ts:103:12-18")) throw Error("Small Read composition regressed");
-const selected = await tools.search({path:window,query:"NEEDLE"}).then(value => value.result);
+if (!onlyNeedle(await tools.search({path:small,query:"NEEDLE"}))) throw Error("Small Read composition regressed");
+const selected = await tools.search({path:window,query:"NEEDLE"});
 await tools.replace({path:selected,text:"FOUND"});
 text("Only the original window was searched and edited");
 `,
@@ -104,8 +105,10 @@ text("Only the original window was searched and edited");
 const window = load("largeWindow");
 for (const input of [window, window.id]) {
   // An exact window follows its region into the edited file instead of its old text.
-  const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
-  if (!found.includes("large.ts:2-${rows + 4}") || !found.includes("No matches found")) throw Error(found);
+  const found = await tools.search({path:input,query:"NEEDLE"});
+  if (found.matches.length !== 0) throw Error(JSON.stringify(found));
+  const current = await tools.search({path:input,query:"FOUND"});
+  if (current.matches.map(match => match.line + ":" + match.text).join() !== "103:FOUND") throw Error(JSON.stringify(current));
 }
 text("Old window inputs searched the current region");
 `,

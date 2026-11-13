@@ -100,7 +100,7 @@ const root = ${JSON.stringify(root)};
 const local = ${JSON.stringify(cwd)};
 // Edit keeps CRLF, and the undo restores the file as it was.
 const note = await tools.read({ path: root + "/note.txt" });
-const beta = await tools.search({ path: note, query: "beta" }).then((value) => value.result);
+const beta = await tools.search({ path: note, query: "beta" });
 text(await tools.replace({ path: beta, text: "gamma" }));
 const undoRead = await tools.read({ path: root + "/undone.txt" });
 const written = await tools.write({ path: undoRead, content: "delta\\r\\nbeta\\r\\n" });

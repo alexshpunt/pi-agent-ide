@@ -103,7 +103,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r = await tools.ast_search({pattern:"console.info($VALUE)", path: ${JSON.stringify(scope)}}).then(value => value.result); if (!r.includes(${JSON.stringify(note)}) || !r.includes("console.info(label)")) throw new Error(r); text(r);`,
+              code: `const r = await tools.ast_search({pattern:"console.info($VALUE)", path: ${JSON.stringify(scope)}}); if (r.matches.length !== 1 || r.matches[0].path !== ${JSON.stringify(note)} || r.matches[0].text !== "console.info(label)" || r.matches[0].captures.VALUE[0].text !== "label") throw new Error(JSON.stringify(r)); text(JSON.stringify(r));`,
             },
           }),
         ]),

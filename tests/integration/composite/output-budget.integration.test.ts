@@ -333,7 +333,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
                 id: "scoped-search",
                 name: "codemode",
                 arguments: {
-                  code: 'const tail = await tools.read({path:"regression/1724-"+ "long-path-".repeat(8)+".txt"}); text(await tools.search({ query: "needle", path: tail, limit: 1 }).then(value => value.result));',
+                  code: 'const tail = await tools.read({path:"regression/1724-"+ "long-path-".repeat(8)+".txt"}); const found = await tools.search({ query: "needle", path: tail, limit: 1 }); text("matches:" + found.matches.length + " complete:" + found.complete); text(JSON.stringify(found));',
                 },
               }),
             ],
@@ -362,7 +362,8 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
       }
       const result = resultFor(cases.length);
       expect(getToolResultMessage(result, "scoped-search").isError).toBe(false);
-      expect(getToolResultText(result, "scoped-search")).toContain("5 matches");
+      // Display limit 1 bounds the readable result only; the script value lists every match.
+      expect(getToolResultText(result, "scoped-search")).toContain("matches:5 complete:true");
       expect(getToolResultText(result, "scoped-search")).toContain("1724-");
       expectBounded(getToolResultText(result, "scoped-search"));
     } finally {
@@ -839,10 +840,14 @@ test("stresses limits on HTTP text and terminal search", async () => {
           const source = started.session;
           if (!source) throw new Error(JSON.stringify(started));
           for (const limit of [1,80,1000]) {
-            const result = await tools.search({query:"needle",path:source,limit}).then(value => value.result);
-            const count = /(\\d+)\\+? match(?:es)? in/.exec(result)?.[1];
-            if (count === undefined || Number(count) > limit) throw new Error(result);
-            text(result);
+            // Terminal output has no text selection, so its matches carry no ids.
+            const result = await tools.search({query:"needle",path:source,limit});
+            const shown = JSON.stringify(result).slice(0, 400);
+            if (result === null || typeof result !== "object" || "id" in result) throw new Error("Expected a match list without an id: " + shown);
+            const count = result.matches.length;
+            if (count === 0 || count > limit) throw new Error(shown);
+            if (!result.matches.every((match) => match.text === "needle" && !("id" in match))) throw new Error(shown);
+            text(limit + ": " + count + " matches");
           }
           await tools.delete({path:source});`,
               },

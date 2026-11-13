@@ -101,7 +101,11 @@ export const searchDataSchema = Type.Union([
 ]);
 export const searchOutputSchema = structuredResultSchema(searchDataSchema);
 
-/** Project a registered selection in its original order. Columns are zero-based UTF-16 offsets. */
+/**
+ * Project a registered selection in its original order, with every match and its whole text, as a
+ * script gets it. Search core keeps only a preview for other callers; see `selectionPreview`.
+ * Columns are zero-based UTF-16 offsets.
+ */
 export function selectionData(
   matches: readonly {
     source: string;
@@ -118,9 +122,8 @@ export function selectionData(
   return {
     kind: "matches" as const,
     ...(targets?.target === undefined ? {} : { target: targets.target }),
-    truncated: matches.length > 100,
     complete,
-    matches: matches.slice(0, 100).map((match, index) => ({
+    matches: matches.map((match, index) => ({
       source: match.source,
       ...(targets?.matchTargets?.[index] === undefined
         ? {}
@@ -131,9 +134,7 @@ export function selectionData(
         endLine: match.endLineNumber ?? match.lineNumber,
         endColumn: match.endColumn,
       },
-      ...(Buffer.byteLength(match.matchedText) <= 4096
-        ? { matchedText: match.matchedText }
-        : { textTruncated: true }),
+      matchedText: match.matchedText,
       ...(sessionId === undefined
         ? {}
         : {
@@ -147,4 +148,50 @@ export function selectionData(
       ? { all: { line: `SEARCH#${sessionId}:all:line`, match: `SEARCH#${sessionId}:all:match` } }
       : {}),
   };
+}
+
+/** Matches a preview keeps, and the longest match text it keeps, in UTF-8 bytes. */
+const preview = { matches: 100, textBytes: 4096 } as const;
+
+/**
+ * The record of a call that does not hand its result to a script: the first 100 matches, each with
+ * its text when that text is at most 4 KB. The record of every call must stay within the 1 MiB
+ * limit of structured results, which only a script's call lifts. `truncated` marks a shortened
+ * list and `textTruncated` an omitted text. Data of other kinds stays as it is.
+ */
+export function selectionPreview(data: unknown): unknown {
+  if (!isRecord(data) || data.kind !== "matches" || !Array.isArray(data.matches)) return data;
+  const matches: unknown[] = data.matches;
+  return {
+    ...data,
+    ...(matches.length > preview.matches && { truncated: true }),
+    matches: matches.slice(0, preview.matches).map((match) => {
+      if (!isRecord(match)) return match;
+      const captures = isRecord(match.captures)
+        ? Object.fromEntries(
+            Object.entries(match.captures).map(([name, nodes]) => [
+              name,
+              Array.isArray(nodes)
+                ? nodes.map((node: unknown) => (isRecord(node) ? previewText(node) : node))
+                : nodes,
+            ]),
+          )
+        : undefined;
+      return { ...previewText(match), ...(captures !== undefined && { captures }) };
+    }),
+  };
+}
+
+function previewText(match: Record<string, unknown>): Record<string, unknown> {
+  if (
+    typeof match.matchedText !== "string" ||
+    Buffer.byteLength(match.matchedText) <= preview.textBytes
+  )
+    return match;
+  const { matchedText: _omitted, ...rest } = match;
+  return { ...rest, textTruncated: true };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

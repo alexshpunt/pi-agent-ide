@@ -78,10 +78,10 @@ const page = await tools.read({ path: "long.txt", offset: 10, limit: 2 });
 check(page.text === "line 10\nline 11\n", "page: " + JSON.stringify(page.text));
 const byValue = await tools.search({ path: page, query: "line 1" });
 const byId = await tools.search({ path: page.id, query: "line 11" });
-check(byValue.hasMatches && byId.hasMatches, "search by value or id");
+check(byValue.matches.length > 0 && byId.matches.length > 0, "search by value or id");
 const inside = await tools.search({ path: page, query: "regex:^line 1\\d$" });
-check(inside.result.includes("long.txt:11:"), "the value selects its window: " + inside.result);
-check(!inside.result.includes("long.txt:12:"), "the value selects only its window: " + inside.result);
+// The value selects only its window: lines 10 and 11, not line 12.
+check(inside.matches.map((match) => match.path + ":" + match.line).join() === "long.txt:10,long.txt:11", "the value selects its window: " + JSON.stringify(inside));
 const anchored = await tools.read({ path: "long.txt", limit: 2, views: ["anchors"] });
 check(/^\w+\|line 1\n\w+\|line 2$/u.test(anchored.text), "anchors: " + JSON.stringify(anchored.text));
 const jq = await tools.read({ path: "data.json", views: ["jq:.items"] });
@@ -99,7 +99,7 @@ const listed = await tools.read({ path: ["data.json", "missing.txt", page], limi
 check(Array.isArray(listed) && listed.length === 3, "array path: " + JSON.stringify(listed));
 check(listed[0].text === "{\r\n" && listed[1] === null && listed[2].text === "line 10\n", JSON.stringify(listed));
 const again = await tools.search({ path: listed[2], query: "line 10" });
-check(again.hasMatches, "an array item's id selects its window");
+check(again.matches.length === 1, "an array item's id selects its window");
 text("done");
 `,
     );

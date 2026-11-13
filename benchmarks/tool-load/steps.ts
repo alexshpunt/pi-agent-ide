@@ -265,8 +265,8 @@ const [found, calls, diagnostics] = await Promise.all([
   tools.ast_search({ pattern: ${JSON.stringify(`${name}($A)`)}, path: file, language: ${JSON.stringify(spec.astLanguage)} }),
   tools.read({ path: "diagnostics:" + file }),
 ]);
-if (!String(found.result).includes("1 match in 1 file")) throw new Error("search after replace: " + found.result);
-if (!calls.hasMatches) throw new Error("ast_search found no call of ${name}");
+if (found?.matches?.length !== 1) throw new Error("search after replace: " + JSON.stringify(found));
+if (!(calls?.matches?.length > 0)) throw new Error("ast_search found no call of ${name}");
 // Other agents' error lines in a shared file are theirs to check.
 const errors = (diagnostics?.text ?? "").split("\\n").filter((entry) => entry.includes("[ERROR]") && !/broken_a\\d+_\\d+/i.test(entry));
 if (errors.length > 0) throw new Error("unexpected diagnostics: " + errors.join("\\n"));

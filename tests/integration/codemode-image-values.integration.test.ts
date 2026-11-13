@@ -75,7 +75,7 @@ text("aborted:" + aborted.stopReason + ":" + (aborted.answers.colour === undefin
 const note = await tools.read({path:"note.txt"});
 if (note?.text !== "alpha\nbeta\n" || !note.id.startsWith("RESULT#")) throw Error("Text Read must be { text, id }");
 const found = await tools.search({path:note, query:"beta"});
-text("composed:" + found.hasMatches);
+text("composed:" + (found.matches.length > 0));
 const missing = await tools.read({path:"missing.png"});
 text("missing:" + (missing === null));
 const both = await tools.read({path:["note.txt", "pixel.png"]});

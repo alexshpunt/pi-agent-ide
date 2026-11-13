@@ -8,9 +8,14 @@ Pass `pattern` in source-code syntax. `$NAME` captures one node and `$$$ARGS` ca
 
 Each match shows a `SEARCH#...:N:match` reference and a `capture NAME: RESULT#...` reference per capture. Pass either to Read, Search or an edit tool; a capture selects exactly its nodes, such as a function body or an argument list. `SEARCH#...:all:match` selects every match of a complete result. A single-match reference keeps working when other lines of its file change, including other parts of its own line, and goes stale when the matched text or its direct neighbours change; repeat the search.
 
+In Codemode, `ast_search` returns `{ id, complete, matches }` like Search, and each match adds `captures`: the nodes of each metavariable, keyed by its name without `$`, as `{ text, id }`. Pass any `id` to a source parameter.
+
 ```js
 const calls = await tools.ast_search({ path: "client.ts", pattern: "request($OPTIONS)" });
-text(calls.result);
+for (const call of calls.matches) {
+  const [options] = call.captures.OPTIONS;
+  await tools.replace({ path: options.id, text: `{ ...${options.text}, retry: true }` });
+}
 ```
 
 ## Rules
@@ -42,7 +47,7 @@ Pass a Read, Search or edit result as `path` and `relation: "enclosing"` to get 
 ```js
 const hit = await tools.search({ path: "src/app.ts", query: '"connection lost"' });
 const fn = await tools.ast_search({
-  path: hit.result,
+  path: hit,
   relation: "enclosing",
   language: "typescript",
   rule: {
