@@ -49,15 +49,26 @@ test("a null path fails in every search tool, while an omitted path searches the
   tools.file_search({ path: null, pattern: "a.ts" }),
   tools.ast_search({ path: null, pattern: "needle" }),
   tools.lsp_search({ path: null, query: "needle" }),
+  tools.search({ include: null, query: "needle" }),
+  tools.file_search({ exclude: null, pattern: "a.ts" }),
 ]);
+let limitError = "";
+try {
+  await tools.search({ limit: null, query: "needle" });
+} catch (error) {
+  limitError = String(error);
+}
 const omitted = await Promise.all([
   tools.search({ query: "needle" }),
   tools.file_search({ pattern: "a.ts" }),
 ]);
 text("nulls:" + JSON.stringify(nulls.map((value) => value === null)));
+text("limit:" + JSON.stringify(limitError));
 text("omitted:" + JSON.stringify(omitted.map((value) => value !== null)));`,
       [
         { id: "direct-null", name: "search", arguments: { query: "needle", path: null } },
+        { id: "direct-include", name: "search", arguments: { query: "needle", include: null } },
+        { id: "direct-limit", name: "search", arguments: { query: "needle", limit: null } },
         { id: "direct-omitted", name: "search", arguments: { query: "needle" } },
       ],
     );
@@ -65,18 +76,27 @@ text("omitted:" + JSON.stringify(omitted.map((value) => value !== null)));`,
     const directNull = getToolResultText(result, "direct-null");
     expect(getToolExecution(result, "direct-null").isError, directNull).toBe(true);
     expect(directNull).toContain("path is null");
+    const directInclude = getToolResultText(result, "direct-include");
+    expect(getToolExecution(result, "direct-include").isError, directInclude).toBe(true);
+    expect(directInclude).toContain("include is null");
+    const directLimit = getToolResultText(result, "direct-limit");
+    expect(getToolExecution(result, "direct-limit").isError, directLimit).toBe(true);
+    expect(directLimit).toContain("limit is null");
     expect(getToolExecution(result, "direct-omitted").isError).toBe(false);
     expect(getToolResultText(result, "direct-omitted")).toContain("a.ts");
 
     const output = getToolResultText(result, "script");
     expect(getToolExecution(result, "script").isError, output).toBe(false);
-    expect(output).toContain("nulls:[true,true,true,true]");
+    expect(output).toContain("nulls:[true,true,true,true,true,true]");
     expect(output).toContain("omitted:[true,true]");
+    expect(output).toContain("limit is null");
     const block = codemodeFailures(output);
-    expect(block, output).toContain("4 of 6 IDE calls failed:");
+    expect(block, output).toContain("6 of 8 IDE calls failed:");
     for (const tool of ["search", "file_search", "ast_search", "lsp_search"])
       expect(block).toContain(`- ${tool}`);
     expect(block.match(/path is null/gu)).toHaveLength(4);
+    expect(block).toContain("include is null");
+    expect(block).toContain("exclude is null");
     expect(block).toContain("failed or selected no text");
   });
 });
