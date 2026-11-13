@@ -42,4 +42,5 @@ Keep machine-specific targets out of shared Git history unless the user asks.
 - The workspace is only the base for relative paths, not a sandbox.
 - The target needs its own tools: Git for `changes` and `undo`, `ast-grep` for ast_search, the language servers for lsp_search (plus `rg` for C and C++ references and renames), and Node, `playwright-core` and Chromium for rendered web pages. Nothing is installed automatically.
 - Operations across two machines are not atomic. After a failure, check both sides before retrying; don't replay a write whose effect is unknown.
+- A lost connection reports `TRANSPORT_FAILED` with what OpenSSH saw (reset, closed by the target, keepalive or TCP timeout), whether the command had started and how long the target was silent before the loss. Pi reconnects by itself when the network drops a connection while it is being set up. When the error says nothing ran on the target, a retry is safe; when the command was running, it was stopped and its effect is unknown.
 - `/agent-ide-doctor ssh://<target>/<path>` checks that project's setup on the target.
