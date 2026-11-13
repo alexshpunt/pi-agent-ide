@@ -10,6 +10,11 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, onTestFinished, test } from "vitest";
+import {
+  createSearchRecipe,
+  fallbackNotice,
+  tokenSelectionWarning,
+} from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/search-recipe.ts";
 
 test("Codemode separates broadened matches and keeps notices even when the script discards its value", async () => {
   const root = path.resolve(".tmp/codemode-fallback");
@@ -34,6 +39,7 @@ text("fallback contract passed");
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
     tools: ["search", "read", "codemode"],
+    rawMode: false,
     timeoutMs: 120_000,
     conversation: [
       assistantMessage(
@@ -54,8 +60,20 @@ text("fallback contract passed");
   }).run("Search the fixture directly and through Codemode");
   for (const id of ["direct", "script"])
     expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
-  expect(getToolResultText(result, "direct")).toContain("Search fallback:");
+  const notice = fallbackNotice("words");
+  const recipe = {
+    ...createSearchRecipe({ query: "alpha beta", path: "input.txt" }),
+    originalQuery: "alpha beta",
+  };
+  const warning = tokenSelectionWarning(
+    recipe,
+    recipe.fallbacks!.find((step) => step.mode === "words")!.query,
+    2,
+    true,
+  );
+  expect(warning).toBeDefined();
+  expect(getToolResultText(result, "direct")).toContain(notice);
   expect(getToolResultText(result, "script")).toContain("fallback contract passed");
-  expect(getToolResultText(result, "script")).toContain("Search fallback:");
-  expect(getToolResultText(result, "script")).toContain("separate tokens");
+  expect(getToolResultText(result, "script")).toContain(notice);
+  expect(getToolResultText(result, "script")).toContain(warning);
 }, 150_000);
