@@ -1361,7 +1361,9 @@ add(
       tool: "search",
       args: {
         path: "task.txt",
-        query: /^(?:"alpha"|alpha) AND (?:"beta"|beta) NOT (?:"skip"|skip)$/,
+        // Search reads a NOT factor anywhere in the conjunction alike.
+        query:
+          /^(?:(?:"alpha"|alpha) AND (?:"beta"|beta) (?:AND )?NOT (?:"skip"|skip)|NOT (?:"skip"|skip) AND (?:"alpha"|alpha) AND (?:"beta"|beta))$/,
       },
       contains: "PASS-MARKER",
     },

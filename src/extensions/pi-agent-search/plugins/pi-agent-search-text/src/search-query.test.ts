@@ -57,6 +57,50 @@ describe("compileSearchQuery", () => {
     expect(expression.test("beta gamma ignored")).toBe(false);
   });
 
+  test.each([
+    ["alpha NOT skip", ["alpha AND NOT skip", "NOT skip AND alpha", "NOT skip alpha"]],
+    [
+      "alpha beta NOT skip",
+      [
+        "alpha AND beta AND NOT skip",
+        "NOT skip AND alpha AND beta",
+        "alpha NOT skip AND beta",
+        "alpha AND NOT skip beta",
+      ],
+    ],
+    [
+      "(alpha OR gamma) NOT (skip OR drop)",
+      ["NOT (skip OR drop) AND (alpha OR gamma)", "(alpha OR gamma) AND NOT (skip OR drop)"],
+    ],
+  ])("treats a NOT factor anywhere in %s's conjunction alike", (canonical, variants) => {
+    const lines = [
+      "alpha",
+      "alpha beta",
+      "gamma beta",
+      "alpha beta skip",
+      "gamma drop",
+      "skip beta",
+      "beta",
+    ];
+    const expected = expressionFor(canonical);
+    for (const variant of variants) {
+      const expression = expressionFor(variant);
+      expect(compileSearchQuery(variant), variant).toBe(compileSearchQuery(canonical));
+      expect(
+        lines.map((line) => expression.test(line)),
+        variant,
+      ).toEqual(lines.map((line) => expected.test(line)));
+    }
+  });
+
+  test("keeps AND NOT inside its OR branch", () => {
+    const expression = expressionFor("alpha OR beta AND NOT skip");
+
+    expect(expression.test("alpha skip")).toBe(true);
+    expect(expression.test("beta")).toBe(true);
+    expect(expression.test("beta skip")).toBe(false);
+  });
+
   test("uses implicit AND between adjacent terms in a Boolean query", () => {
     const expression = expressionFor("alpha beta OR gamma");
 
@@ -100,6 +144,16 @@ describe("compileSearchQuery", () => {
     ["foo OR ()", "Invalid Boolean search query at column 9: expected a term after '('."],
     ["foo NOT", "Invalid Boolean search query at column 8: expected a term after NOT."],
     ["OR foo", "Invalid Boolean search query at column 1: expected a term before OR."],
+    ["foo AND NOT", "Invalid Boolean search query at column 12: expected a term after NOT."],
+    ["foo NOT NOT bar", "Invalid Boolean search query at column 9: expected a term after NOT."],
+    [
+      "NOT foo",
+      'Invalid Boolean search query at column 1: NOT only excludes lines; add a term to match, such as "alpha AND NOT beta".',
+    ],
+    [
+      "foo OR NOT bar",
+      'Invalid Boolean search query at column 8: NOT only excludes lines; add a term to match, such as "alpha AND NOT beta".',
+    ],
     ['foo OR "bar', "Invalid Boolean search query at column 8: unterminated double-quoted term."],
     ["foo OR bar)", "Invalid Boolean search query at column 11: unexpected ')'."],
   ])("reports an actionable error for %s", (query, message) => {
