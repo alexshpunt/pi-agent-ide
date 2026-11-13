@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
+import { anchorProperty } from "#src/tools/text-tool-schema-properties.ts";
 import {
   insertionAfterAnchor,
   insertionBeforeAnchor,
@@ -19,11 +20,8 @@ export const insertSchema = Type.Object(
         description: "Source selection or live resource.",
       }),
     ),
-    anchor: Type.Optional(
-      Type.String({
-        description:
-          "Selection whose start or end receives the text. Omit when path already selects text.",
-      }),
+    anchor: anchorProperty(
+      "Selection whose start or end receives the text. Omit when path already selects text. With a result as path, it selects inside the result's ranges.",
     ),
     text: Type.String({
       minLength: 1,
@@ -48,7 +46,8 @@ export const insertSchema = Type.Object(
 
 interface InsertParameters {
   readonly path?: unknown;
-  readonly anchor?: string;
+  /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
+  readonly anchor?: unknown;
   readonly text: string;
   readonly separation?: "line" | "blank-line";
   readonly before?: boolean;

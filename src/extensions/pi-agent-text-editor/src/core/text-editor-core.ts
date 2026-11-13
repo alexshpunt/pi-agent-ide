@@ -360,6 +360,8 @@ export type ResolveResourceTextAnchor = (
   source: string,
   value: string,
   kinds?: readonly string[],
+  /** Ranges of the source the anchor is limited to; see TextAnchorResolverContext.scope. */
+  scope?: TextAnchorResolverContext["scope"],
 ) => Promise<TextAnchor>;
 
 /** Input for resolving an anchor value against already-available text content. */
@@ -1346,7 +1348,7 @@ async function previewTextResources(
     }
 
     const texts = new Map([...prepared].map(([source, item]) => [source, item.before.content]));
-    const mutation = await operation(texts, (source, value, kinds) => {
+    const mutation = await operation(texts, (source, value, kinds, scope) => {
       const item = prepared.get(source);
 
       if (item === undefined) {
@@ -1355,7 +1357,7 @@ async function previewTextResources(
 
       return anchorResolvers.resolve(
         value,
-        item.anchorContext,
+        scope === undefined ? item.anchorContext : { ...item.anchorContext, scope },
         kinds === undefined ? undefined : new Set(kinds),
       );
     });
@@ -1450,7 +1452,7 @@ async function editTextResources<Result>(
   }
 
   const texts = new Map([...prepared].map(([source, item]) => [source, item.before.content]));
-  const mutation = await operation(texts, (source, value, kinds) => {
+  const mutation = await operation(texts, (source, value, kinds, scope) => {
     const item = prepared.get(source);
 
     if (item === undefined) {
@@ -1459,7 +1461,7 @@ async function editTextResources<Result>(
 
     return anchorResolvers.resolve(
       value,
-      item.anchorContext,
+      scope === undefined ? item.anchorContext : { ...item.anchorContext, scope },
       kinds === undefined ? undefined : new Set(kinds),
     );
   });

@@ -29,8 +29,9 @@ export const replaceSchema = Type.Object(
 );
 interface ReplaceParameters {
   readonly path?: unknown;
-  readonly start?: string;
-  readonly end?: string;
+  /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
+  readonly start?: unknown;
+  readonly end?: unknown;
   readonly text: string;
 }
 

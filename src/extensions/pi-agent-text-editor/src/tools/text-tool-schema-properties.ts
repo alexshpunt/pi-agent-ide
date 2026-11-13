@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { resultInputSchema } from "pi-agent-resource";
+import { resultInputSchema, resultSourceSchema } from "pi-agent-resource";
 
 /** Build a structured source selector without changing legacy path semantics. */
 export function resultSourceProperty(description: string) {
@@ -11,20 +11,22 @@ export function sourcePathProperty(description: string) {
   return Type.Optional(Type.String({ description }));
 }
 
+/**
+ * Build a selector: anchor text, or a value with an id that selects text, such as a Search match
+ * in Codemode.
+ */
+export function anchorProperty(description: string) {
+  return Type.Optional(Type.Union(resultSourceSchema.anyOf, { description }));
+}
+
 /** Build shared source-range selectors, with optional tool-specific descriptions. */
 export function sourceRangeProperties(descriptions: Partial<Record<"start" | "end", string>> = {}) {
   return {
-    start: Type.Optional(
-      Type.String({
-        description:
-          descriptions.start ?? "Start selector; omit when path selects the intended text.",
-      }),
+    start: anchorProperty(
+      descriptions.start ??
+        "Start selector; omit when path selects the intended text. With a result as path, it selects inside the result's ranges.",
     ),
-    end: Type.Optional(
-      Type.String({
-        description: descriptions.end ?? "Inclusive end selector; omit for start alone.",
-      }),
-    ),
+    end: anchorProperty(descriptions.end ?? "Inclusive end selector; omit for start alone."),
   };
 }
 
@@ -34,17 +36,11 @@ export function targetProperties(directorySemantics: string) {
     target: resultSourceProperty(
       `Destination: a path, or an unchanged result whose ranges are replaced. A whole-file transfer creates missing folders and replaces an existing file. ${directorySemantics}`,
     ),
-    targetStart: Type.Optional(
-      Type.String({
-        description:
-          "Anchor or unique exact text in the destination file; the text goes after its selected extent. Required when the text goes into a file path.",
-      }),
+    targetStart: anchorProperty(
+      "Anchor or unique exact text in the destination file; the text goes after its selected extent. Required when the text goes into a file path.",
     ),
-    targetEnd: Type.Optional(
-      Type.String({
-        description:
-          "Replace from targetStart through targetEnd instead of inserting after targetStart.",
-      }),
+    targetEnd: anchorProperty(
+      "Replace from targetStart through targetEnd instead of inserting after targetStart.",
     ),
   };
 }

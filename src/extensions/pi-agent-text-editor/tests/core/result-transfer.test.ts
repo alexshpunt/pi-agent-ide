@@ -72,7 +72,7 @@ test("structured transfers pair ranges in declared order and remove only repeate
   expect(applyTextChanges("ONE TWO", edit?.changes ?? []).content).toBe("last first");
 });
 
-test("structured transfers reject count mismatches, incomplete inputs and mixed selectors", async () => {
+test("structured transfers reject count mismatches, incomplete inputs and partial file sources", async () => {
   const f = fixture();
   const first = f.selected(f.source, 0, 5);
   const last = f.selected(f.source, 11, 15);
@@ -88,9 +88,15 @@ test("structured transfers reject count mismatches, incomplete inputs and mixed 
       f.cwd,
     ),
   ).rejects.toThrow(/Incomplete/u);
-  await expect(
-    prepareResultTransfer("copy", { path: first, start: "first", target: one }, f.store, f.cwd),
-  ).rejects.toThrow(/combine/u);
+  // Selectors with a result select inside it: the result becomes their scope.
+  const scoped = await prepareResultTransfer(
+    "copy",
+    { path: first, start: "first", target: one },
+    f.store,
+    f.cwd,
+  );
+  expect(scoped.input.path).toMatch(/^RESULT#/u);
+  expect(scoped.input.start).toBe("first");
   await expect(
     prepareResultTransfer("copy", { path: first, target: f.destination }, f.store, f.cwd),
   ).rejects.toThrow(/partial/u);

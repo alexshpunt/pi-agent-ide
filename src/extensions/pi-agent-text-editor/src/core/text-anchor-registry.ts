@@ -5,6 +5,7 @@ import {
   isTextAnchorResolutionAttempt,
   type TextAnchor,
   type TextAnchorRecoveryOutcome,
+  type TextAnchorRecoveryRange,
   type TextAnchorRejection,
   type TextAnchorResolver,
   type TextAnchorResolverContext,
@@ -51,6 +52,29 @@ export class TextAnchorResolutionError extends Error {
     private readonly originalRecoveryContext?: TextAnchorResolverContext,
   ) {
     super(message, options);
+  }
+
+  /** The same rejection with a reason that says more, such as the range the anchor was limited to. */
+  public withReason(
+    reason: string,
+    contextRange?: TextAnchorRecoveryRange,
+  ): TextAnchorResolutionError {
+    const range = contextRange ?? this.rejection?.contextRange;
+    // A reference failure keeps its own presentation, so keep its class.
+    const Kind = this.constructor as typeof TextAnchorResolutionError;
+    return new Kind(
+      reason,
+      this.resolverId,
+      { cause: this },
+      {
+        code: this.rejection?.code ?? "invalid",
+        reason,
+        ...(range !== undefined && { contextRange: range }),
+      },
+      this.recovery,
+      this.recoverAgain,
+      this.originalRecoveryContext,
+    );
   }
 
   /** Recomputes recovery against a supplied or original immutable source snapshot. */

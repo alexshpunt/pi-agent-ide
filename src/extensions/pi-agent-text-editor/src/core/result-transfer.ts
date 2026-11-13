@@ -7,6 +7,7 @@ import type {
 import { TextChangeDocument, type TextChange } from "./text-change-engine.ts";
 import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
 import { wholeFileResultSource } from "./result-input.ts";
+import { resolveResultScope } from "./result-scope.ts";
 import { SOURCE_CHANGED } from "./source-change-retry.ts";
 
 /** Distinguish structured source authority from ordinary paths and legacy anchors. */
@@ -42,8 +43,17 @@ export async function prepareResultTransfer(
   const handles = new Map<"path" | "target", readonly string[]>();
   const resolve = (field: "path" | "target", start: string, end: string) => {
     if (!isResultInput(input[field])) return undefined;
-    if (input[start] !== undefined || input[end] !== undefined)
-      throw new Error(`Do not combine structured ${field} with ${start}/${end}.`);
+    if (input[start] !== undefined || input[end] !== undefined) {
+      // The anchors select the text, inside the result's selection: the result is their scope.
+      const scope = resolveResultScope(store, input[field], cwd);
+      if (!scope.complete)
+        throw new Error(
+          "Incomplete result targets cannot establish a complete transfer. Run Search again with a higher limit or a narrower query, then use the complete result.",
+        );
+      if (scope.targets.length === 0) throw new Error("Empty result target set.");
+      input[field] = store.register(scope.targets, cwd);
+      return undefined;
+    }
     const selected = store.resolveOrdered(input[field], cwd);
     if (!selected.complete)
       throw new Error(
