@@ -2,7 +2,7 @@ import type { ResolvedResultTargets } from "pi-agent-resource";
 import { createTextDocument } from "pi-agent-text";
 import { searchTextContent } from "#src/search-backend.ts";
 import type { TextSearchBackendResult } from "#src/search-backend.ts";
-import { fallbackNotice, type SearchRecipe } from "#src/search-recipe.ts";
+import { fallbackNotice, type SearchRecipe, type SearchFallback } from "#src/search-recipe.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
 
 /**
@@ -16,7 +16,11 @@ export async function runScopedSearch(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<
-  TextSearchBackendResult & { readonly query: string; readonly notices: readonly string[] }
+  TextSearchBackendResult & {
+    readonly query: string;
+    readonly notices: readonly string[];
+    readonly fallback?: SearchFallback["mode"];
+  }
 > {
   if (recipe.include !== undefined || recipe.exclude !== undefined)
     throw new Error(
@@ -83,6 +87,7 @@ export async function runScopedSearch(
     return { matches, complete: scope.complete };
   };
   let query = recipe.query;
+  let selectedFallback: SearchFallback["mode"] | undefined;
   let result = await search(query);
   const notices: string[] = [];
   for (const fallback of recipe.fallbacks ?? []) {
@@ -90,6 +95,7 @@ export async function runScopedSearch(
     try {
       result = await search(fallback.query, fallback.condition);
       query = fallback.query;
+      selectedFallback = fallback.mode;
       notices.push(fallbackNotice(fallback.mode));
     } catch (error) {
       if (
@@ -102,5 +108,10 @@ export async function runScopedSearch(
       notices.push("Search fallback: invalid regex skipped; literal search found no matches.");
     }
   }
-  return { ...result, query, notices };
+  return {
+    ...result,
+    query,
+    notices,
+    ...(selectedFallback === undefined ? {} : { fallback: selectedFallback }),
+  };
 }

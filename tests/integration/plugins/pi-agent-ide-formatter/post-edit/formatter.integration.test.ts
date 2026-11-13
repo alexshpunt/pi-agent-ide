@@ -29,11 +29,82 @@ afterAll(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
+test("editing an unformatted Rust file preserves unrelated formatting", async () => {
+  await withTempDirectory(async (directory) => {
+    const fileName = "src/main.rs";
+    const before =
+      'fn main(){\n    let value=1;\n    println!("a long line that deliberately keeps its non-rustfmt style: {}", value);\n}\n';
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(
+      path.join(directory, "Cargo.toml"),
+      '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2024"\n',
+    );
+    await writeFile(path.join(directory, fileName), before);
+    const scenario = await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-rust-unformatted",
+      tool: "replace",
+      arguments: {
+        path: fileName,
+        start: formatLineHashAnchor(before, 2),
+        text: "    let value=2;",
+      },
+    });
+    expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+    expect(await readFile(path.join(directory, fileName), "utf8")).toBe(
+      before.replace("let value=1;", "let value=2;"),
+    );
+    expect(
+      getToolExecutionDetails(getToolExecution(scenario.result, scenario.mutationCallId)),
+    ).toMatchObject({
+      results: [
+        {
+          data: {
+            formatting: { status: "skipped-style", formatter: "rustfmt" },
+            diffStatuses: [
+              expect.objectContaining({ formattingStatus: "skipped-style", formatter: "rustfmt" }),
+            ],
+          },
+        },
+      ],
+    });
+  });
+}, 60_000);
+test("formatting a Rust edit leaves child modules unchanged", async () => {
+  await withTempDirectory(async (directory) => {
+    const before = 'mod sub;\n\nfn main() {\n    println!("original");\n}\n';
+    const child = 'pub fn child(){println!("unchanged");}\n';
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(
+      path.join(directory, "Cargo.toml"),
+      '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n',
+    );
+    await writeFile(path.join(directory, "src/main.rs"), before);
+    await writeFile(path.join(directory, "src/sub.rs"), child);
+    const scenario = await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-rust-child-module",
+      tool: "replace",
+      arguments: {
+        path: "src/main.rs",
+        start: formatLineHashAnchor(before, 4),
+        text: '    println!( "changed" );',
+      },
+    });
+    expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+    expect(await readFile(path.join(directory, "src/main.rs"), "utf8")).toBe(
+      before.replace("original", "changed"),
+    );
+    expect(await readFile(path.join(directory, "src/sub.rs"), "utf8")).toBe(child);
+  });
+}, 60_000);
 test("editing a Rust 2024 let chain formats the saved file", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "src/main.rs";
     const before =
-      'fn main() {\n    if let Some(x) = Some(1) && x > 0 {\n        println!("{x}");\n    }\n}\n';
+      'fn main() {\n    if let Some(x) = Some(1)\n        && x > 0\n    {\n        println!("{x}");\n    }\n}\n';
     await mkdir(path.join(directory, "src"), { recursive: true });
     await writeFile(
       path.join(directory, "Cargo.toml"),
@@ -47,7 +118,7 @@ test("editing a Rust 2024 let chain formats the saved file", async () => {
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(before, 3),
+        start: formatLineHashAnchor(before, 5),
         text: '        println!( "value={x}" );',
       },
     });

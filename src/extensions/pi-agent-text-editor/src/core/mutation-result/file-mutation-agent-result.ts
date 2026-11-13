@@ -269,6 +269,9 @@ export class FileMutationAgentResult {
       case "unchanged": {
         return `Already formatted${by}.`;
       }
+      case "skipped-style": {
+        return `Formatting skipped${by}: existing style preserved.`;
+      }
       case "unavailable": {
         return "No formatter is available for this file.";
       }

@@ -51,9 +51,14 @@ export async function runSearchRecipe(
   signal?: AbortSignal,
   environment?: SearchEnvironment,
 ): Promise<
-  TextSearchBackendResult & { readonly query: string; readonly notices: readonly string[] }
+  TextSearchBackendResult & {
+    readonly query: string;
+    readonly notices: readonly string[];
+    readonly fallback?: SearchFallback["mode"];
+  }
 > {
   let query = recipe.query;
+  let selectedFallback: SearchFallback["mode"] | undefined;
   let result = await searchText(recipe, cwd, signal, undefined, environment);
   const notices: string[] = [];
   for (const fallback of recipe.fallbacks ?? []) {
@@ -69,6 +74,7 @@ export async function runSearchRecipe(
       );
       result = next;
       query = fallback.query;
+      selectedFallback = fallback.mode;
       notices.push(fallbackNotice(fallback.mode));
     } catch (error) {
       if (fallback.mode !== "regex" || !isRegexSyntaxError(error) || signal?.aborted) throw error;
@@ -76,7 +82,12 @@ export async function runSearchRecipe(
     }
   }
   if (result.unreadable !== undefined) notices.push(unreadableNotice(result.unreadable, cwd));
-  return { ...result, query, notices };
+  return {
+    ...result,
+    query,
+    notices,
+    ...(selectedFallback === undefined ? {} : { fallback: selectedFallback }),
+  };
 }
 
 /** Explain a selection made of separate terms, not one literal phrase. */
