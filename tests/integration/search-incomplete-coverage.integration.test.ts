@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutions,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -26,21 +27,16 @@ test("warns about inherited incomplete coverage for empty and non-empty searches
     );
     const source = "probe(first);\nprobe(second);\n";
     await writeFile(path.join(cwd, "sample.ts"), source);
-    const code = `const seed = await tools.ast_search({pattern:"probe($ARG)",path:"sample.ts",limit:1}).then(value => value.result);
-const warning = "incomplete";
-const zero = await tools.search({path:seed,query:"regex:missing"}).then(value => value.result);
-const found = await tools.search({path:seed,query:"regex:probe"}).then(value => value.result);
-for (const result of [seed, zero, found]) {
-  if (!result.includes(warning)) throw Error("Incomplete result lost its warning: " + result);
-  if (result.includes("limit reached")) throw Error("Incomplete scope was mislabeled as a new limit: " + result);
-}
-if (!zero.includes("No matches found.")) throw Error(zero);
-if (!found.includes("1+ match")) throw Error(found);
+    const code = `const seed = await tools.ast_search({pattern:"probe($ARG)",path:"sample.ts",limit:1});
+const zero = await tools.search({path:seed,query:"regex:missing"});
+const found = await tools.search({path:seed,query:"regex:probe"});
+for (const value of [seed, zero, found])
+  if (value.complete !== false) throw Error("Incomplete result claimed complete coverage: " + JSON.stringify(value));
+if (zero.matches.length !== 0 || found.matches.length !== 1) throw Error(JSON.stringify([zero, found]));
 // A refused edit resolves to null; the test checks its reason in the Codemode result.
 const blocked = (await tools.replace({path:zero,text:"BAD"})) === null;
 if (!blocked) throw Error("Incomplete zero result authorized an edit");
-text(zero);
-text(found);`;
+text("Incomplete values checked");`;
     const run = await new PiIntegrationTest({
       testName: "search-incomplete-coverage",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -63,6 +59,23 @@ text(found);`;
       getToolExecution(run, "incomplete-searches").isError,
       getToolResultText(run, "incomplete-searches"),
     ).toBe(false);
+    // The readable results of the nested searches, as a direct call shows them, keep the warning.
+    const readable = getToolExecutions(run).flatMap(({ toolName, result }) =>
+      toolName === "search" || toolName === "ast_search"
+        ? [
+            ((result as { content?: { type: string; text?: string }[] }).content ?? [])
+              .map((block) => block.text ?? "")
+              .join("\n"),
+          ]
+        : [],
+    );
+    expect(readable).toHaveLength(3);
+    for (const shown of readable) {
+      expect(shown).toContain("incomplete");
+      expect(shown).not.toContain("limit reached");
+    }
+    expect(readable[1]).toContain("No matches found.");
+    expect(readable[2]).toContain("1+ match");
     const refusal = codemodeFailures(getToolResultText(run, "incomplete-searches"));
     expect(refusal).toMatch(/^1 of 4 IDE calls failed:\n- replace RESULT#/u);
     expect(refusal).toMatch(/incomplete/iu);

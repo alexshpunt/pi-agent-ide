@@ -21,7 +21,7 @@ const replaced = id(await tools.replace({path:"a.txt",start:"alpha",text:"ALPHA"
 id(await tools.insert({path:"a.txt",anchor:"gamma",text:" delta"}), "Insert");
 // The id of an edit still pending in the batch: the next call commits the batch first.
 const found = await tools.search({path:replaced,query:"ALPHA"});
-check(found.hasMatches===true && found.complete===true, "Search lost the pending replacement: "+found.result);
+check(found.matches.length===1 && found.complete===true, "Search lost the pending replacement: "+JSON.stringify(found));
 const chained = id(await tools.replace({path:replaced,text:"OMEGA"}), "Chained Replace");
 // An edit whose target already has the text succeeds and still selects it.
 id(await tools.replace({path:chained,text:"OMEGA"}), "Already-done Replace");
@@ -32,8 +32,8 @@ const copied = id(await tools.copy({path:"b.txt",target:"c.txt"}), "Whole-file C
 check((await tools.read({path:copied})).text==="one\\ntwo\\n", "Copy id lost the destination");
 id(await tools.move({path:"c.txt",target:"d.txt"}), "Whole-file Move");
 const moved = id(await tools.move({path:"b.txt",start:"two\\n",target:"d.txt",targetStart:"begin"}), "Text Move");
-check((await tools.search({path:moved,query:"two"})).hasMatches===true, "Move id lost the moved text");
-check((await tools.search({path:moved,query:"one"})).hasMatches===false, "Move id widened past the moved text");
+check((await tools.search({path:moved,query:"two"})).matches.length===1, "Move id lost the moved text");
+check((await tools.search({path:moved,query:"one"})).matches.length===0, "Move id widened past the moved text");
 id(await tools.undo({file:"d.txt",change:"last"}), "Undo");
 await tools.write({path:"dir/x.txt",content:"x\\n"});
 check(await tools.copy({path:"dir",target:"dir2"})===null, "Directory Copy selected text");

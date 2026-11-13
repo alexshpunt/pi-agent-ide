@@ -77,7 +77,7 @@ test.each(["direct", "codemode"] as const)(
     });
   },
 );
-test("the capability validator checks Search facts and unchanged result provenance", async () => {
+test("the capability validator checks Search values and unchanged result provenance", async () => {
   await withTempWorkspace(async (cwd) => {
     const task = capabilityCases.find((candidate) => candidate.id === "search-script-facts");
     const contents = task?.files?.["task.txt"];
@@ -102,15 +102,15 @@ test("the capability validator checks Search facts and unchanged result provenan
               name: "codemode",
               arguments: {
                 code: `const empty = await tools.search({path:"task.txt",query:"regex:^ABSENT$"});
-if (empty.hasMatches !== false || empty.complete !== true) throw Error("Empty facts missing");
+if (empty.matches.length !== 0 || empty.complete !== true) throw Error("Empty value missing");
 const limited = await tools.ast_search({path:"scope.ts",pattern:"probe($ARG)",limit:1});
-if (limited.hasMatches !== true || limited.complete !== false) throw Error("Incomplete facts missing");
+if (limited.matches.length !== 1 || limited.complete !== false) throw Error("Incomplete value missing");
 const failed = (await tools.search({path:"task.txt",query:"regex:("})) === null;
 if (!failed) throw Error("Invalid Search did not fail");
 const found = await tools.search({path:"task.txt",query:"OLD",limit:1000});
-if (found.hasMatches !== true || found.complete !== true || typeof found.result !== "string") throw Error("Complete facts missing");
-await tools.replace({path:found.result,text:"NEW"});
-text("Search facts verified");`,
+if (found.matches.length !== 2 || found.complete !== true) throw Error("Complete value missing");
+await tools.replace({path:found,text:"NEW"});
+text("Search values verified");`,
               },
             }),
           ],
@@ -168,7 +168,7 @@ test("the native TUI public event mirror is usable by the unchanged capability v
               id: "mirror-compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches.result,text:"NEW"}));',
+                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
               },
             }),
           ],
@@ -277,7 +277,7 @@ test("the capability validator preserves real IDE provenance through a transpare
               id: "compose-alias",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.mcp__fixture__read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches.result,text:"NEW"}));',
+                code: 'const source = await tools.mcp__fixture__read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
               },
             }),
           ],
@@ -332,7 +332,7 @@ test("the capability validator follows real nested tool results instead of names
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches.result,text:"NEW"}));',
+                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
               },
             }),
           ],

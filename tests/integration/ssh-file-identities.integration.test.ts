@@ -152,9 +152,9 @@ for(let i=0;i<sources.length;i++) {
  const result=await tools.read({path:sources[i],views:["anchors"]});
  const expected=["LEFT VERIFIED","right café"][i];
  if(!result.text.includes(expected)) throw Error("Target text crossed a namespace: "+result.text);
- const found=await tools.search({path:result,query:expected}).then(value => value.result);
- if(!found.includes(sources[i])) throw Error("Read receipt lost its namespace owner: "+found);
- text(found);
+ const found=await tools.search({path:result,query:expected});
+ if(found.matches.length!==1 || found.matches[0].path!==sources[i] || found.matches[0].text!==expected) throw Error("Read receipt lost its namespace owner: "+JSON.stringify(found));
+ text(JSON.stringify(found));
 }
 async function inspect(request) {
  // A failed Read resolves to null; the Codemode result lists its reason.

@@ -147,8 +147,8 @@ ${
     ? `check(saved?.text==="","Empty no-op Read lost its source");`
     : `check(saved?.text===${JSON.stringify(content)},"No-op lost its whole-file target");`
 }
-const found=await tools.search({path:unchanged,query:"same"}).then(value => value.result);
-check(matches(found).length===${content.length === 0 ? 0 : 2},"No-op lost its searchable whole-file target");
+const found=await tools.search({path:unchanged,query:"same"});
+check(found.matches.length===${content.length === 0 ? 0 : 2},"No-op lost its searchable whole-file target");
 text(unchanged);`,
                 },
               });

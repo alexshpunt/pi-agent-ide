@@ -1,5 +1,5 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectResultTargets } from "pi-agent-resource";
+import { connectResultTargets, trackScriptCalls } from "pi-agent-resource";
 import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.ts";
 import {
   ToolCallInterceptionRenderStore,
@@ -29,17 +29,9 @@ export default async function registerReadCore(
   context?: { readonly preferences: Readonly<Record<string, string>> },
 ): Promise<void> {
   // Codemode scripts and other tools call Read through Pi; their results skip the model budget.
-  const nestedCalls = new Set<string>();
-  pi.on("tool_execution_start", (event) => {
-    if (event.toolName === "read" && event.parentToolCallId !== undefined)
-      nestedCalls.add(event.toolCallId);
-  });
-  pi.on("tool_execution_end", (event) => {
-    nestedCalls.delete(event.toolCallId);
-  });
   const core = createReadCore(
     () => parsePresentation(context?.preferences["ui.read"]),
-    (toolCallId) => nestedCalls.has(toolCallId),
+    trackScriptCalls(pi, "read"),
   );
   const targets = connectResultTargets(pi);
   await core.registerPlugin({

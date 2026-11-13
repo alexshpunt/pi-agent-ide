@@ -129,49 +129,74 @@ test("shows pinned Vimium possible names in native Search for files and URLs wit
   expect(result.tuiRenderedOutput).toContain("No matches");
 }, 150_000);
 
-test("composed Search shows separate alternatives whose Read reference refreshes only the exact alternative", async () => {
+test("composed Search keeps the original zero without suggestions, and a candidate Read reference refreshes only the exact alternative", async () => {
   const fixture = await setup();
+  // Possible names stay out of Codemode values: scripts get the original zero as data.
   const code = String.raw`
-const results = await Promise.all([tools.search({query:"generateHintStrings",path:"link_hints.js"}).then(value => value.result), tools.search({query:"generateHintStrings",path:${JSON.stringify(fixture.url)}}).then(value => value.result)]);
-for (const found of results) {
-  if (typeof found !== "string" || !found.includes("No matches")) throw Error("Original zero was lost");
-  if (found.includes("const hintStrings =")) throw Error("User preview leaked");
-  const groups=found.split("Possible name: ").slice(1);
-  if(groups.length!==2 || !groups[0].startsWith("hintStrings ") || !groups[0].includes("5 matches") || !groups[1].startsWith("generateHintString ") || !groups[1].includes("2 matches")) throw Error("Candidate groups were lost: "+found);
+const results = await Promise.all([tools.search({query:"generateHintStrings",path:"link_hints.js"}), tools.search({query:"generateHintStrings",path:${JSON.stringify(fixture.url)}})]);
+// A file search selects its (empty) matches; a web page has no selections, so it has no id.
+for (const [found, keys] of [[results[0], "complete,id,matches"], [results[1], "complete,matches"]]) {
+  if (found === null || found.complete !== true || found.matches.length !== 0) throw Error("Original zero was lost: "+JSON.stringify(found));
+  if (Object.keys(found).sort().join() !== keys) throw Error("Suggestions leaked into the value: "+JSON.stringify(found));
+  if (JSON.stringify(found).includes("hintStrings")) throw Error("Suggestion or preview leaked: "+JSON.stringify(found));
 }
-const local = results[0].split("Possible name: ")[1];
-const web = results[1].split("Possible name: ")[1];
-if (web.includes("SEARCH#")) throw Error("URL got editable SEARCH refs");
-const reference=/Read: (SEARCH#[A-F\d]+:all:line)/.exec(local)?.[1];
-if(!reference) throw Error("Candidate Read reference missing");
-const before = await tools.read({path:reference});
-if (!before?.text.includes("hintStrings")) throw Error("Candidate Read failed");
-const first=await tools.search({path:before,query:"hintStrings"}).then(value => value.result);
-const individual=/SEARCH#[A-F\d]+:\d+:match/.exec(first)?.[0];
-if(!individual) throw Error("Candidate individual reference missing");
-text(results[0]); text(results[1]);
-await tools.write({path:"link_hints.js",content:"hintStrings();\nHintStrings();\nmyhintStrings();\ngenerateHintStrings();\n"});
-const after = await tools.read({path:reference});
-if (!after.text.includes("hintStrings();") || after.text.includes("HintStrings();") || after.text.includes("generateHintStrings();")) throw Error("Read reranked fuzzy or changed exact semantics: "+after.text);
-const stale = (await tools.read({path:individual})) === null;
-if(!stale) throw Error("Individual candidate reference failed to go stale");
-text("Exact candidate Read and refresh passed");
+text("Composed zero values passed");
 `;
+  // The candidate Read reference exists only in the readable result of a direct call. This
+  // extension passes the actual references of the earlier calls to the later scripted calls.
+  const references = path.join(fixture.cwd, "fuzzy-references.js");
+  await writeFile(
+    references,
+    String.raw`export default function fuzzyReferences(pi) {
+  const found = {};
+  pi.on("tool_result", (event) => {
+    const shown = JSON.stringify(event.content);
+    if (event.toolCallId === "local") found["SEARCH#CANDIDATE"] = /Read: (SEARCH#[A-F\d]+:all:line)/.exec(shown)?.[1];
+    if (event.toolCallId === "first") found["SEARCH#INDIVIDUAL"] = /SEARCH#[A-F\d]+:\d+:match/.exec(shown)?.[0];
+  });
+  pi.on("tool_call", (event) => {
+    const input = event.input;
+    if (typeof input.path !== "string" || !(input.path in found)) return;
+    if (found[input.path] === undefined) throw new Error("Missing reference for " + input.path);
+    input.path = found[input.path];
+  });
+}
+`,
+  );
+  const changed = "hintStrings();\nHintStrings();\nmyhintStrings();\ngenerateHintStrings();\n";
   const result = await new PiIntegrationTest({
     testName: "fuzzy-vimium-composed",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd: fixture.cwd,
-    extensions: [ide, "builtin:codemode"],
+    extensions: [ide, "builtin:codemode", references],
     tools: ["search", "read", "write", "codemode"],
     rawMode: true,
     timeoutMs: 120_000,
-    conversation: [call("script", "codemode", { code }), assistantMessage([text("Done")])],
+    conversation: [
+      call("script", "codemode", { code }),
+      call("local", "search", { query: "generateHintStrings", path: "link_hints.js" }),
+      call("before", "read", { path: "SEARCH#CANDIDATE" }),
+      call("first", "search", { path: "SEARCH#CANDIDATE", query: "hintStrings" }),
+      call("write", "write", { path: "link_hints.js", content: changed }),
+      call("after", "read", { path: "SEARCH#CANDIDATE" }),
+      call("stale", "read", { path: "SEARCH#INDIVIDUAL" }),
+      assistantMessage([text("Done")]),
+    ],
   }).run(
     "Use fuzzy candidates through composed Search and current Read, then edit the fixture and refresh the candidate",
   );
-  expect(getToolExecution(result, "script").isError, getToolResultText(result, "script")).toBe(
-    false,
-  );
-  expect(getToolResultText(result, "script")).toContain("Exact candidate Read and refresh passed");
+  for (const id of ["script", "local", "before", "first", "write", "after"])
+    expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
+  expect(getToolResultText(result, "script")).toContain("Composed zero values passed");
+  expect(getToolResultText(result, "local")).toContain("Possible name: hintStrings");
+  expect(getToolResultText(result, "before")).toContain("hintStrings");
+  expect(getToolResultText(result, "first")).toMatch(/SEARCH#[A-F\d]+:\d+:match/u);
+  // Read keeps the exact alternative's semantics after the edit: no reranking, no fuzzy widening.
+  const after = getToolResultText(result, "after");
+  expect(after).toContain("hintStrings();");
+  expect(after).not.toContain("HintStrings();");
+  expect(after).not.toContain("generateHintStrings();");
+  // The individual reference of the changed text goes stale.
+  expect(getToolExecution(result, "stale").isError, getToolResultText(result, "stale")).toBe(true);
   expect(fixture.requests()).toBe(1);
 }, 150_000);

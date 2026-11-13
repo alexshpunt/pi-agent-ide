@@ -137,7 +137,7 @@ for (const route of ["direct", "codemode"] as const) {
                 code: 'await tools.replace({path:"ambiguous.txt",start:"duplicate",text:"BAD"});',
               }),
               call("stale", "codemode", {
-                code: 'const selected = await tools.search({path:"stale.txt",query:"OLD"}); await tools.replace({path:"stale.txt",start:"OLD",text:"NEW"}); await tools.delete({path:selected.result});',
+                code: 'const selected = await tools.search({path:"stale.txt",query:"OLD"}); await tools.replace({path:"stale.txt",start:"OLD",text:"NEW"}); await tools.delete({path:selected});',
               }),
             ];
       const result = await new PiIntegrationTest({

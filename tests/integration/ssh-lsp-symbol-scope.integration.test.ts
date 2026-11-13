@@ -112,7 +112,8 @@ test.each(["scope", "mutation"] as const)(
               arguments: {
                 code: `
 const read = await tools.read({ path: ${JSON.stringify(`${root}/note.ts`)} });
-const seed = await tools.search({ path: read, query: "label", caseSensitive: true, wholeWord: true }).then(value => value.result);
+const seed = await tools.search({ path: read, query: "label", caseSensitive: true, wholeWord: true });
+if(seed.matches.length!==1) throw Error("Seed search: "+JSON.stringify(seed));
 
 const strict=await tools.lsp_search({query:"label",path:seed}).then(value => value.result);
 if(!strict.includes("definition label") || strict.includes("reference label")) throw Error(strict);
@@ -127,7 +128,8 @@ if(${JSON.stringify(mode)} === "scope") {
  if(!definition || references.length!==1) throw Error("Lost declaration identity: "+navigation);
  if(!definition[1].startsWith(definition[2]+":")) throw Error("Lost declaration identity: "+navigation);
  if(references.some(match=>match[2]!==definition[1])) throw Error("Lost declaration identity: "+navigation);
- const cut=await tools.search({path:seed,query:"abel",caseSensitive:true}).then(value => value.result);
+ const cut=await tools.search({path:seed,query:"abel",caseSensitive:true});
+ if(cut.matches.length!==1 || cut.matches[0].text!=="abel") throw Error("Partial search: "+JSON.stringify(cut));
  const absent=await tools.lsp_search({query:"label",path:cut}).then(value => value.result);
  if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);
  text({strict,name,navigation,absent});

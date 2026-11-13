@@ -41,16 +41,16 @@ const file=${JSON.stringify(source)};
 await tools.write({path:file,content:"one\\ntwo\\nthree\\nfour\\nfive\\n"});
 const anchored=await tools.read({path:file,views:["anchors"]});
 const anchorOf=(word)=>new RegExp("([0-9A-HJKMNP-TV-Z]{7})\\\\|"+word).exec(anchored.text)[1];
-const four=await tools.search({path:file,query:"four"}).then(value => value.result);
-const two=await tools.search({path:file,query:"two"}).then(value => value.result);
+const four=await tools.search({path:file,query:"four"});
+const two=await tools.search({path:file,query:"two"});
 const five=anchorOf("five");
 const three=anchorOf("three");
 await tools.bash({command:"sed -i '1i zero' "+file});
-await tools.replace({path:matches(four)[0],text:"FOUR"});
+await tools.replace({path:four.matches[0].id,text:"FOUR"});
 await tools.replace({path:file,start:five,text:"LAST\\n"});
 check((await tools.read({path:file})).text.startsWith("zero\\none\\ntwo\\nthree\\nFOUR\\nLAST"),"Edits above did not keep the targets");
 await tools.bash({command:"sed -i 's/two/2/' "+file});
-await rejects(()=>tools.replace({path:matches(two)[0],text:"X"}));
+await rejects(()=>tools.replace({path:two.matches[0].id,text:"X"}));
 await tools.bash({command:"sed -i 's/three/3/' "+file});
 await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({
@@ -71,7 +71,7 @@ await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}));`;
     expect(getToolExecution(run, "composed").isError, output).toBe(false);
     const [changedResult, changedAnchor, ...others] = failedCalls(output);
     expect(others, output).toEqual([]);
-    expect(changedResult).toMatch(/^replace SEARCH#[A-F\d]+:1:match\n[\s\S]*(?:expired|stale)/u);
+    expect(changedResult).toMatch(/^replace RESULT#[a-f\d-]{36}\n[\s\S]*(?:expired|stale)/u);
     expect(changedAnchor).toMatch(/^replace \.tmp\/shared\/main\.txt\n[\s\S]*stale/u);
     expect(await readFile(path.join(cwd, source), "utf8")).toBe("zero\none\n2\n3\nFOUR\nLAST\n");
   });
@@ -95,9 +95,10 @@ test("A list of match references from a limited search survives other sessions' 
 const file=${JSON.stringify(source)};
 const lines=Array.from({length:160},(_,i)=>"v_"+i+" = rename_me(a_"+i+") + other(a_"+i+");");
 await tools.write({path:file,content:lines.join("\n")+"\n"});
-// The search hits its limit, so references beyond the 100th and an incomplete result are both in play.
-const found=String(await tools.search({path:file,query:"rename_me",limit:120}).then(value=>value.result));
-const ref=(n)=>{const hit=matches(found).find(item=>item.endsWith(":"+n+":match")); check(hit,"No reference "+n+" in "+found.slice(0,400)); return hit;};
+// The display limit is below the match count, so references beyond the 100th and beyond the display limit are both in play.
+const found=await tools.search({path:file,query:"rename_me",limit:120});
+check(found.matches.length===160,"Search value lost matches: "+found.matches.length);
+const ref=(n)=>{const hit=found.matches[n-1]; check(hit&&hit.line===n&&hit.text==="rename_me","No reference "+n+" in "+JSON.stringify(hit)); return hit.id;};
 const [r3,r110,r112,r115,r117,r120]=[3,110,112,115,117,120].map(ref);
 // Another session shifts the file and edits other parts of every second line.
 await tools.bash({command:"sed -i '2~2s/other(/different(/' "+file+" && sed -i '1i top' "+file});
@@ -170,13 +171,12 @@ const names=Array.from({length:${String(count)}},()=>"rename_me");
 let anchored=0;
 for(let attempt=0;attempt<${String(attempts)};attempt++){
   const [found]=await Promise.all([
-    tools.search({path:file,query:"regex:\\b(?:rename_me|step_\\d\\d)\\b",limit:1000}).then((value)=>String(value.result)),
+    tools.search({path:file,query:"regex:\\b(?:rename_me|step_\\d\\d)\\b",limit:1000}),
     tools.bash({command:"sleep "+(attempt*0.01).toFixed(2)+"; sed -i '1i // writer "+attempt+"' "+file}),
   ]);
-  const heading=/SEARCH#([A-F\d]+):all:match/.exec(found);
-  if(heading===null) continue;
+  if(!found.complete) continue;
   const next="step_"+String(attempt).padStart(2,"0");
-  const chosen=names.flatMap((_,row)=>(row+attempt)%3===0?[]:[{row,ref:"SEARCH#"+heading[1]+":"+(row+1)+":match"}]);
+  const chosen=names.flatMap((_,row)=>(row+attempt)%3===0?[]:[{row,ref:found.matches[row].id}]);
   await tools.replace({path:chosen.map((item)=>item.ref),text:next});
   for(const item of chosen) names[item.row]=next;
   anchored++;

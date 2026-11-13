@@ -44,7 +44,7 @@ await rejected({path:"notes.txt#not-in-the-file"});
 // The test checks that the listed recovery Read names this file with the anchors view.
 const fresh = await tools.read({path:"notes.txt",views:["anchors"]});
 if(typeof fresh?.text !== "string" || !fresh.text.includes("|beta")) throw Error(JSON.stringify(fresh));
-const beta = await tools.search({path:fresh,query:"beta"}).then(value => value.result);
+const beta = await tools.search({path:fresh,query:"beta"});
 const selected = await tools.read({path:beta});
 if(!selected.text.includes("beta") || selected.text.includes("alpha")) throw Error(selected.text);
 await rejected({});

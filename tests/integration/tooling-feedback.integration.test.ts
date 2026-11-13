@@ -332,7 +332,7 @@ test("issued Search line and match scopes stay sparse through direct calls and C
         code: scopes
           .map(
             (scope) =>
-              `text(await tools.search(${JSON.stringify({ path: `$issued-${scope.kind}:titles`, query: scope.query })}).then(value => value.result));`,
+              `{ const found = await tools.search(${JSON.stringify({ path: `$issued-${scope.kind}:titles`, query: scope.query })}); if (found.matches.length !== ${scope.count} || found.complete !== true) throw new Error(${JSON.stringify(scope.kind)} + ": " + JSON.stringify(found)); text(JSON.stringify(found)); }`,
           )
           .join("\n"),
       }),

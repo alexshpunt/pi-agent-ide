@@ -58,13 +58,14 @@ test("native scripts compose Search and Read and keep empty scopes empty", async
       cwd,
       "text-search-read-edit",
       `
-const found=await tools.search({query:"beta",path:"note.txt"}).then(value => value.result);
+const found=await tools.search({query:"beta",path:"note.txt"});
 const shown=await tools.read({path:found});
 if(typeof shown?.text!=="string"||!shown.text.includes("beta")) throw Error("Selected text missing");
 await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 const after=await tools.read({path:"note.txt"});
 if(after.text!=="alpha\\nBETA\\ngamma\\n") throw Error("Continued before commit");
-const empty=await tools.search({query:"__nothing__",path:"note.txt"}).then(value => value.result);
+const empty=await tools.search({query:"__nothing__",path:"note.txt"});
+if(empty.matches.length!==0||empty.complete!==true) throw Error("Empty search found matches");
 text(await tools.replace({path:empty,text:"BAD"}));
 `,
     );
@@ -160,7 +161,7 @@ for(const args of [{path:"raw:data.json"},{path:"data.json",views:["jq:.value"]}
   text(again.text);
 }
 const anchored=await tools.read({path:"data.json",views:["anchors"]});
-const selected=(await tools.search({path:anchored,query:"regex:\\S.*\\S"})).result;
+const selected=await tools.search({path:anchored,query:"regex:\\S.*\\S"});
 text(await tools.replace({path:selected,text:'{"value":"changed"}'}));
 `,
     );

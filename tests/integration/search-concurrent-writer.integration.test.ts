@@ -16,6 +16,7 @@ import {
   createConcurrentWriterSource,
   installConcurrentWriter,
 } from "#integration/support/concurrent-writer.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
 
@@ -67,6 +68,35 @@ async function runStress(cwd: string, name: string, code: string) {
   }).run("Search and edit the files while other sessions keep writing them.");
 }
 
+/** Run each call as a direct tool call, in order, for checks of the readable result. */
+async function runDirect(
+  cwd: string,
+  name: string,
+  calls: readonly { id: string; name: string; arguments: Record<string, unknown> }[],
+) {
+  await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+  await writeFile(
+    path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+    JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+  );
+  return new PiIntegrationTest({
+    testName: name,
+    artifactsDir: testArtifactsDir(import.meta.filename),
+    cwd,
+    rawMode: true,
+    timeoutMs: 110_000,
+    traceToolDetails: false,
+    extensions: [path.resolve("src/pi-agent-ide.ts")],
+    tools: ["search", "bash", "delete"],
+    conversation: [
+      ...calls.map((call) =>
+        assistantMessage([toolCall({ ...call, delayMs: 0 })], { stopReason: "toolUse" }),
+      ),
+      assistantMessage([text("Rounds finished.", { delayMs: 0 })]),
+    ],
+  }).run("Search the file while another session keeps writing it.");
+}
+
 test("every search keeps usable anchors while another session writes the file", async () => {
   await withTempWorkspace(async (cwd) => {
     const searched = createConcurrentWriterSource();
@@ -95,21 +125,21 @@ test("every search keeps usable anchors while another session writes the file", 
 for (const peer of ${JSON.stringify([peers.searched, peers.edited].map((peer) => ({ command: peer.command, session: peer.session })))})
   await tools.bash({command:peer.command,background:true,name:peer.session});
 let searches = 0;
-// Every match a result shows must carry its anchors; a result without them cannot be edited.
+// Every match of a result must carry its id; a match without one cannot be edited. A result with
+// such a match is not a match list: Search then returns its readable text instead.
 function anchored(result, round, what) {
-  const rows = matchRows(result);
-  const shown = (result.match(/^[^\\s]+:\\d+:\\d+-\\d+/gm) ?? []).length;
-  check(shown > 0 && rows.length === shown,
-    "Round " + round + ": the " + what + " result shows " + shown + " matches with " + rows.length + " match anchors: " + result);
-  return rows;
+  check(result !== null && typeof result === "object" && result.matches.length > 0 &&
+    result.matches.every((match) => typeof match.id === "string" && match.id.startsWith("RESULT#")),
+    "Round " + round + ": the " + what + " result has matches without ids: " + JSON.stringify(result).slice(0, 2000));
+  return result.matches;
 }
 async function found(file, query, round, what, expected) {
-  const result = await tools.search({path:file,query}).then(value=>value.result);
+  const result = await tools.search({path:file,query});
   searches += 1;
-  const rows = anchored(result, round, what);
-  check(expected === undefined || rows.length === expected,
-    "Round " + round + ": the " + what + " result of " + file + " shows " + rows.length + " matches instead of " + expected + ": " + result);
-  return { result, rows };
+  const matches = anchored(result, round, what);
+  check(expected === undefined || matches.length === expected,
+    "Round " + round + ": the " + what + " result of " + file + " has " + matches.length + " matches instead of " + expected + ": " + JSON.stringify(result).slice(0, 2000));
+  return result;
 }
 // A large file a peer rewrites while every search of it runs.
 for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
@@ -120,12 +150,12 @@ for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
 for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   // The whole result as an edit source: every occurrence of the identifier is renamed at once.
   const whole = await found("edit.cpp", "regex:alpha_token_\\\\d+", round, "identifier", ${String(edited.tokenOccurrences)});
-  const renamed = await tools.replace({path:whole.result,text:"alpha_token_" + String(round)});
+  const renamed = await tools.replace({path:whole,text:"alpha_token_" + String(round)});
   check(typeof renamed === "string", "Round " + round + ": whole-result rename returned " + JSON.stringify(renamed));
-  // Numbered anchors of a result with many matches: one marker of each round is retired.
+  // Match ids of a result with many matches: one marker of each round is retired.
   // The count is left open: the peer rewrites what it last read, so it can drop a retired marker.
   const markers = await found("edit.cpp", ${JSON.stringify(edited.markerQuery)}, round, "marker");
-  const retired = await tools.replace({path:markers.rows[0].ref,text:"beta_done_" + String(round)});
+  const retired = await tools.replace({path:markers.matches[0].id,text:"beta_done_" + String(round)});
   check(typeof retired === "string", "Round " + round + ": numbered rename returned " + JSON.stringify(retired));
 }
 for (const session of ${JSON.stringify([peers.searched.session, peers.edited.session])})
@@ -152,10 +182,10 @@ text("searches " + searches);`,
   });
 }, 150_000);
 
-/** Reads of a search's all-line reference from a file a peer rewrites every 50 ms. */
+/** Reads of a search's whole selection from a file a peer rewrites every 50 ms. */
 const readRounds = 20;
 
-test("a Read of a search reference shows the matched lines while another session writes the file", async () => {
+test("a Read of a search result shows its matches while another session writes the file", async () => {
   await withTempWorkspace(async (cwd) => {
     const source = createConcurrentWriterSource({ token: "alphaTokenValue" });
     await writeFile(path.join(cwd, "names.cpp"), source.content);
@@ -172,15 +202,20 @@ test("a Read of a search reference shows the matched lines while another session
       `// @options: {"timeout_ms": 150000}
 await tools.bash({command:${JSON.stringify(peer.command)},background:true,name:${JSON.stringify(peer.session)}});
 let rounds = 0;
+let stale = 0;
 // A failed round still stops the peer, so it cannot write into the next run's workspace.
 try {
   for (let round = 1; round <= ${String(readRounds)}; round += 1) {
-    const result = await tools.search({path:"names.cpp",query:"alphaTokenValue"}).then(value=>value.result);
-    const all = /SEARCH#[A-F0-9]+:all:line/u.exec(result)?.[0];
-    check(all !== undefined, "Round " + round + ": the search shows no all reference: " + result);
-    // Each selected line is a line of the identifier; the peer only moves them down.
-    const read = await tools.read({path:all});
-    check(typeof read?.text === "string", "Round " + round + ": the Read of " + all + " failed: " + JSON.stringify(read));
+    const result = await tools.search({path:"names.cpp",query:"alphaTokenValue"});
+    check(result !== null && typeof result === "object" && result.complete && result.matches.length === ${String(source.tokenOccurrences)},
+      "Round " + round + ": the search selected no complete match list: " + JSON.stringify(result).slice(0, 2000));
+    const all = result.id;
+    // Each selected range is an occurrence of the identifier; the peer only moves them down. A
+    // write that lands between the store moving the selection and the Read checking it makes the
+    // Read fail as stale (null); the Codemode result then names the reason, checked below.
+    const read = await tools.read({path:result});
+    if (read === null) { stale += 1; continue; }
+    check(typeof read.text === "string", "Round " + round + ": the Read of " + all + " failed: " + JSON.stringify(read));
     const shown = read.text;
     check((shown.match(/alphaTokenValue/gu) ?? []).length === ${String(source.tokenOccurrences)} && !shown.includes("total += compute("),
       "Round " + round + ": the Read of " + all + " shows other lines: " + shown);
@@ -189,11 +224,18 @@ try {
 } finally {
   await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
 }
-text("read rounds " + rounds);`,
+text("read rounds " + rounds + " stale " + stale);`,
     );
 
-    expect(getToolExecution(run, "stress").isError, getToolResultText(run, "stress")).toBe(false);
-    expect(getToolResultText(run, "stress")).toContain(`read rounds ${String(readRounds)}`);
+    const output = getToolResultText(run, "stress");
+    expect(getToolExecution(run, "stress").isError, output).toBe(false);
+    const [, shown, stale] = /read rounds (\d+) stale (\d+)/u.exec(output) ?? [];
+    expect(Number(shown) + Number(stale)).toBe(readRounds);
+    // Most rounds read their matches; a failed one failed only because the file changed.
+    expect(Number(shown)).toBeGreaterThan(readRounds / 2);
+    const failures = codemodeFailures(output);
+    expect(failures.match(/^- read /gmu)?.length ?? 0).toBe(Number(stale));
+    expect(failures.match(/Result target is stale/gu)?.length ?? 0).toBe(Number(stale));
     expect(await peer.writes()).toBeGreaterThan(readRounds);
   });
 }, 150_000);
@@ -217,29 +259,43 @@ test("every possible-name candidate keeps its anchors while another session writ
       lifetimeMs: 90_000,
     });
 
-    const run = await runStress(
-      cwd,
-      "search-candidate-concurrent-writer",
-      `// @options: {"timeout_ms": 150000}
-await tools.bash({command:${JSON.stringify(peer.command)},background:true,name:${JSON.stringify(peer.session)}});
-let rounds = 0;
-for (let round = 1; round <= ${String(candidateRounds)}; round += 1) {
-  const result = await tools.search({path:"names.cpp",query:"alphaTokenValues"}).then(value=>value.result);
-  check(result.includes("Possible name: alphaTokenValue ") && result.includes("${String(source.tokenOccurrences)} matches in 1 file"),
-    "Round " + round + ": the search offers no complete candidate: " + result);
-  // A candidate without anchors shows locations an edit cannot use.
-  check(!result.includes("without stable references") && /Read: SEARCH#[A-F0-9]+:all:line/u.test(result),
-    "Round " + round + ": the candidate lost its anchors: " + result);
-  rounds += 1;
-}
-await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
-text("candidate rounds " + rounds);`,
+    // Possible names are readable text of a direct call; a Codemode value leaves them out.
+    const rounds = Array.from(
+      { length: candidateRounds },
+      (_, index) => `round-${String(index + 1)}`,
     );
+    const run = await runDirect(cwd, "search-candidate-concurrent-writer", [
+      {
+        id: "peer",
+        name: "bash",
+        arguments: { command: peer.command, background: true, name: peer.session },
+      },
+      ...rounds.map((id) => ({
+        id,
+        name: "search",
+        arguments: { path: "names.cpp", query: "alphaTokenValues" },
+      })),
+      { id: "stop", name: "delete", arguments: { path: `shell:${peer.session}` } },
+    ]);
 
-    expect(getToolExecution(run, "stress").isError, getToolResultText(run, "stress")).toBe(false);
-    expect(getToolResultText(run, "stress")).toContain(
-      `candidate rounds ${String(candidateRounds)}`,
-    );
+    for (const id of ["peer", ...rounds, "stop"])
+      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    for (const id of rounds) {
+      const result = getToolResultText(run, id);
+      expect(result, `${id}: the search offers no complete candidate`).toContain(
+        "Possible name: alphaTokenValue ",
+      );
+      expect(result, `${id}: the search offers no complete candidate`).toContain(
+        `${String(source.tokenOccurrences)} matches in 1 file`,
+      );
+      // A candidate without anchors shows locations an edit cannot use.
+      expect(result, `${id}: the candidate lost its anchors`).not.toContain(
+        "without stable references",
+      );
+      expect(result, `${id}: the candidate lost its anchors`).toMatch(
+        /Read: SEARCH#[A-F0-9]+:all:line/u,
+      );
+    }
     // The peer really wrote the file throughout the rounds.
     expect(await peer.writes()).toBeGreaterThan(candidateRounds);
   });

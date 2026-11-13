@@ -16,7 +16,7 @@ import {
   withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";
 import { toolCallHeader } from "pi-agent-tool-ui";
-import { resultError, withStructuredResult } from "pi-agent-resource";
+import { resultError, trackScriptCalls, withStructuredResult } from "pi-agent-resource";
 import { Type, type Static } from "typebox";
 
 import type { FileSearchOptions } from "#src/resolvers.ts";
@@ -56,14 +56,7 @@ export function registerFileSearchTool(
   search: Promise<SearchPluginApi>,
 ): void {
   // A call from a script, such as Codemode, lists every match unless it sets a limit.
-  const nestedCalls = new Set<string>();
-  pi.on("tool_execution_start", (event) => {
-    if (event.toolName === "file_search" && event.parentToolCallId !== undefined)
-      nestedCalls.add(event.toolCallId);
-  });
-  pi.on("tool_execution_end", (event) => {
-    nestedCalls.delete(event.toolCallId);
-  });
+  const scriptCall = trackScriptCalls(pi, "file_search");
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
@@ -144,7 +137,7 @@ export function registerFileSearchTool(
         ): Promise<AgentToolResult<SearchToolDetails>> {
           const nulls = nullFieldsMessage(parameters);
           if (nulls !== undefined) return fileSearchFailure(nulls);
-          const script = nestedCalls.has(id);
+          const script = scriptCall(id);
           const options: FileSearchOptions = {
             pattern: parameters.pattern,
             ...(script && { uncapped: true }),

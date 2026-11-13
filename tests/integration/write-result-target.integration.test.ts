@@ -29,14 +29,14 @@ for (const mode of ["on", "only"] as const) {
         `
 const created=await tools.write({path:${JSON.stringify(source)},content:"first\\nsecond\\n"});
 check((await tools.read({path:created})).text==="FIRST\\nSECOND\\n","Creation lost the formatted whole-file target");
-check(matches(await tools.search({path:created,query:"SECOND"}).then(value => value.result)).length===1,"Search cannot consume creation");
+check((await tools.search({path:created,query:"SECOND"})).matches.length===1,"Search cannot consume creation");
 const overwritten=await tools.write({path:created,content:"😀 unique\\r\\nunique tail"});
 check((await tools.read({path:overwritten})).text==="😀 UNIQUE\\r\\nUNIQUE TAIL","Overwrite lost final UTF16/CRLF text");
-const found=await tools.search({path:overwritten,query:"UNIQUE"}).then(value => value.result);
-check(matches(found).length===2,"Search lost part of the final whole file");
+const found=await tools.search({path:overwritten,query:"UNIQUE"});
+check(found.matches.length===2,"Search lost part of the final whole file");
 const noop=await tools.write({path:overwritten,content:"😀 UNIQUE\\r\\nUNIQUE TAIL"});
 check((await tools.read({path:noop})).text==="😀 UNIQUE\\r\\nUNIQUE TAIL","No-op lost the final snapshot");
-await tools.replace({path:matches(found)[0],text:"FINAL"});
+await tools.replace({path:found.matches[0],text:"FINAL"});
 await rejects(()=>tools.read({path:overwritten}));
 await rejects(()=>tools.replace({path:overwritten,text:"WRONG"}));
 text(created); text(noop);`;

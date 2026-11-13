@@ -76,8 +76,11 @@ export async function expandReferenceList(
       }
     } catch (error) {
       signal?.throwIfAborted();
+      // A numbered Search reference arrives as the handle it names. A script passes that handle
+      // itself as the id of a Search match, so the message names both.
+      const name = store.referenceName(item);
       failures.push(
-        `Reference ${named(store.referenceName(item))} cannot be used: ${describe(error).replaceAll("\n", "\n  ")}`,
+        `Reference ${named(name === item ? item : `${name} (${item})`)} cannot be used: ${describe(error).replaceAll("\n", "\n  ")}`,
       );
     }
   }

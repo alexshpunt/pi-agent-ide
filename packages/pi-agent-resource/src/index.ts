@@ -11,6 +11,7 @@ export {
   type ResultError,
   type StructuredResult,
 } from "./tool-result.ts";
+export { trackScriptCalls } from "./script-calls.ts";
 export { ResourceError } from "./resource-error.ts";
 export {
   resourceErrorMetadata,

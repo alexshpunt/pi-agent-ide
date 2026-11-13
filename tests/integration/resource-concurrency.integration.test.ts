@@ -123,7 +123,7 @@ test.each([false, true])(
                 id: "concurrent-read-search",
                 name: "codemode",
                 arguments: {
-                  code: `${holdWriter ? "await tools.hold_resource({});" : ""} const results = await Promise.all([tools.read({path:"concurrency:first"}).then(value => value.text), tools.search({query:"concurrency:second"}).then(value => value.result)]); for (const result of results) { if (typeof result !== "string") throw new Error("Expected readable result"); text(result); }`,
+                  code: `${holdWriter ? "await tools.hold_resource({});" : ""} const results = await Promise.all([tools.read({path:"concurrency:first"}).then(value => value.text), tools.search({query:"concurrency:second"})]); for (const result of results) { if (typeof result !== "string") throw new Error("Expected readable result"); text(result); }`,
                 },
               }),
             ],

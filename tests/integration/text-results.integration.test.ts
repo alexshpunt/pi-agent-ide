@@ -72,8 +72,8 @@ test("view warnings stay outside source selections and remain visible in native 
 const warning = await tools.read({path:"note.txt",views:["anchors","ghost"]});
 // The warning reaches the model through the Codemode result and the panel, not the value.
 if(typeof warning?.text !== "string" || warning.text.includes("ghost") || !warning.text.includes("|beta")) throw new Error(JSON.stringify(warning));
-const outside = await tools.search({path:warning,query:"ghost"}).then(value => value.result);
-if(!outside.includes("No matches found")) throw new Error(outside);
+const outside = await tools.search({path:warning,query:"ghost"});
+if(outside.matches.length !== 0) throw new Error(JSON.stringify(outside));
 store("readViewWarning",warning);
 const image = await tools.read({path:"pixel.png",views:["anchors"]});
 if(image?.type !== "image" || "note" in image) throw new Error(JSON.stringify(image).slice(0, 300));
@@ -81,7 +81,7 @@ text("View warnings verified");
 `,
       String.raw`
 const saved = load("readViewWarning");
-const beta = await tools.search({path:saved,query:"beta"}).then(value => value.result);
+const beta = await tools.search({path:saved,query:"beta"});
 await tools.replace({path:beta,text:"BETA"});
 const unknown = await tools.read({path:"pixel.png",views:["ghost"]});
 if(unknown?.type !== "image" || "note" in unknown) throw new Error(JSON.stringify(unknown).slice(0, 300));
@@ -207,7 +207,7 @@ test("Codemode prints file text and composes Read, Search and pending mutations"
 const shown = await tools.read({path:"note.txt"});
 if (shown?.text !== "alpha\\nbeta\\ngamma\\n") throw Error("Read did not return file text");
 text(shown.text);
-const found = await tools.search({path:shown, query:"beta"}).then(value => value.result);
+const found = await tools.search({path:shown, query:"beta"});
 const accepted = await tools.replace({path:found, text:"BETA"});
 const after = await tools.read({path:accepted});
 if (!after.text.includes("BETA")) throw Error("Pending mutation did not compose");
@@ -234,16 +234,16 @@ const pastEnd = await tools.read({path:"note.txt",offset:10});
 // The empty-read notices reach the model through the Codemode result, not the values.
 for (const result of [empty, zero, pastEnd]) {
   if (result?.text !== "") throw Error("Empty read returned text: "+JSON.stringify(result));
-  const found = await tools.search({path:result,query:"regex:Empty|No lines|Offset|alpha"}).then(value => value.result);
-  if (!found.includes("No matches found")) throw Error("Empty selection searched a notice or neighboring text: "+found);
+  const found = await tools.search({path:result,query:"regex:Empty|No lines|Offset|alpha"});
+  if (found.matches.length !== 0) throw Error("Empty selection searched a notice or neighboring text: "+JSON.stringify(found));
 }
 await tools.replace({path:zero,text:"BAD"});
 store("emptyWindow",pastEnd);
 `,
       String.raw`
 const saved = load("emptyWindow");
-const found = await tools.search({path:saved,query:"alpha"}).then(value => value.result);
-if (!found.includes("No matches found")) throw Error("Stored empty selection widened to the source");
+const found = await tools.search({path:saved,query:"alpha"});
+if (found.matches.length !== 0) throw Error("Stored empty selection widened to the source");
 const emptyRead = await tools.read({path:saved});
 if (emptyRead !== null) throw Error("Read widened an empty target set");
 const failed = await tools.read({path:"missing.txt"});
@@ -292,16 +292,16 @@ for (const [result, query] of [
   [narrower,"regex:beta|gamma|more line|offset="],
   [await tools.read({path:window,offset:3}),"gamma"],
 ]) {
-  const found = await tools.search({path:result,query}).then(value => value.result);
-  if (!found.includes("No matches found")) throw Error("Context or notice widened source authority: "+found);
+  const found = await tools.search({path:result,query});
+  if (found.matches.length !== 0) throw Error("Context or notice widened source authority: "+JSON.stringify(found));
 }
 const zero = await tools.read({path:window,limit:0});
 exact(zero,"");
 store("window",narrower);
 `,
       String.raw`
-const found = await tools.search({path:load("window"),query:"beta"}).then(value => value.result);
-if (!found.includes("No matches found")) throw Error("Stored narrowed result widened");
+const found = await tools.search({path:load("window"),query:"beta"});
+if (found.matches.length !== 0) throw Error("Stored narrowed result widened");
 text(found);
 `,
     ]);
@@ -339,10 +339,10 @@ if (strip(await tools.read({path:"bytes.txt"})) !== heavy) throw Error("Expected
 const counted = strip(await tools.read({path:"counts.txt",views:["jq:range(1; .count + 1)"]}));
 if (counted !== Array.from({ length: 2105 }, (_, i) => String(i + 1)).join("\n") + "\n") throw Error("Expected every jq output line");
 const context = await tools.read({path:limited,offset:2001});
-const outside = await tools.search({path:context,query:"regex:row 2011|Showing lines|offset="}).then(value => value.result);
-if (!outside.includes("No matches found")) throw Error("Cap or continuation widened the requested selection");
-const inside = await tools.search({path:context,query:"regex:row 2010$"}).then(value => value.result);
-if (!inside.includes("row 2010")) throw Error("Valid continuation selection was lost");
+const outside = await tools.search({path:context,query:"regex:row 2011|Showing lines|offset="});
+if (outside.matches.length !== 0) throw Error("Cap or continuation widened the requested selection");
+const inside = await tools.search({path:context,query:"regex:row 2010$"});
+if (inside.matches.length !== 1 || inside.matches[0].text !== "row 2010" || inside.matches[0].line !== 2010) throw Error("Valid continuation selection was lost");
 // A script gets every requested byte; only the readable hex view is bounded.
 const raw = await tools.read({path:"raw:bytes.txt"});
 if (raw?.bytes.length !== 4 * Math.ceil(heavy.length / 3)) throw Error("Raw bytes were cut: " + raw?.bytes.length);
@@ -352,8 +352,8 @@ text("raw:" + raw.bytes.length);
 store("limited",limited);
 `,
       String.raw`
-const found = await tools.search({path:load("limited"),query:"regex:row 2011$"}).then(value => value.result);
-if (!found.includes("No matches found")) throw Error("Stored cap widened the requested range");
+const found = await tools.search({path:load("limited"),query:"regex:row 2011$"});
+if (found.matches.length !== 0) throw Error("Stored cap widened the requested range");
 text(found);
 `,
     ]);
@@ -370,8 +370,8 @@ test("pending result strings confirm at dependent boundaries without invalidatin
 const first=await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
 const second=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 const shown=await tools.read({path:first});
-const found=await tools.search({path:second,query:"BETA"}).then(value => value.result);
-if(!shown.text.includes("ALPHA")||!found.includes("BETA")) throw Error("A peer result expired at the common commit");
+const found=await tools.search({path:second,query:"BETA"});
+if(!shown.text.includes("ALPHA")||found.matches.map(match=>match.text).join()!=="BETA") throw Error("A peer result expired at the common commit");
 text(shown.text); text(found);
 `,
     ]);
@@ -386,8 +386,8 @@ test("store/load retains text and UUID composition; Search reads a changed file'
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "text-result-store", [
       `store("source", await tools.read({path:"note.txt"}));`,
-      `const source=load("source"); const uuid=source.id.slice("RESULT#".length); const found=await tools.search({path:uuid,query:"beta"}).then(value => value.result); text(await tools.replace({path:found,text:"BETA"}));`,
-      `const current=await tools.search({path:load("source"),query:"alpha"}).then(value => value.result); if(!current.includes("alpha")) throw Error("Search did not read the changed result's current text: "+current); if((await tools.replace({path:load("source"),text:"ALPHA\\nBETA\\n"}))!==null) throw Error("An edit on the stored old result survived a write"); text("Old result searched, edit rejected");`,
+      `const source=load("source"); const uuid=source.id.slice("RESULT#".length); const found=await tools.search({path:uuid,query:"beta"}); text(await tools.replace({path:found,text:"BETA"}));`,
+      `const current=await tools.search({path:load("source"),query:"alpha"}); if(current.matches.map(match=>match.line+":"+match.text).join()!=="1:alpha") throw Error("Search did not read the changed result's current text: "+JSON.stringify(current)); if((await tools.replace({path:load("source"),text:"ALPHA\\nBETA\\n"}))!==null) throw Error("An edit on the stored old result survived a write"); text("Old result searched, edit rejected");`,
     ]);
     for (let i = 0; i < 3; i++)
       expect(
@@ -485,7 +485,7 @@ test("a registered Search selection restores exact-text editing after a selector
       String.raw`
 const failed=(await tools.replace({path:"note.txt",start:"missing",text:"BAD"}))===null;
 if(!failed) throw Error("Expected exact-text failure");
-const found=await tools.search({path:"note.txt",query:"beta"}).then(value => value.result);
+const found=await tools.search({path:"note.txt",query:"beta"});
 await tools.replace({path:found,text:"BETA"});
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
 `,
@@ -535,8 +535,10 @@ test("system envelopes cannot be inserted into file contents", async () => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\n");
     const run = await runText(cwd, "text-result-payload-guard", [
       `
-// A Read value carries no envelope; a Search result string still starts with one.
-const shown=(await tools.search({path:"note.txt",query:"alpha"})).result;
+// Read and Search values carry no envelope; a readable result string, such as lsp_search's, still
+// starts with one. Rebuild it around an issued id.
+const found=await tools.search({path:"note.txt",query:"alpha"});
+const shown='<system-result note="Internal reference; not part of the file. Do not edit."><uuid>'+found.id.slice("RESULT#".length)+'</uuid></system-result>\\nalpha\\n';
 if((await tools.write({path:"copy.txt",content:shown}))!==null) throw Error("A system envelope was written to a file");
 text("System marker rejected");
 `,

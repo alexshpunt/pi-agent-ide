@@ -256,7 +256,9 @@ test("read and search finish a batch before dependent work starts", async () => 
 const shown = await tools.read({path:"note.txt",views:["anchors"]});
 if (!shown.text.includes(${JSON.stringify(anchor(3, "beta"))})) throw new Error("read saw an uncommitted file");
 text(await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(3, "beta"))},text:"BETA"}));
-text(await tools.search({path:"note.txt",query:"BETA"}).then(value => value.result));`,
+const found = await tools.search({path:"note.txt",query:"BETA"});
+if (found.matches.length !== 1 || found.matches[0].line !== 3) throw new Error("search saw an uncommitted file: " + JSON.stringify(found));
+text(JSON.stringify(found));`,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
       false,
@@ -266,7 +268,7 @@ text(await tools.search({path:"note.txt",query:"BETA"}).then(value => value.resu
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
       "added\nalpha\nBETA\ngamma\nomega\n",
     );
-    expect(getToolResultText(run, "script-0")).toMatch(/SEARCH#[0-9A-F]+/u);
+    expect(getToolResultText(run, "script-0")).toMatch(/"id":"RESULT#[\da-f-]{36}"/u);
   });
 });
 
@@ -561,8 +563,8 @@ test("resource-owning search anchors keep their normal stale-snapshot protection
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-search-anchor-boundary", [
-      'const found = await tools.search({path:"note.txt",query:"beta"}).then(value => value.result);\n' +
-        "const selection = found.match(/SEARCH#[A-F0-9]+:1:match/)?.[0];\n" +
+      'const found = await tools.search({path:"note.txt",query:"beta"});\n' +
+        "const selection = found.matches[0];\n" +
         'if (!selection) throw new Error("missing search selection");\n' +
         'text(await tools.replace({path:"note.txt",start:"beta",text:"changed"}));\n' +
         'if ((await tools.replace({path:selection,text:"wrong"})) !== null) throw new Error("stale selection was edited");',

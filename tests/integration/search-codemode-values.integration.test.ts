@@ -14,31 +14,32 @@ import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const coverageCode = `
-function check(value, message) { if (!value) throw Error(message); }
+function check(value, message) { if (!value) throw Error(message + ": " + JSON.stringify(value)); }
 const seed = await tools.ast_search({path:"sample.ts",pattern:"probe($ARG)",limit:1});
-check(seed.hasMatches === true && seed.complete === false,"Limited search claimed complete coverage");
-const zero = await tools.search({path:seed.result,query:"regex:absent"});
-const some = await tools.search({path:seed.result,query:"regex:probe"});
-check(zero.hasMatches === false && zero.complete === false,"Incomplete empty scope became absence");
-check(some.hasMatches === true && some.complete === false,"Inherited incomplete coverage was lost");
-const blocked = (await tools.replace({path:zero.result,text:"BAD"})) === null;
+check(seed.complete === false && seed.matches.length === 1,"Limited search claimed complete coverage");
+check(seed.matches[0].captures.ARG[0].text === "first","AST capture lost its text");
+const zero = await tools.search({path:seed,query:"regex:absent"});
+const some = await tools.search({path:seed,query:"regex:probe"});
+check(zero.matches.length === 0 && zero.complete === false,"Incomplete empty scope became absence");
+check(some.matches.length === 1 && some.complete === false,"Inherited incomplete coverage was lost");
+const blocked = (await tools.replace({path:zero,text:"BAD"})) === null;
 check(blocked,"Incomplete scope authorized an edit");
-const clipped = await tools.search({path:"large.txt",query:"regex:entry",limit:1000});
-check(clipped.hasMatches === true && clipped.complete === true,"Presentation clipping changed coverage");
-check(clipped.result.length < 80000,"Large Search did not exercise bounded presentation");
+const large = await tools.search({path:"large.txt",query:"regex:^entry\\\\d+ x+$"});
+check(large.complete === true && large.matches.length === 150,"Search value lost matches");
+check(large.matches.every((match, index) => match.path === "large.txt" && match.line === index + 1),"Match lines or paths changed");
+check(large.matches[149].text.length > 4096 && large.matches[149].text.startsWith("entry149 "),"Long match text was cut");
 const files = await tools.file_search({path:".",pattern:"note.txt"});
 check(JSON.stringify(files) === '["note.txt"]',"File search lost its paths");
 const custom = await tools.search({query:"facts:custom"});
-check(custom.hasMatches === null && custom.complete === null,"Custom payload was interpreted as match facts");
-check(Object.keys(custom).sort().join(",") === "complete,hasMatches,result","Private fields leaked");
+check(typeof custom === "string" && custom.includes("Custom resolver response"),"Custom payload was interpreted as matches");
 // A failed Search resolves to null; arguments outside the schema are still rejected by Pi.
 check((await tools.search({query:"facts:failed"})) === null,"Failed search became a successful value");
 let invalid = false;
 try { await tools.search({query:"entry",limit:1001}); } catch { invalid = true; }
 check(invalid,"Invalid search arguments became a successful value");
-text("Coverage, clipping, unknown facts and failures verified");`;
+text("Coverage, complete match lists, custom results and failures verified");`;
 
-test("Search separates incomplete coverage, clipped presentation, unknown facts and rejected calls", async () => {
+test("Search values list every match and keep incomplete coverage, custom results and rejected calls apart", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
@@ -49,10 +50,12 @@ test("Search separates incomplete coverage, clipped presentation, unknown facts 
     await writeFile(path.join(cwd, "note.txt"), "keep\n");
     await writeFile(
       path.join(cwd, "large.txt"),
-      Array.from({ length: 150 }, (_, i) => `entry${i} ${"x".repeat(900)}`).join("\n") + "\n",
+      Array.from({ length: 150 }, (_, i) => `entry${i} ${"x".repeat(i === 149 ? 6000 : 900)}`).join(
+        "\n",
+      ) + "\n",
     );
     const run = await new PiIntegrationTest({
-      testName: "search-codemode-coverage-facts",
+      testName: "search-codemode-coverage-values",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       transport: "rpc",
@@ -78,7 +81,7 @@ test("Search separates incomplete coverage, clipped presentation, unknown facts 
         ),
         assistantMessage([text("Done", { delayMs: 0 })]),
       ],
-    }).run("Inspect Search facts without treating incomplete or failed coverage as absence");
+    }).run("Inspect Search values without treating incomplete or failed coverage as absence");
     expect(getToolExecution(run, "coverage").isError, getToolResultText(run, "coverage")).toBe(
       false,
     );
@@ -93,25 +96,36 @@ test("Search separates incomplete coverage, clipped presentation, unknown facts 
   });
 });
 
-test("Search exposes facts in Codemode while preserving readable direct results and bounded edits", async () => {
+test("Search and ast_search values compose by match, capture and stored value while direct results stay readable", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
     );
-    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
+    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\nbeta\n");
+    await writeFile(path.join(cwd, "calls.ts"), "call(one);\ncall(two);\n");
     const code = `
+function check(value, message) { if (!value) throw Error(message + ": " + JSON.stringify(value)); }
 const empty = await tools.search({path:"note.txt",query:"regex:absent"});
-if (typeof empty !== "object" || empty.hasMatches !== false || empty.complete !== true)
-  throw Error("Complete empty Search did not expose facts: " + JSON.stringify(empty));
-if (typeof empty.result !== "string") throw Error("Missing composable result");
-const found = await tools.search({path:"note.txt",query:"regex:beta"});
-if (found.hasMatches !== true || found.complete !== true) throw Error("Missing match facts");
-store("searchFacts", found);
-text("Search facts verified");`;
+check(empty.complete === true && empty.matches.length === 0 && /^RESULT#[a-f\\d-]{36}$/u.test(empty.id),"Complete empty Search");
+const found = await tools.search({path:"note.txt",query:"beta"});
+check(found.complete === true && found.matches.length === 2,"Search matches");
+check(found.matches.every((match) => match.path === "note.txt" && match.text === "beta" && match.id.startsWith("RESULT#")),"Match fields");
+check(found.matches.map((match) => match.line).join() === "2,4","Match lines");
+check(Object.keys(found).sort().join() === "complete,id,matches","Private fields leaked");
+check(Object.keys(found.matches[0]).sort().join() === "id,line,path,text","Private match fields leaked");
+check(await tools.replace({path:found.matches[1],text:"BETA2"}) !== null,"Replace one match by its value");
+store("found", found);
+const calls = await tools.ast_search({path:"calls.ts",pattern:"call($ARG)"});
+check(calls.matches.map((match) => match.captures.ARG[0].text).join() === "one,two","Capture texts");
+for (const match of calls.matches) {
+  const [arg] = match.captures.ARG;
+  check(await tools.replace({path:arg.id,text:arg.text.toUpperCase()}) !== null,"Replace a capture by its id");
+}
+text("Search values verified");`;
     const run = await new PiIntegrationTest({
-      testName: "search-codemode-facts",
+      testName: "search-codemode-values",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       transport: "rpc",
@@ -132,7 +146,7 @@ text("Search facts verified");`;
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "facts", name: "codemode", arguments: { code }, delayMs: 0 })],
+          [toolCall({ id: "values", name: "codemode", arguments: { code }, delayMs: 0 })],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
@@ -141,7 +155,8 @@ text("Search facts verified");`;
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const saved=load("searchFacts"); await tools.replace({path:saved.result,text:"BETA"}); text("Bounded edit verified");',
+                // The stored match id follows the edit of the other match in the previous script.
+                code: 'const saved=load("found"); if (await tools.replace({path:saved.matches[0].id,text:"BETA1"}) === null) throw Error("Stored match id"); text("Stored value verified");',
               },
               delayMs: 0,
             }),
@@ -150,12 +165,16 @@ text("Search facts verified");`;
         ),
         assistantMessage([text("Done", { delayMs: 0 })]),
       ],
-    }).run("Use Search facts and its issued result without parsing display prose");
-    for (const id of ["direct", "facts", "compose"])
+    }).run("Use Search values and their ids without parsing display prose");
+    for (const id of ["direct", "values", "compose"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    for (const id of ["values", "compose"])
+      expect(codemodeFailures(getToolResultText(run, id))).toBe("");
     const direct = getToolResultText(run, "direct");
-    expect(direct).toContain("beta");
-    expect(direct).not.toContain('"hasMatches"');
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\ngamma\n");
+    expect(direct).toContain("SEARCH#");
+    expect(direct).toContain("note.txt:2:");
+    expect(direct).not.toContain('"matches"');
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA1\ngamma\nBETA2\n");
+    expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe("call(ONE);\ncall(TWO);\n");
   });
 });

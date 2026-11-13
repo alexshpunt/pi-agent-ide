@@ -81,19 +81,19 @@ const copied = await tools.copy({path:${JSON.stringify(local)},target:${JSON.str
 const copiedBytes = await tools.read({path:${JSON.stringify("raw:" + copied)},limit:3});
 // "77u/" is the base64 of the UTF-8 BOM, ef bb bf.
 if (copiedBytes?.bytes !== "77u/") throw Error("Copy lost the UTF-8 BOM: " + JSON.stringify(copiedBytes));
-const copiedText = await tools.search({path:copied,query:"café"}).then(value => value.result);
-if (!copiedText.includes("café")) throw Error(copiedText);
+const copiedText = await tools.search({path:copied,query:"café"});
+if (copiedText.matches.length !== 1 || copiedText.matches[0].text !== "café") throw Error(JSON.stringify(copiedText));
 const moved = await tools.move({path:copied,target:${JSON.stringify(moved)}});
 const movedBytes = await tools.read({path:${JSON.stringify("raw:" + moved)},limit:3});
 if (movedBytes?.bytes !== "77u/") throw Error("Move lost the UTF-8 BOM: " + JSON.stringify(movedBytes));
-const movedText = await tools.search({path:moved,query:"café"}).then(value => value.result);
-if (!movedText.includes(${JSON.stringify(moved)})) throw Error(movedText);
+const movedText = await tools.search({path:moved,query:"café"});
+if (movedText.matches.length !== 1 || movedText.matches[0].path !== ${JSON.stringify(moved)}) throw Error(JSON.stringify(movedText));
 const written = await tools.write({path:moved,content:"changed café\\r\\n"});
 text((await tools.read({path:written})).text);
 const saved = await tools.read({path:${JSON.stringify(moved)}});
 const restored = await tools.undo({file:saved,change:"last"});
-const found = await tools.search({path:restored,query:"prior"}).then(value => value.result);
-if (!found.includes("prior") || !found.includes(${JSON.stringify(moved)})) throw Error(found);
+const found = await tools.search({path:restored,query:"prior"});
+if (found.matches.length !== 1 || found.matches[0].text !== "prior" || found.matches[0].path !== ${JSON.stringify(moved)}) throw Error(JSON.stringify(found));
 text({copied,moved,restored,found});
 const created = await tools.write({path:${JSON.stringify(created)},content:"created café"});
 const cleared = await tools.delete({path:created});

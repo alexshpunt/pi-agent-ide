@@ -84,11 +84,15 @@ try {
     // A search under a writer sometimes returns a result without anchors; that is LPT-1382, so
     // this round asks again instead of failing, and the run needs one scoped call to count.
     let scope;
-    for (let attempt = 1; attempt <= 3 && scope === undefined; attempt += 1)
-      scope = matchRows(String((await tools.search({ path: "main.cpp", query: "int handle(int value)" })).result))[0];
+    // A match whose registration failed has no id and cannot be a scope.
+    for (let attempt = 1; attempt <= 3 && scope === undefined; attempt += 1) {
+      const found = await tools.search({ path: "main.cpp", query: "int handle(int value)" });
+      const match = found?.matches[0];
+      scope = match?.id === undefined ? undefined : match;
+    }
     if (scope === undefined) { report.push("round " + round + " result scope: the search result has no anchor (LPT-1382)"); continue; }
     scoped += 1;
-    note("round " + round + " result scope", await tools.lsp_search({ query: "handle", path: scope.ref, references: true }));
+    note("round " + round + " result scope", await tools.lsp_search({ query: "handle", path: scope.id, references: true }));
   } while (round < 3 || (round < 30 && (await peerWrites()) <= ${String(MIN_WRITES)}));
   // An agent renames from the list it got under the writer: every call must move with it.
   listed = note("rename list", await tools.lsp_search({ query: "handle", path: "main.cpp", references: true }));
