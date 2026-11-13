@@ -100,6 +100,26 @@ test.each(["2015", "2024"])("honors rustfmt config edition %s over Cargo", async
     formatter: "rustfmt",
   });
 });
+test("uses Cargo edition when the nearest rustfmt config does not set it", async () => {
+  const root = path.resolve(".agents/tmp/formatter-rust-nearest");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "crate-"));
+  directories.push(cwd);
+  const filePath = path.join(cwd, "src", "main.rs");
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(
+    path.join(cwd, "Cargo.toml"),
+    '[package]\nname = "example"\nversion = "0.1.0"\nedition = "2024"\n',
+  );
+  await writeFile(path.join(cwd, "rustfmt.toml"), 'edition = "2015"\n');
+  await writeFile(path.join(cwd, "src", ".rustfmt.toml"), "max_width = 80\n");
+  await writeFile(filePath, 'fn main(){if let Some(x)=Some(1) && x > 0 {println!("{x}");}}\n');
+  expect(await createFormatter().format({ filePath }, { cwd })).toMatchObject({
+    ok: true,
+    edits: 1,
+    formatter: "rustfmt",
+  });
+});
 test("leaves a project-defined Rust formatter command unchanged", async () => {
   const root = path.resolve(".agents/tmp/formatter-rust-custom");
   await mkdir(root, { recursive: true });
