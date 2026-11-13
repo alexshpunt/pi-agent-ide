@@ -18,6 +18,38 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "deferred-navigation-recovery",
+  ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
+  "Discover ast_search, lsp_search, diff and undo through tool_search before using them. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then undo that last edit. Read task.txt and report its restored marker. Preserve both files.",
+  [
+    ...["ast_search", "lsp_search", "diff", "undo"].map((name) => ({
+      tool: "tool_search",
+      args: { query: new RegExp(name, "u") },
+      contains: name,
+    })),
+    { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, contains: "probe(1)" },
+    { tool: "lsp_search", args: { path: "task.ts", query: "probe" }, contains: "probe" },
+    { tool: "diff", args: { before: "task.ts", after: "task.ts" }, scriptResult: "" },
+    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+    { tool: "undo", args: { file: "task.txt", change: "last" } },
+    { tool: "read", args: { path: "task.txt" }, contains: "OLD" },
+  ],
+  {
+    files: {
+      ...textFile,
+      "task.ts": "export function probe(value: number) { return value; }\nprobe(1);\n",
+      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
+    },
+    expected: {
+      ...textFile,
+      "task.ts": "export function probe(value: number) { return value; }\nprobe(1);\n",
+      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
+    },
+    answer: "OLD",
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+add(
   "standalone-resource-host",
   ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
   "Only standalone resource hosts are loaded; the full IDE is not enabled. Discover the demo namespace through tool_search. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. Finally reread memory://demo/note. Use demo tools, not the sibling namespace or filesystem tools.",

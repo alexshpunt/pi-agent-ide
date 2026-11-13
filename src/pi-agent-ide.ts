@@ -114,6 +114,22 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
       .filter((tool) => tool.namespace?.name === "ide_git")
       .map((tool) => tool.name);
     const guidance = [
+      ...(tools.some((tool) => tool.name === "ast_search")
+        ? [
+            `${discovery} ast_search for structural code search: syntax patterns, captures and enclosing functions or classes.`,
+          ]
+        : []),
+      ...(tools.some((tool) => tool.name === "lsp_search")
+        ? [
+            `${discovery} lsp_search for navigation through language servers: symbol definitions, references and call graphs.`,
+          ]
+        : []),
+      ...(tools.some((tool) => tool.name === "diff")
+        ? [`${discovery} diff when comparing text sources.`]
+        : []),
+      ...(tools.some((tool) => tool.name === "undo")
+        ? [`${discovery} undo when reverting the last text edit or an uncommitted Git change.`]
+        : []),
       ...(gitTools.length === 0
         ? []
         : [

@@ -14,7 +14,7 @@ import {
 } from "#src/api/read-parameters.ts";
 import { createReadCore } from "#src/core/read-core.ts";
 
-test("puts plugin syntax on its parameter without changing accepted arguments", async () => {
+test("keeps source syntax out of path metadata without changing accepted arguments", async () => {
   const core = createReadCore();
   await core.registerPlugin(
     plugin("source", (api) => {
@@ -25,7 +25,7 @@ test("puts plugin syntax on its parameter without changing accepted arguments", 
     }),
   );
   const schema = core.read.tool.parameters;
-  expect(description(schema, "path")).toContain("example:<id>");
+  expect(description(schema, "path")).not.toContain("example:<id>");
   expect(description(schema, "path")).not.toContain("outline");
   expect(description(schema, "views")).toContain("outline");
   expect(description(schema, "offset")).not.toContain("example:<id>");
@@ -76,17 +76,17 @@ test("omits metadata from pending and failed setup", async () => {
   };
   const ready = core.registerPlugin(
     plugin("pending", async (api) => {
-      api.describe({ path: "pending-source:" });
+      api.describe({ views: "pending-view" });
       await new Promise<void>((resolve) => {
         finish = resolve;
       });
     }),
   );
   await Promise.resolve();
-  expect(description(core.read.tool.parameters, "path")).not.toContain("pending-source:");
+  expect(description(core.read.tool.parameters, "views")).not.toContain("pending-view");
   finish();
   await ready;
-  expect(description(core.read.tool.parameters, "path")).toContain("pending-source:");
+  expect(description(core.read.tool.parameters, "views")).toContain("pending-view");
   await expect(
     core.registerPlugin(
       plugin("failed", (api) => {

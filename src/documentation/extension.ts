@@ -44,6 +44,10 @@ export default async function registerProgressiveDocumentation(
     registry.register(value.documents);
   });
   pi.on("session_shutdown", unsubscribe);
+  pi.on("before_agent_start", (event) => {
+    const section = history.recordType?.replaceAll("/", "_") ?? "ide_documentation";
+    event.systemPromptOptions.sections[section] = renderPromptGuideline(registry.list()) ?? "";
+  });
 
   await connectReadPlugin(pi, {
     protocol: READ_PROTOCOL,
@@ -81,7 +85,6 @@ export default async function registerProgressiveDocumentation(
             ? undefined
             : "docs: — list of guides; docs:<id> — one guide.",
       });
-      api.addPromptGuideline(() => renderPromptGuideline(registry.list()));
     },
   });
 

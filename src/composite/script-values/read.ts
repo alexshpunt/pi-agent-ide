@@ -26,7 +26,7 @@ const sourceValueSchemas = [
   },
   {
     type: "object",
-    properties: { bytes: { type: "string", description: "Base64 of every requested byte." } },
+    properties: { bytes: { type: "string" } },
     required: ["bytes"],
   },
   {
@@ -35,7 +35,6 @@ const sourceValueSchemas = [
       entries: {
         type: "array",
         items: { type: "string" },
-        description: "Directory entries; directory names end with /.",
       },
     },
     required: ["entries"],

@@ -13,19 +13,12 @@ export type TerminalValue = {
 const terminalValueSchema = {
   type: "object",
   properties: {
-    output: {
-      type: "string",
-      description:
-        "Terminal output, up to 1 MiB. Longer output keeps its first and last 512 KiB around an omission marker.",
-    },
+    output: { type: "string" },
     truncated: { type: "boolean" },
-    full_output_path: { type: "string", description: "Complete output log." },
-    exit_code: { type: "number", description: "Absent while the command runs." },
+    full_output_path: { type: "string" },
+    exit_code: { type: "number" },
     wall_time_seconds: { type: "number" },
-    session: {
-      type: "string",
-      description: "shell: source of the session, which stays readable after the command ends.",
-    },
+    session: { type: "string" },
   },
   required: ["output", "truncated", "full_output_path", "wall_time_seconds", "session"],
   additionalProperties: false,

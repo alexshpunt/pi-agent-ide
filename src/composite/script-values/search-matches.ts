@@ -22,16 +22,8 @@ export function matchListSchema(
       {
         type: "object",
         properties: {
-          id: {
-            type: "string",
-            description:
-              "RESULT#<uuid> that selects every match. Absent when the source has no selections, such as terminal output or a guide.",
-          },
-          complete: {
-            type: "boolean",
-            description:
-              "False when the search did not cover its whole scope: an empty list then proves nothing.",
-          },
+          id: { type: "string" },
+          complete: { type: "boolean" },
           matches: { type: "array", items: match },
           ...extra,
         },

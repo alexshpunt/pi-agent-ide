@@ -116,7 +116,6 @@ import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception";
 import type { Static, TSchema } from "typebox";
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.ts";
-import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.ts";
 import { writeAgentResult } from "./write-agent-result.ts";
 import { mutationResultSchema, structuredMutation } from "./structured-result.ts";
 import type { ResultImageStore, ResultTargetStore } from "pi-agent-resource";
@@ -152,7 +151,7 @@ export function createTextTool<TParameters extends TSchema>(
       label: definition.name,
 
       promptSnippet: definition.promptSnippet,
-      promptGuidelines: [...EDITING_GUIDELINES, ...(definition.promptGuidelines ?? [])],
+      promptGuidelines: definition.promptGuidelines && [...definition.promptGuidelines],
       description: definition.description,
       parameters: definition.parameters,
       outputSchema: mutationResultSchema(definition.name),

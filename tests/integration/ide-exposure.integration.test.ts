@@ -138,12 +138,24 @@ test.each(["on", "only"])(
     expect(state.active).toContain("tool_search");
     expect(state.callable).not.toContain("apply");
     expect(state.callable).toEqual(
-      expect.arrayContaining(["read", "diff", "debug", "stage", "unstage"]),
+      expect.arrayContaining([
+        "read",
+        "diff",
+        "undo",
+        "ast_search",
+        "lsp_search",
+        "debug",
+        "stage",
+        "unstage",
+      ]),
     );
     expect(state.nested?.isError).toBe(true);
     for (const [name, exposure, namespace] of [
       ["read", "direct", "ide_read"],
-      ["diff", "direct", "ide_read"],
+      ["diff", "deferred", "ide_read"],
+      ["undo", "deferred", "ide_edit"],
+      ["ast_search", "deferred", "ide_ast_search"],
+      ["lsp_search", "deferred", "ide_lsp_search"],
       ["search", "direct", "ide_search"],
       ["write", "direct", "ide_edit"],
       ["bash", "direct", "ide_terminal"],
@@ -156,6 +168,10 @@ test.each(["on", "only"])(
         namespace: { name: namespace },
       });
     expect(state.tools.find((tool) => tool.name === "read")?.annotations?.readOnlyHint).toBe(false);
+    for (const name of ["diff", "undo", "ast_search", "lsp_search"]) {
+      expect(state.active).not.toContain(name);
+      expect(declarations(result).map((tool) => tool.name)).not.toContain(name);
+    }
     expect(declarations(result).map((tool) => tool.name)).not.toContain("apply");
     expect(state.tools.map((tool) => tool.name)).not.toContain("apply");
     expect(declarations(result).map((tool) => tool.name)).not.toContain("debug");

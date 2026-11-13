@@ -21,7 +21,6 @@ export const astSearchValue: ScriptValue = {
       ...scriptMatchSchema.properties,
       captures: {
         type: "object",
-        description: "Nodes of each metavariable, keyed by its name without $.",
         additionalProperties: { type: "array", items: captureSchema },
       },
     },

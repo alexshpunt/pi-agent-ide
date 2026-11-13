@@ -19,15 +19,11 @@ export const lspSearchValue: ScriptValue = {
         type: "object",
         description: "calls: references in matches, callers in incoming, callees in outgoing.",
         properties: {
-          id: { type: "string", description: "RESULT#<uuid> that selects every reference." },
-          complete: {
-            type: "boolean",
-            description:
-              "False when C/C++ coverage is incomplete or the server cannot list a call direction: an empty list then proves nothing.",
-          },
-          matches: { ...matches, description: "References." },
-          incoming: { ...matches, description: "Callers, each as its whole declaration." },
-          outgoing: { ...matches, description: "Callees, each as its whole declaration." },
+          id: { type: "string" },
+          complete: { type: "boolean" },
+          matches,
+          incoming: matches,
+          outgoing: matches,
         },
         required: ["id", "complete", "matches", "incoming", "outgoing"],
         additionalProperties: false,
