@@ -159,11 +159,17 @@ for (const route of ["direct", "codemode"] as const) {
           assistantMessage([text("Completed the rejection checks.")]),
         ],
       }).run("Reject ambiguous and stale selections without changing unselected text.");
-      for (const id of ["ambiguous", "stale"])
-        expect(getToolExecution(result, id).isError).toBe(true);
       if (route === "direct") {
+        for (const id of ["ambiguous", "stale"])
+          expect(getToolExecution(result, id).isError).toBe(true);
         for (const id of ["search", "change"])
           expect(getToolExecution(result, id).isError).toBe(false);
+      } else {
+        // Codemode returns structured edit failures instead of rejecting the script.
+        for (const id of ["ambiguous", "stale"])
+          expect(getToolExecution(result, id).isError).toBe(false);
+        for (const id of ["ambiguous/1", "stale/3"])
+          expect(getToolExecution(result, id).isError).toBe(true);
       }
       expect(await readFile(path.join(cwd, "ambiguous.txt"))).toEqual(Buffer.from(ambiguous));
       expect(await readFile(path.join(cwd, "stale.txt"))).toEqual(Buffer.from("keep\nNEW\n"));

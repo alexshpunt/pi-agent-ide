@@ -103,7 +103,7 @@ if(!session) throw Error(created);
 try {
   await tools.read({path:session});
   const source = await tools.read({path:session+"/source",views:["anchors"]});
-  const anchor = /(?:^|\n)(2#[A-F\d]+)\|/.exec(source.text)?.[1];
+  const anchor = /(?:^|\n)([A-Z\d]+)\|console\.log\(message\);/.exec(source.text)?.[1];
   if(!anchor) throw Error(source.text);
   await tools.insert({path:session+"/source",anchor,text:"breakpoint"});
   const pending = await tools.read({path:session+"/breakpoints"});

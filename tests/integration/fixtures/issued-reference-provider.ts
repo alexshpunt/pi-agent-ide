@@ -44,6 +44,12 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
             .flatMap((block) => (block.type === "text" ? [block.text] : []))
             .join("\n");
           if (kind === "result") return JSON.stringify(shown).slice(1, -1);
+          if (kind === "anchor") {
+            const anchors = [...shown.matchAll(/(?:^|\n)\s*([A-Z\d]{7})\|/gu)];
+            const value = anchors[Number(line) - 1]?.[1];
+            if (!value) throw new Error(`Missing ${kind} reference in ${id}`);
+            return value;
+          }
           const expression =
             kind === "uuid"
               ? /<uuid>([^<]+)<\/uuid>/u
@@ -57,9 +63,7 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
                       ? /(SEARCH#[A-F\d]+:all:line)/u
                       : kind === "searchallmatch"
                         ? /(SEARCH#[A-F\d]+:all:match)/u
-                        : kind === "searchid"
-                          ? /(SEARCH#[A-F\d]+):/u
-                  : new RegExp(`(?:^|\\n)\\s*(${line}#[A-F\\d]{4,64})`, "u");
+                        : /(SEARCH#[A-F\d]+):/u;
           const value = expression.exec(shown)?.[1];
           if (!value) throw new Error(`Missing ${kind} reference in ${id}`);
           return value;
