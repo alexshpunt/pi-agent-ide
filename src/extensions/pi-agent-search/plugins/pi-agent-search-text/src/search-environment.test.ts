@@ -125,6 +125,27 @@ test("text search uses the owner executor and canonical Unicode ranges", async (
   });
 });
 
+test("an owner search keeps its matches when ripgrep could not read some paths", async () => {
+  const { environment } = fixture();
+  const originalRun = environment.runLines;
+  environment.runLines = async (args, cwd, onLine, signal) => {
+    await originalRun(args, cwd, onLine, signal);
+    return { code: 2, stderr: "rg: ./locked: Permission denied (os error 13)\n" };
+  };
+  const result = await searchText(
+    { query: "needle", path: "memory://owner/work" },
+    "/local",
+    undefined,
+    undefined,
+    environment,
+  );
+  expect(result.matches.map((match) => match.source)).toEqual(["memory://owner/work/note.txt"]);
+  expect(result.unreadable).toEqual({
+    count: 1,
+    first: { path: "memory://owner/work/locked", error: "Permission denied (os error 13)" },
+  });
+});
+
 test("SEARCH selections retain their owner for snapshots and stale checks", async () => {
   const { environment, setText } = fixture();
   const store = new SearchSessionStore();

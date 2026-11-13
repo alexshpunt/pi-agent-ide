@@ -6,13 +6,14 @@ import { captureCurrentMatches } from "#src/current-matches.ts";
 import { runScopedSearch } from "#src/scoped-search.ts";
 import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
 import { searchText, searchTextContent } from "#src/search-backend.ts";
+import { searchFuzzy } from "#src/fuzzy-search.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
-async function fixture(mode: "native" | "no-pcre2" | "match-limit") {
+async function fixture(mode: "native" | "no-pcre2" | "match-limit" | "unreadable") {
   const root = path.resolve(".tmp/ripgrep-capability");
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "case-"));
@@ -38,6 +39,13 @@ const result = spawnSync(${JSON.stringify(executable)}, args, {input: require('n
 process.stdout.write(result.stdout ?? '');
 const error = (result.stderr ?? '').toString();
 process.stderr.write(error.includes('look-around') && ${JSON.stringify(mode)} === 'no-pcre2' ? 'PCRE2 is not available in this build of ripgrep' : error);
+// Windows ripgrep cannot resolve WSL symlinks through a wsl.localhost path: it reports each one,
+// searches every other path and exits with code 2.
+if (${JSON.stringify(mode)} === 'unreadable' && (result.status ?? 2) <= 1) {
+ process.stderr.write('rg: ./node_modules/pkg-a: The system cannot find the path specified. (os error 3)\\n');
+ process.stderr.write('rg: ./node_modules/pkg-b: The system cannot find the path specified. (os error 3)\\n');
+ process.exit(2);
+}
 process.exit(result.status ?? 2);
 `,
     );
@@ -174,4 +182,34 @@ test("a text search reports the match-limit failure of both engines instead of h
   expect((error as AggregateError).message).toContain("PCRE2 match limit");
   expect(((error as AggregateError).errors[0] as Error).message).toContain("match limit exceeded");
   expect(ripgrep.resolveRipgrepExecutable).toHaveBeenCalledTimes(2);
+});
+
+test("keeps the matches of a search that ripgrep could not finish reading and summarizes the paths in one notice", async () => {
+  const cwd = await fixture("unreadable");
+  const result = await runSearchRecipe(createSearchRecipe({ query: "alpha", path: "." }), cwd);
+  expect(result.matches.map((match) => [path.basename(match.source), match.lineNumber])).toEqual([
+    ["input.txt", 1],
+    ["input.txt", 3],
+    ["input.txt", 7],
+    ["input.txt", 8],
+    ["input.txt", 9],
+  ]);
+  expect(result.complete).toBe(true);
+  expect(result.notices).toEqual([
+    `Search notice: could not read 2 paths, so matches in them are missing. First: ${path.join("node_modules", "pkg-a")}: The system cannot find the path specified. (os error 3)`,
+  ]);
+});
+
+test("still fails a search that ripgrep stops before reading any path", async () => {
+  const cwd = await fixture("unreadable");
+  await expect(searchText({ query: "alpha(", regex: true, path: "." }, cwd)).rejects.toThrow(
+    "regex parse error",
+  );
+});
+
+test("fuzzy alternatives still collect names when ripgrep could not read some paths", async () => {
+  const cwd = await fixture("unreadable");
+  const result = await searchFuzzy({ query: "alpah", path: "input.txt" }, cwd);
+  expect(result?.status).toBe("ready");
+  expect(result?.candidates.map((candidate) => candidate.identifier)).toEqual(["ALPHA", "alpha"]);
 });
