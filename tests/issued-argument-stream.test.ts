@@ -5,7 +5,7 @@ const token = "$issued-anchor:source-long-id:12";
 const substitute = (value: string) => value.replaceAll(token, "ABC1234");
 
 test("every split point keeps the complete issued token and JSON escapes intact", () => {
-  const input = JSON.stringify({ text: `before ${token} after \\ \" 😀 ${token}` });
+  const input = JSON.stringify({ text: `before ${token} after \\ " 😀 ${token}` });
   const expected = { text: 'before ABC1234 after \\ " 😀 ABC1234' };
   for (let split = 0; split <= input.length; split++) {
     const stream = new IssuedArgumentStream(substitute);
