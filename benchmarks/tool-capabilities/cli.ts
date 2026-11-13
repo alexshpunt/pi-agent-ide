@@ -31,6 +31,7 @@ import {
   reopenTuiHistory,
 } from "./tui.ts";
 import { accountStopReason } from "./run-policy.ts";
+import { schedule } from "./scheduler.ts";
 import { assertPreflightInvocation, runConnectorPreflight } from "./preflight.ts";
 import {
   AuthenticationUnavailable,
@@ -105,6 +106,7 @@ const options = new Set([
   "--case",
   "--mode",
   "--attempts",
+  "--concurrency",
   "--timeout",
   "--results",
   "--pi",
@@ -631,7 +633,7 @@ async function attempt(
 async function main(): Promise<void> {
   if (args.includes("--help") || !args.length) {
     console.log(
-      "Tool capability matrix (Linux/WSL, Bubblewrap)\n\nFree: --list | --list-connectors | --check | --record-contracts (after reviewing changed tools) | --preflight --connector ID --connector-root PRESTAGED_PREFIX [--claude-executable FILE]\nPaid: --run --model PROFILE_ID[,PROFILE_ID] [--case ID[,ID]] [--mode direct|codemode] [--attempts N] [--timeout SECONDS] [--tui [--tui-history]] [--results NEW_DIR] [--pi COMMAND] [--auth-dir DIR] [--dedicated-auth] [--connector ID --connector-root PRESTAGED_PREFIX --claude-executable FILE --claude-state DEDICATED_DIR]\nNo model calls occur without --run and an explicit model selection.",
+      "Tool capability matrix (Linux/WSL, Bubblewrap)\n\nFree: --list | --list-connectors | --check | --record-contracts (after reviewing changed tools) | --preflight --connector ID --connector-root PRESTAGED_PREFIX [--claude-executable FILE]\nPaid: --run --model PROFILE_ID[,PROFILE_ID] [--case ID[,ID]] [--mode direct|codemode] [--attempts N] [--concurrency N] [--timeout SECONDS] [--tui [--tui-history]] [--results NEW_DIR] [--pi COMMAND] [--auth-dir DIR] [--dedicated-auth] [--connector ID --connector-root PRESTAGED_PREFIX --claude-executable FILE --claude-state DEDICATED_DIR]\nNo model calls occur without --run and an explicit model selection.",
     );
     return;
   }
@@ -726,6 +728,8 @@ async function main(): Promise<void> {
   };
   const selected = value("--model")?.split(",");
   if (!selected?.length) throw Error("--run requires an explicit --model profile selection");
+  if (new Set(selected).size !== selected.length)
+    throw Error("Duplicate model profiles are not supported");
   const profiles = selected.map((id) => {
     const profile = roster.models.find((model) => model.id === id);
     if (!profile) throw Error(`Unknown profile: ${id}`);
@@ -772,6 +776,14 @@ async function main(): Promise<void> {
   if (terminal && !tasks.every((task) => task.modes.includes(mode ?? "")))
     throw Error("The selected TUI case does not support this --mode");
   const attemptsCount = Number(value("--attempts", "1"));
+  const concurrency = Number(value("--concurrency", "1"));
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1)
+    throw Error("Concurrency must be a positive safe integer");
+  if (
+    concurrency > 1 &&
+    (terminal || dedicatedAuth || connectorRun?.prepared?.definition.claudeFileAuth)
+  )
+    throw Error("TUI and mutable dedicated authentication require concurrency 1");
   const timeoutMs = Number(value("--timeout", "180")) * 1000;
   if (
     !Number.isSafeInteger(attemptsCount) ||
@@ -822,6 +834,7 @@ async function main(): Promise<void> {
     started: new Date().toISOString(),
     cases: tasks.map((task) => task.id),
     attempts: attemptsCount,
+    concurrency,
     timeoutMs,
   };
   try {
@@ -863,46 +876,67 @@ async function main(): Promise<void> {
       sourceDigest: snapshot.digest,
     };
     await report(root, profiles, attempts, manifest);
-    runAttempts: for (const profile of profiles)
-      for (const task of tasks)
-        for (const route of task.modes.filter((candidate) => !mode || candidate === mode))
-          for (let n = 1; n <= attemptsCount && !abort.signal.aborted; n++) {
-            console.log(`Running ${profile.id} / ${task.id} / ${route} / attempt ${n}`);
-            const result = await attempt(
-              snapshot.source,
-              parent,
-              root,
-              task,
+    const work = profiles.flatMap((profile) =>
+      tasks.flatMap((task) =>
+        task.modes
+          .filter((candidate) => !mode || candidate === mode)
+          .flatMap((route) =>
+            Array.from({ length: attemptsCount }, (_, index) => ({
               profile,
+              task,
               route,
-              n,
-              command,
-              value("--auth-dir") ?? "",
-              timeoutMs,
-              abort.signal,
-              connectorRun,
-              terminal,
-              dedicatedAuth,
-              args.includes("--tui-history"),
-            );
-            attempts.push(result);
-            console.log(
-              `${result.status}: ${task.id} / ${route}${result.reasons.length ? " — " + result.reasons.join("; ") : ""}`,
-            );
-            await report(root, profiles, attempts, manifest);
-            const stoppedFor = accountStopReason(result);
-            if (stoppedFor) {
-              manifest = { ...(manifest as object), stoppedFor, stoppedAfter: result.evidence };
-              await report(root, profiles, attempts, manifest);
-              break runAttempts;
-            }
-          }
+              n: index + 1,
+            })),
+          ),
+      ),
+    );
+    await schedule(work, concurrency, abort, {
+      resource: ({ task }) => (task.setup === "web" ? "web-port-8765" : undefined),
+      stopReason: accountStopReason,
+      run: async ({ profile, task, route, n }, signal) => {
+        console.log(`Running ${profile.id} / ${task.id} / ${route} / attempt ${n}`);
+        const result = await attempt(
+          snapshot.source,
+          parent,
+          root,
+          task,
+          profile,
+          route,
+          n,
+          command,
+          value("--auth-dir") ?? "",
+          timeoutMs,
+          signal,
+          connectorRun,
+          terminal,
+          dedicatedAuth,
+          args.includes("--tui-history"),
+        );
+        console.log(
+          `${result.status}: ${task.id} / ${route}${result.reasons.length ? " — " + result.reasons.join("; ") : ""}`,
+        );
+        return result;
+      },
+      publish: async (results, stopped) => {
+        attempts.splice(0, attempts.length, ...results);
+        if (stopped)
+          manifest = {
+            ...(manifest as object),
+            stoppedFor: stopped.reason,
+            stoppedAfter: stopped.result.evidence,
+          };
+        await report(root, profiles, attempts, manifest);
+      },
+    });
   } finally {
-    await report(root, profiles, attempts, manifest);
-    await rm(parent, { recursive: true, force: true });
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
-    console.log(`Evidence: ${root}/matrix.md`);
+    try {
+      await report(root, profiles, attempts, manifest);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+      process.removeListener("SIGINT", stop);
+      process.removeListener("SIGTERM", stop);
+      console.log(`Evidence: ${root}/matrix.md`);
+    }
   }
   if (abort.signal.aborted || attempts.some((result) => result.status !== "pass"))
     process.exitCode = 1;
