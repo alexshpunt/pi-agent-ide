@@ -59,7 +59,7 @@ test("cleans external system temp without dialogs while tracked temp still promp
                 id: "script-temp",
                 name: "codemode",
                 arguments: {
-                  code: `text(await tools.delete({path:${JSON.stringify(path.join(scratch, "script"))}}));`,
+                  code: `if((await tools.delete({path:${JSON.stringify(path.join(scratch, "script"))}}))!==null) throw Error("Delete selected text"); text("deleted");`,
                 },
               }),
             ],
@@ -90,10 +90,12 @@ test("cleans external system temp without dialogs while tracked temp still promp
           assistantMessage([text("Done")]),
         ],
       }).run("Clean temporary directories and keep tracked directories after refusal");
-      for (const id of ["direct-temp", "script-temp"]) {
+      for (const id of ["direct-temp", "script-temp"])
         expect(getToolExecution(run, id).isError).toBe(false);
-        expect(getToolResultText(run, id)).toContain("delete: applied");
-      }
+      expect(getToolResultText(run, "direct-temp")).toContain("delete: applied");
+      // In Codemode, Delete resolves to null; a failed call would be listed in the result.
+      expect(getToolResultText(run, "script-temp")).toContain("deleted");
+      expect(codemodeFailures(getToolResultText(run, "script-temp"))).toBe("");
       expect(getToolExecution(run, "direct-tracked-temp").isError).toBe(true);
       expect(getToolExecution(run, "script-tracked-temp").isError).toBe(false);
       expect(codemodeFailures(getToolResultText(run, "script-tracked-temp"))).toMatch(

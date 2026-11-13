@@ -98,11 +98,11 @@ const created = await tools.write({path:${JSON.stringify(created)},content:"crea
 const cleared = await tools.delete({path:created});
 const emptyFile = await tools.read({path:${JSON.stringify(created)}});
 if (!emptyFile.includes("Empty source")) throw Error("Deleting a selection must leave the file present: " + emptyFile);
+// Delete leaves no text to select: both the cleared selection and the removed file are null.
+if (cleared !== null) throw Error("Deleted text granted a selection: " + cleared);
 const removed = await tools.delete({path:${JSON.stringify(created)}});
-text(cleared);
-const refusal = (await tools.read({path:removed})) === null;
-if (!refusal) throw Error("Restored absence must not grant text authority");
-text({removed,refusal});
+if (removed !== null) throw Error("Restored absence must not grant text authority: " + removed);
+text({removed});
 `,
             },
           }),
@@ -126,12 +126,11 @@ text({removed,refusal});
     });
     expect(await readFile(local, "utf8")).toBe(original);
     expect(getToolResultText(run, "transfers")).toContain("prior");
-    expect(getToolResultText(run, "transfers")).toContain('"refusal":true');
-    // The two refused calls resolved to null and are listed with their reasons.
+    expect(getToolResultText(run, "transfers")).toContain('"removed":null');
+    // The refused Copy resolved to null and is listed with its reason.
     const refusals = codemodeFailures(getToolResultText(run, "transfers"));
-    expect(refusals).toMatch(/^2 of \d+ IDE calls failed:\n- copy RESULT#[^\n]+\n/u);
+    expect(refusals).toMatch(/^1 of \d+ IDE calls failed:\n- copy RESULT#[^\n]+\n/u);
     expect(refusals).toContain("no reusable text selection");
-    expect(refusals).toMatch(/\n- read RESULT#\S+\n/u);
     expect(run.tuiRenderedOutput).toContain(root);
   } finally {
     await fixture.stop();

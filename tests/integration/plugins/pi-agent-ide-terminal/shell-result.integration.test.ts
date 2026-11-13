@@ -153,7 +153,7 @@ test.runIf(process.platform !== "win32")(
 );
 
 test.runIf(process.platform !== "win32")(
-  "terminal input receipts stay live resources and cannot authorize file edits",
+  "terminal input reaches its live session and cannot authorize file edits",
   async () => {
     const root = path.resolve(".tmp/shell-result");
     await mkdir(root, { recursive: true });
@@ -165,13 +165,12 @@ test.runIf(process.platform !== "win32")(
         const source = opened.session;
         if (!source) throw Error("Missing live session");
         try {
-          const sent = await tools.write({path: source, content: "hello"});
-          const keys = await tools.insert({path: source, text: "Enter"});
-          const observed = await tools.read({path: sent});
-          const afterKeys = await tools.read({path: keys});
-          if (!afterKeys.includes("resource:hello")) throw Error("Key receipt lost its live owner");
-          if (!observed.includes("resource:hello")) throw Error("Input receipt lost its live owner");
-          const refused = (await tools.replace({path: sent, text: "not a file"})) === null;
+          // Terminal input selects no text, so a script gets null rather than a file target.
+          if ((await tools.write({path: source, content: "hello"})) !== null) throw Error("Input selected text");
+          if ((await tools.insert({path: source, text: "Enter"})) !== null) throw Error("Keys selected text");
+          const observed = await tools.read({path: source});
+          if (!observed.includes("resource:hello")) throw Error("Input did not reach the live session");
+          const refused = (await tools.replace({path: observed, start: "hello", text: "not a file"})) === null;
           if (!refused) throw Error("Terminal input granted file edit authority");
           text(observed);
         } finally {

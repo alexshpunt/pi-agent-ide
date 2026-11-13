@@ -95,7 +95,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
             id: "cancel",
             name: "codemode",
             arguments: {
-              code: '// @options: {"timeout_ms":2000}\nconst accepted = await tools.replace({path:"note.txt",start:"alpha",text:"PENDING"}); if(typeof accepted !== "string" || !accepted.includes("<uuid>")) throw Error("No public reserved result"); text(accepted); while(true) {}',
+              code: '// @options: {"timeout_ms":2000}\nconst accepted = await tools.replace({path:"note.txt",start:"alpha",text:"PENDING"}); if(typeof accepted !== "string" || !accepted.startsWith("RESULT#")) throw Error("No public reserved result"); text(accepted); while(true) {}',
             },
           }),
         ]),

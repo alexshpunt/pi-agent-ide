@@ -107,7 +107,8 @@ text(moved);
 const moveScope = await tools.search({path:moved,query:"LOCAL"}).then(value => value.result);
 if (!moveScope.includes("1 match")) throw Error(moveScope);
 const empty = await tools.delete({path:[]});
-if (!/no changes/i.test(empty)) throw Error("Empty deletion is a no-op: " + empty);
+// An empty deletion is a successful no-op; Delete resolves to null and nothing fails.
+if (empty !== null) throw Error("Empty deletion selected text: " + empty);
 `,
             },
           }),

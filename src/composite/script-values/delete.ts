@@ -1,5 +1,5 @@
-import { providerTextValue } from "./provider-value.ts";
+import { noSelectionValue } from "./edit-selection.ts";
 import type { ScriptValue } from "./types.ts";
 
-/** delete resolves to its readable result string, or to a resource provider's value. */
-export const deleteValue: ScriptValue = providerTextValue;
+/** delete resolves to `null`, since it leaves no text to select, or to a resource provider's value. */
+export const deleteValue: ScriptValue = noSelectionValue;

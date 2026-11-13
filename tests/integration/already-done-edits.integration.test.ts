@@ -85,7 +85,8 @@ text(await tools.replace({path:anchors,text:"FuncA"}));`,
         "all-done",
         `const found = (await tools.search({path:"names.cpp",query:"FuncA"})).result;
 const done = await tools.replace({path:matches(found),text:"FuncA"});
-check(done.includes("No changes: every target already has this text."),"Expected no changes: "+done);
+// An edit whose targets already have the text succeeds and selects that text.
+check(typeof done==="string" && done.startsWith("RESULT#"),"Expected the id of the unchanged text: "+done);
 const renamed = await tools.replace({path:done,text:"FuncB"});
 text(renamed);`,
       ),

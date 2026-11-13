@@ -220,7 +220,7 @@ test("silent Write keeps large file content out of the following provider result
   });
 });
 
-test("explicit Write output is a compact receipt even for a large file", async () => {
+test("explicit Write output is only the id of the written file, even for a large file", async () => {
   await withTempWorkspace(async (cwd) => {
     const code = `// @options: {"max_output_tokens":1000}\ntext(await tools.write(${writeArgs}));`;
     const run = await runScript(cwd, "write-context-explicit-large", code);
@@ -229,7 +229,7 @@ test("explicit Write output is a compact receipt even for a large file", async (
     const output = followingResultText(run, false);
     expect(output).not.toContain(marker);
     expect(output).not.toMatch(/truncated/iu);
-    expect(output).toMatch(/read.*file/iu);
+    expect(output).toMatch(/RESULT#[a-f0-9-]{36}/u);
     expect(output.length).toBeLessThan(1000);
     expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(largeContent);
     expect(await savedPanels(run)).toHaveLength(1);
@@ -237,7 +237,7 @@ test("explicit Write output is a compact receipt even for a large file", async (
 });
 
 test.each(["text", "return"])(
-  "explicit %s delivers only the compact Write receipt once",
+  "explicit %s delivers only the id of the written file",
   async (delivery) => {
     await withTempWorkspace(async (cwd) => {
       const content = marker + "positive_control\n";
@@ -247,9 +247,7 @@ test.each(["text", "return"])(
       expect(getToolExecution(run, "parent").isError).toBe(false);
       const output = followingResultText(run, false);
       expect(output).not.toContain(content);
-      expect(output.split("Saved file.")).toHaveLength(2);
-      expect(output).toContain("small.txt");
-      expect(output).toMatch(/read.*file/iu);
+      expect(output.match(/RESULT#[a-f0-9-]{36}/gu)).toHaveLength(1);
       expect(output.length).toBeLessThan(1000);
       expect(await readFile(path.join(cwd, "small.txt"), "utf8")).toBe(content);
       expect(await savedPanels(run)).toHaveLength(1);

@@ -313,7 +313,7 @@ add(
     "edit.move-replace-directory",
     "compose.object-transfer-refusal",
   ],
-  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. Search the unchanged first Copy receipt for BAD and observe that it has no reusable text selection; in Codemode that call resolves to null. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
+  "Copy source-tree into merge-target, retaining copy-only and overwriting nested/data.bin. Move merge-target onto moved-target, removing move-only. Copy then move standalone link and broken-link to moved-link and moved-broken through temporary copied-link and copied-broken paths. Use ordinary paths with no text selectors. Preserve all link text without following targets. Read moved-target/nested/empty to check the empty directory exists. With direct calls, Search the unchanged first Copy result for BAD and observe that it has no reusable text selection. In Codemode that Copy resolves to null because it selects no text; skip that Search. Keep source-tree, link, broken-link, sentinel.txt, and tracked/data unchanged.",
   [
     {
       tool: "copy",
@@ -348,6 +348,8 @@ add(
       reuse: reuse(0),
       error: true,
       contains: "no reusable text selection",
+      // A Codemode script gets null for this Copy, so only a direct route can search its result.
+      modes: ["direct"],
     },
   ],
   {
@@ -565,7 +567,7 @@ add(
 add(
   "binary-copy-move",
   ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
-  "Copy source.bin to copy.bin without decoding it. Report the Copy receipt. Search the unchanged Copy result for BAD and observe that it has no text selection; in Codemode that call resolves to null. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",
+  "Copy source.bin to copy.bin without decoding it. With direct calls, report the Copy receipt and Search the unchanged Copy result for BAD to observe that it has no text selection. In Codemode that Copy resolves to null because it selects no text; skip that Search. Move copy.bin over existing.bin. Keep source.bin unchanged and do not edit any other files.",
   [
     {
       tool: "copy",
@@ -578,6 +580,8 @@ add(
       reuse: reuse(0),
       error: true,
       contains: "no reusable text selection",
+      // A Codemode script gets null for this Copy, so only a direct route can search its result.
+      modes: ["direct"],
     },
     { tool: "move", args: { path: "copy.bin", target: "existing.bin" } },
   ],
@@ -1562,7 +1566,7 @@ add(
 add(
   "write-hook-read",
   ["edit.write-hook-feedback", "compose.write-hook-read"],
-  "Write review.txt containing exactly WRITE_HOOK_BODY review plus a newline. Report the saved-check hook's remark from the compact Write receipt, then pass that unchanged result into Read and report the saved value. Do not treat the remark as a failed or interrupted write.",
+  "Write review.txt containing exactly WRITE_HOOK_BODY review plus a newline. Report the saved-check hook's remark from the compact Write receipt, or in Codemode from the script's result, then pass that unchanged Write result into Read and report the saved value. Do not treat the remark as a failed or interrupted write.",
   [
     {
       tool: "write",
@@ -2263,7 +2267,7 @@ for (const method of ["all", "allSettled"] as const) {
   add(
     `parallel-edit-effects-${method}`,
     ["codemode.parallel-edit-effects"],
-    `In one native Codemode script, use Promise.${method} to start six edits together, without awaiting an individual call first. Insert FIRST plus a newline after first, MIDDLE plus a newline after middle, and LAST plus a newline after last in insert.txt. Use ./insert.txt for the middle request. Concurrently delete the unique whole lines first, middle, and last from delete.txt, using ./delete.txt for the middle request. Check every result and print each receipt. Preserve all other bytes, including the existing blank lines and EOF.`,
+    `In one native Codemode script, use Promise.${method} to start six edits together, without awaiting an individual call first. Insert FIRST plus a newline after first, MIDDLE plus a newline after middle, and LAST plus a newline after last in insert.txt. Use ./insert.txt for the middle request. Concurrently delete the unique whole lines first, middle, and last from delete.txt, using ./delete.txt for the middle request. Print every value: each Insert resolves to the id of its inserted text and each Delete to null; the script result lists any failed call. Preserve all other bytes, including the existing blank lines and EOF.`,
     [
       { tool: "insert", args: { path: "insert.txt", anchor: "first", text: "FIRST\n" } },
       {

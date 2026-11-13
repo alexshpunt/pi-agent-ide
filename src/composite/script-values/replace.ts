@@ -1,5 +1,5 @@
-import { providerTextValue } from "./provider-value.ts";
+import { editSelectionValue } from "./edit-selection.ts";
 import type { ScriptValue } from "./types.ts";
 
-/** replace resolves to its readable result string, or to a resource provider's value. */
-export const replaceValue: ScriptValue = providerTextValue;
+/** replace resolves to the `RESULT#<uuid>` of the new text, or to a resource provider's value. */
+export const replaceValue: ScriptValue = editSelectionValue;

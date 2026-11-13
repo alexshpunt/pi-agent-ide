@@ -552,10 +552,17 @@ class NativeTextEditBatchCoordinator {
                   formatting: outcome.postEditContributions
                     .map((item) => item.data)
                     .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
-                  diffStatuses: outcome.postEditContributions
-                    .map((item) => item.data)
-                    .filter(isDiffStatusContribution)
-                    .flatMap((item) => item.diffStatuses),
+                  // Statuses of the edit itself, such as a symbol text fallback, stay beside
+                  // the final post-edit ones; the script result is where the model reads them.
+                  diffStatuses: [
+                    ...(previous.diffStatuses ?? []).filter(
+                      (status) => status.origin === "pre-edit",
+                    ),
+                    ...outcome.postEditContributions
+                      .map((item) => item.data)
+                      .filter(isDiffStatusContribution)
+                      .flatMap((item) => item.diffStatuses),
+                  ],
                 });
                 replaceScriptResult(script, requiredValue(script.results[index]), updated);
               },

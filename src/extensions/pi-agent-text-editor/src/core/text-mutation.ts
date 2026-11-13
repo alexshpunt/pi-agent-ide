@@ -1762,7 +1762,10 @@ function withPipelineStatuses(result: FileMutationResult, metadata: unknown): Fi
   if (!isDiffStatusContribution(metadata)) return result;
   return new FileMutationResult({
     ...result.data,
-    diffStatuses: [...(result.data.diffStatuses ?? []), ...metadata.diffStatuses],
+    diffStatuses: [
+      ...(result.data.diffStatuses ?? []),
+      ...metadata.diffStatuses.map((status) => ({ ...status, origin: "pre-edit" as const })),
+    ],
   });
 }
 async function resolveAnchorRecovery(error: TextMutationAnchorResolutionError) {

@@ -46,7 +46,8 @@ test("temporary directory roots transfer and delete without host dialogs on both
                   id: `${route}-${operation}`,
                   name: "codemode",
                   arguments: {
-                    code: `text(await tools.${operation}(${JSON.stringify(input)}));`,
+                    // A directory transfer or deletion selects no text, so each call resolves to null.
+                    code: `if((await tools.${operation}(${JSON.stringify(input)}))!==null) throw Error("${operation} selected text"); text("${operation} done");`,
                   },
                 }),
           );
@@ -71,9 +72,12 @@ test("temporary directory roots transfer and delete without host dialogs on both
       for (const route of ["direct", "script"]) {
         for (const operation of ["copy", "move", "delete"]) {
           expect(getToolExecution(run, `${route}-${operation}`).isError).toBe(false);
-          expect(getToolResultText(run, `${route}-${operation}`)).toContain(
-            `${operation}: applied`,
-          );
+          const shown = getToolResultText(run, `${route}-${operation}`);
+          if (route === "direct") expect(shown).toContain(`${operation}: applied`);
+          else {
+            expect(shown).toContain(`${operation} done`);
+            expect(codemodeFailures(shown)).toBe("");
+          }
         }
         for (const target of ["copies/.tmp", "moves/temp"])
           expect(await readFile(path.join(external, route, target, "data"), "utf8")).toBe(

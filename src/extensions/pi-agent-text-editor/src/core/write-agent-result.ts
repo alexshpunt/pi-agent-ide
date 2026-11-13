@@ -17,7 +17,7 @@ export function writeProblemNotices(results: readonly FileMutationResult[]): str
     if (
       result.data.diffStatuses?.some(
         (status) =>
-          status.origin !== "after-edit" &&
+          status.origin === undefined &&
           (status.tone === "warning" || status.tone === "error") &&
           (status.formattingStatus === undefined ||
             status.formattingStatus !== result.data.formatting?.status),
@@ -25,7 +25,7 @@ export function writeProblemNotices(results: readonly FileMutationResult[]): str
     )
       notices.add("Post-edit processing was interrupted or incomplete.");
     for (const status of result.data.diffStatuses ?? [])
-      if (status.origin === "after-edit") notices.add(status.text);
+      if (status.origin !== undefined) notices.add(status.text);
   }
   return [...notices];
 }

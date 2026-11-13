@@ -11,6 +11,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
@@ -251,8 +252,8 @@ for (const path of ${JSON.stringify([applyCreated, applyCopy, uploaded, download
       getToolExecution(run, "mixed-transfers").isError,
       getToolResultText(run, "mixed-transfers"),
     ).toBe(false);
-    for (const source of [applyCopy, uploaded, downloaded])
-      expect(getToolResultText(run, "mixed-transfers")).toContain(source);
+    // Copies resolve to an id or null in the script; a failed transfer would be listed here.
+    expect(codemodeFailures(getToolResultText(run, "mixed-transfers"))).toBe("");
     expect(
       getToolExecution(run, "cleanup-transfers").isError,
       getToolResultText(run, "cleanup-transfers"),

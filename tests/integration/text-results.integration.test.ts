@@ -512,21 +512,25 @@ test.runIf(process.platform !== "win32")(
         String.raw`
 const started=await tools.bash({command:"IFS= read -r answer; printf 'resource:%s' \"$answer\"",background:true});
 if(!started.session) throw Error("Missing shell session");
+// Terminal input selects no text; a failure would be listed at the end of the result.
 const written=await tools.write({path:started.session,content:"hello"});
-if(!written.includes('Sent text "hello"') || written.includes("no verified text selection") || written.includes("ENOENT")) throw Error("Terminal Write was treated as a file: "+written);
+if(written!==null) throw Error("Terminal Write was treated as a file: "+written);
 const entered=await tools.insert({path:started.session,text:"Enter"});
-if(!entered.includes("Sent keys Enter") || entered.includes("no verified text selection")) throw Error("Terminal Insert was treated as a file: "+entered);
-const shown=await tools.read({path:entered});
+if(entered!==null) throw Error("Terminal Insert was treated as a file: "+entered);
+const shown=await tools.read({path:started.session});
 if(!shown.includes("resource:hello")) throw Error("Shell output lost: "+shown);
 const rejected=(await tools.replace({path:shown,start:"hello",text:"BAD"}))===null;
 if(!rejected) throw Error("Shell output granted text-edit authority");
-text(await tools.delete({path:shown}));
+if((await tools.delete({path:shown}))!==null) throw Error("Terminal Delete selected text");
 `,
       ]);
       expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
         false,
       );
-      expect(getToolResultText(run, "script-0")).toContain("Deleted terminal session");
+      // Only the deliberately refused Replace of shell output fails.
+      expect(codemodeFailures(getToolResultText(run, "script-0"))).toMatch(
+        /^1 of \d+ IDE calls failed:\n- replace /u,
+      );
       expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-write");
       expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-keys");
       expect(getToolResultText(run, "script-0")).not.toContain("Saved file.");
