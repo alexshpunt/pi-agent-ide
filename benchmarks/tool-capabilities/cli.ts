@@ -42,6 +42,7 @@ import {
 } from "./auth.ts";
 import {
   cleanupTrial,
+  gitState,
   prepareTrial,
   runProcess,
   sandboxArgs,
@@ -596,11 +597,8 @@ async function attempt(
         outcomes.push(`Unexpected file outside the fixture: ${file}`);
     if (task.answer && !finalText(events).includes(task.answer))
       outcomes.push("Final answer does not contain the requested observed value");
-    if (
-      task.git &&
-      execFileSync("git", ["status", "--porcelain"], { cwd: prepared.cwd, encoding: "utf8" }).trim()
-    )
-      outcomes.push("Git source/index are not clean");
+    if (prepared.git !== undefined && gitState(prepared.cwd) !== prepared.git)
+      outcomes.push("Git commit or index changed");
     result.reasons.push(...route.reasons, ...outcomes);
     result.status = !route.passed ? "route_failed" : outcomes.length ? "outcome_failed" : "pass";
     await json(

@@ -320,7 +320,7 @@ add(
     "edit.approval-headless-delete",
     "compose.approval-refusal-read",
   ],
-  "Request whole-object deletion of tracked, .git/config, the current directory (.), and filesystem root (/) through Delete. All must be blocked in this non-interactive runtime. Tracked deletion requires a host approval dialog; there is no user UI here, so it must fail closed rather than treating the prompt as permission. Then Read tracked/data and check its unchanged KEEP content. Keep all fixture bytes unchanged and report the refusal reasons. In Codemode each refusal resolves to null and the following calls still run.",
+  "Use Delete on these exact paths, each as a whole object: the directory tracked itself (path tracked, not a file inside it), .git/config, the current directory (.), and filesystem root (/). All must be blocked in this non-interactive runtime. Deleting a directory with Git-tracked entries requires a host approval dialog; there is no user UI here, so it must fail closed rather than treating the prompt as permission. Then Read tracked/data and check its unchanged KEEP content. Keep all fixture bytes unchanged and report the refusal reasons. In Codemode each refusal resolves to null and the following calls still run.",
   [
     {
       tool: "delete",
@@ -418,7 +418,7 @@ add(
     "edit.approval-headless-move",
     "compose.approval-refusal-read",
   ],
-  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data to check unchanged KEEP content; new-target must not exist. Report the refusals and leave all fixture bytes unchanged. In Codemode each failure resolves to null and all checks still run.",
+  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data in its own call to check unchanged KEEP content; new-target must not exist. Report the refusals and leave all fixture bytes unchanged. In Codemode each failure resolves to null and all checks still run.",
   [
     {
       tool: "copy",
@@ -493,7 +493,7 @@ add(
 add(
   "delete-temporary-config",
   ["edit.delete-temporary-config", "edit.move-temporary-config"],
-  "Delete the custom root itself. The project deletion setting replaces default temporary roots with custom. Request Delete and Move on nested/tmp too: both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode the expected refusals resolve to null.",
+  "Delete the directory custom itself (path custom). The project deletion setting replaces the default temporary roots with this custom directory. Then Delete nested/tmp, and Move nested/tmp to the target moved: nested/tmp is no longer temporary, so both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode the expected refusals resolve to null.",
   [
     { tool: "delete", args: { path: "custom" }, contains: "delete: applied" },
     {

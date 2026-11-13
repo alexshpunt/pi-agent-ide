@@ -153,6 +153,8 @@ async function inspectDeletion(
   const temporary = temporaryRoots.some((root) => contains(root, resolvedPath, paths));
   let reason: string | undefined;
   let tracked: string[] = [];
+  // Approval guards only directories and symlinks. A regular file, tracked or not,
+  // needs none; hooks and protected paths still apply to it.
   if (kind !== "file") {
     if (!project.gitAvailable || project.root === undefined) {
       // Broken Git metadata must not bypass the tracking check inside the current project.
