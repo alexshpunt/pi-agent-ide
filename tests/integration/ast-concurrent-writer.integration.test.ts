@@ -73,6 +73,7 @@ test("ast_search keeps its matches, captures and edits while another session wri
     const edited = createConcurrentWriterSource({ lines: 400, markers: 20 });
     await writeFile(path.join(cwd, "search.cpp"), searched.content);
     await writeFile(path.join(cwd, "edit.cpp"), edited.content);
+    const editPeerScript = "peer-ast-edit.mjs";
     const peers = {
       searched: await installConcurrentWriter(cwd, {
         file: "search.cpp",
@@ -82,7 +83,7 @@ test("ast_search keeps its matches, captures and edits while another session wri
       }),
       edited: await installConcurrentWriter(cwd, {
         file: "edit.cpp",
-        script: "peer-ast-edit.mjs",
+        script: editPeerScript,
         intervalMs: 600,
         lifetimeMs: 90_000,
       }),
@@ -134,7 +135,7 @@ for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   check(typeof replaced === "string", "Round " + round + ": capture replace returned " + JSON.stringify(replaced));
   // Wait up to 5 s for a new peer write before the next round, even when the edits run quickly.
   // A stopped peer then fails the write-count check below instead of hanging the script.
-  await tools.bash({command:'n=$(cat peer-ast-edit.mjs.writes 2>/dev/null || echo 0); for i in $(seq 100); do [ "$(cat peer-ast-edit.mjs.writes 2>/dev/null || echo 0)" -gt "$n" ] && break; sleep 0.05; done'});
+  await tools.bash({command:'n=$(cat ${editPeerScript}.writes 2>/dev/null || echo 0); for i in $(seq 100); do [ "$(cat ${editPeerScript}.writes 2>/dev/null || echo 0)" -gt "$n" ] && break; sleep 0.05; done'});
 }
 for (const session of ${JSON.stringify([peers.searched.session, peers.edited.session])})
   await tools.delete({path:"shell:" + session});
