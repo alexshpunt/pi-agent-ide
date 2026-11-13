@@ -22,7 +22,10 @@ test("issued references survive split argument tokens and independent tool calls
     const token = "$issued-result:source-long-id";
     const explicit = JSON.stringify({ path: "explicit.txt", content: token });
     const split = explicit.indexOf(token) + "$issued-result:source".length;
-    const progressivePrefix = JSON.stringify({ path: "progressive.txt", content: token }).slice(0, -1);
+    const progressivePrefix = JSON.stringify({ path: "progressive.txt", content: token }).slice(
+      0,
+      -1,
+    );
     const defaultPrefix = "x".repeat(
       1024 - JSON.stringify({ path: "default.txt", content: "" }).indexOf('"}') - 8,
     );

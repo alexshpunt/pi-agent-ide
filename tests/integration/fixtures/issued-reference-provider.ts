@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { IssuedArgumentStream } from "../../support/issued-argument-stream.ts";
 import {
   createAssistantMessageEventStream,
   type AssistantMessage,
@@ -69,42 +70,48 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
           return value;
         };
         const pattern = /\$issued-(uuid|result|item|search(?:match|allline|allmatch|id)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu;
-        // This fixture resolves references, not streaming timing. Wait for complete arguments so
-        // neither split tokens nor the delegate's partial argument snapshots can resolve an ID early.
-        const argumentsByIndex = new Map<number, string>();
+        const argumentsByIndex = new Map<number, IssuedArgumentStream>();
+        const forward = (event: AssistantMessageEvent, delta?: string): void => {
+          // Snapshots may contain an unfinished ID. Rebuild their arguments from the safe stream.
+          const forwarded = JSON.parse(
+            JSON.stringify(event, (key, value) =>
+              key === "arguments" ? {} : key === "delta" && event.type === "toolcall_delta" ? "" : value,
+            ).replace(pattern, reference),
+          ) as AssistantMessageEvent;
+          const message =
+            forwarded.type === "done" ? forwarded.message :
+              forwarded.type === "error" ? forwarded.error : forwarded.partial;
+          for (const [index, block] of message.content.entries()) {
+            if (block.type === "toolCall")
+              block.arguments = argumentsByIndex.get(index)?.arguments ?? {};
+          }
+          if (forwarded.type === "toolcall_delta") forwarded.delta = delta ?? "";
+          if (forwarded.type === "toolcall_end")
+            forwarded.toolCall.arguments = argumentsByIndex.get(forwarded.contentIndex)?.arguments ?? {};
+          partial = message;
+          output.push(forwarded);
+        };
         void (async () => {
           try {
             for await (const event of delegate(currentModel, transcript, options)) {
+              if (event.type === "toolcall_start")
+                argumentsByIndex.set(event.contentIndex, new IssuedArgumentStream((value) => value.replace(pattern, reference)));
               if (event.type === "toolcall_delta") {
-                argumentsByIndex.set(
-                  event.contentIndex,
-                  (argumentsByIndex.get(event.contentIndex) ?? "") + event.delta,
-                );
+                const delta = argumentsByIndex.get(event.contentIndex)!.push(event.delta);
+                if (delta) forward(event, delta);
                 continue;
               }
-              const forwarded = JSON.parse(
-                JSON.stringify(event).replace(pattern, reference),
-              ) as AssistantMessageEvent;
-              if (forwarded.type === "toolcall_end" || forwarded.type === "done") {
-                for (const [contentIndex, argumentsJson] of argumentsByIndex) {
-                  if (forwarded.type === "toolcall_end" && contentIndex !== forwarded.contentIndex)
-                    continue;
-                  output.push({
-                    type: "toolcall_delta",
-                    contentIndex,
-                    delta: argumentsJson.replace(pattern, reference),
-                    partial: forwarded.type === "done" ? forwarded.message : forwarded.partial,
-                  });
-                  argumentsByIndex.delete(contentIndex);
+              if (event.type === "toolcall_end" || event.type === "done") {
+                for (const [contentIndex, stream] of argumentsByIndex) {
+                  if (event.type === "toolcall_end" && contentIndex !== event.contentIndex) continue;
+                  const delta = stream.push("", true);
+                  if (delta) forward({
+                    type: "toolcall_delta", contentIndex, delta,
+                    partial: event.type === "done" ? event.message : event.partial,
+                  }, delta);
                 }
               }
-              partial =
-                forwarded.type === "done"
-                  ? forwarded.message
-                  : forwarded.type === "error"
-                    ? forwarded.error
-                    : forwarded.partial;
-              output.push(forwarded);
+              forward(event);
             }
           } catch (error) {
             output.push({
