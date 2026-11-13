@@ -801,7 +801,8 @@ async function main(): Promise<void> {
   );
   await mkdir(path.dirname(root), { recursive: true });
   await mkdir(root);
-  const parent = await mkdtemp(path.join(repository, ".tmp/capability-run-"));
+  let temporary: string | undefined;
+  const runState = { attemptsStarted: false };
   const attempts: Attempt[] = [];
   const abort = new AbortController();
   const stop = () => abort.abort();
@@ -835,6 +836,9 @@ async function main(): Promise<void> {
     timeoutMs,
   };
   try {
+    await mkdir(path.join(repository, ".tmp"), { recursive: true });
+    const parent = await mkdtemp(path.join(repository, ".tmp/capability-run-"));
+    temporary = parent;
     if (connectorRun?.prepared && !connectorRun.unavailable) {
       try {
         const connector = connectorRun.prepared;
@@ -891,6 +895,7 @@ async function main(): Promise<void> {
       resource: ({ task }) => (task.setup === "web" ? "web-port-8765" : undefined),
       stopReason: accountStopReason,
       run: async ({ profile, task, route, n }, signal) => {
+        runState.attemptsStarted = true;
         console.log(`Running ${profile.id} / ${task.id} / ${route} / attempt ${n}`);
         const result = await attempt(
           snapshot.source,
@@ -927,12 +932,16 @@ async function main(): Promise<void> {
     });
   } finally {
     try {
-      await report(root, profiles, attempts, manifest);
+      if (runState.attemptsStarted) await report(root, profiles, attempts, manifest);
+      else await rm(root, { recursive: true, force: true });
     } finally {
-      await rm(parent, { recursive: true, force: true });
-      process.removeListener("SIGINT", stop);
-      process.removeListener("SIGTERM", stop);
-      console.log(`Evidence: ${root}/matrix.md`);
+      try {
+        if (temporary) await rm(temporary, { recursive: true, force: true });
+      } finally {
+        process.removeListener("SIGINT", stop);
+        process.removeListener("SIGTERM", stop);
+      }
+      if (runState.attemptsStarted) console.log(`Evidence: ${root}/matrix.md`);
     }
   }
   if (abort.signal.aborted || attempts.some((result) => result.status !== "pass"))
