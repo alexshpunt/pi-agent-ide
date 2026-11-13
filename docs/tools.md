@@ -6,13 +6,13 @@ The project is experimental. The behavior below describes the current implementa
 
 ## Readable results and composition
 
-IDE tools return readable text in direct calls and Codemode. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. Source parameters also take an object whose `id` is such a reference; its other fields are ignored. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and automatic commit boundaries.
+IDE tools return readable text in direct calls. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. In Codemode, several tools return values instead, such as Read's `{ text, id }`. Source parameters take any object whose `id` is such a reference, including these values; its other fields are ignored. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and automatic commit boundaries.
 
 ## Shared output limits
 
 Every IDE tool, including nested calls and the combined Codemode result, shares a useful-text limit of 50 KiB or 2,000 lines. Images share a limit of 20 frames, 4,000,000 pixels and 20 MiB of image bytes per result. Notices, guides and composition references are added afterward and are not part of these budgets.
 
-A text Read inside a Codemode script is the exception: the script receives the whole requested text, so it can parse a large file or write it back. Explicit `offset` and `limit` still select a page with its continuation notice, and large files are not replaced with a code overview. The script's own output is still bounded: the combined Codemode result shares the limit above. The Read panel inside the Codemode card shows the first 2,000 lines or 50 KiB of such a result and says that the script received all of it.
+A text Read inside a Codemode script is the exception: the script receives `{ text, id }` with the whole requested text, so it can parse a large file or write it back. Explicit `offset` and `limit` select exactly that window. Notices and continuation hints stay out of `text`, and large files are not replaced with a code overview. The script's own output is still bounded: the combined Codemode result shares the limit above. The Read panel inside the Codemode card shows the first 2,000 lines or 50 KiB of such a result and says that the script received all of it.
 
 Diff is another exception: in a Codemode script it returns the complete unified diff as a string, without the system-result envelope, and `""` when the sources are equal. A direct Diff call shows the bounded diff and saves the full one as a temporary result that its truncation notice names.
 
@@ -66,11 +66,13 @@ Browser reads discover `google-chrome`, `google-chrome-stable`, `chromium`, or `
 
 When `path` is a typed text resource, `read` returns one independent chunk for each selected range, in resolver order. Each chunk starts at the range's containing line. `offset` and `limit` are applied to every chunk, not across the combined result. The chunks are then joined and the normal aggregate limit of 2,000 lines or 50 KiB is applied.
 
+When `path` is an array, `read` reads each source on its own with the same `offset`, `limit` and `views`, and shows each result under its source. The call fails as a whole when any source fails; the other sources' results are still shown. In Codemode it returns an array of values in the same order, with `null` for each source that failed, and the Codemode result lists only the failed sources.
+
 ### Original bytes
 
 Use `read({path: "raw:sample.bin", offset: 0, limit: 64})` to inspect original file bytes, including PDF and image headers. For remote bytes, use `raw:ssh://target/path`. In `raw:` mode only, offset is zero-based in bytes (negative from EOF), and limit is a non-negative byte count. The output shows hexadecimal offsets, hex bytes, and printable ASCII. Follow its returned byte offset to continue. No views or text anchors apply.
 
-Codemode receives the same bounded hex view as a direct call. Use `text(result)` or return it to display that view. Follow the displayed offset or continuation reference. This is read-only; byte editing and byte diff are not included.
+In Codemode, a `raw:` Read returns `{ bytes }`, the base64 of every requested byte; the Read panel shows the bounded hex view. This is read-only; byte editing and byte diff are not included.
 
 ### Diagnostic completion
 
@@ -88,7 +90,7 @@ In Codemode, `bash`, `powershell`, `remote_bash` and `remote_powershell` resolve
 const result = await tools.bash({ command: "your-command" });
 if (result !== null && result.exit_code !== 0) text(result.output);
 const server = await tools.bash({ command: "npm run dev", background: true });
-text(await tools.read({ path: server.session }));
+text((await tools.read({ path: server.session })).text);
 ```
 
 `bash` (Linux/WSL) or `powershell` (Windows) starts a command in the user's configured system shell. Its schema and prompt guidance name that shell at runtime, so the agent writes Bash, zsh, PowerShell, or Command Prompt syntax as appropriate. Commands are not translated between shell languages.
