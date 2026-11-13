@@ -6,7 +6,7 @@ The project is experimental. The behavior below describes the current implementa
 
 ## Readable results and composition
 
-IDE tools return readable text in direct calls and Codemode. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. Source parameters also take an object whose `id` holds a `RESULT#` reference; its other fields are ignored. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and automatic commit boundaries.
+IDE tools return readable text in direct calls and Codemode. A leading system-result envelope carries a registered UUID; it is not file content. Pass the unchanged result to another source parameter, or use its UUID in a direct call. Source parameters also take an object whose `id` is such a reference; its other fields are ignored. The system resolves the private source records. Check the readable file effects before retrying failed edits. See [IDE result composition](./structured-results.md) for reference lifetime and automatic commit boundaries.
 
 ## Shared output limits
 
@@ -143,7 +143,7 @@ When an `:all` form cannot be used, the error says why and what to do: the searc
 
 ## File search
 
-`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored. Results are sorted, limited by `limit` (default 100), and mark an incomplete list when the limit is reached.
+`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored. Results are sorted, limited by `limit` (default 100), and mark an incomplete list when the limit is reached. In Codemode, `file_search` resolves to the paths as a `string[]`, and without `limit` it lists every matching file.
 
 ## Syntax search
 
