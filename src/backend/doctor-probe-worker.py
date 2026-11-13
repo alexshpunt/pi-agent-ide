@@ -66,6 +66,8 @@ def remove_probe(data):
 
 
 def interrupted(_signal, _frame):
+    # Only the first TERM interrupts, so a later one cannot cut the rollback short.
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     raise InterruptedError()
 
 
@@ -105,21 +107,27 @@ def create_probe():
         finally:
             os.close(container_fd)
     finally:
-        # Further TERM requests must not interrupt our exact-entry rollback.
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
-        signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
-        if not retained:
-            try:
-                if receipt is not None:
-                    remove_probe({**receipt, "name": os.path.basename(request["source"])})
-                elif entry_name is not None:
-                    # Allocation without a recorded entry identity is not safe to remove.
-                    raise ValueError()
-                if created and container_identity is not None:
-                    remove_container({"container": container, "device": str(container_identity.st_dev), "inode": str(container_identity.st_ino)})
-            except Exception:
-                print(json.dumps({"error": "PROBE_CLEANUP_FAILED"}), flush=True)
-                sys.exit(2)
+        # Further TERM requests must not interrupt our exact-entry rollback. A stop closes input
+        # and sends TERM almost together, so TERM can land here as rollback begins; the inner
+        # finally still runs the rollback.
+        try:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        except InterruptedError:
+            pass
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+            if not retained:
+                try:
+                    if receipt is not None:
+                        remove_probe({**receipt, "name": os.path.basename(request["source"])})
+                    elif entry_name is not None:
+                        # Allocation without a recorded entry identity is not safe to remove.
+                        raise ValueError()
+                    if created and container_identity is not None:
+                        remove_container({"container": container, "device": str(container_identity.st_dev), "inode": str(container_identity.st_ino)})
+                except Exception:
+                    print(json.dumps({"error": "PROBE_CLEANUP_FAILED"}), flush=True)
+                    sys.exit(2)
 
 
 try:
