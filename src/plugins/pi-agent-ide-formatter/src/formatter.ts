@@ -4,9 +4,11 @@ import {
   runConfiguredFormatter,
 } from "pi-agent-ide/api/tool-config";
 import path from "node:path";
+import { realpath } from "node:fs/promises";
 
 import { FORMATTER_RECIPES } from "./catalog.ts";
 import { FormatterCommandRegistry } from "./registry.ts";
+import { localRustfmtAccess, rustfmtWithEdition, type RustfmtAccess } from "./rustfmt.ts";
 
 import type { Formatter } from "pi-agent-ide/api/toolchain";
 import type { FormatterCommandConfig } from "pi-agent-ide/api/tool-config";
@@ -18,6 +20,10 @@ export interface FormatterRuntime {
     cwd: string,
   ): Promise<{ cwd: string; external: boolean } | undefined>;
   loadRegistry(cwd: string, external: boolean): Promise<FormatterCommandRegistry>;
+  rustfmtAccess?(
+    projectRoot: string,
+    source: string,
+  ): Promise<{ file: string; access: RustfmtAccess }>;
   run(
     config: FormatterCommandConfig,
     projectRoot: string,
@@ -61,12 +67,26 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
       const registry = runtime
         ? await runtime.loadRegistry(projectRoot, project.external)
         : await loadRegistry(projectRoot, project.external);
-      const formatter = registry.resolve(filePath, projectRoot);
+      const entry = registry.resolveEntry(filePath, projectRoot);
+      let formatter = entry?.config;
 
       if (formatter === undefined) {
         return { ok: true, edits: 0, formatter: null };
       }
 
+      if (entry?.layer === "built-in" && entry.id === "rustfmt") {
+        try {
+          const selected = runtime?.rustfmtAccess
+            ? await runtime.rustfmtAccess(projectRoot, filePath)
+            : {
+                file: path.join(await realpath(path.dirname(filePath)), path.basename(filePath)),
+                access: localRustfmtAccess(projectRoot, filePath),
+              };
+          formatter = await rustfmtWithEdition(formatter, selected.file, selected.access);
+        } catch {
+          return { ok: false, edits: 0, formatter: "rustfmt" };
+        }
+      }
       const name = configuredExecutableName(formatter.run.command);
       if (runtime) {
         const result = await runtime.run(formatter, projectRoot, filePath);

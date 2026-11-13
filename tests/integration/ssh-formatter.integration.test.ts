@@ -1,8 +1,47 @@
 import { expect, test } from "vitest";
+import { execFileSync } from "node:child_process";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackendRegistry } from "#src/backend/registry.ts";
 import { createOwnedFormatterRuntime } from "#src/backend/formatter-registration.ts";
 import { createFormatter } from "#src/plugins/pi-agent-ide-formatter/src/formatter.ts";
+
+test("formats a Rust 2024 crate using cargo and rustfmt on the source owner", async () => {
+  const fixture = await startSshFixture({
+    cargo: execFileSync("which", ["cargo"], { encoding: "utf8" }).trim(),
+    rustfmt: execFileSync("which", ["rustfmt"], { encoding: "utf8" }).trim(),
+  });
+  const root = `ssh://fixture${fixture.workspace}`;
+  const registry = new SshBackendRegistry([
+    { id: "fixture", host: "fixture", workspace: fixture.workspace, configFile: fixture.config },
+  ]);
+  const owner = registry.resolve(root);
+  if (!owner) throw new Error("Missing fixture owner");
+  try {
+    await owner.backend.write(
+      `${fixture.workspace}/Cargo.toml`,
+      Buffer.from(
+        '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2024"\n[lib]\npath = "lib.rs"\n',
+      ),
+      null,
+    );
+    await owner.backend.write(
+      `${fixture.workspace}/lib.rs`,
+      Buffer.from('pub fn example(){if let Some(x)=Some(1) && x > 0 {println!("{x}");}}\n'),
+      null,
+    );
+    expect(
+      await createFormatter(createOwnedFormatterRuntime(registry)).format(
+        { filePath: `${root}/lib.rs` },
+        { cwd: root },
+      ),
+    ).toMatchObject({ ok: true, edits: 1, formatter: "rustfmt" });
+    expect(
+      (await owner.backend.read(`${fixture.workspace}/lib.rs`)).bytes.toString("utf8"),
+    ).toContain("if let Some(x) = Some(1)");
+  } finally {
+    await fixture.stop();
+  }
+}, 30000);
 
 test("owner formatter selection publishes stdout with a revision guard and preserves conflicting writes", async () => {
   const fixture = await startSshFixture();

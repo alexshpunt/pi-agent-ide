@@ -29,6 +29,34 @@ afterAll(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
+test("editing a Rust 2024 let chain formats the saved file", async () => {
+  await withTempDirectory(async (directory) => {
+    const fileName = "src/main.rs";
+    const before =
+      'fn main() {\n    if let Some(x) = Some(1) && x > 0 {\n        println!("{x}");\n    }\n}\n';
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(
+      path.join(directory, "Cargo.toml"),
+      '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2024"\n',
+    );
+    await writeFile(path.join(directory, fileName), before);
+    const scenario = await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-rust-2024",
+      tool: "replace",
+      arguments: {
+        path: fileName,
+        start: formatLineHashAnchor(before, 3),
+        text: '        println!( "value={x}" );',
+      },
+    });
+    expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+    expect(await readFile(path.join(directory, fileName), "utf8")).toContain(
+      'println!("value={x}");',
+    );
+  });
+}, 60_000);
 test("an installed built-in does not format without project evidence", async () => {
   await withTempDirectory(async (directory) => {
     const bin = path.join(directory, "bin");

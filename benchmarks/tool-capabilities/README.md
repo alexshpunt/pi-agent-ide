@@ -15,6 +15,8 @@ The coverage gate is part of `pnpm check`. It loads the current IDE without a pr
 
 The free regression tests cover route provenance and sandbox timeout/reset/cleanup. One scripted real-Pi integration test proves that nested Codemode events are read correctly. These tests do not use paid models.
 
+Rust edition selection is formatter behavior after an edit, not a new model operation. The existing edit routes still cover tool use; focused Rust formatter and real-Pi tests cover Cargo edition discovery and formatting. The paid routes do not verify Rust editions.
+
 ## Paid runs
 
 Requirements: Linux or WSL, Node 24, Git, Bubblewrap with user namespaces enabled, installed Pi with native Codemode and tool discovery, and provider credentials. The free inventory prefers the globally installed Pi; without one it uses the checkout's SDK. `--pi /absolute/path/to/pi` selects an installed runtime explicitly. Paid runs need Pi and its dependencies inside the read-only system toolchain mounts (`/usr`, `/opt`, or the local bin/lib directories under the user home).
