@@ -153,7 +153,10 @@ export interface RouteStep {
   discovers?: readonly string[];
   /** Routes that need this step, such as one only a direct call can take; others skip it. */
   modes?: string[];
-  /** Native text calls can be accepted before their parent reports a write failure. */
+  /**
+   * `"direct"`: a direct call fails; in Codemode the call fails itself or is accepted and its
+   * parent reports the write failure.
+   */
   error?: boolean | "direct";
   reuse?: ResultReuse | ResultReuse[];
 }
@@ -451,6 +454,9 @@ export function validateRoute(
     if (!step) return true;
     if (step.modes && !step.modes.includes(mode))
       return walk(stepIndex + 1, previousStart, [...selected, undefined]);
+    // In Codemode, a native text call either fails at once, such as one with a result-bound
+    // selector, or is accepted into a batch whose commit fails its parent.
+    const acceptedOrFailed = step.error === "direct" && mode === "codemode";
     for (const start of starts) {
       const event = start.event;
       const end = ends.get(event.toolCallId ?? "");
@@ -459,7 +465,7 @@ export function validateRoute(
         event.toolName !== step.tool ||
         !end ||
         end.index <= start.index ||
-        end.event.isError !== (step.error === "direct" ? mode === "direct" : Boolean(step.error))
+        (!acceptedOrFailed && end.event.isError !== Boolean(step.error))
       )
         continue;
       const execution = executionParent(start);
@@ -469,6 +475,13 @@ export function validateRoute(
         if (execution.parent || !step.discovers.every((name) => discovered(start.index).has(name)))
           continue;
       } else if (mode === "codemode" && !codemodeParents.has(execution.parent)) continue;
+      // An accepted native text call fails when its parent commits the batch.
+      if (
+        acceptedOrFailed &&
+        !end.event.isError &&
+        ends.get(execution.parent ?? "")?.event.isError !== true
+      )
+        continue;
       if (
         step.scriptResult !== undefined &&
         !matches(step.scriptResult, end.event.result?.structuredContent)
