@@ -30,6 +30,8 @@ check(found.matches.length > 1,"word fallback");
 check(Object.keys(found).sort().join() === "complete,id,matches", "compact search value");
 check(await tools.replace({path:found,text:"BAD"}) === null,"whole value must fail");
 check(await tools.replace({path:found.id,text:"BAD"}) === null,"whole id must fail");
+check(await tools.read({path:found}) !== null,"whole selection is readable");
+check(await tools.copy({path:found,target:"literal.txt",targetStart:"end"}) === null,"bulk transfer must fail");
 const scoped = await tools.search({path:found,query:"const"});
 check(scoped.matches.length === 1,"read-only search scope");
 check(await tools.replace({path:found.matches[0],text:"CONST"}) !== null,"individual match");
@@ -47,7 +49,7 @@ text("done");`;
       rawMode: false,
       environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "replace", "read", "copy", "codemode"],
       conversation: [
         assistantMessage(
           [
@@ -67,9 +69,9 @@ text("done");`;
     }).run("Safely edit Search results");
     expect(getToolExecution(run, "compose").isError, getToolResultText(run, "compose")).toBe(false);
     const output = getToolResultText(run, "compose");
-    expect(output.split("3 of ")[0]).toContain("separate tokens, not the phrase");
+    expect(output.split("4 of ")[0]).toContain("separate tokens, not the phrase");
     const failures = codemodeFailures(output);
-    expect(failures).toMatch(/^3 of \d+ IDE calls failed:/u);
+    expect(failures).toMatch(/^4 of \d+ IDE calls failed:/u);
     expect(failures).toContain("const x = await f");
     expect(failures).toContain('"const x = await f"');
     expect(failures).toContain("red AND blue");
