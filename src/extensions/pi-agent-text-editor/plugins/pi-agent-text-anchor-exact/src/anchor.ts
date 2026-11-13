@@ -79,7 +79,9 @@ export function resolveExactTextAnchor(
 
   if (matches.length === 0) {
     return rejected(
-      "missing",
+      scope !== undefined && query.length > 0 && source.text.includes(query)
+        ? "outside-scope"
+        : "missing",
       scope === undefined
         ? "exact text anchor was not found"
         : "exact text anchor was not found inside the selection",
@@ -164,7 +166,7 @@ function includeTrailingLineBreak(content: string, end: number): number {
   return content[end] === "\r" || content[end] === "\n" ? end + 1 : end;
 }
 function rejected(
-  code: "invalid" | "missing" | "ambiguous",
+  code: "invalid" | "missing" | "ambiguous" | "outside-scope",
   reason: string,
 ): TextAnchorResolutionAttempt {
   return { kind: "rejected", rejection: { code, reason } };

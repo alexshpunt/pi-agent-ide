@@ -2122,6 +2122,7 @@ async function anchorFailureToolResult(
       anchorRecovery: true,
       // A Copy destination failure must not block otherwise valid source selectors.
       ...(resolution.resolverId === "exact-text" &&
+        resolution.rejection?.code !== "outside-scope" &&
         !(
           contextual.toolName === "copy" &&
           (contextual.field === "targetStart" || contextual.field === "targetEnd")
@@ -2158,11 +2159,13 @@ function formatRejectedAnchorMessage(
           ? "was rejected"
           : "could not be resolved";
   const guidance =
-    failure.resolution.resolverId === "exact-text"
-      ? failure.toolName === "copy"
-        ? "Use an anchor below, or get a fresh Read/Search selection and pass it to Copy."
-        : "Exact-text edits are blocked for this file. Use a current anchor below for the intended edit, or get one with Read/Search. Exact text is available again after that edit succeeds."
-      : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
+    code === "outside-scope"
+      ? "Choose text inside the result's selection, or pass the file path to edit elsewhere."
+      : failure.resolution.resolverId === "exact-text"
+        ? failure.toolName === "copy"
+          ? "Use an anchor below, or get a fresh Read/Search selection and pass it to Copy."
+          : "Exact-text edits are blocked for this file. Use a current anchor below for the intended edit, or get one with Read/Search. Exact text is available again after that edit succeeds."
+        : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
   const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} "${failure.anchor}" ${state}`;
   // Nothing is shown below a reference without a position; its reason carries the next step.

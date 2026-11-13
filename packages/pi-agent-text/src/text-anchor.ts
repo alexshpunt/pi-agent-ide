@@ -67,7 +67,8 @@ export interface TextAnchorRecoveryRange {
 
 /** Why an anchor could not resolve safely. */
 export interface TextAnchorRejection {
-  readonly code: "invalid" | "stale" | "missing" | "ambiguous";
+  /** outside-scope means the selector matches the source, but not within the requested ranges. */
+  readonly code: "invalid" | "stale" | "missing" | "ambiguous" | "outside-scope";
   readonly reason: string;
   readonly contextRange?: TextAnchorRecoveryRange;
 }
@@ -224,6 +225,7 @@ const rejectionSchema = Type.Object({
     Type.Literal("invalid"),
     Type.Literal("stale"),
     Type.Literal("missing"),
+    Type.Literal("outside-scope"),
     Type.Literal("ambiguous"),
   ]),
   reason: Type.String(),

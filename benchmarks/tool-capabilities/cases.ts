@@ -2913,6 +2913,23 @@ add(
 );
 
 add(
+  "result-selector-exact-retry",
+  ["compose.result-selector-scope"],
+  "Read only line 2 of task.txt. Pass that Read result unchanged as Replace's path with start last and text BAD. The text exists outside the selection, so the call must fail without editing. Then pass the explicit task.txt path to Replace with start last and text fixed. This exact-text edit must succeed without an intervening anchor edit. Preserve all other bytes.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    {
+      tool: "replace",
+      args: { start: "last", text: "BAD" },
+      reuse: reuse(0),
+      error: true,
+    },
+    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" } },
+  ],
+  { expected: { "task.txt": "keep\nOLD\nfixed\n" } },
+);
+
+add(
   "stale-recovery",
   ["compose.stale-recovery", "read.reference-recovery"],
   "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Then read the current file and report NEW. Do not try to revive the old result.",
