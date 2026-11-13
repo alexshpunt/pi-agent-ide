@@ -228,7 +228,8 @@ describe("shell-roundtrip", () => {
 });
 
 describe("deferred tool discovery", () => {
-  const discovery = { steps: capabilityCase("deferred-navigation-recovery").steps.slice(0, 4) };
+  // The case's first step requires all four tools, from one search or several.
+  const discovery = { steps: capabilityCase("deferred-navigation-recovery").steps.slice(0, 1) };
   const search = (id: string, loaded: string[], text = "Loaded tools") => ({
     id,
     tool: "tool_search",
