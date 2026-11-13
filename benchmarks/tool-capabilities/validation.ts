@@ -99,8 +99,6 @@ export interface ResultReuse {
   field: string | string[];
   kind?: string;
   newParent?: boolean;
-  /** An explicit argument accepted instead of the reference, such as the path it was read from. */
-  explicit?: unknown;
 }
 
 function fieldValue(value: unknown, field: string): unknown {
@@ -117,12 +115,6 @@ function fieldValue(value: unknown, field: string): unknown {
 /** One actual execution required to establish a capability. */
 export interface RouteStep {
   tool: string;
-  /** In the Codemode route, also accept a direct call, such as tool_search loading later tools. */
-  outsideScript?: boolean;
-  /** The same execution may also meet the previous step, such as one search loading two tools. */
-  sharesPrevious?: boolean;
-  /** Require tool_search to report this tool among the tools it loaded. */
-  loads?: string;
   /** Require overlap with an earlier step's execution in the same native Codemode script. */
   parallelWith?: number;
   /** Require two direct tool calls in the same completed assistant message, not a retry. */
@@ -151,6 +143,12 @@ export interface RouteStep {
   /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
   finalMaxBytes?: number;
   image?: boolean;
+  /**
+   * Require the native tool_search calls up to this one to have loaded these tools together. One
+   * search may load several tools, so a tool may come from a search for another one. tool_search is
+   * model-only, so this step is a direct call in Codemode routes too.
+   */
+  discovers?: readonly string[];
   /** Routes that need this step, such as one only a direct call can take; others skip it. */
   modes?: string[];
   /** Native text calls can be accepted before their parent reports a write failure. */
@@ -195,18 +193,6 @@ export function resultText(event: RunEvent): string {
     .join("\n");
 }
 
-/** Tools that a completed tool_search reports it loaded. */
-function loaded(event: RunEvent): string[] {
-  const details = event.result?.details;
-  const names =
-    details !== null && typeof details === "object" && "loaded" in details
-      ? details.loaded
-      : undefined;
-  return Array.isArray(names)
-    ? names.filter((name): name is string => typeof name === "string")
-    : [];
-}
-
 function fixturePath(value: string): string {
   if (/^https?:/.test(value)) return new URL(value).href;
   const prefix = value.startsWith("raw:") ? "raw:" : "";
@@ -237,11 +223,12 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
         matches(value, (actual as Record<string, unknown>)[key], key),
       )
     );
-  if (["path", "file", "target"].includes(field) && typeof expected === "string") {
-    // A list of one source, such as a file_search value, names the same source.
-    const source = Array.isArray(actual) && actual.length === 1 ? (actual[0] as unknown) : actual;
-    return typeof source === "string" && fixturePath(expected) === fixturePath(source);
-  }
+  if (
+    ["path", "file", "target"].includes(field) &&
+    typeof expected === "string" &&
+    typeof actual === "string"
+  )
+    return fixturePath(expected) === fixturePath(actual);
   if (
     field === "query" &&
     typeof expected === "string" &&
@@ -384,6 +371,22 @@ export function validateRoute(
     }
     return { call: current.event.toolCallId };
   }
+  /** Tools that successful native tool_search calls started up to `index` reported as loaded. */
+  function discovered(index: number): Set<string> {
+    return new Set(
+      starts.flatMap(({ event, index: startIndex }) => {
+        const end = ends.get(event.toolCallId ?? "")?.event;
+        const loaded = (end?.result?.details as { loaded?: unknown } | undefined)?.loaded;
+        return startIndex <= index &&
+          event.toolName === "tool_search" &&
+          !event.parentToolCallId &&
+          end?.isError === false &&
+          Array.isArray(loaded)
+          ? loaded.filter((name): name is string => typeof name === "string")
+          : [];
+      }),
+    );
+  }
   let furthest = 0;
   function walk(
     stepIndex: number,
@@ -400,8 +403,7 @@ export function validateRoute(
       const event = start.event;
       const end = ends.get(event.toolCallId ?? "");
       if (
-        start.index < previousStart ||
-        (start.index === previousStart && !step.sharesPrevious) ||
+        start.index <= previousStart ||
         event.toolName !== step.tool ||
         !end ||
         end.index <= start.index ||
@@ -411,13 +413,10 @@ export function validateRoute(
       const execution = executionParent(start);
       if (!execution) continue;
       if (step.viaLocalAlias && (!execution.call || execution.call === event.toolCallId)) continue;
-      if (
-        mode === "codemode" &&
-        !codemodeParents.has(execution.parent) &&
-        !(step.outsideScript && execution.parent === undefined)
-      )
-        continue;
-      if (step.loads !== undefined && !loaded(end.event).includes(step.loads)) continue;
+      if (step.discovers) {
+        if (execution.parent || !step.discovers.every((name) => discovered(start.index).has(name)))
+          continue;
+      } else if (mode === "codemode" && !codemodeParents.has(execution.parent)) continue;
       if (
         step.scriptResult !== undefined &&
         !matches(step.scriptResult, end.event.result?.structuredContent)
@@ -519,19 +518,12 @@ export function validateRoute(
             prior.end >= start.index ||
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
-                (reference.explicit !== undefined &&
-                  matches(
-                    reference.explicit,
-                    fieldValue(event.args, field),
-                    field.split(".").at(-1),
-                  )) ||
                 reuses(
                   fieldValue(event.args, field),
                   resultText(prior.event),
                   reference.kind,
                   valueIds(prior.event.result?.structuredContent),
-                ) ||
-                passesValue(fieldValue(event.args, field), prior.event),
+                ) || passesValue(fieldValue(event.args, field), prior.event),
             ) ||
             (reference.newParent && prior.parent === execution.parent)
           );

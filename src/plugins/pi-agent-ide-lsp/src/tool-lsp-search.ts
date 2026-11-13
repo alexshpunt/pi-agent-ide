@@ -91,7 +91,11 @@ export async function registerLspSearchTool(
         name: "lsp_search",
         label: "lsp_search",
         exposure: "direct",
-        namespace: { name: "ide_lsp_search", description: "Find code through language servers." },
+        namespace: {
+          name: "ide_lsp_search",
+          description:
+            "Navigate code through language servers: symbol definitions, references and call graphs.",
+        },
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
