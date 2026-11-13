@@ -32,7 +32,7 @@ Before inference, settle:
 
 Count selected supported routes × attempts × selected profiles; a Codemode-only case has no direct route. Omitting `--case` selects all cases; omitting `--mode` selects their supported routes. Retries are new paid attempts; inspect a failure before repeating it.
 
-The runner refuses the personal `~/.pi/agent/auth.json`. Pass `--auth-dir` with the private snapshot directory that `paid-model-runs` describes, without `--dedicated-auth`, so the runner uses the access token without refreshing it.
+The runner refuses the personal `~/.pi/agent/auth.json`. Pass `--auth-dir` with the private snapshot directory that `paid-model-runs` describes, without `--dedicated-auth`, so the runner uses the access token without refreshing it. The directory must contain `auth.json` itself: on ZinPC, `~/.pi/paid-run-auth/openai-codex` holds only per-run subdirectories, and pointing at it makes every attempt `unavailable` before inference.
 
 ## Run the existing CLI
 
@@ -40,7 +40,7 @@ Adapt this bounded example to the planned scope:
 
 ```sh
 pnpm validate:tools:models --run --model luna-6-low \
-  --auth-dir ~/.pi/paid-run-auth/openai-codex \
+  --auth-dir ~/.pi/paid-run-auth/openai-codex/<run> \
   --case read-search-replace --mode codemode --attempts 1 --timeout 120
 ```
 
