@@ -444,6 +444,12 @@ describe("search fallback dispatch", () => {
     expect(fallback).not.toHaveBeenCalled();
     expect(specialized).not.toHaveBeenCalled();
   });
+  test("treats an empty path as an omitted path", async () => {
+    const { core, fallback } = await setup({ kind: "not-handled" });
+    await core.execute({ query: "needle", path: "" }, { cwd: process.cwd() });
+    expect(fallback).toHaveBeenCalledOnce();
+    expect(fallback.mock.calls[0]?.[0]).toHaveProperty("path", undefined);
+  });
   test("keeps a completely empty request invalid", async () => {
     const { core, fallback, specialized } = await setup({ kind: "not-handled" });
     expect(
