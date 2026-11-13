@@ -344,7 +344,7 @@ export async function fixtureFiles(
   const entries: Record<string, Buffer> = {};
   for (const entry of await readdir(path.join(root, prefix), { withFileTypes: true })) {
     if ([".git", ".pi", "node_modules"].includes(entry.name)) continue;
-    if (veraIndexPrefix === prefix && entry.name === ".vera") continue;
+    if (veraIndexPrefix === prefix && [".vera", ".vera.lock"].includes(entry.name)) continue;
     const file = path.join(prefix, entry.name);
     if (entry.isDirectory())
       Object.assign(entries, await fixtureFiles(root, file, veraIndexPrefix));

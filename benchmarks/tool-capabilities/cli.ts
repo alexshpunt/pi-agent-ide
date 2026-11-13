@@ -51,6 +51,12 @@ import {
   fixtureFiles,
 } from "./sandbox.ts";
 
+/**
+ * Each attempt starts with an empty home, so engine setup downloads its runtime and model again.
+ * The Linux ColGREP 1.8.5 build fetches about 460 MB (CUDA ONNX Runtime and model) on first use.
+ */
+const PREREQUISITE_TIMEOUT_MS = 120_000;
+
 interface Profile {
   id: string;
   model: string;
@@ -308,11 +314,16 @@ async function attempt(
       const prerequisite = await runProcess(
         "bwrap",
         [...bwrap, "/bin/bash", "-lc", task.prerequisite],
-        { env, timeoutMs: 15000, signal },
+        { env, timeoutMs: PREREQUISITE_TIMEOUT_MS, signal },
       );
       if (prerequisite.code !== 0) {
         result.status = "unavailable";
-        result.reasons.push(`Missing prerequisite: ${task.prerequisite}`, prerequisite.stderr);
+        result.reasons.push(
+          prerequisite.timedOut
+            ? `Prerequisite timed out after ${PREREQUISITE_TIMEOUT_MS / 1000} s: ${task.prerequisite}`
+            : `Missing prerequisite: ${task.prerequisite}`,
+          prerequisite.stderr,
+        );
         return result;
       }
     }
