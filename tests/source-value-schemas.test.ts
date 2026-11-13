@@ -76,3 +76,32 @@ describe("source parameters accept a Codemode value with an id", () => {
     }
   });
 });
+
+/** Tool, schema and selector fields that take anchor text or a value with an id. */
+const selectors: readonly (readonly [string, TSchema, readonly string[]])[] = [
+  ["replace", replaceSchema, ["start", "end"]],
+  ["delete", deleteSchema, ["start", "end"]],
+  ["insert", insertSchema, ["anchor"]],
+  ["copy", copySchema, ["start", "end", "targetStart", "targetEnd"]],
+  ["move", moveSchema, ["start", "end", "targetStart", "targetEnd"]],
+];
+
+describe("selector parameters accept a Codemode value with an id", () => {
+  test.each(selectors)("%s", (name, parameters, fields) => {
+    for (const field of fields) {
+      const base: JsonObject = { ...required[name], path: "a.txt" };
+      expect(validate(name, parameters, { ...base, [field]: value })).toMatchObject({
+        [field]: value,
+      });
+      expect(validate(name, parameters, { ...base, [field]: "OLD" })).toMatchObject({
+        [field]: "OLD",
+      });
+      expect(() => validate(name, parameters, { ...base, [field]: { text: "a\n" } })).toThrow(
+        /Validation failed/u,
+      );
+      expect(() => validate(name, parameters, { ...base, [field]: [value] })).toThrow(
+        /Validation failed/u,
+      );
+    }
+  });
+});
