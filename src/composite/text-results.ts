@@ -491,7 +491,8 @@ export function createIdeTextResults(
         projected = scriptFailed
           ? scriptValue.failed?.(valueInput)
           : scriptValue.project(valueInput);
-        if (scriptFailed) failureReason = scriptValue.failureReason?.(valueInput);
+        if (scriptFailed && parent !== undefined)
+          failureReason = scriptValue.failureReason?.(valueInput);
       } catch (error) {
         const label = labels.get(event.toolCallId);
         labels.delete(event.toolCallId);
