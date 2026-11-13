@@ -18,6 +18,7 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  // Fresh-session discovery only; already-active guidance is covered by deterministic tests.
   "deferred-navigation-recovery",
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
   "Discover ast_search, lsp_search, diff and undo through tool_search before using them. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then undo that last edit. Read task.txt and report its restored marker. Preserve both files.",
