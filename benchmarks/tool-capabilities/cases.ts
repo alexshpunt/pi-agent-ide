@@ -754,13 +754,16 @@ add(
   ],
   {
     files: {
-      "Cargo.toml": '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n',
+      "Cargo.toml":
+        '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n[lib]\npath = "formatted.rs"\n',
       "unformatted.rs": 'fn main(){let value=1;println!("{}",value);}\n',
-      "formatted.rs": "fn main() {\n    let value = 1;\n}\n",
+      "formatted.rs": "mod child;\n\nfn main() {\n    let value = 1;\n}\n",
+      "child.rs": 'pub fn child(){println!("untouched");}\n',
     },
     expected: {
       "unformatted.rs": 'fn main(){let value=2;println!("{}",value);}\n',
-      "formatted.rs": "fn main() {\n    let value = 2;\n}\n",
+      "formatted.rs": "mod child;\n\nfn main() {\n    let value = 2;\n}\n",
+      "child.rs": 'pub fn child(){println!("untouched");}\n',
     },
     prerequisite: "command -v cargo && command -v rustfmt",
   },
