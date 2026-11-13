@@ -97,6 +97,29 @@ async function runDirect(
   }).run("Search the file while another session keeps writing it.");
 }
 
+test("RESULT Read follows moved selections and rejects changed selected text", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "selected.txt"), "before\nneedle\nafter\n");
+    const run = await runStress(
+      cwd,
+      "result-read-changed-selection",
+      `
+const result = await tools.search({path:"selected.txt",query:"needle"});
+check(result.matches.length === 1, "expected one selection");
+await tools.bash({command:"printf 'new\\nbefore\\nneedle\\nafter\\n' > selected.txt"});
+const moved = await tools.read({path:result.id});
+check(moved !== null && moved.text.includes("needle") && !moved.text.includes("before"), "wrong moved selection: " + JSON.stringify(moved));
+await tools.bash({command:"printf 'new\\nbefore\\nchanged\\nafter\\n' > selected.txt"});
+await rejects(() => tools.read({path:result.id}));
+text("moved then rejected");
+`,
+    );
+    const output = getToolResultText(run, "stress");
+    expect(getToolExecution(run, "stress").isError, output).toBe(false);
+    expect(output).toContain("moved then rejected");
+    expect(codemodeFailures(output)).toMatch(/stale|changed/iu);
+  });
+});
 test("every search keeps usable anchors while another session writes the file", async () => {
   await withTempWorkspace(async (cwd) => {
     const searched = createConcurrentWriterSource();
@@ -202,7 +225,6 @@ test("a Read of a search result shows its matches while another session writes t
       `// @options: {"timeout_ms": 150000}
 await tools.bash({command:${JSON.stringify(peer.command)},background:true,name:${JSON.stringify(peer.session)}});
 let rounds = 0;
-let stale = 0;
 // A failed round still stops the peer, so it cannot write into the next run's workspace.
 try {
   for (let round = 1; round <= ${String(readRounds)}; round += 1) {
@@ -210,11 +232,8 @@ try {
     check(result !== null && typeof result === "object" && result.complete && result.matches.length === ${String(source.tokenOccurrences)},
       "Round " + round + ": the search selected no complete match list: " + JSON.stringify(result).slice(0, 2000));
     const all = result.id;
-    // Each selected range is an occurrence of the identifier; the peer only moves them down. A
-    // write that lands between the store moving the selection and the Read checking it makes the
-    // Read fail as stale (null); the Codemode result then names the reason, checked below.
-    const read = await tools.read({path:result});
-    if (read === null) { stale += 1; continue; }
+    // Each selected range is an occurrence of the identifier; the peer only moves them down.
+    const read = await tools.read({path:result.id});
     check(typeof read.text === "string", "Round " + round + ": the Read of " + all + " failed: " + JSON.stringify(read));
     const shown = read.text;
     check((shown.match(/alphaTokenValue/gu) ?? []).length === ${String(source.tokenOccurrences)} && !shown.includes("total += compute("),
@@ -224,18 +243,12 @@ try {
 } finally {
   await tools.delete({path:"shell:" + ${JSON.stringify(peer.session)}});
 }
-text("read rounds " + rounds + " stale " + stale);`,
+text("read rounds " + rounds);`,
     );
 
     const output = getToolResultText(run, "stress");
     expect(getToolExecution(run, "stress").isError, output).toBe(false);
-    const [, shown, stale] = /read rounds (\d+) stale (\d+)/u.exec(output) ?? [];
-    expect(Number(shown) + Number(stale)).toBe(readRounds);
-    // Most rounds read their matches; a failed one failed only because the file changed.
-    expect(Number(shown)).toBeGreaterThan(readRounds / 2);
-    const failures = codemodeFailures(output);
-    expect(failures.match(/^- read /gmu)?.length ?? 0).toBe(Number(stale));
-    expect(failures.match(/Result target is stale/gu)?.length ?? 0).toBe(Number(stale));
+    expect(output).toContain(`read rounds ${String(readRounds)}`);
     expect(await peer.writes()).toBeGreaterThan(readRounds);
   });
 }, 150_000);
