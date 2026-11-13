@@ -207,7 +207,11 @@ export interface SearchPluginApi {
   describe(description: SearchDescriptionSource): void;
   /** Add an operational guideline while this search plugin is active. */
   addPromptGuideline(guideline: SearchDescriptionSource): void;
-  /** Execute configured resolvers and register references before returning script data. */
+  /**
+   * Execute configured resolvers and register references before returning script data. The
+   * `script` audience is a caller that hands the result to a script: its structured data has no
+   * size limit.
+   */
   search(
     request: SearchInput,
     context: SearchContext,

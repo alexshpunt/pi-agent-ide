@@ -479,6 +479,8 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
                           ],
                         }
                       : { status: "success", data, errors: [] },
+                  // A script gets the whole result; the 1 MiB limit protects the model's context.
+                  audience === "script" ? { maxBytes: Infinity } : undefined,
                 );
               } catch (error) {
                 return failure(

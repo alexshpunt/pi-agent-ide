@@ -137,6 +137,8 @@ export function createRegexResolver(
 /** Options the `file_search` tool passes in `SearchRequest.options.files`; their presence selects this resolver. */
 export interface FileSearchOptions {
   readonly pattern: string;
+  /** Without a `limit`, list every matching file instead of the first 100: a script's call. */
+  readonly uncapped?: boolean;
 }
 
 function fileOptions(request: SearchRequest): FileSearchOptions | undefined {
@@ -162,7 +164,9 @@ export function createFileResolver(): SearchResolver {
       const query = options.pattern.trim();
       const result = await searchFiles(
         query,
-        request,
+        options.uncapped === true && request.limit === undefined
+          ? { ...request, limit: Number.POSITIVE_INFINITY }
+          : request,
         context.cwd,
         context.signal,
         context.environment,

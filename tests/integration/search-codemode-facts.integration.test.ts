@@ -27,7 +27,7 @@ const clipped = await tools.search({path:"large.txt",query:"regex:entry",limit:1
 check(clipped.hasMatches === true && clipped.complete === true,"Presentation clipping changed coverage");
 check(clipped.result.length < 80000,"Large Search did not exercise bounded presentation");
 const files = await tools.file_search({path:".",pattern:"note.txt"});
-check(files.hasMatches === true && files.complete === true,"File search lost facts");
+check(JSON.stringify(files) === '["note.txt"]',"File search lost its paths");
 const custom = await tools.search({query:"facts:custom"});
 check(custom.hasMatches === null && custom.complete === null,"Custom payload was interpreted as match facts");
 check(Object.keys(custom).sort().join(",") === "complete,hasMatches,result","Private fields leaked");

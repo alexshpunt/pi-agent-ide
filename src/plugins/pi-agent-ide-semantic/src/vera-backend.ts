@@ -18,7 +18,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { delimiter, join, relative, resolve, sep } from "node:path";
 import { searchFiles } from "#src/extensions/pi-agent-search/plugins/pi-agent-search-text/src/file-search.ts";
-import type { BackendOptions, ProjectStatus } from "./backend.ts";
+import type { BackendOptions, ProjectStatus, SemanticSearchResult } from "./backend.ts";
 
 const VERSION = "2.3.0"; // Version with the verified JSON and filtering contracts.
 const RELEASE = `https://github.com/VeraTools/vera/releases/download/v${VERSION}`;
@@ -346,7 +346,7 @@ export async function searchVeraProject(
     readonly include?: string;
     readonly exclude?: string;
   } = {},
-): Promise<string> {
+): Promise<SemanticSearchResult> {
   const project = projectPath(cwd);
   if (!query.trim()) throw new Error("A semantic search query is required");
   const status = await inspectVeraProject(project, options);
@@ -399,7 +399,7 @@ export async function searchVeraProject(
   const warning = filtered
     ? "Vera may omit relevant matches when a scope or filter is used.\n"
     : "";
-  if (allowed?.size === 0) return `${warning}No semantic search results.`;
+  if (allowed?.size === 0) return { text: `${warning}No semantic search results.`, files: [] };
   const args = ["search", "--json", "--potion-code", "--limit", String(singleFile ? 100 : limit)];
   const paths = allowed ? [...allowed] : [];
   if (
@@ -439,7 +439,7 @@ export async function searchVeraProject(
     ranges.add(`${item.line_start}-${item.line_end}`);
     files.set(file, ranges);
   }
-  if (!files.size) return `${warning}No semantic search results.`;
+  if (!files.size) return { text: `${warning}No semantic search results.`, files: [] };
   if (singleFile) {
     const lines: string[] = [];
     for (const [file, ranges] of files) {
@@ -450,10 +450,17 @@ export async function searchVeraProject(
     }
     if (output.length === 100)
       lines.push("More candidates may exist beyond Vera's retrieval limit");
-    return `${warning}Approximate ranges (read before editing):\n${lines.join("\n")}`;
+    return {
+      text: `${warning}Approximate ranges (read before editing):\n${lines.join("\n")}`,
+      files: [...files.keys()],
+    };
   }
-  return (
-    warning +
-    [...files].map(([file, ranges]) => `${file}  (${ranges.size} retrieved candidates)`).join("\n")
-  );
+  return {
+    text:
+      warning +
+      [...files]
+        .map(([file, ranges]) => `${file}  (${ranges.size} retrieved candidates)`)
+        .join("\n"),
+    files: [...files.keys()],
+  };
 }

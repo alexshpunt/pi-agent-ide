@@ -1,5 +1,8 @@
-import { textValue } from "./text.ts";
+import { pathListValue } from "./path-list.ts";
 import type { ScriptValue } from "./types.ts";
 
-/** semantic_search resolves to its readable result string. */
-export const semanticSearchValue: ScriptValue = textValue;
+/**
+ * semantic_search resolves to the found files in rank order, relative to the project. Approximate
+ * ranges stay out: they are hints, not selections.
+ */
+export const semanticSearchValue: ScriptValue = pathListValue();

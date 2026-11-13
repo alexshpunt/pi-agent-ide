@@ -67,9 +67,14 @@ export function structuredResultSchema(data: TSchema) {
 /** Maximum serialized public data; callers expose a smaller window or a full-result resource. */
 export const MAX_STRUCTURED_BYTES = 1024 * 1024;
 
-/** Reject classes, bytes, cycles and lossy JSON values rather than silently changing their meaning. */
+/**
+ * Reject classes, bytes, cycles and lossy JSON values rather than silently changing their meaning.
+ * Data larger than `maxBytes` is rejected too; `Infinity` accepts any size, for a caller that
+ * hands the value to a script rather than to a model.
+ */
 export function assertJsonData(
   value: unknown,
+  maxBytes = MAX_STRUCTURED_BYTES,
 ): asserts value is NonNullable<AgentToolResult<unknown>["structuredContent"]> {
   const ancestors = new Set<object>();
   const visit = (item: unknown): void => {
@@ -88,9 +93,9 @@ export function assertJsonData(
     ancestors.delete(item);
   };
   visit(value);
-  if (Buffer.byteLength(JSON.stringify(value)) > MAX_STRUCTURED_BYTES)
+  if (maxBytes !== Infinity && Buffer.byteLength(JSON.stringify(value)) > maxBytes)
     throw new RangeError(
-      "Structured data exceeds 1 MiB; return a smaller window or a full-result reference",
+      `Structured data exceeds ${maxBytes === MAX_STRUCTURED_BYTES ? "1 MiB" : `${String(maxBytes)} bytes`}; return a smaller window or a full-result reference`,
     );
 }
 
@@ -122,14 +127,18 @@ export function resultError(
   };
 }
 
-/** Validate at the owning boundary and make native isError agree with the public outcome. */
+/**
+ * Validate at the owning boundary and make native isError agree with the public outcome. Public
+ * data is limited to `MAX_STRUCTURED_BYTES` unless `maxBytes` sets another limit.
+ */
 export function withStructuredResult<D, T>(
   result: AgentToolResult<D>,
   dataSchema: TSchema,
   outcome: StructuredResult<T>,
+  options: { readonly maxBytes?: number } = {},
 ): AgentToolResult<D> {
   try {
-    assertJsonData(outcome);
+    assertJsonData(outcome, options.maxBytes);
     if (!Value.Check(structuredResultSchema(dataSchema), outcome))
       throw new TypeError("Result adapter returned data outside its public schema");
     return {

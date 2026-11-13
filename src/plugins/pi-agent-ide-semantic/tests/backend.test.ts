@@ -43,7 +43,7 @@ test.skipIf(process.platform === "win32")(
     expect((await inspectProject(a, { env: f.env })).usable).toBe(true);
     expect((await inspectProject(b, { env: f.env })).usable).toBe(false);
     const result = await searchProject(a, "--strange query; echo unsafe", { env: f.env, limit: 3 });
-    expect(result).toContain("src/example.ts");
+    expect(result.text).toContain("src/example.ts");
     const history = await calls(f.log);
     const search = history.find((call) => call.args[0] === "search");
     expect(search?.cwd).toBe(a);
@@ -92,12 +92,14 @@ test.skipIf(process.platform === "win32")(
     const result = await searchProject(f.root, "query", {
       env: { ...f.env, TEST_OUTPUT: JSON.stringify(output) },
     });
-    const lines = result.split("\n");
+    const lines = result.text.split("\n");
     expect(lines.filter((line) => line.includes("src/with spaces.ts"))).toHaveLength(1);
     expect(lines.find((line) => line.includes("src/with spaces.ts"))).toMatch(/\b4\b/u);
     expect(lines.filter((line) => line.includes("fallback.ts"))).toHaveLength(1);
-    expect(result).not.toContain("src/with spaces.ts:5-8");
-    expect(result).not.toContain("LARGE SOURCE");
+    expect(result.text).not.toContain("src/with spaces.ts:5-8");
+    expect(result.text).not.toContain("LARGE SOURCE");
+    // Files keep ColGREP's rank order and appear once.
+    expect(result.files).toEqual(["src/with spaces.ts", "fallback.ts"]);
   },
 );
 
@@ -110,7 +112,7 @@ test.skipIf(process.platform === "win32")(
       searchProject(f.root, "query", {
         env: { ...f.env, TEST_OUTPUT: JSON.stringify(output) },
       });
-    expect(await search([])).toBeTruthy();
+    expect((await search([])).files).toEqual([]);
     await expect(search([{ unit: { file: "broken.ts" }, matches: [{ line: 0 }] }])).rejects.toThrow(
       Error,
     );
@@ -141,9 +143,10 @@ test.skipIf(process.platform === "win32")(
       include: "*.ts",
       exclude: "*.test.ts, *.spec.ts",
     });
-    expect(result).toContain("1-1");
-    expect(result).not.toContain("20-20");
-    expect(result).toMatch(/\b5\b/u);
+    expect(result.text).toContain("1-1");
+    expect(result.text).not.toContain("20-20");
+    expect(result.text).toMatch(/\b5\b/u);
+    expect(result.files).toEqual([file]);
     const search = (await calls(f.log)).find((call) => call.args[0] === "search");
     expect(search?.args).toEqual(
       expect.arrayContaining(["--include", "*.ts", "--exclude", "*.test.ts", "*.spec.ts", file]),
