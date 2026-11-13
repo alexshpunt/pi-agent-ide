@@ -28,6 +28,7 @@ const groups: [string[], string[]][] = [
     ["docs-search-status"],
   ],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  [["edit.rust-style-preservation"], ["rust-style-preservation"]],
   // Pair actual native/alias TUI frames; execution alone cannot establish renderer parity.
   [["compose.codemode-child-result"], ["codemode-child-presentation"]],
   [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],

@@ -19,6 +19,7 @@ export interface MutationFormatting {
     | "disabled"
     | "unavailable"
     | "skipped-syntax"
+    | "skipped-style"
     | "unchanged"
     | "changed"
     | "failed"
