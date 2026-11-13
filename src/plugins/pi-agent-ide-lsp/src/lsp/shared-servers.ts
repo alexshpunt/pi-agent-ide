@@ -1,12 +1,22 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, openSync, renameSync, statSync } from "node:fs";
+import { closeSync, openSync, readFileSync, renameSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { lstat, mkdir } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  stat,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
+import { createRequire } from "node:module";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough, type Readable, type Writable } from "node:stream";
-import { fileURLToPath } from "node:url";
 
 import { SHARED_SERVER_PROTOCOL } from "./server-request-handlers.mjs";
 
@@ -30,7 +40,24 @@ import { SHARED_SERVER_PROTOCOL } from "./server-request-handlers.mjs";
 /** Stop a shared server this long after its last session disconnects, unless configured. */
 export const DEFAULT_SHARED_SERVER_LINGER_MS = 10 * 60_000;
 
-const HOST_SCRIPT = fileURLToPath(new URL("shared-server-host.mjs", import.meta.url));
+/** The host script and the local modules it imports, entry first. */
+const HOST_MODULES = ["shared-server-host.mjs", "server-request-handlers.mjs"] as const;
+const HOST_SCRIPT = HOST_MODULES[0];
+/**
+ * A running Pi keeps the code it loaded, but a host it starts later would run whatever is on disk
+ * then, possibly a newer version with another protocol. So the host's own modules are read when
+ * this module loads, and each start runs that copy. A failed read surfaces at the first attach.
+ */
+const hostSources = readHostSources();
+
+function readHostSources(): readonly string[] | Error {
+  try {
+    // Synchronous, so the copy is complete once this module has loaded.
+    return HOST_MODULES.map((name) => readFileSync(new URL(name, import.meta.url), "utf8"));
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
 const HOST_START_TIMEOUT_MS = 10_000;
 const HOST_POLL_INTERVAL_MS = 25;
 
@@ -74,12 +101,14 @@ export class LspSharedServers {
 
   /** Connect to the host for this configuration, starting it when none runs. */
   async attach(request: LspSharedServerRequest): Promise<LspSharedServer> {
-    const key = sharedServerKey(request);
+    const host = loadedHost();
+    const key = sharedServerKey(request, host.version);
     const socketPath = await this._socketPath(key);
     let socket = await connect(socketPath, request.signal);
     if (!socket) {
-      const host = startHost(socketPath, key, this._directory);
-      socket = await waitForHost(socketPath, host, request.signal);
+      const script = await writeHost(this._directory, host);
+      const started = startHost(script, socketPath, key, this._directory);
+      socket = await waitForHost(socketPath, started, request.signal);
     }
     try {
       const reply = await exchange(
@@ -125,10 +154,11 @@ export class LspSharedServers {
 }
 
 /** Hash of everything that makes two sessions' servers interchangeable. */
-function sharedServerKey(request: LspSharedServerRequest): string {
+function sharedServerKey(request: LspSharedServerRequest, hostVersion: string): string {
   return hash(
     JSON.stringify([
       SHARED_SERVER_PROTOCOL,
+      hostVersion,
       request.serverId,
       request.command,
       request.configuredEnv,
@@ -157,8 +187,101 @@ function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }
 
+/** The host this module loaded and the packages it imports. */
+interface LoadedHost {
+  readonly sources: readonly string[];
+  /** Root directory of each package the host imports, by package name. */
+  readonly packages: ReadonlyMap<string, string>;
+  /** Hash of the sources and package locations; hosts of different versions never share a key. */
+  readonly version: string;
+}
+
+function loadedHost(): LoadedHost {
+  if (hostSources instanceof Error) throw hostSources;
+  const sources = hostSources;
+  const resolve = createRequire(new URL(HOST_SCRIPT, import.meta.url));
+  const packages = new Map(
+    [...new Set(sources.flatMap(packageImports))]
+      .toSorted()
+      .map((name) => [name, packageRoot(name, resolve.resolve(name))] as const),
+  );
+  return { sources, packages, version: hash(JSON.stringify([sources, [...packages]])) };
+}
+
+/** Names of the packages a module imports; Node built-ins and relative imports are not packages. */
+function packageImports(source: string): string[] {
+  return [...source.matchAll(/\bfrom\s+["']([^"'.][^"']*)["']/gu)]
+    .map(([, specifier = ""]) => specifier)
+    .filter((specifier) => !specifier.startsWith("node:"))
+    .map((specifier) => {
+      const parts = specifier.split("/");
+      return (specifier.startsWith("@") ? parts.slice(0, 2) : parts.slice(0, 1)).join("/");
+    });
+}
+
+/** The directory of the package that contains a file resolved from it. */
+function packageRoot(name: string, entry: string): string {
+  for (let directory = path.dirname(entry); ; directory = path.dirname(directory)) {
+    try {
+      const manifest = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8")) as {
+        name?: unknown;
+      };
+      if (manifest.name === name) return directory;
+    } catch {
+      // Not a package root.
+    }
+    if (path.dirname(directory) === directory)
+      throw new Error(`Shared language server host package not found: ${name}`);
+  }
+}
+
+/**
+ * Write the loaded host into the private directory, named by its version, with links to the
+ * packages it imports, and return its script. Concurrent sessions may write the same version;
+ * the first complete copy wins. Hosts remove copies that no start has used for a day.
+ */
+async function writeHost(directory: string, host: LoadedHost): Promise<string> {
+  const target = path.join(directory, `host-${host.version}`);
+  const script = path.join(target, HOST_SCRIPT);
+  const present = async () => {
+    try {
+      await stat(script);
+      const now = new Date();
+      await utimes(target, now, now);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (await present()) return script;
+  const staging = await mkdtemp(path.join(directory, "staging-"));
+  try {
+    await Promise.all(
+      HOST_MODULES.map((name, index) =>
+        writeFile(path.join(staging, name), host.sources[index] ?? ""),
+      ),
+    );
+    for (const [name, root] of host.packages) {
+      const link = path.join(staging, "node_modules", name);
+      await mkdir(path.dirname(link), { recursive: true });
+      // A junction needs no privilege on Windows; other systems ignore the type.
+      await symlink(root, link, "junction");
+    }
+    await rename(staging, target);
+  } catch (error) {
+    await rm(staging, { recursive: true, force: true });
+    if (!(await present())) throw error;
+  }
+  return script;
+}
+
 /** Start a detached host with the runtime that runs Pi. */
-function startHost(socketPath: string, key: string, directory: string): ChildProcess {
+function startHost(
+  script: string,
+  socketPath: string,
+  key: string,
+  directory: string,
+): ChildProcess {
   // A single-executable Pi cannot run scripts, so its host runs on the installed Node.js.
   const command = process.versions.bun || !singleExecutable() ? process.execPath : "node";
   // Runtime failures such as heap exhaustion are written here; a clean stop removes the file.
@@ -166,7 +289,7 @@ function startHost(socketPath: string, key: string, directory: string): ChildPro
   keepFailureLog(log);
   const output = openSync(log, "w", 0o600);
   try {
-    const host = spawn(command, [HOST_SCRIPT, socketPath, key, log], {
+    const host = spawn(command, [script, socketPath, key, log], {
       cwd: directory,
       detached: true,
       env: hostEnvironment(),

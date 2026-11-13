@@ -155,6 +155,10 @@ async function sweep() {
       () => now,
     );
     if (name.endsWith(".log") && now - changed > FAILURE_LOG_MS) await rm(file, { force: true });
+    // Host copies that no start used for a day, and staging left by an interrupted copy.
+    // A running host has already loaded its copy, and a start writes a removed copy again.
+    if (/^(?:host|staging)-/u.test(name) && now - changed > FAILURE_LOG_MS)
+      await rm(file, { recursive: true, force: true });
     if (name.endsWith(".sock") && now - changed > STALE_SOCKET_MS && !(await reachable(file)))
       await rm(file, { force: true });
   }
