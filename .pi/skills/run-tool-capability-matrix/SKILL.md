@@ -18,7 +18,7 @@ pnpm validate:tools:models --list
 
 Read `benchmarks/tool-capabilities/models.json` and the requested cases in `benchmarks/tool-capabilities/cases.ts`. Use `benchmarks/tool-capabilities/matrix.ts` to map requested capabilities to cases. Select only the requested scope. If the free gate fails, report the blocker; do not regenerate contracts or change cases just to make a run start.
 
-Check Linux/WSL, Node 24, Git, Bubblewrap with user namespaces, installed Pi with native Codemode/tool discovery, and credentials. Check the selected cases' extra prerequisites. Never print or commit credentials. A successful free inventory does not prove that paid inference or every case's prerequisites are available.
+Check Linux/WSL, Node 24, Git, Bubblewrap with user namespaces, installed Pi with native Codemode/tool discovery, and credentials. Check the selected cases' extra prerequisites; the README's "Case prerequisites" section lists them and how to install them where the sandbox sees them. Never print or commit credentials. A successful free inventory does not prove that paid inference or every case's prerequisites are available.
 
 ## Plan the paid run
 

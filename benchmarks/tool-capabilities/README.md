@@ -59,6 +59,45 @@ Resumed tool loadouts are host lifecycle, not a model route. On Pi 1.3.0 and new
 
 The `compose.shell-first-use-input` and `compose.debug-first-use-controls` capabilities use fresh-session roundtrips after deferred terminal/debugger metadata becomes available. Bash activates terminal guidance on first use. Native `tool_search` activates debugger guidance from its loaded results; Codemode `searchTools` and `describeTool` do not activate it until an actual debug call. These paid routes validate the follow-up operations and reference reuse. Deterministic real-Pi cases check schema publication, composition, restoration and exclusions; a paid route does not inspect serialized schemas or prove cache savings. Unrun direct and Codemode routes remain unverified.
 
+### Case prerequisites
+
+Some cases need extra tools. The sandbox sees only `/usr`, `/etc`, `/opt`, and `~/.local/bin` and `~/.local/lib` of the user who runs the matrix. A tool installed elsewhere, such as rustup's `~/.cargo/bin`, stays invisible and its case reports `unavailable`. Each attempt also starts with an empty home, so caches in the host user's home do not reach it.
+
+| Tool                         | Cases                                                                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `typescript-language-server` | `lsp-read`, `lsp-rename`, `lsp-path-list`, `lsp-calls-script-value`, `deferred-navigation-recovery`, `delete-symbol`, `read-symbol-delete`, `reject-symbol-delete` |
+| `clangd`                     | `lsp-overload-rename`                                                                                                                                              |
+| `jq`                         | `read-jq`, `read-jq-bounded-input`                                                                                                                                 |
+| `cargo` and `rustfmt`        | `rust-style-preservation`                                                                                                                                          |
+| Python `debugpy`             | `debug-roundtrip`, `debug-controls`, `debug-backend-fallback`                                                                                                      |
+| ColGREP                      | `semantic-code-search`, `semantic-script-files`                                                                                                                    |
+| Vera                         | `semantic-code-search-vera`, `semantic-vera-refresh`                                                                                                               |
+
+`semantic-local-alias-receipts` needs a connector that registers a local MCP alias. It is `unavailable` in native runs and in runs with connectors without one; no host setup changes that.
+
+On Ubuntu 24.04, install the system packages:
+
+```bash
+sudo apt-get install -y --no-install-recommends jq clangd cargo rustfmt python3-debugpy
+sudo npm install --global typescript typescript-language-server
+```
+
+Install the ColGREP and Vera versions pinned in `src/plugins/pi-agent-ide-semantic/src/backend.ts` and `vera-backend.ts`, with the SHA-256 listed there:
+
+```bash
+curl -fsSLO https://github.com/lightonai/next-plaid/releases/download/v1.8.5/colgrep-x86_64-unknown-linux-gnu.tar.xz
+curl -fsSLO https://github.com/VeraTools/vera/releases/download/v2.3.0/vera-x86_64-unknown-linux-gnu.tar.gz
+sha256sum -c <<'EOF'
+532e1da739f6b5d489cdaefd20c5918fa1bb0ff9f456c89098eb49a6379ae205  colgrep-x86_64-unknown-linux-gnu.tar.xz
+cf0e4c7847eaf2b4dd95c02c623ade21532762d1cf2a9361ea91558ba42145f9  vera-x86_64-unknown-linux-gnu.tar.gz
+EOF
+tar -xf colgrep-x86_64-unknown-linux-gnu.tar.xz
+tar -xf vera-x86_64-unknown-linux-gnu.tar.gz
+sudo install -m 0755 colgrep-x86_64-unknown-linux-gnu/colgrep vera-x86_64-unknown-linux-gnu/vera /usr/local/bin/
+```
+
+The ColGREP and Vera prerequisites download their runtime and model into the attempt's empty home every time: about 460 MB for ColGREP's CUDA build of ONNX Runtime and its model, less for Vera's local model. The prerequisite timeout is 120 seconds. A slower download makes the route `unavailable`.
+
 ## Connector runs
 
 Use one connector per invocation. `connectors.ts` pins the package identity, version, entrypoints, provider and prerequisites. When a connector delegates authentication, `authProvider` names the actual credential owner separately from its model provider. The runner guards that owner without copying credentials into another provider key. Stage the connector outside the source tree with lifecycle scripts disabled before the run. The runner never installs a connector during an attempt. `--connector-root` points to the staging prefix containing `node_modules`; its lockfile and dependency-tree digest become evidence.
