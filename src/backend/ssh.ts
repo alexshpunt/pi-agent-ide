@@ -9,6 +9,7 @@ import { remoteLocation, type SshTargetOs } from "./identity.ts";
 // package changes could pair a newer module with this one and the workers it already read.
 import { runOwnedSshCommand } from "./owned-command.ts";
 import { startSshProcess, type SshProcessChannel, type SshProcessContext } from "./ssh-channel.ts";
+import { describeSshConnectionLoss, type SshConnectionLoss } from "./ssh-connection-loss.ts";
 import { readSshFileStream } from "./ssh-file-stream.ts";
 import {
   neutralDirectory,
@@ -49,15 +50,22 @@ export interface BackendOperationContext {
 
 /** A transport-safe failure. Never retains raw SSH diagnostics or configuration paths. */
 export class SshBackendError extends ResourceError {
+  /** Classified facts about a lost connection; the message ends with their description. */
+  readonly connection?: SshConnectionLoss;
+
   constructor(
     code: string,
     source: string,
     effect: "not-applied" | "applied" | "unknown",
     /** Preserve only another sanitized backend failure, never raw transport diagnostics. */
-    options?: { readonly cause: SshBackendError },
+    options?: { readonly cause?: SshBackendError; readonly connection?: SshConnectionLoss },
   ) {
-    super(code, source, effect, options);
+    super(code, source, effect, options?.cause ? { cause: options.cause } : undefined);
     this.name = code === "CANCELLED" ? "AbortError" : "SshBackendError";
+    if (options?.connection) {
+      this.connection = options.connection;
+      this.message = `${this.message}: ${describeSshConnectionLoss(options.connection)}`;
+    }
   }
 }
 

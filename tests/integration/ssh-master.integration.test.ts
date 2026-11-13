@@ -26,10 +26,15 @@ async function backendFor(policy: { readonly multiplex?: boolean } = {}) {
   return { fixture, backend };
 }
 
-/** Sockets of this process's masters. */
-async function ownSockets(): Promise<string[]> {
+/** Sockets and logs of this process's masters. */
+async function ownFiles(): Promise<string[]> {
   const names = await readdir(directory).catch(() => []);
   return names.filter((name) => name.startsWith(`${process.pid}-`)).sort();
+}
+
+/** Sockets of this process's masters. */
+async function ownSockets(): Promise<string[]> {
+  return (await ownFiles()).filter((name) => !name.endsWith(".log"));
 }
 
 function running(pid: number): boolean {
@@ -68,7 +73,7 @@ test("sequential requests reuse one master, which stops with its process", async
   stopSshMasters();
   // `ssh -O exit` returns once the master accepted the request; it exits right after.
   await expect.poll(() => running(pid), { timeout: 5000 }).toBe(false);
-  expect(await ownSockets()).toEqual([]);
+  expect(await ownFiles()).toEqual([]);
 }, 60_000);
 
 test("a killed master is replaced and no request fails", async () => {
@@ -92,7 +97,7 @@ test("stopping removes the socket of a master that died unnoticed", async () => 
   process.kill(pid, "SIGKILL");
   await expect.poll(() => running(pid), { timeout: 5000 }).toBe(false);
   stopSshMasters();
-  expect(await ownSockets()).toEqual([]);
+  expect(await ownFiles()).toEqual([]);
 }, 60_000);
 
 test("concurrent requests beyond one master's sessions open more masters", async () => {
@@ -110,7 +115,7 @@ test("concurrent requests beyond one master's sessions open more masters", async
 test("a user's own ControlPath is used instead of a Pi master", async () => {
   const { fixture, backend } = await backendFor({ multiplex: true });
   await backend.lstat(fixture.workspace);
-  expect(await ownSockets()).toEqual([]);
+  expect(await ownFiles()).toEqual([]);
 }, 60_000);
 
 test("a reloaded module starts its own masters without touching earlier ones", async () => {
@@ -131,5 +136,5 @@ test("a reloaded module starts its own masters without touching earlier ones", a
   expect(await masterPid(fixture.config, first)).toBe(pid);
   stopSshMasters();
   await expect.poll(() => running(pid), { timeout: 5000 }).toBe(false);
-  expect(await ownSockets()).toEqual([]);
+  expect(await ownFiles()).toEqual([]);
 }, 60_000);
