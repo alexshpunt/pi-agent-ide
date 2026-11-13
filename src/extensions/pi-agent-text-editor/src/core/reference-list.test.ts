@@ -93,6 +93,19 @@ test("reports every unusable item in one error and changes nothing", async () =>
   expect(message).not.toContain("SEARCH#AAAA:1:match");
 });
 
+test("names a match handle by its Search reference and by the id a script passed", async () => {
+  const { core, store } = fixture();
+  const handle = store.register(
+    [{ source: "/workspace/d.txt", expectedContent: "delta\n", ranges: [range(0, 5)] }],
+    cwd,
+  );
+  store.registerSearchReference("SEARCH#DDDD:1:match", handle, cwd);
+  store.invalidate("/workspace/d.txt");
+  await expect(expandReferenceList(core, store, [handle], cwd)).rejects.toThrow(
+    `Reference SEARCH#DDDD:1:match (${handle}) cannot be used`,
+  );
+});
+
 test("rejects a plain path in an array and says how to pass one", async () => {
   const { core, store } = fixture();
   await expect(

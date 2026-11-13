@@ -102,6 +102,39 @@ test("a script's search keeps structured data above the 1 MiB limit an agent's s
   expect(agent.isError).toBe(true);
   expect(JSON.stringify(agent.content)).toContain("exceeds 1 MiB");
 });
+test("a script's search keeps every match while an agent's record keeps a preview", async () => {
+  const core = createSearchCore();
+  const matches = Array.from({ length: 2000 }, (_, index) => ({
+    source: `/workspace/${"long-directory/".repeat(20)}file.txt`,
+    range: { startLine: index + 1, startColumn: 0, endLine: index + 1, endColumn: 600 },
+    matchedText: "y".repeat(index === 0 ? 5000 : 600),
+  }));
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "many-matches",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "matches",
+          tryResolve: () => ({ kind: "resolved", payload: matches }),
+          format: () => ({ content: [{ type: "text", text: "2000 matches" }], details: {} }),
+          toScriptData: () => ({ kind: "matches", complete: true, matches }),
+        },
+      });
+    },
+  });
+  const script = await core.execute({ query: "many" }, { cwd: process.cwd() }, "script");
+  expect(script.isError).not.toBe(true);
+  expect(script.structuredContent).toMatchObject({ status: "success", data: { matches } });
+  const agent = await core.execute({ query: "many" }, { cwd: process.cwd() });
+  expect(agent.isError, JSON.stringify(agent.content)).not.toBe(true);
+  const data = (agent.structuredContent as { data: { truncated: boolean; matches: unknown[] } })
+    .data;
+  expect(data.truncated).toBe(true);
+  expect(data.matches).toHaveLength(100);
+  expect(data.matches[0]).toMatchObject({ textTruncated: true });
+});
 async function setup(attempt: SearchResolutionAttempt | Error, supportsResultScope = false) {
   const core = createSearchCore();
   const specialized = vi.fn(() => {
