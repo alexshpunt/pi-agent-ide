@@ -1,10 +1,18 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { mergeUnreadablePaths, resolveRipgrepExecutable, RipgrepStderr } from "#src/ripgrep.ts";
+import { searchFiles } from "#src/file-search.ts";
+import {
+  mergeUnreadablePaths,
+  parentIgnoreArguments,
+  resolveRipgrepExecutable,
+  RipgrepStderr,
+} from "#src/ripgrep.ts";
+import { searchText } from "#src/search-backend.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -32,6 +40,46 @@ test("falls back to the system PATH when Pi has no bundled binary", async () => 
   temporaryDirectories.push(agentDirectory);
 
   expect(resolveRipgrepExecutable(agentDirectory, "win32")).toBe("rg");
+});
+
+test("a scope below the repository root skips what the root ignore file skips, unless Git ignores the scope", async () => {
+  const repository = await mkdtemp(path.join(os.tmpdir(), "pi-agent-ripgrep-"));
+  temporaryDirectories.push(repository);
+  execFileSync("git", ["init", "-q"], { cwd: repository });
+  await writeFile(path.join(repository, ".gitignore"), "node_modules/\nbuild/**\n");
+  const files = {
+    "packages/a/src/index.ts": "needle\n",
+    "packages/a/node_modules/dep/index.ts": "needle\n",
+    "build/out/main.ts": "needle\n",
+  };
+  for (const [file, text] of Object.entries(files)) {
+    await mkdir(path.dirname(path.join(repository, file)), { recursive: true });
+    await writeFile(path.join(repository, file), text);
+  }
+  const found = async (scope: string) => ({
+    files: (await searchFiles("*.ts", { query: "*.ts", path: scope }, repository)).files,
+    text: (await searchText({ query: "needle", path: scope }, repository)).matches.map((match) =>
+      path.relative(repository, match.source),
+    ),
+  });
+
+  expect(await found("packages/a")).toEqual({
+    files: ["packages/a/src/index.ts"],
+    text: [path.join("packages", "a", "src", "index.ts")],
+  });
+  // With the root's rules, `build/**` would leave out every file of a scope inside it.
+  expect(await found("build/out")).toEqual({
+    files: ["build/out/main.ts"],
+    text: [path.join("build", "out", "main.ts")],
+  });
+  expect(await parentIgnoreArguments(repository)).toEqual([]);
+});
+
+test("a scope outside a Git repository leaves out the ignore files above it", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "pi-agent-ripgrep-"));
+  temporaryDirectories.push(directory);
+
+  expect(await parentIgnoreArguments(directory)).toEqual(["--no-ignore-parent"]);
 });
 
 test("exit code 2 with per-path read errors and warnings is a finished search with unreadable paths", () => {

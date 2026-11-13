@@ -125,6 +125,31 @@ test("text search uses the owner executor and canonical Unicode ranges", async (
   });
 });
 
+test.each([
+  ["not ignored", 1, []],
+  ["ignored", 0, ["--no-ignore-parent"]],
+  ["no repository", 128, ["--no-ignore-parent"]],
+] as const)(
+  "Git's answer on the owner (%s) decides whether a scope follows its parents' ignore files",
+  async (_case, gitCode, expected) => {
+    const { environment, calls } = fixture();
+    const git: unknown[][] = [];
+    environment.execute = async (command, arguments_, cwd) => {
+      git.push([command, [...arguments_], cwd]);
+      return { code: gitCode, stdout: "", stderr: "" };
+    };
+    await searchText(
+      { query: "needle", path: "memory://owner/work" },
+      "/local",
+      undefined,
+      undefined,
+      environment,
+    );
+    expect(git).toEqual([["git", ["check-ignore", "-q", "."], "memory://owner/work"]]);
+    expect(calls[0]?.filter((argument) => argument === "--no-ignore-parent")).toEqual(expected);
+  },
+);
+
 test("an owner search keeps its matches when ripgrep could not read some paths", async () => {
   const { environment } = fixture();
   const originalRun = environment.runLines;

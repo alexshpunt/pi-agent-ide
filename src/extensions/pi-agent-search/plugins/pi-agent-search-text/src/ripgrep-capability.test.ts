@@ -7,6 +7,7 @@ import { runScopedSearch } from "#src/scoped-search.ts";
 import { createSearchRecipe, runSearchRecipe } from "#src/search-recipe.ts";
 import { searchText, searchTextContent } from "#src/search-backend.ts";
 import { searchFuzzy } from "#src/fuzzy-search.ts";
+import { createFileResolver } from "#src/resolvers.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -212,4 +213,23 @@ test("fuzzy alternatives still collect names when ripgrep could not read some pa
   const result = await searchFuzzy({ query: "alpah", path: "input.txt" }, cwd);
   expect(result?.status).toBe("ready");
   expect(result?.candidates.map((candidate) => candidate.identifier)).toEqual(["ALPHA", "alpha"]);
+});
+
+test("file search keeps the files it listed when ripgrep could not read some paths", async () => {
+  const cwd = await fixture("unreadable");
+  const resolver = createFileResolver();
+  const result = await resolver.tryResolve(
+    { query: "*.txt", path: ".", options: { files: { pattern: "*.txt" } } },
+    { cwd },
+  );
+  if (result.kind !== "resolved") throw new Error("file search was not resolved");
+  const notice = `Search notice: could not read 2 paths, so matches in them are missing. First: ${path.join("node_modules", "pkg-a")}: The system cannot find the path specified. (os error 3)`;
+  expect(resolver.toScriptData?.(result.payload, {})).toEqual({
+    kind: "files",
+    files: ["input.txt"],
+    complete: true,
+    notices: [notice],
+  });
+  const output = await resolver.format(result.payload, { cwd });
+  expect(output.content).toEqual([{ type: "text", text: `${notice}\n1 files\ninput.txt` }]);
 });
