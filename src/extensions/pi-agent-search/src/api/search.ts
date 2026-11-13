@@ -249,7 +249,10 @@ export { containsSearchMatch, currentScope, SearchScopeChangedError } from "./se
 export { splitGlobList } from "./glob-list.ts";
 export {
   describePathArgument,
+  isNullScope,
   isResultReference,
+  markNullScope,
+  nullScopeMessage,
   pathMachine,
   plainPathList,
   uniquePaths,

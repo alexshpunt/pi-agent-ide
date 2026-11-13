@@ -27,7 +27,13 @@ import {
   SEARCH_PROTOCOL,
 } from "#src/api/plugin-protocol.ts";
 import { createSearchCore } from "#src/core/search-core.ts";
-import { describePathArgument, plainPathList } from "#src/api/path-list.ts";
+import {
+  describePathArgument,
+  isNullScope,
+  markNullScope,
+  nullScopeMessage,
+  plainPathList,
+} from "#src/api/path-list.ts";
 
 import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
 import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
@@ -121,6 +127,7 @@ export default async function registerSearchCore(
           return describeSearchParameters(core.renderDescriptions());
         },
         outputSchema: searchOutputSchema,
+        prepareArguments: (arguments_) => markNullScope(arguments_) as SearchParameters,
         renderCall(arguments_, theme, renderContext): Component {
           const mode = renderContext.expanded ? "full" : presentation();
           if (mode === "disabled") return new Text(theme.fg("toolTitle", "search"), 0, 0);
@@ -158,6 +165,19 @@ export default async function registerSearchCore(
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
+          if (isNullScope(parameters.path)) {
+            return withStructuredResult(
+              {
+                content: [{ type: "text", text: nullScopeMessage }],
+                details: { failure: { code: "INVALID_REQUEST", message: nullScopeMessage } },
+              },
+              searchDataSchema,
+              {
+                status: "error",
+                errors: [resultError(new Error(nullScopeMessage), "SEARCH_FAILED")],
+              },
+            );
+          }
           try {
             const config = await loadSearchConfig(
               resolveSearchConfigPaths(process.env, os.homedir(), context.cwd),
