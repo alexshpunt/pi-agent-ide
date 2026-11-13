@@ -21,6 +21,7 @@ import {
 import {
   CLANG_LANGUAGES,
   clangCoverage,
+  coverageComplete,
   coverageNotes,
   createClangReach,
   mergeCoverage,
@@ -134,6 +135,29 @@ interface CallSite {
   readonly uri: string;
   /** Zero-based line in the reported text of `uri`. */
   readonly line: number;
+  /** The caller's or callee's whole declaration in the reported text of `uri`. */
+  readonly declaration: LspRange;
+}
+
+/** A range of a graph in the text of its file that the graph reports from. */
+export interface LspGraphLocation {
+  /** The file, as language-server queries name it: a local path or an `ssh://` URI. */
+  readonly source: string;
+  readonly range: LspRange;
+}
+
+/** A call graph: the text a direct call shows and the places it names. */
+export interface LspGraph {
+  readonly text: string;
+  readonly references: readonly LspGraphLocation[];
+  /** Callers' whole declarations. */
+  readonly incoming: readonly LspGraphLocation[];
+  /** Callees' whole declarations. */
+  readonly outgoing: readonly LspGraphLocation[];
+  /** False when C/C++ coverage is incomplete or the server cannot list calls. */
+  readonly complete: boolean;
+  /** The text of each source that the locations' ranges belong to. */
+  readonly contents: ReadonlyMap<string, string>;
 }
 
 /** A declaration's relations, with every position in the reported text of its file. */
@@ -193,20 +217,56 @@ export async function readLspSymbolGraph(
   selector: readonly string[],
   cwd: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<LspGraph> {
   return retryWhileSourceChanges(async () => {
     throwIfAborted(signal);
     const document = await openCodeDocument(manager, filePath, cwd, signal);
     const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
-    const relations = await queryRelations(
-      document,
-      symbol,
-      relationContext(manager, cwd, true, signal),
-      signal,
-    );
+    const context = relationContext(manager, cwd, true, signal);
+    const relations = await queryRelations(document, symbol, context, signal);
     const locations = new LocationPresenter(cwd);
-    return formatSymbolGraph(document, symbol, relations, locations);
+    const text = await formatSymbolGraph(document, symbol, relations, locations);
+    return graphOf(text, [relations], context.texts);
   }, signal);
+}
+
+/**
+ * The places a graph names, each list in source order without duplicates, with the texts their
+ * ranges belong to.
+ */
+async function graphOf(
+  text: string,
+  relations: readonly SymbolRelations[],
+  texts: ReportedTexts,
+): Promise<LspGraph> {
+  const contents = new Map<string, string>();
+  const locate = async (items: readonly { readonly uri: string; readonly range: LspRange }[]) => {
+    const found = new Map<string, LspGraphLocation>();
+    for (const { uri, range } of items) {
+      const source = fileOf(uri);
+      contents.set(source, await texts.snapshot(uri));
+      found.set(JSON.stringify([source, range]), { source, range });
+    }
+    return [...found.values()].sort(
+      (left, right) =>
+        left.source.localeCompare(right.source) ||
+        left.range.start.line - right.range.start.line ||
+        left.range.start.character - right.range.start.character,
+    );
+  };
+  const declarations = (calls: readonly CallSite[]) =>
+    calls.map((call) => ({ uri: call.uri, range: call.declaration }));
+  return {
+    text,
+    references: await locate(relations.flatMap((relation) => relation.references)),
+    incoming: await locate(relations.flatMap((relation) => declarations(relation.incoming))),
+    outgoing: await locate(relations.flatMap((relation) => declarations(relation.outgoing))),
+    // A direction the server does not implement leaves its list unknown, not empty.
+    complete: relations.every(
+      (relation) => coverageComplete(relation.coverage) && relation.unsupported.length === 0,
+    ),
+    contents,
+  };
 }
 
 /**
@@ -273,7 +333,7 @@ export async function readLspFileGraph(
   filePath: string,
   cwd: string,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<LspGraph> {
   return retryWhileSourceChanges(async () => {
     throwIfAborted(signal);
     const document = await openCodeDocument(manager, filePath, cwd, signal);
@@ -285,21 +345,23 @@ export async function readLspFileGraph(
     // A file graph queries every declaration; looking up each name in the workspace would take
     // minutes in a large project, so it checks only the files that are already open.
     const context = relationContext(manager, cwd, false, signal);
-    const coverages: (ClangCoverage | undefined)[] = [];
+    const found: SymbolRelations[] = [];
 
     for (const symbol of document.symbols) {
       throwIfAborted(signal);
       const relations = await queryRelations(document, symbol, context, signal);
-      coverages.push(relations.coverage);
+      found.push(relations);
       lines.push("", ...(await formatFileGraphSymbol(document, symbol, relations, locations)));
     }
     lines.splice(
       2,
       0,
-      ...coverageNotes(mergeCoverage(coverages), (source) => locations.display(source)),
+      ...coverageNotes(mergeCoverage(found.map((relations) => relations.coverage)), (source) =>
+        locations.display(source),
+      ),
     );
 
-    return lines.join("\n");
+    return graphOf(lines.join("\n"), found, context.texts);
   }, signal);
 }
 
@@ -412,6 +474,7 @@ async function queryRelations(
     kind: item.kind,
     uri: item.uri,
     line: (await report(item.uri, range)).start.line,
+    declaration: await report(item.uri, item.range),
   });
   return {
     definitionLine: (await texts.report(document.uri, document.servedText, symbol.selectionRange))

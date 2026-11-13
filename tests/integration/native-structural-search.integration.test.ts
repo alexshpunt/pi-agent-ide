@@ -9,6 +9,7 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
+import { nestedResultTexts } from "#integration/support/nested-results.ts";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
@@ -179,17 +180,17 @@ test("composes real LSP discovery and explicit external references without mixin
       "lsp-scope-navigation-composition",
       [
         `const window=await tools.read({path:"service.ts",offset:1,limit:1});
-const strict=await tools.lsp_search({path:window,query:"ping"}).then(value => value.result);
-check(matches(strict).length===1 && strict.includes("service.ts:1:17 definition ping"),"LSP escaped Read or lost exact coordinates");
-const nav=await tools.lsp_search({path:window,query:"ping",references:true}).then(value => value.result);
-text(nav);
-check(!nav.includes("other.ts"),"LSP mixed same-name declarations");
-const rows=nav.split(String.fromCharCode(10)).filter(row=>/SEARCH#.*:match .*reference ping/.test(row));
-check(rows.length>0 && rows.every(row=>row.includes("declared at service.ts:1:17")),"Reference association missing");
-check(nav.includes("consumer.ts:2:7 reference ping"),"Reference UTF16 mapping lost");
-const external=rows.find(row=>row.includes("consumer.ts:3:1"));
+const strict=await tools.lsp_search({path:window,query:"ping"});
+check(strict.matches.length===1 && strict.matches[0].path==="service.ts" && strict.matches[0].line===1 && strict.matches[0].text==="ping","LSP escaped Read or lost exact coordinates");
+const nav=await tools.lsp_search({path:window,query:"ping",references:true});
+const places=nav.matches.map(match=>match.path+":"+match.line+" "+match.text);
+text(places.join(String.fromCharCode(10)));
+check(!places.some(place=>place.startsWith("other.ts")),"LSP mixed same-name declarations");
+// The exact text "ping" at line 2, after a surrogate pair, proves the UTF-16 mapping.
+check(places.includes("consumer.ts:2 ping"),"Reference UTF16 mapping lost");
+const external=nav.matches.find(match=>match.path==="consumer.ts" && match.line===3);
 check(external,"External reference missing");
-const selected=await tools.read({path:matches(external)[0]});
+const selected=await tools.read({path:external});
 const textHit=await tools.search({path:selected,query:"ping"});
 check(textHit.matches.length===1 && textHit.matches[0].path==="consumer.ts" && textHit.matches[0].line===3,"LSP target cannot be searched");
 text(await tools.replace({path:textHit,text:"PING"}));`,
@@ -200,8 +201,10 @@ text(await tools.replace({path:textHit,text:"PING"}));`,
     expect(await readFile(path.join(cwd, "consumer.ts"), "utf8")).toBe(
       consumer.replace('ping("outside")', 'PING("outside")'),
     );
-    expect(getToolResultText(run, "ast-0")).toContain("LSP reference navigation");
-    expect(getToolResultText(run, "ast-0")).toContain("reference ping");
+    // A direct call's readable result, as the nested call shows it, keeps roles and declarations.
+    const navigation = nestedResultTexts(run, "lsp_search").at(-1);
+    expect(navigation).toContain("LSP reference navigation");
+    expect(navigation).toContain("consumer.ts:2:7 reference ping · declared at service.ts:1:17");
   });
 }, 120_000);
 test("retains every node of a capture larger than the ordinary match preview", async () => {

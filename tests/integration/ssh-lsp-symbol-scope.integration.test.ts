@@ -10,6 +10,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { nestedResultTexts } from "#integration/support/nested-results.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
@@ -115,23 +116,19 @@ const read = await tools.read({ path: ${JSON.stringify(`${root}/note.ts`)} });
 const seed = await tools.search({ path: read, query: "label", caseSensitive: true, wholeWord: true });
 if(seed.matches.length!==1) throw Error("Seed search: "+JSON.stringify(seed));
 
-const strict=await tools.lsp_search({query:"label",path:seed}).then(value => value.result);
-if(!strict.includes("definition label") || strict.includes("reference label")) throw Error(strict);
+const strict=await tools.lsp_search({query:"label",path:seed});
+// Inside the seed the name is only its definition.
+if(strict.matches.length!==1 || strict.matches[0].text!=="label") throw Error(JSON.stringify(strict));
 const name=strict;
 if(${JSON.stringify(mode)} === "scope") {
- const navigation=await tools.lsp_search({query:"label",path:seed,references:true}).then(value => value.result);
- if(!navigation.includes(${JSON.stringify(`${root}/reference.ts`)}) || !navigation.includes("reference label")) throw Error(navigation);
- // One declaration behind both hits: the definition names it by its own selector, the reference
- // by the position where it is declared, which is the definition's own position.
- const definition=/([^ \\n]+:[0-9]+:[0-9]+) definition label · selector ([^ \\n]+)#label/.exec(navigation);
- const references=[...navigation.matchAll(/([^ \\n]+:[0-9]+:[0-9]+) reference label · declared at ([^ \\n]+)/g)];
- if(!definition || references.length!==1) throw Error("Lost declaration identity: "+navigation);
- if(!definition[1].startsWith(definition[2]+":")) throw Error("Lost declaration identity: "+navigation);
- if(references.some(match=>match[2]!==definition[1])) throw Error("Lost declaration identity: "+navigation);
+ const navigation=await tools.lsp_search({query:"label",path:seed,references:true});
+ // The definition and its reference in another file; the readable result shows that both name
+ // one declaration.
+ if(navigation.matches.length!==2 || !navigation.matches.some(match=>match.path===${JSON.stringify(`${root}/reference.ts`)} && match.text==="label")) throw Error(JSON.stringify(navigation));
  const cut=await tools.search({path:seed,query:"abel",caseSensitive:true});
  if(cut.matches.length!==1 || cut.matches[0].text!=="abel") throw Error("Partial search: "+JSON.stringify(cut));
- const absent=await tools.lsp_search({query:"label",path:cut}).then(value => value.result);
- if(!absent.includes("No symbols found")) throw Error("Partial name widened: "+absent);
+ const absent=await tools.lsp_search({query:"label",path:cut});
+ if(absent.matches.length!==0) throw Error("Partial name widened: "+JSON.stringify(absent));
  text({strict,name,navigation,absent});
 } else {
  text(await tools.replace({path:name,text:"renamed"}));
@@ -153,8 +150,24 @@ if(${JSON.stringify(mode)} === "scope") {
       );
       expect(getToolResultText(run, "ordinary")).not.toContain(`${root}/reference.ts`);
       expect(getToolExecution(run, "scoped").isError, getToolResultText(run, "scoped")).toBe(false);
-      if (mode === "scope") expect(getToolResultText(run, "scoped")).toContain("reference label");
-      else
+      if (mode === "scope") {
+        // One declaration behind both hits: the definition names it by its own selector, the
+        // reference by the position where it is declared, which is the definition's own position.
+        const navigation =
+          nestedResultTexts(run, "lsp_search").find((shown) => shown.includes("reference label")) ??
+          "";
+        const definition = /(\S+:\d+:\d+) definition label · selector (\S+)#label/u.exec(
+          navigation,
+        );
+        const references = [
+          ...navigation.matchAll(/(\S+:\d+:\d+) reference label · declared at (\S+)/gu),
+        ];
+        expect(definition, navigation).not.toBeNull();
+        expect(references, navigation).toHaveLength(1);
+        const [, position = "", file = ""] = definition ?? [];
+        expect(position.startsWith(`${file}:`), navigation).toBe(true);
+        expect(references[0]?.[2], navigation).toBe(position);
+      } else
         expect(codemodeFailures(getToolResultText(run, "scoped"))).toMatch(
           /^1 of \d+ IDE calls failed:\n- lsp_search \S+\n[\s\S]*(?:stale|changed|expired)/u,
         );

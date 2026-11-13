@@ -3,7 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { LspClient } from "./client.ts";
-import { readLspFileGraph, readLspSymbolGraph } from "./code-views.ts";
+import { readLspFileGraph, readLspSymbolGraph, type LspGraphLocation } from "./code-views.ts";
 import { LspManager } from "./manager.ts";
 import { LspServerRegistry } from "./registry.ts";
 
@@ -169,7 +169,12 @@ function requiredPosition(input: { position?: { line: number; character: number 
 test("a call graph asks at the position of the text the server holds while another session writes the file", async () => {
   const file = await writtenFile();
 
-  const graph = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
+  const { text: graph, ...places } = await readLspSymbolGraph(
+    file.manager,
+    "a.cpp",
+    ["handle"],
+    file.cwd,
+  );
 
   // Every line is a line of the file as it is now, though the server answered for an older text.
   const [handle, helper, first, second] = await Promise.all(
@@ -195,13 +200,22 @@ test("a call graph asks at the position of the text the server holds while anoth
   expect(graph).toContain(
     ["Outgoing calls: 1", `- Function helper — a.cpp ${String(helper)}`].join("\n"),
   );
+  // The same places as ranges of one text of the file, for selections.
+  const lines = (list: readonly LspGraphLocation[]) =>
+    list.map((location) => location.range.start.line + 1);
+  expect(lines(places.references)).toEqual([handle, first, second]);
+  expect(lines(places.incoming)).toEqual([first, second]);
+  expect(lines(places.outgoing)).toEqual([helper]);
+  expect(places.complete).toBe(true);
+  const text = places.contents.get(path.join(file.cwd, "a.cpp"))?.split("\n");
+  expect(text?.[(first ?? 0) - 1]).toBe("int first() { return handle(1); }");
   expect(file.writes()).toBeGreaterThan(1);
 });
 
 test("a file graph lists every relation while another session writes the file", async () => {
   const file = await writtenFile();
 
-  const graph = await readLspFileGraph(file.manager, "a.cpp", file.cwd);
+  const { text: graph, ...places } = await readLspFileGraph(file.manager, "a.cpp", file.cwd);
 
   // The peer writes again while the graph runs, so its lines are those of one text of the file:
   // the four declarations on consecutive lines, as in every text the peer writes.
@@ -219,6 +233,12 @@ test("a file graph lists every relation while another session writes the file", 
       "Outgoing calls: helper (a.cpp)",
     ].join("\n"),
   );
+  // The places of every declaration merge into one list each.
+  const lines = (list: readonly LspGraphLocation[]) =>
+    list.map((location) => location.range.start.line + 1);
+  expect(lines(places.references)).toEqual([first + 1, first + 2, first + 3]);
+  expect(lines(places.incoming)).toEqual([first + 2, first + 3]);
+  expect(lines(places.outgoing)).toEqual([first]);
 });
 
 test("a call graph runs again when the server's text changes while it answers", async () => {
@@ -235,7 +255,7 @@ test("a call graph runs again when the server's text changes while it answers", 
     return answer?.(method, parameters, signal);
   });
 
-  const graph = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
+  const { text: graph } = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
 
   expect(reopened).toBe(true);
   // The graph was taken again: a second document-symbol read follows the failed attempt.

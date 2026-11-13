@@ -157,9 +157,17 @@ const preview = { matches: 100, textBytes: 4096 } as const;
  * The record of a call that does not hand its result to a script: the first 100 matches, each with
  * its text when that text is at most 4 KB. The record of every call must stay within the 1 MiB
  * limit of structured results, which only a script's call lifts. `truncated` marks a shortened
- * list and `textTruncated` an omitted text. Data of other kinds stays as it is.
+ * list and `textTruncated` an omitted text. A resolver's own value, such as an lsp_search call
+ * graph, keeps each list of matches it holds as a preview. Data of other kinds stays as it is.
  */
 export function selectionPreview(data: unknown): unknown {
+  if (isRecord(data) && data.kind === "custom" && isRecord(data.value))
+    return {
+      ...data,
+      value: Object.fromEntries(
+        Object.entries(data.value).map(([key, item]) => [key, selectionPreview(item)]),
+      ),
+    };
   if (!isRecord(data) || data.kind !== "matches" || !Array.isArray(data.matches)) return data;
   const matches: unknown[] = data.matches;
   return {

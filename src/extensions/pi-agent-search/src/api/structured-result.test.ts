@@ -49,3 +49,19 @@ test("a preview cuts long capture texts and leaves short lists and other data al
   const files = { kind: "files", files: ["a.txt"], complete: true };
   expect(selectionPreview(files)).toBe(files);
 });
+
+test("a preview of a resolver's own value cuts each list of matches it holds", () => {
+  const list = selectionData(
+    Array.from({ length: 150 }, (_, index) => match(index)),
+    true,
+  );
+  const graph = {
+    kind: "custom",
+    resolverId: "lsp",
+    value: { target: "RESULT#a", incoming: list },
+  };
+  const preview = selectionPreview(graph) as typeof graph;
+  expect(preview.value.target).toBe("RESULT#a");
+  expect(preview.value.incoming).toMatchObject({ truncated: true });
+  expect(preview.value.incoming.matches).toHaveLength(100);
+});

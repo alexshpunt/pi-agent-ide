@@ -62,13 +62,8 @@ export function matchList(
     typeof data.complete !== "boolean"
   )
     return undefined;
-  const matches: MatchEntry[] = [];
-  for (const item of data.matches as unknown[]) {
-    if (!record(item)) return undefined;
-    const match = scriptMatch(item, input.cwd);
-    if (match === undefined) return undefined;
-    matches.push({ match, data: item });
-  }
+  const matches = matchEntries(data.matches, input.cwd);
+  if (matches === undefined) return undefined;
   return {
     // The published result selects text only when its record names a target; the result of a
     // search in terminal output or a guide selects nothing to pass on.
@@ -78,6 +73,21 @@ export function matchList(
     complete: data.complete && data.truncated !== true,
     matches,
   };
+}
+
+/** The matches of a resolver's list in its order, or undefined when a record lacks a field. */
+export function matchEntries(
+  items: readonly unknown[],
+  cwd: string | undefined,
+): MatchEntry[] | undefined {
+  const matches: MatchEntry[] = [];
+  for (const item of items) {
+    if (!record(item)) return undefined;
+    const match = scriptMatch(item, cwd);
+    if (match === undefined) return undefined;
+    matches.push({ match, data: item });
+  }
+  return matches;
 }
 
 /** One matched text of a resolver record, or undefined when the record lacks a field. */

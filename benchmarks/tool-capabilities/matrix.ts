@@ -306,6 +306,7 @@ const groups: [string[], string[]][] = [
     ["lsp-rename"],
   ],
   [["lsp.overload-selectors", "compose.symbol-overload-rename"], ["lsp-overload-rename"]],
+  [["lsp.script-call-graph", "compose.lsp-caller-id"], ["lsp-calls-script-value"]],
   // The PDF route covers ordinary and recoverable documents; terminal silence is a separate check.
   [["read.image", "read.pdf"], ["read-media"]],
   [["compose.codemode-image-value"], ["codemode-image-value"]],
