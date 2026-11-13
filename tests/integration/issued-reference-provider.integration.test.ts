@@ -17,7 +17,10 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 test("issued references survive split argument tokens and independent tool calls", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi-agent"), { recursive: true });
-    await writeFile(path.join(cwd, "source.txt"), 'first "quoted" \\ path\nsecond café 😀\n');
+    await writeFile(
+      path.join(cwd, "source.txt"),
+      'first "quoted" \\ path\nsecond café 😀\n$issued-uuid:missing\n',
+    );
     await writeFile(path.join(cwd, "other.txt"), "another result\n");
     const token = "$issued-result:source-long-id";
     const explicit = JSON.stringify({ path: "explicit.txt", content: token });
