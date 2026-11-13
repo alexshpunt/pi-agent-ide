@@ -117,6 +117,34 @@ test("sessions share one server when the user has no account entry", async () =>
   expect(await readdir(sockets)).toContain(`pi-agent-ide-lsp-${process.getuid?.()}`);
 });
 
+test("a host started after its files change on disk runs the code the session loaded", async () => {
+  const { cwd, sockets } = await workspace();
+  // A copy of the host modules stands in for the checkout of a running Pi. It stays inside the
+  // plugin so that its imports resolve the plugin's packages.
+  const parent = path.resolve("src/plugins/pi-agent-ide-lsp/.tmp");
+  await mkdir(parent, { recursive: true });
+  const checkout = await mkdtemp(path.join(parent, "loaded-host-"));
+  directories.push(checkout);
+  const modules = ["shared-servers.ts", "shared-server-host.mjs", "server-request-handlers.mjs"];
+  for (const name of modules)
+    await writeFile(
+      path.join(checkout, name),
+      await readFile(path.join(import.meta.dirname, name)),
+    );
+  const loaded = (await import(path.join(checkout, "shared-servers.ts"))) as {
+    LspSharedServers: typeof LspSharedServers;
+  };
+  const sharing = new loaded.LspSharedServers({ directory: sockets });
+  // The update replaces the host after the session loaded it, before any host has started.
+  for (const name of modules.slice(1))
+    await writeFile(path.join(checkout, name), 'throw new Error("read after the update");\n');
+
+  const client = await session(cwd, sharing);
+
+  expect(client.shared).toBe(true);
+  expect((await status(client)).pid).toBe(client.pid);
+});
+
 test("each session gets diagnostics under its own document versions", async () => {
   const { cwd, sharing } = await workspace();
   const first = await session(cwd, sharing);
