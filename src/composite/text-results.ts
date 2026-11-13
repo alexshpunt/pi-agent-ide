@@ -14,6 +14,7 @@ import {
   connectResultImages,
   connectResultTargets,
   resultValueId,
+  resultValueReference,
   TempResourceStore,
 } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -42,6 +43,15 @@ const sourceFields: Record<string, readonly string[]> = {
   move: ["path", "target"],
   undo: ["file"],
   diff: ["before", "after"],
+};
+
+/** Selector fields that also take a value with an id, such as a Search match in Codemode. */
+const anchorFields: Record<string, readonly string[]> = {
+  replace: ["start", "end"],
+  delete: ["start", "end"],
+  insert: ["anchor"],
+  copy: ["start", "end", "targetStart", "targetEnd"],
+  move: ["start", "end", "targetStart", "targetEnd"],
 };
 
 /** What a failed call of a tool without source fields names in the Codemode failure block. */
@@ -216,7 +226,7 @@ export function createIdeTextResults(
   pi.on("agent_end", clearCalls);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
-      "Direct IDE calls return readable text; the system-result reference is not file content. Pass an unchanged result or its UUID to compose tools. Codemode calls return the inline value types. Text Read values hold exactly the requested text without notices; bytes are base64 and directory names end with /. Search match lists hold every found match with whole text and a one-based line; AST captures are keyed by metavariable name without $. An id selects its result, match or capture; pass that value or its RESULT# id to a source parameter. A result selects only its returned ranges, not surrounding preview context. Sources without selections have no id. A false complete means incomplete coverage, so an empty list proves nothing. A broadened Search keeps the original matches empty and places hints in fallback; refine the query before editing them. LSP calls put references in matches and whole caller/callee declarations in incoming/outgoing. Diff is complete, or empty for equal sources. Edits return the id of verified output text or null when no text is selected; filesystem/text delete returns null. A failed IDE call normally resolves to null and the script continues; a multi-source Read keeps its array with null at failed sources, and a provider action keeps its receipt. Terminal exit_code is absent while running; a nonzero exit is a value, not a tool failure. Check the Codemode result's failed calls and effects before retrying. Pi can still reject invalid or blocked calls. Omit optional arguments rather than passing null. Store/load retains values in the session; references cannot be reused across sessions.";
+      "Direct IDE calls return readable text; the system-result reference is not file content. Pass an unchanged result or its UUID to compose tools. Codemode calls return the inline value types. Text Read values hold exactly the requested text without notices; bytes are base64 and directory names end with /. Search match lists hold every found match with whole text and a one-based line; AST captures are keyed by metavariable name without $. An id selects its result, match or capture; pass that value or its RESULT# id to a source or selector parameter. A result selects only its returned ranges, not surrounding preview context. Sources without selections have no id. A false complete means incomplete coverage, so an empty list proves nothing. A broadened Search keeps the original matches empty and places hints in fallback; refine the query before editing them. LSP calls put references in matches and whole caller/callee declarations in incoming/outgoing. Diff is complete, or empty for equal sources. Edits return the id of verified output text or null when no text is selected; filesystem/text delete returns null. A failed IDE call normally resolves to null and the script continues; a multi-source Read keeps its array with null at failed sources, and a provider action keeps its receipt. Terminal exit_code is absent while running; a nonzero exit is a value, not a tool failure. Check the Codemode result's failed calls and effects before retrying. Pi can still reject invalid or blocked calls. Omit optional arguments rather than passing null. Store/load retains values in the session; references cannot be reused across sessions.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -294,6 +304,9 @@ export function createIdeTextResults(
           );
         }
       }
+      for (const field of anchorFields[event.toolName] ?? [])
+        if (input[field] !== undefined)
+          input[field] = resultValueReference(store, input[field], context.cwd);
       for (const field of ["text", "content"]) {
         const value = input[field];
         if (

@@ -50,6 +50,13 @@ export interface TextAnchorResolverContext {
   readonly lines: readonly string[];
   readonly cwd: string;
   readonly signal?: AbortSignal;
+  /**
+   * Ranges of the text that the caller limits this anchor to, such as the selection of a result
+   * passed together with the anchor. A resolver that searches the text, such as exact text,
+   * matches only inside them; the caller checks that other anchors land inside them. A range that
+   * ends where a line ends also covers that line's break, so whole-line text inside it counts.
+   */
+  readonly scope?: readonly TextAnchorRecoveryCandidateRange[];
 }
 
 /** Legacy line window used by anchor inspection. */

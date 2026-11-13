@@ -26,8 +26,9 @@ export const deleteSchema = Type.Object(
 );
 interface DeleteParameters {
   readonly path?: unknown;
-  readonly start?: string;
-  readonly end?: string;
+  /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
+  readonly start?: unknown;
+  readonly end?: unknown;
 }
 
 export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchema> = {

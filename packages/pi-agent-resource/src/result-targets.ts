@@ -71,6 +71,22 @@ export function resultValueId(input: unknown): string | undefined {
   return input.id;
 }
 /**
+ * The `RESULT#` reference of a value with an `id` passed where a single text selection is
+ * expected, such as an edit anchor: the id of a Search match, or of a Read or Search value. A
+ * result of several selections is registered as one. Any other input is returned unchanged.
+ */
+export function resultValueReference(
+  store: ResultTargetStore,
+  input: unknown,
+  cwd: string,
+): unknown {
+  if (resultValueId(input) === undefined) return input;
+  const source = store.source(input, cwd);
+  if (typeof source === "string") return source;
+  const selected = store.resolve(source, cwd);
+  return store.register(selected.targets, cwd, selected.complete);
+}
+/**
  * Version of the shared store's behavior. Raise it with any change that a store from an older
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.

@@ -62,28 +62,31 @@ async function runReferencePlan(
 }
 
 for (const [form, token] of tokens) {
-  test(`standalone ${form} rejects extra selectors before filesystem lookup`, async () => {
+  test(`standalone ${form} scopes selectors to its selection before filesystem lookup`, async () => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
+      // A missed exact-text anchor blocks exact text in that file, so the misses come last.
+      const again = token.replace(":source", ":again");
       const run = await runReferencePlan(cwd, `direct-reference-${form}`, [
         { id: "source", name: "read", arguments: { path: "note.txt", offset: 2, limit: 1 } },
-        { id: "invalid", name: "replace", arguments: { path: token, start: "beta", text: "BAD" } },
-        {
-          id: "invalid-range",
-          name: "replace",
-          arguments: { path: token, start: "beta", end: "beta", text: "BAD" },
-        },
         {
           id: "unknown",
           name: "replace",
           arguments: { path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" },
         },
-        { id: "valid", name: "replace", arguments: { path: token, text: "BETA\n" } },
+        { id: "inside", name: "replace", arguments: { path: token, start: "bet", text: "BET" } },
         { id: "stale", name: "replace", arguments: { path: token, text: "STALE\n" } },
         {
           id: "path",
           name: "replace",
           arguments: { path: "note.txt", start: "gamma", text: "GAMMA" },
+        },
+        { id: "again", name: "read", arguments: { path: "note.txt", offset: 2, limit: 1 } },
+        { id: "outside", name: "replace", arguments: { path: again, start: "GAMMA", text: "BAD" } },
+        {
+          id: "outside-range",
+          name: "replace",
+          arguments: { path: again, start: "alpha", end: "BETa", text: "BAD" },
         },
         {
           id: "bad-anchor",
@@ -92,17 +95,17 @@ for (const [form, token] of tokens) {
         },
       ]);
       expect(run.state?.model).toMatchObject({ provider: "scripted", id: "scripted-model" });
-      expect(getToolExecution(run, "invalid").isError).toBe(true);
-      expect(getToolExecution(run, "invalid-range").isError).toBe(true);
-      expect(getToolResultText(run, "invalid-range")).toContain("RESULT_INPUT_REJECTED");
-      expect(getToolResultText(run, "invalid")).toContain("RESULT_INPUT_REJECTED");
-      expect(getToolResultText(run, "invalid")).not.toContain("ENOENT");
-      expect(getToolExecution(run, "valid").isError, getToolResultText(run, "valid")).toBe(false);
+      for (const id of ["outside", "outside-range"]) {
+        expect(getToolExecution(run, id).isError).toBe(true);
+        expect(getToolResultText(run, id)).toContain("The result selects note.txt line 2.");
+        expect(getToolResultText(run, id)).not.toContain("ENOENT");
+      }
+      expect(getToolExecution(run, "inside").isError, getToolResultText(run, "inside")).toBe(false);
       expect(getToolExecution(run, "stale").isError).toBe(true);
       expect(getToolExecution(run, "unknown").isError).toBe(true);
       expect(getToolExecution(run, "bad-anchor").isError).toBe(true);
       expect(getToolExecution(run, "path").isError, getToolResultText(run, "path")).toBe(false);
-      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\nGAMMA\n");
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETa\nGAMMA\n");
     });
   });
 }
@@ -124,11 +127,15 @@ for (const [index, form] of ["uuid", "value", "prefix"].entries()) {
   const id = /^RESULT#([a-f\d-]{36})$/u.exec(shown?.id)?.[1];
   if (!id) throw Error("Read did not issue a reference");
   const source = form === "value" ? shown : form === "uuid" ? id : "RESULT#" + id;
-  // A refused call resolves to null; the Codemode result lists each reason.
-  for (const selector of [{ start: "beta" }, { start: "beta", end: "beta" }])
-    if ((await tools.replace({ path: source, ...selector, text: "BAD" })) !== null)
-      throw Error("Unsupported reference-plus-selector call was not rejected");
-  await tools.replace({ path: source, text: "BETA" + index + "\n" });
+  const anchors = (await tools.read({ path: "note.txt", views: ["anchors"] })).text
+    .split("\n")
+    .map((line) => line.split("|")[0]);
+  // A refused call resolves to null; the Codemode result lists each reason. Only line 2 is inside.
+  for (const selector of [{ start: anchors[2] }, { start: anchors[0], end: anchors[1] }])
+    if ((await tools.replace({ path: source, ...selector, text: "BAD\n" })) !== null)
+      throw Error("A selector outside the result was not rejected");
+  if ((await tools.replace({ path: source, start: anchors[1], text: "BETA" + index + "\n" })) === null)
+    throw Error("A selector inside the result was rejected");
   await tools.read({ path: "note.txt" });
   if ((await tools.replace({ path: source, text: "STALE" })) !== null)
     throw Error("A changed snapshot still authorized an edit");
@@ -148,7 +155,8 @@ text("Reference boundaries verified");
     const failures = codemodeFailures(output).split("\n- ").slice(1);
     expect(failures, output).toHaveLength(10);
     for (const [index, failure] of failures.slice(0, 9).entries())
-      if (index % 3 < 2) expect(failure).toContain("RESULT_INPUT_REJECTED");
+      if (index % 3 < 2)
+        expect(failure).toContain("outside the result's selection: note.txt line 2");
       else expect(failure).toContain("expired after its snapshot changed");
     expect(failures[9]).toMatch(/^replace 00000000-0000-0000-0000-000000000000\n/u);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA2\nGAMMA\n");

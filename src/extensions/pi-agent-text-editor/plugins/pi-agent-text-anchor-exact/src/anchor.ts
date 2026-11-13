@@ -61,14 +61,38 @@ export function resolveExactTextAnchor(
 
   const source = normalizeText(stripInitialBom(context.content));
   const query = normalizeText(stripInitialBom(value)).text;
-  const matches = overlappingMatches(source.text, query, 2);
+  const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
+  const span = (start: number) => ({
+    start: bomOffset + source.sourceOffset(start),
+    end: bomOffset + source.sourceOffset(start + query.length),
+  });
+  const scope = context.scope?.map((range) => scopeOffsets(context.content, range));
+  // In a scope, only matches inside it count: text that occurs elsewhere in the file too is
+  // still unique there.
+  const matches =
+    scope === undefined
+      ? overlappingMatches(source.text, query, 2)
+      : overlappingMatches(source.text, query, 2, (start) => {
+          const match = span(start);
+          return scope.some((range) => match.start >= range.from && match.end <= range.to);
+        });
 
   if (matches.length === 0) {
-    return rejected("missing", "exact text anchor was not found");
+    return rejected(
+      "missing",
+      scope === undefined
+        ? "exact text anchor was not found"
+        : "exact text anchor was not found inside the selection",
+    );
   }
 
   if (matches.length > 1) {
-    return rejected("ambiguous", "exact text anchor matched more than once");
+    return rejected(
+      "ambiguous",
+      scope === undefined
+        ? "exact text anchor matched more than once"
+        : "exact text anchor matched more than once inside the selection",
+    );
   }
 
   const normalizedStart = matches[0];
@@ -76,9 +100,7 @@ export function resolveExactTextAnchor(
     return { kind: "failed", error: new Error("Exact match index is missing") };
   }
 
-  const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
-  const startOffset = bomOffset + source.sourceOffset(normalizedStart);
-  const endOffset = bomOffset + source.sourceOffset(normalizedStart + query.length);
+  const { start: startOffset, end: endOffset } = span(normalizedStart);
 
   const linewise = isWholeLineMatch(context.content, startOffset, endOffset);
   const selectionEndOffset =
@@ -193,7 +215,12 @@ function countBefore(positions: readonly number[], offset: number): number {
   return low;
 }
 
-function overlappingMatches(content: string, query: string, limit: number): number[] {
+function overlappingMatches(
+  content: string,
+  query: string,
+  limit: number,
+  accept: (start: number) => boolean = () => true,
+): number[] {
   if (query.length === 0) {
     return [];
   }
@@ -204,10 +231,35 @@ function overlappingMatches(content: string, query: string, limit: number): numb
     if (match === -1) {
       break;
     }
-    starts.push(match);
+    if (accept(match)) starts.push(match);
     from = match + 1;
   }
   return starts;
+}
+
+/**
+ * Source offsets of a scope range. A range that ends at the end of a line also covers that line's
+ * break, so text that ends with the break still counts as inside.
+ */
+function scopeOffsets(
+  content: string,
+  range: TextAnchorRecoveryCandidateRange,
+): { readonly from: number; readonly to: number } {
+  const to = offsetAt(content, range.end);
+  const lineBreak = content.startsWith("\r\n", to) ? 2 : /[\r\n]/u.test(content[to] ?? "") ? 1 : 0;
+  return { from: offsetAt(content, range.start), to: to + lineBreak };
+}
+
+function offsetAt(content: string, position: TextSelectionPosition): number {
+  const lineBreak = /\r\n|\r|\n/gu;
+  let offset = 0;
+  for (let line = 1; line < position.lineNumber; line++) {
+    lineBreak.lastIndex = offset;
+    const next = lineBreak.exec(content);
+    if (next === null) return content.length;
+    offset = next.index + next[0].length;
+  }
+  return Math.min(content.length, offset + position.column);
 }
 
 function scanMatches(

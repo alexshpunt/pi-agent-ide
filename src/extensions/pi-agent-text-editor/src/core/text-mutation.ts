@@ -2,6 +2,8 @@ import { requiredValue } from "pi-agent-invariant";
 import {
   ResourceError,
   resourceErrorMetadataOf,
+  resultValueId,
+  resultValueReference,
   type ResourceErrorMetadata,
 } from "pi-agent-resource";
 import path from "node:path";
@@ -33,6 +35,7 @@ import {
   isMutationAnchorValue,
   mutationSource,
   type TextMutation,
+  type TextMutationAnchorField,
   type TextMutationContext,
   type TextMutationEdit,
   type TextMutationToolRegistration,
@@ -56,8 +59,10 @@ import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import {
   resolvedTextAnchorType,
+  TextAnchorResolutionError,
   TextAnchorResourceResolutionError,
 } from "#src/core/text-anchor-registry.ts";
+import { describeScope, resolveResultScope, scopeRangeIndex, scopeWindow } from "./result-scope.ts";
 import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.ts";
 import { retryWhenSourceChanged, SOURCE_CHANGED } from "#src/core/source-change-retry.ts";
 import {
@@ -186,6 +191,34 @@ export function createTextTool<TParameters extends TSchema>(
             captureScriptMutation(core, async () => {
               const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
                 let input = asMutationParameters<TParameters>(parameters);
+                // The IDE replaces a value with an id by its reference before the call; a host
+                // without its result store cannot, and must not ignore the selector.
+                const valueAnchors = (definition.anchors ?? []).filter(
+                  ({ field }) => resultValueId(input[field]) !== undefined,
+                );
+                if (valueAnchors.length > 0) {
+                  try {
+                    if (resultTargets === undefined)
+                      throw new Error("Result targets are unavailable.");
+                    input = {
+                      ...input,
+                      ...Object.fromEntries(
+                        valueAnchors.map(({ field }) => [
+                          field,
+                          resultValueReference(resultTargets, input[field], context.cwd),
+                        ]),
+                      ),
+                    };
+                  } catch (error) {
+                    signal?.throwIfAborted();
+                    return failureToolResult(
+                      "",
+                      "RESULT_INPUT_REJECTED",
+                      errorMessage(error),
+                      "not-applied",
+                    );
+                  }
+                }
                 if (definition.name === "write") {
                   const written = await writeImageContent(
                     core,
@@ -203,22 +236,25 @@ export function createTextTool<TParameters extends TSchema>(
                   try {
                     if (resultTargets === undefined)
                       throw new Error("Result targets are unavailable.");
-                    if (input.start !== undefined || input.end !== undefined)
-                      throw new Error("Do not combine result targets with start/end.");
                     const sourceInput: unknown = input[definition.source.field];
-                    const selected = resultTargets.resolve(
-                      Array.isArray(sourceInput)
-                        ? await expandReferenceList(
-                            core,
-                            resultTargets,
-                            sourceInput,
-                            context.cwd,
-                            signal,
-                          )
-                        : sourceInput,
-                      context.cwd,
-                      { forEdit: true },
+                    const expanded = Array.isArray(sourceInput)
+                      ? await expandReferenceList(
+                          core,
+                          resultTargets,
+                          sourceInput,
+                          context.cwd,
+                          signal,
+                        )
+                      : sourceInput;
+                    // With selectors, the result is only their scope.
+                    const scoped = (definition.anchors ?? []).some(
+                      (anchor) =>
+                        anchor.sourceField === definition.source.field &&
+                        isMutationAnchorValue(anchor, input[anchor.field]),
                     );
+                    const selected = scoped
+                      ? resolveResultScope(resultTargets, expanded, context.cwd)
+                      : resultTargets.resolve(expanded, context.cwd, { forEdit: true });
                     if (!selected.complete)
                       throw new Error(
                         "Incomplete result targets cannot establish a complete edit. Run Search again with a higher limit or a narrower query, then use the complete result.",
@@ -571,8 +607,11 @@ function prepareGuardedArguments<TParameters extends TSchema>(
   const properties = (schema as { properties?: Record<string, { type?: unknown }> }).properties;
 
   // Anchor ownership is asynchronous; defer its source fallback until resources resolve.
-  const hasExplicitAnchor = anchorFields.some((descriptor) =>
-    isMutationAnchorValue(descriptor, prepared[descriptor.field]),
+  // A value with an id, such as a Search match in Codemode, becomes its RESULT# reference later.
+  const hasExplicitAnchor = anchorFields.some(
+    (descriptor) =>
+      isMutationAnchorValue(descriptor, prepared[descriptor.field]) ||
+      resultValueId(prepared[descriptor.field]) !== undefined,
   );
   if (
     sourceField !== undefined &&
@@ -610,6 +649,29 @@ interface ResolvedMutationSources {
   readonly resources: readonly string[];
   /** Other names of resources in `resources`, such as a relative path for an absolute one. */
   readonly aliases: SourceAliases;
+  /**
+   * Selections of `RESULT#` sources passed together with anchors, by source field. The anchors of
+   * that field resolve inside these ranges instead of adding to them.
+   */
+  readonly scopes: ReadonlyMap<string, readonly TextTarget[]>;
+}
+
+/** Whether a source field holds a result whose selection limits the field's anchors. */
+function isScopedSourceField(
+  definition: TextMutationToolRegistration,
+  input: Readonly<Record<string, unknown>>,
+  field: string,
+): boolean {
+  const value = input[field];
+  return (
+    typeof value === "string" &&
+    value.startsWith("RESULT#") &&
+    (definition.anchors ?? []).some(
+      (descriptor) =>
+        descriptor.sourceField === field &&
+        isMutationAnchorValue(descriptor, input[descriptor.field]),
+    )
+  );
 }
 
 async function resolveMutationSources(
@@ -623,6 +685,7 @@ async function resolveMutationSources(
   const expandedBySourceField = new Map<string, readonly TextTarget[]>();
   const expandedFromExplicitSource = new Set<string>();
   const sourceSelections = new Map<string, readonly TextTarget[]>();
+  const scopes = new Map<string, readonly TextTarget[]>();
   const explicitlyScopedSourceFields = new Set<string>();
   const allKinds = [
     ...new Set((definition.anchors ?? []).flatMap((descriptor) => descriptor.kinds)),
@@ -671,7 +734,9 @@ async function resolveMutationSources(
     const expanded = await resolveTargets(explicit, descriptor.field, explicit);
     if (expanded !== undefined) {
       expandedFromExplicitSource.add(descriptor.field);
-      sourceSelections.set(descriptor.field, expanded);
+      if (isScopedSourceField(definition, input, descriptor.field))
+        scopes.set(descriptor.field, expanded);
+      else sourceSelections.set(descriptor.field, expanded);
       expandedBySourceField.set(
         descriptor.field,
         mergeTargets(expandedBySourceField.get(descriptor.field) ?? [], expanded),
@@ -765,6 +830,10 @@ async function resolveMutationSources(
           : [source],
       );
     }
+    // An anchor of a scoped source resolves in each file of the scope, whatever it names itself.
+    const scope = scopes.get(descriptor.sourceField);
+    if (scope !== undefined && isMutationAnchorValue(descriptor, value))
+      anchors.set(descriptor.field, [...new Set(scope.map((target) => target.source))]);
   }
   const targets = [...expandedBySourceField.values()]
     .flat()
@@ -796,6 +865,7 @@ async function resolveMutationSources(
       ...new Set([...resolvedFields.values(), ...resolvedTargets.map((target) => target.source)]),
     ],
     aliases,
+    scopes: new Map([...scopes].map(([field, selected]) => [field, canonicalTargets(selected)])),
   };
 }
 
@@ -976,6 +1046,140 @@ function createMutationContext(
 
     return document;
   };
+  /** Where each resolved anchor of a scoped source lies: its file and its range of the scope. */
+  const scopedPlacements = new Map<string, { readonly source: string; readonly index: number }>();
+  /** Resolve an anchor inside the selection of the result passed as its source. */
+  const resolveScopedAnchor = async (
+    field: string,
+    descriptor: TextMutationAnchorField,
+    value: string,
+    scope: readonly TextTarget[],
+  ): Promise<ReadonlyMap<string, TextAnchor>> => {
+    const describe = (target: TextTarget) =>
+      describeScope(target.source, target.ranges ?? [], documentFor(target.source), invocation.cwd);
+    const rejection = (
+      target: TextTarget,
+      code: TextAnchorRejection["code"],
+      reason: string,
+    ): TextMutationAnchorResolutionError =>
+      new TextMutationAnchorResolutionError(
+        definition.name,
+        field,
+        target.source,
+        value,
+        new TextAnchorResolutionError(reason, "result-scope", undefined, {
+          code,
+          reason,
+          ...((target.ranges ?? []).length > 0 && {
+            contextRange: scopeWindow(target.ranges ?? []),
+          }),
+        }),
+      );
+    const attempts = await Promise.allSettled(
+      scope.map(async (target) => {
+        const ranges = target.ranges ?? [];
+        let anchor: TextAnchor;
+        try {
+          anchor = await resolveResourceAnchor(
+            target.source,
+            value,
+            descriptor.kinds,
+            ranges.length === 0 ? undefined : ranges,
+          );
+        } catch (error) {
+          throw contextualizeTextMutationAnchorError(
+            error instanceof TextAnchorResolutionError && ranges.length > 0
+              ? error.withReason(
+                  `${error.message.replace(/\.?$/u, ".")} The result selects ${describe(target)}.`,
+                  error.rejection?.contextRange ?? scopeWindow(ranges),
+                )
+              : error,
+            definition.name,
+            field,
+            target.source,
+            value,
+          );
+        }
+        const index =
+          ranges.length === 0 ? 0 : scopeRangeIndex(documentFor(target.source), anchor, ranges);
+        if (index === undefined)
+          throw rejection(
+            target,
+            "invalid",
+            `The anchor is outside the result's selection: ${describe(target)}. Use an anchor inside it, or pass the file path to edit elsewhere.`,
+          );
+        return { target, anchor, index };
+      }),
+    );
+    const resolved = attempts.flatMap((attempt) =>
+      attempt.status === "fulfilled" ? [attempt.value] : [],
+    );
+    const failures = attempts.flatMap((attempt) =>
+      attempt.status === "rejected" ? [attempt.reason as unknown] : [],
+    );
+    // A file whose selection holds the anchor more than once holds it too.
+    const ambiguous = attempts.flatMap((attempt, index) =>
+      attempt.status === "rejected" &&
+      attempt.reason instanceof TextMutationAnchorResolutionError &&
+      attempt.reason.resolution.rejection?.code === "ambiguous"
+        ? [{ target: requiredValue(scope[index]), error: attempt.reason }]
+        : [],
+    );
+    const holding = [...resolved, ...ambiguous].map(({ target }) => target);
+    const placed = resolved[0];
+    if (resolved.length !== 1 || placed === undefined || holding.length > 1) {
+      publishAnchorRenderState?.(field, { kind: "failed" });
+      const first = requiredValue(scope[0]);
+      const unexpected = failures.find(
+        (failure) => !(failure instanceof TextMutationAnchorResolutionError),
+      );
+      if (unexpected !== undefined)
+        throw unexpected instanceof Error ? unexpected : new Error(errorMessage(unexpected));
+      if (holding.length > 1)
+        throw rejection(
+          first,
+          "ambiguous",
+          `The anchor matches in several files of the result: ${holding.map(describe).join("; ")}. Pass the result of one file, or its path.`,
+        );
+      // Every failure is an anchor rejection here; one file has exactly one.
+      if (scope.length === 1) throw requiredValue(failures[0]) as TextMutationAnchorResolutionError;
+      // Only one file holds the anchor, more than once.
+      if (ambiguous[0] !== undefined) throw ambiguous[0].error;
+      throw rejection(
+        first,
+        "missing",
+        `The anchor is not inside the result's selection in any of its files: ${scope.map(describe).join("; ")}.`,
+      );
+    }
+    const { target, anchor, index } = placed;
+    // All anchors of one source select a part of a single range: an edit between two ranges
+    // would change text the result does not select.
+    for (const [other, placement] of scopedPlacements) {
+      const sibling = (definition.anchors ?? []).find((candidate) => candidate.field === other);
+      if (
+        sibling?.sourceField === descriptor.sourceField &&
+        placement.source === target.source &&
+        placement.index !== index
+      ) {
+        publishAnchorRenderState?.(field, { kind: "failed" });
+        throw rejection(
+          target,
+          "invalid",
+          `The anchors ${other} and ${field} lie in different ranges of the result's selection: ${describe(target)}. Use anchors inside one range.`,
+        );
+      }
+    }
+    scopedPlacements.set(field, { source: target.source, index });
+    if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(target.source);
+    const rendered = renderTextAnchor(anchor, value, { source: target.source, anchor });
+    publishAnchorRenderState?.(field, {
+      kind: "resolved",
+      full: rendered.full,
+      compact: rendered.compact,
+      resolverId: rendered.resolverId,
+    });
+    return new Map([[target.source, anchor]]);
+  };
   const resolveAnchors = (field: string): Promise<ReadonlyMap<string, TextAnchor>> => {
     const cached = anchorCache.get(field);
 
@@ -994,6 +1198,10 @@ function createMutationContext(
           `Mutation tool ${definition.name} tried to resolve undeclared anchor ${field}`,
         );
       }
+
+      const scope = sources.scopes.get(descriptor.sourceField);
+      if (typeof value === "string" && scope !== undefined)
+        return resolveScopedAnchor(field, descriptor, value, scope);
 
       const explicitAnchors =
         typeof value === "string" && anchorSources !== undefined

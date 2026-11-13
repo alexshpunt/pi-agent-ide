@@ -132,7 +132,20 @@
         "additionalProperties": false,
         "properties": {
           "end": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "anyOf": [
@@ -170,7 +183,20 @@
             ]
           },
           "start": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "target": {
             "anyOf": [
@@ -208,10 +234,36 @@
             ]
           },
           "targetEnd": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "targetStart": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -290,7 +342,20 @@
         "additionalProperties": false,
         "properties": {
           "end": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "anyOf": [
@@ -328,7 +393,20 @@
             ]
           },
           "start": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -494,7 +572,20 @@
         "additionalProperties": false,
         "properties": {
           "anchor": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "before": {
             "type": "boolean"
@@ -635,7 +726,20 @@
         "additionalProperties": false,
         "properties": {
           "end": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "anyOf": [
@@ -673,7 +777,20 @@
             ]
           },
           "start": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "target": {
             "anyOf": [
@@ -711,10 +828,36 @@
             ]
           },
           "targetEnd": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "targetStart": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           }
         },
         "type": "object"
@@ -786,7 +929,20 @@
         "additionalProperties": false,
         "properties": {
           "end": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "anyOf": [
@@ -824,7 +980,20 @@
             ]
           },
           "start": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "text": {
             "type": "string"

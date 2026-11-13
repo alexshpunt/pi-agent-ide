@@ -25,11 +25,12 @@ export const copySchema = Type.Object(
 );
 interface CopyParameters {
   readonly path?: unknown;
-  readonly start?: string;
-  readonly end?: string;
+  /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
+  readonly start?: unknown;
+  readonly end?: unknown;
   readonly target?: unknown;
-  readonly targetStart?: string;
-  readonly targetEnd?: string;
+  readonly targetStart?: unknown;
+  readonly targetEnd?: unknown;
 }
 
 export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> = {

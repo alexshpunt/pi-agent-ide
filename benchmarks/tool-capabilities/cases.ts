@@ -1514,7 +1514,11 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "replace",
-      args: { start: /^1#/, end: /^2#/, text: /^READY\n?$/ },
+      args: {
+        start: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        end: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        text: /^READY\n?$/,
+      },
       reuse: [reuse(0, "start", "anchor"), reuse(0, "end", "anchor")],
     },
   ],
@@ -1535,7 +1539,8 @@ add(
       args: {
         path: "credit.txt",
         start: "\n\nBased on",
-        end: "[source](credit).",
+        // Any unique fragment that ends with the closing period selects the same suffix.
+        end: /\(credit\)\.$/u,
         text: "",
       },
     },
@@ -1695,12 +1700,12 @@ add(
 add(
   "mixed-range-replace",
   ["edit.mixed-range-endpoints"],
-  "Read line-start.txt with anchors. Replace from its returned first-line anchor through the exact END fragment on line 2 with NEW, preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference with NEW followed by a newline. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
+  "Read line-start.txt with anchors; each line is shown after its 7-character anchor and a |. Replace from the anchor shown before line 1 through the exact END fragment on line 2 with NEW, preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference with NEW followed by a newline. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
   [
     { tool: "read", args: { path: "line-start.txt", views: ["anchors"] } },
     {
       tool: "replace",
-      args: { path: "line-start.txt", start: /^1#/u, end: "END", text: "NEW" },
+      args: { path: "line-start.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, end: "END", text: "NEW" },
       reuse: reuse(0, "start", "anchor"),
     },
     { tool: "search", args: { path: "line-end.txt", query: "END" } },
@@ -2462,7 +2467,7 @@ for (const [name, eol, ending] of [
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
         tool: "delete",
-        args: { path: "line.txt", start: /^2#/u },
+        args: { path: "line.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
         reuse: reuse(3, "start", "anchor"),
       },
     ],
@@ -2870,20 +2875,26 @@ add(
 );
 
 add(
-  "result-selector-rejection",
-  ["compose.result-selector-rejection"],
-  "Read only line 2 of task.txt. Pass that issued result unchanged to Replace together with start OLD and text BAD; the unsupported result-plus-selector combination must fail without a filename lookup. Then reuse the same issued result in a valid result-only Replace with text NEW followed by a newline. Preserve all bytes outside the original Read selection.",
+  "result-selector-scope",
+  ["compose.result-selector-scope"],
+  "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as start and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Then pass the same line-2 result as path with the anchor the first Read shows before line 2 as start and text NEW followed by a newline. Preserve all other bytes.",
   [
-    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    // The window may also come from the first Read's result of the same file.
+    { tool: "read", args: { offset: 2, limit: 1 } },
     {
       tool: "replace",
-      args: { start: "OLD", text: "BAD" },
-      reuse: reuse(0),
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, text: "BAD" },
+      reuse: [reuse(1), reuse(0, "start", "anchor")],
       error: true,
-      contains: "RESULT_INPUT_REJECTED",
+      contains: "outside the result's selection: task.txt line 2",
       excludes: "ENOENT",
     },
-    { tool: "replace", args: { text: "NEW\n" }, reuse: reuse(0) },
+    {
+      tool: "replace",
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, text: /^NEW\n?$/u },
+      reuse: [reuse(1), reuse(0, "start", "anchor")],
+    },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );

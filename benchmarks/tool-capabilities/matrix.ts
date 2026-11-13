@@ -260,7 +260,8 @@ const groups: [string[], string[]][] = [
   // Direct calls take the same object; the focused source-value cases cover them without a model.
   [["compose.value-id-source"], ["value-id-source"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
-  [["compose.result-selector-rejection"], ["result-selector-rejection"]],
+  // A result passed with selectors is their scope; an anchor outside it fails and names it.
+  [["compose.result-selector-scope"], ["result-selector-scope"]],
   [
     [
       // Fresh-session follow-up operations exercise metadata activated by the first Bash call.

@@ -110,6 +110,7 @@ export {
   resultSourceSchema,
   resultValueSchema,
   resultValueId,
+  resultValueReference,
   type ResultRange,
   type ResultSourceTarget,
   type ResolvedResultTargets,

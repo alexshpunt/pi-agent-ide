@@ -388,6 +388,55 @@ export function validateRoute(
       }),
     );
   }
+  /**
+   * The paths an earlier completed call read or searched to issue the result that a source value
+   * reuses: passing that result names the same file as passing its path.
+   */
+  function reusedPaths(value: unknown, before: number): string[] {
+    for (const prior of starts) {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      if (
+        !reuses(
+          value,
+          resultText(end.event),
+          "result",
+          valueIds(end.event.result?.structuredContent),
+        )
+      )
+        continue;
+      // A Codemode parent can print a child's id; only a call with a path issued it.
+      const source = prior.event.args?.path;
+      if (source === undefined) continue;
+      const sources = Array.isArray(source) ? (source as unknown[]) : [source];
+      const paths = sources.flatMap((item) =>
+        typeof item === "string" ? [item] : reusedPaths(item, prior.index),
+      );
+      if (paths.length > 0) return paths;
+    }
+    return [];
+  }
+  /**
+   * Arguments match. For an edit, a reused result of the expected file also stands for its path:
+   * the edit's selectors resolve inside that result. A search with a result is narrower, so it
+   * keeps the exact path.
+   */
+  function argsMatch(
+    tool: string,
+    expected: Record<string, unknown>,
+    actual: Record<string, unknown> | undefined,
+    before: number,
+  ): boolean {
+    if (matches(expected, actual)) return true;
+    const { path: file, ...rest } = expected;
+    return (
+      ["replace", "delete", "insert", "copy", "move"].includes(tool) &&
+      typeof file === "string" &&
+      actual?.path !== undefined &&
+      matches(rest, actual) &&
+      reusedPaths(actual.path, before).some((source) => matches({ path: file }, { path: source }))
+    );
+  }
   let furthest = 0;
   function walk(
     stepIndex: number,
@@ -453,8 +502,12 @@ export function validateRoute(
         )
           continue;
       }
-      if (step.args && !matches(step.args, event.args)) continue;
-      if (step.argsAny && !step.argsAny.some((args) => matches(args, event.args))) continue;
+      if (step.args && !argsMatch(step.tool, step.args, event.args, start.index)) continue;
+      if (
+        step.argsAny &&
+        !step.argsAny.some((args) => argsMatch(step.tool, args, event.args, start.index))
+      )
+        continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
       if (step.finalContains !== undefined || step.finalMaxBytes !== undefined) {
