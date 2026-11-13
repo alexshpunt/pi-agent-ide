@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
 
-import { isTextAnchorResolutionAttempt, isTextAnchorResolver, TextAnchor } from "#src/index.ts";
+import {
+  isTextAnchorResolutionAttempt,
+  isTextAnchorResolver,
+  isTextTargetResolutionAttempt,
+  TextAnchor,
+} from "#src/index.ts";
 
 class FixtureTextAnchor extends TextAnchor {
   public constructor(value: string, lineNumber: number) {
@@ -30,6 +35,17 @@ describe("text anchor runtime contracts", () => {
     );
   });
 
+  test("accepts scope-only rejection semantics for anchor and target resolvers", () => {
+    const attempt = { kind: "rejected", rejection: { code: "outside-scope", reason: "" } };
+    expect(isTextAnchorResolutionAttempt(attempt)).toBe(true);
+    expect(isTextTargetResolutionAttempt(attempt)).toBe(true);
+    expect(
+      isTextTargetResolutionAttempt({
+        kind: "rejected",
+        rejection: { code: "unknown", reason: "" },
+      }),
+    ).toBe(false);
+  });
   test("accepts a whitespace-only exact anchor value", () => {
     expect(() => new FixtureTextAnchor("  \n\t", 1)).not.toThrow();
   });
