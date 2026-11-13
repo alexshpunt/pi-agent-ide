@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import {
   assistantMessage,
   getToolExecution,
@@ -215,8 +216,10 @@ test("silent Write keeps large file content out of the following provider result
     expect(panels).toHaveLength(1);
     expect(panels?.[0]?.name).toBe("write");
     expect(JSON.stringify(panels)).toContain(marker);
-    expect(run.tuiRenderedOutput).toContain("write");
-    expect(run.tuiRenderedOutput).toContain("+400 ~0 -0");
+    // The large panel can scroll out of the final screen; inspect the rendered stream.
+    const terminal = stripVTControlCharacters(run.terminalOutput);
+    expect(terminal).toContain("write");
+    expect(terminal).toContain("+400 ~0 -0");
   });
 });
 
@@ -289,7 +292,8 @@ test("a failed Write keeps recovery output without copying earlier successful fi
     await mkdir(path.join(cwd, "directory"));
     const code = `await tools.write(${writeArgs}); await tools.write({path:"directory",content:"blocked"});`;
     const run = await runScript(cwd, "write-context-error", code);
-    expect(getToolExecution(run, "parent").isError).toBe(true);
+    expect(getToolExecution(run, "parent").isError).toBe(false);
+    expect(getToolExecution(run, "parent/2").isError).toBe(true);
     assertScriptArguments(run, code);
     expect(followingResultText(run)).toContain("directory");
     expect(followingResultText(run)).toMatch(/failed|error/iu);
