@@ -187,6 +187,10 @@ export function createIdeTextResults(
    * Their value becomes null when their execution ends.
    */
   const nullNested = new Set<string>();
+  const pendingFailureText = new Map<
+    string,
+    { parent: string; original: string; reason: string; filtered: boolean }
+  >();
   const parents = new Map<string, string>();
   const searchWarnings = new Map<string, string[]>();
   const receipts = new Map<string, string[]>();
@@ -197,6 +201,7 @@ export function createIdeTextResults(
     labels.clear();
     ledger.clear();
     nullNested.clear();
+    pendingFailureText.clear();
     searchWarnings.clear();
     receipts.clear();
   };
@@ -218,6 +223,35 @@ export function createIdeTextResults(
       parents.set(event.toolCallId, parents.get(event.parentToolCallId) ?? event.parentToolCallId);
   });
   pi.on("tool_execution_end", (event) => {
+    const pending = pendingFailureText.get(event.toolCallId);
+    pendingFailureText.delete(event.toolCallId);
+    if (pending && event.result && Array.isArray(event.result.content)) {
+      const finalText = event.result.content
+        .filter(
+          (block: unknown): block is { type: "text"; text: string } =>
+            block !== null &&
+            typeof block === "object" &&
+            "type" in block &&
+            block.type === "text" &&
+            "text" in block &&
+            typeof block.text === "string",
+        )
+        .map((block: { text: string }) => block.text)
+        .join("\n")
+        .replace(envelopePattern, "");
+      if (finalText !== pending.original) {
+        const position = pending.original ? finalText.indexOf(pending.original) : -1;
+        const unique = position >= 0 && position === finalText.lastIndexOf(pending.original);
+        const reason = pending.filtered
+          ? unique
+            ? finalText.slice(0, position) +
+              pending.reason +
+              finalText.slice(position + pending.original.length)
+            : pending.reason
+          : finalText;
+        ledger.updateReason(pending.parent, event.toolCallId, reason);
+      }
+    }
     if (!nullNested.delete(event.toolCallId)) return;
     // Pi drops a null structuredContent that a tool_result hook returns, because the agent loop
     // merges it with `??`. It hands this same result object to the calling script after the
@@ -597,6 +631,15 @@ export function createIdeTextResults(
               }
             : undefined,
         );
+        // Later provider hooks can add recovery text. A multi-path Read's reason deliberately
+        // excludes successful paths, so preserve that filter when retaining surrounding text.
+        if (scriptFailed)
+          pendingFailureText.set(event.toolCallId, {
+            parent,
+            original: reason,
+            reason: failureReason ?? reason,
+            filtered: failureReason !== undefined,
+          });
         if (value === null || (scriptFailed && value === undefined))
           nullNested.add(event.toolCallId);
       }

@@ -39,6 +39,13 @@ export class CodemodeCallLedger {
     this.#scripts.set(script, entry);
   }
 
+  /** Update a recorded failure after later result hooks have changed its visible reason. */
+  updateReason(script: string, call: string, reason: string): void {
+    const failures = this.#scripts.get(script)?.failures;
+    const failure = failures?.get(call);
+    if (failure !== undefined) failures?.set(call, { ...failure, reason });
+  }
+
   /**
    * Add the edits that a script got a value for when they were accepted, and that failed or had an
    * unknown effect when their batch was committed.

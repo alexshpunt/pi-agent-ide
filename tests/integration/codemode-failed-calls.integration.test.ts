@@ -17,7 +17,12 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 type Call = Parameters<typeof toolCall>[0];
 
-async function run(cwd: string, name: string, calls: readonly Call[]) {
+async function run(
+  cwd: string,
+  name: string,
+  calls: readonly Call[],
+  extensions: readonly string[] = [],
+) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
   await writeFile(
     path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
@@ -35,6 +40,7 @@ async function run(cwd: string, name: string, calls: readonly Call[]) {
       path.resolve("src/pi-agent-ide.ts"),
       "builtin:codemode",
       path.resolve("tests/integration/fixtures/structured-results-fixture.ts"),
+      ...extensions,
     ],
     tools: ["read", "search", "replace", "receipt_edit", "codemode"],
     conversation: [
@@ -92,6 +98,47 @@ throw new Error("stopped after " + value);`,
     expect(getToolExecution(result, "direct").isError).toBe(true);
     expect(direct).toContain("Search for the correct path.");
     expect(direct).not.toContain("<system-result");
+  });
+});
+
+test("Codemode retains recovery text added by a later provider result hook", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const result = await run(
+      cwd,
+      "codemode-provider-recovery",
+      [
+        script(
+          "nested",
+          `const values = await Promise.all(["absent-a.txt", "absent-b.txt"].map(path => tools.read({path}))); text(JSON.stringify(values));`,
+        ),
+        script(
+          "mixed",
+          `const values = await tools.read({path:["a.txt", "absent-a.txt"]}); text(JSON.stringify(values.map(value => value === null)));`,
+        ),
+        script(
+          "replaced",
+          `const value = await tools.read({path:"replace-c.txt"}); text(JSON.stringify(value));`,
+        ),
+        { id: "direct", name: "read", arguments: { path: "absent-a.txt" } },
+      ],
+      [path.resolve("tests/integration/fixtures/failure-recovery.ts")],
+    );
+    const output = getToolResultText(result, "nested");
+    expect(getToolExecution(result, "nested").isError, output).toBe(false);
+    expect(output).toContain("[null,null]");
+    expect(output).toContain("provider-context:absent-a.txt");
+    expect(output).toContain("provider-context:absent-b.txt");
+    expect(output).not.toContain("private-recovery-fixture");
+    expect(getToolResultText(result, "direct")).toContain("provider-context:absent-a.txt");
+    const mixed = getToolResultText(result, "mixed");
+    expect(getToolExecution(result, "mixed").isError, mixed).toBe(false);
+    expect(mixed).toContain("[false,true]");
+    expect(mixed).toContain("provider-prefix:a.txt,absent-a.txt");
+    expect(mixed).toContain("provider-context:a.txt,absent-a.txt");
+    expect(mixed).not.toContain("alpha");
+    const replaced = getToolResultText(result, "replaced");
+    expect(getToolExecution(result, "replaced").isError, replaced).toBe(false);
+    expect(replaced).toContain("provider-context:replace-c.txt");
   });
 });
 
