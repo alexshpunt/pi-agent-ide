@@ -34,28 +34,33 @@ export async function piRuntime(
   } catch (error) {
     if (command !== "pi") throw error;
   }
-  if (command === "pi")
+  if (command === "pi" && candidates.length === 0)
     candidates.push(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
   for (const candidate of candidates) {
-    let directory = path.dirname(await realpath(candidate));
+    let entrypoint = await realpath(candidate);
+    // pnpm's POSIX shim executes a CLI relative to its own .bin directory. Do not
+    // execute or source the launcher: only accept its explicit Pi package target.
+    const source = await readFile(entrypoint, "utf8");
+    const target = source.match(/"\$basedir\/(\.\.\/@earendil-works\/pi-coding-agent\/[^"\n]+)"/);
+    if (target?.[1]) entrypoint = await realpath(path.resolve(path.dirname(entrypoint), target[1]));
+    let directory = path.dirname(entrypoint);
     while (directory !== path.dirname(directory)) {
+      let manifest: { name: string; version: string; bin?: { pi?: string } } | undefined;
       try {
-        const manifest = JSON.parse(
-          await readFile(path.join(directory, "package.json"), "utf8"),
-        ) as {
-          name: string;
-          version: string;
-          bin?: { pi?: string };
-        };
-        if (manifest.name === "@earendil-works/pi-coding-agent" && manifest.bin?.pi)
-          return {
-            directory,
-            sdk: path.join(directory, "dist/index.js"),
-            cli: path.join(directory, manifest.bin.pi),
-            version: manifest.version,
-          };
+        manifest = JSON.parse(await readFile(path.join(directory, "package.json"), "utf8"));
       } catch {
         /* Keep looking above this entrypoint. */
+      }
+      if (manifest?.name === "@earendil-works/pi-coding-agent" && manifest.bin?.pi) {
+        if (target && (await realpath(path.join(directory, manifest.bin.pi))) !== entrypoint)
+          throw Error("Launcher target does not match the package CLI");
+        await realpath(path.join(directory, "dist/index.js"));
+        return {
+          directory,
+          sdk: path.join(directory, "dist/index.js"),
+          cli: path.join(directory, manifest.bin.pi),
+          version: manifest.version,
+        };
       }
       directory = path.dirname(directory);
     }
