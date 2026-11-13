@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 
 import {
   mergeUnreadablePaths,
+  parentIgnoreArguments,
   resolveRipgrepExecutable,
   RipgrepStderr,
   type UnreadablePaths,
@@ -160,7 +161,10 @@ export async function ripgrepScope(
     target: directory ? "." : `./${environment?.basename(target) ?? path.basename(target)}`,
     arguments: [
       "--no-config",
-      "--no-ignore-parent",
+      // Ripgrep searches a file scope even when an ignore file names it.
+      ...(directory
+        ? await parentIgnoreArguments(target, environment, signal)
+        : ["--no-ignore-parent"]),
       "--color=never",
       ...splitGlobList(request.include).flatMap((glob) => ["--glob", glob]),
       ...splitGlobList(request.exclude).flatMap((glob) => ["--glob", `!${glob}`]),

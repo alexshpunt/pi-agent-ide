@@ -1,6 +1,9 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+
+import type { SearchEnvironment } from "pi-agent-search/api/search";
 
 /** Resolve Pi's bundled ripgrep binary, falling back to the system PATH. */
 export function resolveRipgrepExecutable(
@@ -13,6 +16,51 @@ export function resolveRipgrepExecutable(
     platform === "win32" ? "rg.exe" : "rg",
   );
   return existsSync(bundledExecutable) ? bundledExecutable : "rg";
+}
+
+/**
+ * Ripgrep arguments for the ignore files above a directory scope. The scope follows them, as a
+ * search from the repository root does, so nested `node_modules` and build output stay skipped.
+ * A scope that Git ignores itself, such as a build directory, leaves them out: ripgrep would
+ * otherwise skip every file in it. Without an answer from Git, they stay out as well.
+ */
+export async function parentIgnoreArguments(
+  directory: string,
+  environment?: SearchEnvironment,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const arguments_ = ["check-ignore", "-q", "."];
+  let code: number | undefined;
+  try {
+    if (environment === undefined) code = await localExitCode("git", arguments_, directory, signal);
+    else if (environment.execute !== undefined)
+      code = (await environment.execute("git", arguments_, directory, signal)).code;
+  } catch {
+    // No Git, no repository or an unreachable owner: keep the parents' rules out.
+  }
+  signal?.throwIfAborted();
+  // `git check-ignore` exits with 1 when the path is not ignored.
+  return code === 1 ? [] : ["--no-ignore-parent"];
+}
+
+function localExitCode(
+  command: string,
+  arguments_: readonly string[],
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      arguments_,
+      { cwd, windowsHide: true, timeout: 10_000, ...(signal === undefined ? {} : { signal }) },
+      (error) => {
+        if (error === null) resolve(0);
+        else if (typeof error.code === "number") resolve(error.code);
+        else reject(error);
+      },
+    );
+  });
 }
 
 /** Paths ripgrep could not read while it searched the rest of its scope. */
