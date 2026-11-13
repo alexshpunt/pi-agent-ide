@@ -93,7 +93,10 @@ test("an edit's RESULT source survives a write between its resolution and the fi
   });
 });
 
-test("a RESULT source read outside an edit still has to match its file", async () => {
-  const { resolve } = await racedSource();
-  expect(await resolve()).toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
+test("a RESULT source read survives a concurrent write outside its selection", async () => {
+  const { source, resolve } = await racedSource();
+  expect(await resolve()).toMatchObject({
+    kind: "resolved",
+    targets: [{ source, expectedContent: original }],
+  });
 });
