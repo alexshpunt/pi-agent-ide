@@ -277,7 +277,8 @@ test("an edit returns the formatter result instead of the requested intermediate
 test.skipIf(process.platform !== "win32" || !process.env.PI_TEST_WSL_FORMATTER_PROJECT)(
   "Windows edits a WSL project without selecting its POSIX-only formatter shim",
   async () => {
-    const project = process.env.PI_TEST_WSL_FORMATTER_PROJECT!;
+    const project = process.env.PI_TEST_WSL_FORMATTER_PROJECT;
+    if (!project) throw new Error("PI_TEST_WSL_FORMATTER_PROJECT is required");
     const shim = path.join(project, "node_modules", ".bin", "oxfmt");
     expect(await readFile(shim, "utf8")).toContain("#!/bin/sh");
     await expect(readFile(`${shim}.cmd`)).rejects.toMatchObject({ code: "ENOENT" });

@@ -19,7 +19,8 @@ export async function schedule<T, R>(
   let publishFailed = false;
   while (pending.length || active.size) {
     while (finished.length) {
-      const settled = finished.shift()!;
+      const settled = finished.shift();
+      if (settled === undefined) break;
       active.delete(settled.index);
       if ("error" in settled) {
         if (!failed) failure = settled.error;
@@ -49,7 +50,8 @@ export async function schedule<T, R>(
           ![...active.values()].some((entry) => entry.resource === candidate.resource),
       );
       if (next < 0) break;
-      const entry = pending.splice(next, 1)[0]!;
+      const [entry] = pending.splice(next, 1);
+      if (entry === undefined) throw new Error("Pending scheduler entry is missing");
       const promise = Promise.resolve()
         .then(() => options.run(entry.item, controller.signal))
         .then(

@@ -10,13 +10,15 @@ function deferred<T>() {
 }
 
 test("bounds work and publishes completed results in selection order", async () => {
-  const gates = Array.from({ length: 3 }, () => deferred<number>());
+  const gates = [deferred<number>(), deferred<number>(), deferred<number>()] as const;
   const started: number[] = [];
   const reports: number[][] = [];
   const running = schedule([0, 1, 2], 2, new AbortController(), {
     run: async (item) => {
       started.push(item);
-      return gates[item]!.promise;
+      const gate = gates[item];
+      if (gate === undefined) throw new Error("Unknown scheduled item");
+      return gate.promise;
     },
     publish: async (results) => {
       reports.push([...results]);
@@ -26,23 +28,25 @@ test("bounds work and publishes completed results in selection order", async () 
   });
   await viWait(() => started.length === 2);
   expect(started).toEqual([0, 1]);
-  gates[1]!.resolve(1);
+  gates[1].resolve(1);
   await viWait(() => started.length === 3);
   expect(reports).toEqual([[1]]);
-  gates[2]!.resolve(2);
+  gates[2].resolve(2);
   await viWait(() => reports.length === 2);
-  gates[0]!.resolve(0);
+  gates[0].resolve(0);
   await running;
   expect(reports).toEqual([[1], [1, 2], [0, 1, 2]]);
 });
 
 test("serializes shared resources while unrelated work proceeds", async () => {
-  const gates = Array.from({ length: 3 }, () => deferred<number>());
+  const gates = [deferred<number>(), deferred<number>(), deferred<number>()] as const;
   const started: number[] = [];
   const running = schedule([0, 1, 2], 2, new AbortController(), {
     run: async (item) => {
       started.push(item);
-      return gates[item]!.promise;
+      const gate = gates[item];
+      if (gate === undefined) throw new Error("Unknown scheduled item");
+      return gate.promise;
     },
     publish: async () => {},
     stopReason: () => undefined,
@@ -50,11 +54,11 @@ test("serializes shared resources while unrelated work proceeds", async () => {
   });
   await viWait(() => started.length === 2);
   expect(started).toEqual([0, 2]);
-  gates[0]!.resolve(0);
+  gates[0].resolve(0);
   await viWait(() => started.length === 3);
   expect(started).toEqual([0, 2, 1]);
-  gates[1]!.resolve(1);
-  gates[2]!.resolve(2);
+  gates[1].resolve(1);
+  gates[2].resolve(2);
   await running;
 });
 
@@ -87,7 +91,7 @@ test("account stop aborts and drains active work without starting more", async (
 });
 
 test("a stop completing during publication prevents refilling the queue", async () => {
-  const gates = Array.from({ length: 2 }, () => deferred<string>());
+  const gates = [deferred<string>(), deferred<string>()] as const;
   const publishing = deferred<void>();
   const release = deferred<void>();
   const started: number[] = [];
@@ -95,7 +99,9 @@ test("a stop completing during publication prevents refilling the queue", async 
   const running = schedule([0, 1, 2], 2, controller, {
     run: async (item) => {
       started.push(item);
-      return gates[item]!.promise;
+      const gate = gates[item];
+      if (gate === undefined) throw new Error("Unknown scheduled item");
+      return gate.promise;
     },
     resource: () => undefined,
     stopReason: (result) => (result === "limit" ? "account-limit" : undefined),
@@ -107,9 +113,9 @@ test("a stop completing during publication prevents refilling the queue", async 
     },
   });
   await viWait(() => started.length === 2);
-  gates[0]!.resolve("ok");
+  gates[0].resolve("ok");
   await publishing.promise;
-  gates[1]!.resolve("limit");
+  gates[1].resolve("limit");
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(controller.signal.aborted).toBe(true);
   release.resolve();
@@ -169,7 +175,7 @@ test("an unexpected failure aborts and waits for active cleanup", async () => {
   await viWait(() => controller.signal.aborted);
   expect(drained).toBe(false);
   cleaned.resolve();
-  await expect(running).rejects.toThrow();
+  await expect(running).rejects.toThrow("failure");
   expect(drained).toBe(true);
 });
 
