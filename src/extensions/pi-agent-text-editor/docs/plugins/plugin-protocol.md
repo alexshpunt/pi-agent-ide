@@ -160,7 +160,7 @@ Successful results identify the applied operation and the number of text changes
 
 The displayed text is the resulting file region, labelled with its line range. It is not a proposal or a before/after diff. The existing excerpt selection and size remain unchanged.
 
-Post-edit integrations can contribute `formatting: { status, formatter? }`. Status is `disabled`, `unavailable`, `skipped-syntax`, `unchanged`, `changed`, `failed`, or `not-reported`. A missing report remains unknown. Formatter failure does not turn a saved edit into an unapplied edit. Formatting metadata does not claim diagnostics or tests passed.
+Post-edit integrations can contribute `formatting: { status, formatter? }`. Status is `disabled`, `unavailable`, `skipped-syntax`, `skipped-style`, `unchanged`, `changed`, `failed`, `not-reported`, or `deferred`. A missing report remains unknown. Formatter failure does not turn a saved edit into an unapplied edit. Formatting metadata does not claim diagnostics or tests passed.
 
 Formatter status labels retain `formattingStatus` alongside their formatter identity. The result fills this from matching formatting metadata for success/error labels that do not already carry it. This lets the TUI keep changed formatting separate from already-formatted content without parsing display text. The agent gets one report for the selected formatting outcome; other handler messages stay visible. A caught formatter failure without an identity still carries its failed state. These labels do not change saving, rollback or handler execution.
 
