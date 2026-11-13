@@ -448,7 +448,8 @@ test(
     expect(returning.pid).toBe(pid);
     await returning.shutdown();
     await until(() => !alive(pid));
-    await until(async () => (await readdir(sockets)).length === 0);
+    // Only the copy of the host code stays for later starts.
+    await until(async () => (await readdir(sockets)).every((name) => name.startsWith("host-")));
 
     const next = await session(cwd, sharing);
     expect(next.shared).toBe(true);
