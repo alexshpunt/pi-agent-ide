@@ -8,7 +8,7 @@ import {
   type CaptureOptions,
   type CapturedMatches,
 } from "#src/current-matches.ts";
-import { searchFiles } from "#src/file-search.ts";
+import { searchFiles, type FileSearchResult } from "#src/file-search.ts";
 import type { TextSearchRequest } from "#src/search-backend.ts";
 import {
   booleanQueryNotice,
@@ -21,6 +21,7 @@ import {
   createFuzzyPresentation,
   createSearchToolDetails,
   displaySource,
+  unreadableNotice,
 } from "#src/search-result.ts";
 import { planSearchPresentation } from "#src/search-presentation.ts";
 
@@ -55,10 +56,9 @@ interface TextPayload {
   readonly fuzzy?: FuzzyResult;
 }
 
-interface FilePayload {
+interface FilePayload extends FileSearchResult {
   readonly query: string;
-  readonly files: readonly string[];
-  readonly complete: boolean;
+  readonly notices: readonly string[];
 }
 
 /** What a search registered its anchors for; a concurrent writer can make it differ from the backend's matches. */
@@ -155,7 +155,12 @@ export function createFileResolver(): SearchResolver {
       fileOptions(request) === undefined ? [] : (request.paths ?? [request.path ?? context.cwd]),
     toScriptData(payload) {
       const result = payload as FilePayload;
-      return { kind: "files", files: [...result.files], complete: result.complete };
+      return {
+        kind: "files",
+        files: [...result.files],
+        complete: result.complete,
+        ...(result.notices.length === 0 ? {} : { notices: [...result.notices] }),
+      };
     },
     async tryResolve(request, context) {
       const options = fileOptions(request);
@@ -171,7 +176,9 @@ export function createFileResolver(): SearchResolver {
         context.signal,
         context.environment,
       );
-      return { kind: "resolved", payload: { query, ...result } satisfies FilePayload };
+      const notices =
+        result.unreadable === undefined ? [] : [unreadableNotice(result.unreadable, context.cwd)];
+      return { kind: "resolved", payload: { query, ...result, notices } satisfies FilePayload };
     },
     renderResult(result, options, theme) {
       const data = result.details as FilePayload & { cwd: string };
@@ -198,7 +205,7 @@ export function createFileResolver(): SearchResolver {
         ? `${String(result.files.length)} files`
         : `${String(result.files.length)}+ files (limit reached)`;
       return {
-        content: [{ type: "text", text: [heading, ...result.files].join("\n") }],
+        content: [{ type: "text", text: [...result.notices, heading, ...result.files].join("\n") }],
         details: {
           query: result.query,
           files: result.files,

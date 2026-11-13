@@ -1,6 +1,5 @@
 import type { SearchEnvironment } from "pi-agent-search/api/search";
-import type { UnreadablePaths } from "#src/ripgrep.ts";
-import { displaySource } from "#src/search-result.ts";
+import { unreadableNotice } from "#src/search-result.ts";
 import {
   searchText,
   type TextSearchRequest,
@@ -78,13 +77,6 @@ export async function runSearchRecipe(
   }
   if (result.unreadable !== undefined) notices.push(unreadableNotice(result.unreadable, cwd));
   return { ...result, query, notices };
-}
-
-/** Summarize in one line the paths a search could not read, so they never replace its matches. */
-function unreadableNotice(unreadable: UnreadablePaths, cwd: string): string {
-  const paths = unreadable.count === 1 ? "1 path" : `${unreadable.count} paths`;
-  const { path, error } = unreadable.first;
-  return `Search notice: could not read ${paths}, so matches in them are missing. First: ${displaySource(path, cwd)}: ${error}`;
 }
 
 /** Tell the agent how a broadened search may be used, because its matches can differ from the query. */

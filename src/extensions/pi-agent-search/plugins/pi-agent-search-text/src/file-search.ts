@@ -1,8 +1,15 @@
 import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline";
 
-import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
+import {
+  mergeUnreadablePaths,
+  parentIgnoreArguments,
+  resolveRipgrepExecutable,
+  RipgrepStderr,
+  type UnreadablePaths,
+} from "#src/ripgrep.ts";
 
 import { splitGlobList, type SearchRequest } from "pi-agent-search/api/search";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
@@ -10,6 +17,8 @@ import type { SearchEnvironment } from "pi-agent-search/api/search";
 export interface FileSearchResult {
   readonly files: readonly string[];
   readonly complete: boolean;
+  /** Paths ripgrep could not read; files below them are missing. */
+  readonly unreadable?: UnreadablePaths;
 }
 
 /** List matching files in sort order: the first `request.limit` (default 100); `Infinity` lists all. */
@@ -21,14 +30,7 @@ export async function searchFiles(
   environment?: SearchEnvironment,
 ): Promise<FileSearchResult> {
   const limit = request.limit ?? 100;
-  const arguments_ = [
-    "--files",
-    "--hidden",
-    "--no-config",
-    "--no-ignore-parent",
-    "--glob",
-    "!.git/**",
-  ];
+  const arguments_ = ["--files", "--hidden", "--no-config", "--glob", "!.git/**"];
 
   for (const include of splitGlobList(request.include)) {
     arguments_.push("--glob", include);
@@ -42,12 +44,18 @@ export async function searchFiles(
   if (environment !== undefined) {
     // Each root is listed from its own directory, so a glob with / matches relative to it.
     const found = firstFiles(limit, roots.length > 1);
+    let unreadable: UnreadablePaths | undefined;
     for (const root of roots.length === 0 ? ["."] : roots) {
       const target = environment.resolve(cwd, root);
       const directory = await environment.isDirectory(target, signal);
       const searchCwd = directory ? target : environment.dirname(target);
       const result = await environment.runLines(
-        [...arguments_, "--", directory ? "." : `./${environment.basename(target)}`],
+        [
+          ...arguments_,
+          ...(directory ? await parentIgnoreArguments(target, environment, signal) : []),
+          "--",
+          directory ? "." : `./${environment.basename(target)}`,
+        ],
         searchCwd,
         (file) => {
           const relative = file.replace(/^\.\//u, "");
@@ -56,14 +64,16 @@ export async function searchFiles(
         signal,
       );
       signal?.throwIfAborted();
-      if (result.code !== 0 && result.code !== 1)
-        throw new Error(result.stderr || "File search failed.");
+      const stderr = new RipgrepStderr((printed) => environment.resolve(searchCwd, printed));
+      stderr.write(result.stderr);
+      if (stderr.failed(result.code)) throw new Error(stderr.message || "File search failed.");
+      unreadable = mergeUnreadablePaths(unreadable, stderr.unreadable(result.code));
     }
-    return found.result();
+    return withUnreadable(found.result(), unreadable);
   }
   if (roots.some((root) => root.includes("://")) || cwd.includes("://"))
     throw new Error("No search environment owns this scope.");
-  arguments_.push(...roots);
+  arguments_.push(...(await localParentIgnoreArguments(roots, cwd, signal)), ...roots);
 
   return new Promise((resolve, reject) => {
     const child = spawn(resolveRipgrepExecutable(), arguments_, {
@@ -73,10 +83,10 @@ export async function searchFiles(
     // A large tree lists more paths than one string can hold, so lines are matched as they arrive.
     const found = firstFiles(limit, roots.length > 1);
     let failure: Error | undefined;
-    let stderr = "";
+    const stderr = new RipgrepStderr((printed) => path.resolve(cwd, printed));
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      if (stderr.length < maximumStderrLength) stderr += chunk;
+      stderr.write(chunk);
     });
     createInterface({ input: child.stdout, crlfDelay: Infinity }).on("line", (line) => {
       if (line.length === 0 || failure !== undefined) return;
@@ -107,17 +117,45 @@ export async function searchFiles(
         return;
       }
 
-      if (code !== 0 && code !== 1) {
-        reject(new Error(stderr.trim() || `rg exited with code ${String(code)}`));
+      if (stderr.failed(code)) {
+        reject(new Error(stderr.message || `rg exited with code ${String(code)}`));
         return;
       }
 
-      resolve(found.result());
+      resolve(withUnreadable(found.result(), stderr.unreadable(code)));
     });
   });
 }
 
-const maximumStderrLength = 64 * 1024;
+/**
+ * One run lists every root, so it follows the ignore files above them only when each directory
+ * root does. Ripgrep lists a file root even when an ignore file names it.
+ */
+async function localParentIgnoreArguments(
+  roots: readonly string[],
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const perRoot = await Promise.all(
+    (roots.length === 0 ? ["."] : roots).map(async (root) => {
+      const target = path.resolve(cwd, root);
+      const directory = await stat(target).then(
+        (stats) => stats.isDirectory(),
+        () => false,
+      );
+      return directory ? parentIgnoreArguments(target, undefined, signal) : [];
+    }),
+  );
+  return perRoot.some((arguments_) => arguments_.length > 0) ? ["--no-ignore-parent"] : [];
+}
+
+function withUnreadable(
+  result: FileSearchResult,
+  unreadable: UnreadablePaths | undefined,
+): FileSearchResult {
+  return unreadable === undefined ? result : { ...result, unreadable };
+}
+
 const collator = new Intl.Collator();
 
 /**

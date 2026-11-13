@@ -7,6 +7,7 @@ import {
 } from "pi-agent-search/api/search";
 import { pathToFileURL } from "node:url";
 
+import type { UnreadablePaths } from "#src/ripgrep.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
 import { planSearchPresentation } from "#src/search-presentation.ts";
 
@@ -309,4 +310,11 @@ export function displaySource(source: string, cwd: string): string {
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
     ? relative
     : source;
+}
+
+/** Summarize in one line the paths a search could not read, so they never replace its results. */
+export function unreadableNotice(unreadable: UnreadablePaths, cwd: string): string {
+  const paths = unreadable.count === 1 ? "1 path" : `${unreadable.count} paths`;
+  const { path: source, error } = unreadable.first;
+  return `Search notice: could not read ${paths}, so matches in them are missing. First: ${displaySource(source, cwd)}: ${error}`;
 }
