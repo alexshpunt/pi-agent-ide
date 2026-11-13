@@ -28,11 +28,6 @@ export async function schedule<T, R>(
         continue;
       }
       completed.set(settled.index, settled.result);
-      const reason = options.stopReason(settled.result);
-      if (reason && !stop) {
-        stop = { reason, result: settled.result };
-        controller.abort();
-      }
       if (!publishFailed) {
         try {
           await options.publish(
@@ -59,9 +54,20 @@ export async function schedule<T, R>(
         .then(() => options.run(entry.item, controller.signal))
         .then(
           (result) => {
-            finished.push({ index: entry.index, result });
+            try {
+              const reason = options.stopReason(result);
+              if (reason && !stop) {
+                stop = { reason, result };
+                controller.abort();
+              }
+              finished.push({ index: entry.index, result });
+            } catch (error) {
+              controller.abort();
+              finished.push({ index: entry.index, error });
+            }
           },
           (error: unknown) => {
+            controller.abort();
             finished.push({ index: entry.index, error });
           },
         );

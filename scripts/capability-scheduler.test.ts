@@ -86,6 +86,38 @@ test("account stop aborts and drains active work without starting more", async (
   expect(reports.at(-1)).toEqual(["limit", "cancelled"]);
 });
 
+test("a stop completing during publication prevents refilling the queue", async () => {
+  const gates = Array.from({ length: 2 }, () => deferred<string>());
+  const publishing = deferred<void>();
+  const release = deferred<void>();
+  const started: number[] = [];
+  const controller = new AbortController();
+  const running = schedule([0, 1, 2], 2, controller, {
+    run: async (item) => {
+      started.push(item);
+      return gates[item]!.promise;
+    },
+    resource: () => undefined,
+    stopReason: (result) => (result === "limit" ? "account-limit" : undefined),
+    publish: async (results) => {
+      if (results.length === 1) {
+        publishing.resolve();
+        await release.promise;
+      }
+    },
+  });
+  await viWait(() => started.length === 2);
+  gates[0]!.resolve("ok");
+  await publishing.promise;
+  gates[1]!.resolve("limit");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(controller.signal.aborted).toBe(true);
+  release.resolve();
+  const result = await running;
+  expect(result.stoppedFor).toBe("account-limit");
+  expect(started).toEqual([0, 1]);
+});
+
 test("external cancellation drains active work and skips the queue", async () => {
   const controller = new AbortController();
   const started: number[] = [];
@@ -138,6 +170,38 @@ test("an unexpected failure aborts and waits for active cleanup", async () => {
   expect(drained).toBe(false);
   cleaned.resolve();
   await expect(running).rejects.toThrow();
+  expect(drained).toBe(true);
+});
+
+test("publication failure aborts and drains active attempts", async () => {
+  const first = deferred<void>();
+  const cleaned = deferred<void>();
+  const controller = new AbortController();
+  let drained = false;
+  const running = schedule([0, 1, 2], 2, controller, {
+    run: async (item, signal) => {
+      if (item === 0) {
+        await first.promise;
+        return item;
+      }
+      await new Promise<void>((resolve) =>
+        signal.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      await cleaned.promise;
+      drained = true;
+      return item;
+    },
+    resource: () => undefined,
+    stopReason: () => undefined,
+    publish: async () => {
+      throw new Error("report failed");
+    },
+  });
+  first.resolve();
+  await viWait(() => controller.signal.aborted);
+  expect(drained).toBe(false);
+  cleaned.resolve();
+  await expect(running).rejects.toThrow("report failed");
   expect(drained).toBe(true);
 });
 
