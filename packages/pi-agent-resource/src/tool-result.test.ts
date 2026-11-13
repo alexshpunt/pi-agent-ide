@@ -93,3 +93,22 @@ test("rejects cycles and oversized public data instead of silently clipping them
   expect(() => assertJsonData(cycle)).toThrow(TypeError);
   expect(() => assertJsonData("x".repeat(1024 * 1024))).toThrow(RangeError);
 });
+
+test("a caller can lift the size limit for data a script receives", () => {
+  const large = "x".repeat(1024 * 1024);
+  expect(() => assertJsonData(large, Infinity)).not.toThrow();
+  const native = withStructuredResult(
+    { content: [{ type: "text", text: "large" }], details: {} },
+    Type.String(),
+    { status: "success", data: large, errors: [] },
+    { maxBytes: Infinity },
+  );
+  expect(native.isError).toBe(false);
+  expect(native.structuredContent).toMatchObject({ data: large });
+  const bounded = withStructuredResult(
+    { content: [{ type: "text", text: "large" }], details: {} },
+    Type.String(),
+    { status: "success", data: large, errors: [] },
+  );
+  expect(bounded.isError).toBe(true);
+});

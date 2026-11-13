@@ -77,6 +77,31 @@ test.each([false, true])(
     expect(JSON.stringify(denied.content)).toContain("Owned content is blocked");
   },
 );
+test("a script's search keeps structured data above the 1 MiB limit an agent's search has", async () => {
+  const core = createSearchCore();
+  const files = Array.from({ length: 20_000 }, (_, index) => `${"x".repeat(60)}-${String(index)}`);
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "large-files",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "files",
+          tryResolve: () => ({ kind: "resolved", payload: files }),
+          format: () => ({ content: [{ type: "text", text: "20000 files" }], details: {} }),
+          toScriptData: () => ({ kind: "files", files, complete: true }),
+        },
+      });
+    },
+  });
+  const script = await core.execute({ query: "large" }, { cwd: process.cwd() }, "script");
+  expect(script.isError).not.toBe(true);
+  expect(script.structuredContent).toMatchObject({ status: "success", data: { files } });
+  const agent = await core.execute({ query: "large" }, { cwd: process.cwd() });
+  expect(agent.isError).toBe(true);
+  expect(JSON.stringify(agent.content)).toContain("exceeds 1 MiB");
+});
 async function setup(attempt: SearchResolutionAttempt | Error, supportsResultScope = false) {
   const core = createSearchCore();
   const specialized = vi.fn(() => {

@@ -40,3 +40,33 @@ test("a files: query without file_search options is not a path search", async ()
     createFileResolver().tryResolve({ query: "files:*.txt", path: "src" }, { cwd }),
   ).resolves.toEqual({ kind: "not-handled" });
 });
+
+test("an uncapped search lists every file unless the request sets a limit", async () => {
+  const cwd = await workspace();
+  const names = Array.from({ length: 105 }, (_, index) => `many/file-${String(index)}.log`);
+  await mkdir(path.join(cwd, "many"));
+  await Promise.all(names.map((name) => writeFile(path.join(cwd, name), "")));
+  const resolver = createFileResolver();
+  const files = async (request: { limit?: number }, uncapped?: boolean) => {
+    const result = await resolver.tryResolve(
+      {
+        query: "*.log",
+        ...request,
+        options: { files: { pattern: "*.log", ...(uncapped === undefined ? {} : { uncapped }) } },
+      },
+      { cwd },
+    );
+    if (result.kind !== "resolved") throw new Error("file search was not resolved");
+    return resolver.toScriptData?.(result.payload, {}) as { files: string[]; complete: boolean };
+  };
+
+  const all = await files({}, true);
+  expect(all.files).toHaveLength(105);
+  expect(all.complete).toBe(true);
+  const limited = await files({ limit: 2 }, true);
+  expect(limited.files).toHaveLength(2);
+  expect(limited.complete).toBe(false);
+  const capped = await files({});
+  expect(capped.files).toHaveLength(100);
+  expect(capped.complete).toBe(false);
+});
