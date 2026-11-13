@@ -9,7 +9,7 @@ import {
   type SearchEnvironment,
 } from "pi-agent-search/api/search";
 import { ripgrepScope, searchText, type TextSearchRequest } from "#src/search-backend.ts";
-import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
+import { resolveRipgrepExecutable, RipgrepStderr } from "#src/ripgrep.ts";
 
 /** Scan fresh names, then capture only bounded exact alternatives in the same scope. */
 export async function searchFuzzy(
@@ -81,7 +81,8 @@ export async function searchFuzzyAlternative(
     { matches: fuzzyLimits.matchesPerCandidate, bytes: fuzzyLimits.verificationBytes },
     environment,
   );
-  return { ...result, matches: result.matches.filter(isWholeIdentifierMatch) };
+  // The search of the query itself reports the paths this scope could not read.
+  return { matches: result.matches.filter(isWholeIdentifierMatch), complete: result.complete };
 }
 
 /**
@@ -152,8 +153,11 @@ async function collectNames(
         },
         ownedSignal,
       );
-      if (!vocabulary.limited && result.code !== 0 && result.code !== 1)
-        throw new Error(result.stderr.trim() || "Ripgrep failed.");
+      // Names come only from paths ripgrep could read; the search reports the others.
+      const stderr = new RipgrepStderr();
+      stderr.write(result.stderr);
+      if (!vocabulary.limited && stderr.failed(result.code))
+        throw new Error(stderr.message || "Ripgrep failed.");
     } catch (error) {
       signal.throwIfAborted();
       if (!vocabulary.limited) throw error;
@@ -177,7 +181,7 @@ async function collectNames(
     );
     let token = "";
     let oversized = false;
-    let stderr = "";
+    const stderr = new RipgrepStderr();
     const abort = (): void => {
       child.kill();
     };
@@ -209,7 +213,7 @@ async function collectNames(
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      stderr = (stderr + chunk).slice(0, 4096);
+      stderr.write(chunk);
     });
     child.once("error", (error) => {
       cleanup();
@@ -221,8 +225,9 @@ async function collectNames(
         reject(signal.reason);
         return;
       }
-      if (!vocabulary.limited && code !== 0 && code !== 1) {
-        reject(new Error(stderr.trim() || `ripgrep exited with code ${String(code)}`));
+      // Names come only from paths ripgrep could read; the search reports the others.
+      if (!vocabulary.limited && stderr.failed(code)) {
+        reject(new Error(stderr.message || `ripgrep exited with code ${String(code)}`));
         return;
       }
       resolve(vocabulary);
