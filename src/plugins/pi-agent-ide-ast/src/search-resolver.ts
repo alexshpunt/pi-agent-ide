@@ -330,12 +330,29 @@ export function createAstSearchResolver(
                   throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
                 },
               });
-              const captured = selectionData(matches, selected.complete, undefined, group);
               groupsForMatch[name] = {
-                target: requiredValue(captured.target),
+                target: requiredValue(
+                  selectionData(matches, selected.complete, undefined, group).target,
+                ),
                 nodes: matches.length,
               };
-              projected.push([name, captured.matches] as const);
+              const nodesData: ReturnType<typeof selectionData>["matches"] = [];
+              // Shared Search previews hold 100 nodes. Register every capture chunk without dropping nodes.
+              for (let offset = 0; offset < matches.length; offset += 100) {
+                const chunk = matches.slice(offset, offset + 100);
+                const captured = await register({
+                  request,
+                  matches: chunk,
+                  complete: selected.complete,
+                  refresh: async () => {
+                    throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
+                  },
+                });
+                nodesData.push(
+                  ...selectionData(chunk, selected.complete, undefined, captured).matches,
+                );
+              }
+              projected.push([name, nodesData] as const);
             }
             captures.push(Object.fromEntries(projected));
             captureGroups.push(groupsForMatch);
