@@ -26,12 +26,12 @@ export const insertSchema = Type.Object(
     text: Type.String({
       minLength: 1,
       description:
-        "Non-empty text to insert. Whole-line selections add needed separators; exact fragments do not.",
+        "Non-empty text to insert. A selection of whole lines, including exact text of a complete line, puts the text on its own line and adds needed line breaks; a partial-line selection inserts the text exactly.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
         description:
-          "line (default) or blank-line: put the text in its own paragraph, with blank lines around it.",
+          "line (default) keeps the line handling above; blank-line puts the text in its own paragraph, with blank lines around it.",
       }),
     ),
     before: Type.Optional(

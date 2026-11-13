@@ -1489,7 +1489,7 @@ add(
 add(
   "search-literal-operators",
   ["search.literal-operators"],
-  "Search task.txt for the exact C++ text `flags | MASK`, including the spaced vertical bar, and report the only line that contains it. Do not change files.",
+  "Search task.txt for the exact C++ text `flags | MASK`, including the spaced vertical bar, and report the full text of the only line that contains it. Do not change files.",
   [
     {
       tool: "search",
@@ -2280,16 +2280,17 @@ for (const scenario of ["restored", "target-failed", "target-failed-after-restor
   add(
     `move-rollback-${scenario}`,
     ["edit.move-rollback"],
-    `Move the complete move-me line from ${source} after top in ${target}. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read both files in later calls. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
+    `Move the complete move-me line from ${source} after top in ${target}. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read the source and the destination in two separate later calls. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
     [
       {
         tool: "move",
         error: "direct",
         args: {
           path: source,
-          start: /move-me|[A-Z]+#|[0-9]+#/u,
+          // Exact text, a Search anchor or a line anchor such as 1A4YVAE|move-me.
+          start: /move-me|[A-Z]+#|^[0-9A-HJKMNP-TV-Z]{7}(?:\||$)/u,
           target,
-          targetStart: /top|[A-Z]+#|[0-9]+#/u,
+          targetStart: /top|[A-Z]+#|^[0-9A-HJKMNP-TV-Z]{7}(?:\||$)/u,
         },
       },
       { tool: "read", args: { path: source }, contains: "move-me" },
@@ -2412,7 +2413,7 @@ const addedRows = Array.from({ length: 2500 }, (_, index) => `row ${index}\n`).j
 add(
   "diff-script-complete",
   ["codemode.diff-complete"],
-  'In one Codemode script, diff before.txt against after.txt; after.txt has more lines than a tool result shows. Without printing the diff, count the lines of the returned string that start with "+" but not with "+++", and report that count. Then diff before.txt against itself and check that the result is an empty string. Do not use Bash, the raw: prefix or temporary results, and do not edit files.',
+  'In one Codemode script, diff before.txt against after.txt; after.txt has more lines than a tool result shows. Without printing the diff, count the lines of the returned string that start with "+" but not with "+++", and report that count in plain digits. Then diff before.txt against itself and check that the result is an empty string. Do not use Bash, the raw: prefix or temporary results, and do not edit files.',
   [
     {
       tool: "diff",
@@ -2488,26 +2489,29 @@ for (const [name, eol, ending] of [
     },
   );
 }
+/** The exact text of a whole line, or its line anchor such as `YZVZ5WQ|first`. */
+const line = (text: string) =>
+  new RegExp(`^(?:[0-9A-HJKMNP-TV-Z]{7}(?:\\|${text})?|${text})$`, "u");
 for (const method of ["all", "allSettled"] as const) {
   add(
     `parallel-edit-effects-${method}`,
     ["codemode.parallel-edit-effects"],
-    `In one native Codemode script, use Promise.${method} to start six edits together, without awaiting an individual call first. Insert FIRST plus a newline after first, MIDDLE plus a newline after middle, and LAST plus a newline after last in insert.txt. Use ./insert.txt for the middle request. Concurrently delete the unique whole lines first, middle, and last from delete.txt, using ./delete.txt for the middle request. Print every value: each Insert resolves to the id of its inserted text and each Delete to null; the script result lists any failed call. Preserve all other bytes, including the existing blank lines and EOF.`,
+    `In one native Codemode script, use Promise.${method} to start six edits together, without awaiting an individual call first. Make three inserts, one after each line: FIRST plus a newline after first in insert.txt, MIDDLE plus a newline after middle in ./insert.txt, and LAST plus a newline after last in insert.txt. Concurrently make three deletes of unique whole lines: first from delete.txt, middle from ./delete.txt, and last from delete.txt. Print every value: each Insert resolves to the id of its inserted text and each Delete to null; the script result lists any failed call. Preserve all other bytes, including the existing blank lines and EOF.`,
     [
-      { tool: "insert", args: { path: "insert.txt", anchor: "first", text: "FIRST\n" } },
+      { tool: "insert", args: { path: "insert.txt", anchor: line("first"), text: "FIRST\n" } },
       {
         tool: "insert",
-        args: { path: "./insert.txt", anchor: "middle", text: "MIDDLE\n" },
+        args: { path: "./insert.txt", anchor: line("middle"), text: "MIDDLE\n" },
         parallelWith: 0,
       },
       {
         tool: "insert",
-        args: { path: "insert.txt", anchor: "last", text: "LAST\n" },
+        args: { path: "insert.txt", anchor: line("last"), text: "LAST\n" },
         parallelWith: 1,
       },
-      { tool: "delete", args: { path: "delete.txt", start: "first" } },
-      { tool: "delete", args: { path: "./delete.txt", start: "middle" }, parallelWith: 3 },
-      { tool: "delete", args: { path: "delete.txt", start: "last" }, parallelWith: 4 },
+      { tool: "delete", args: { path: "delete.txt", start: line("first") } },
+      { tool: "delete", args: { path: "./delete.txt", start: line("middle") }, parallelWith: 3 },
+      { tool: "delete", args: { path: "delete.txt", start: line("last") }, parallelWith: 4 },
     ],
     {
       modes: ["codemode"],

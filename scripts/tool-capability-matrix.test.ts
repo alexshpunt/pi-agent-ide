@@ -642,13 +642,69 @@ describe("capability route evidence", () => {
       { type: "tool_execution_end", toolCallId: "compose", toolName: "codemode", isError: true },
     ];
     expect(validateRoute(route, native, "codemode").passed).toBe(true);
+    // A result-bound selector runs the call at once, so it fails as a child.
     expect(
       validateRoute(
         route,
         native.map((event) => (event.toolCallId === "move" ? { ...event, isError: true } : event)),
         "codemode",
       ).passed,
+    ).toBe(true);
+    // An accepted call whose parent completed was not shown to fail.
+    expect(
+      validateRoute(
+        route,
+        native.map((event) =>
+          event.toolCallId === "compose" ? { ...event, isError: false } : event,
+        ),
+        "codemode",
+      ).passed,
     ).toBe(false);
+  });
+  test("accepts a Move rollback by line anchor and rejects a constant selector", () => {
+    const rollback = capabilityCases.find((item) => item.id === "move-rollback-restored");
+    if (!rollback) throw Error("Missing Move rollback capability case");
+    const source = ".tmp/move-rollback/restored-source.txt";
+    const target = ".tmp/move-rollback/restored-target.txt";
+    const route = (start: string) => [
+      { type: "tool_execution_start", toolCallId: "m", toolName: "codemode", args: {} },
+      {
+        type: "tool_execution_start",
+        toolCallId: "move",
+        parentToolCallId: "m",
+        toolName: "move",
+        args: { path: source, start, target, targetStart: "top" },
+      },
+      { type: "tool_execution_end", toolCallId: "move", toolName: "move", isError: false },
+      { type: "tool_execution_end", toolCallId: "m", toolName: "codemode", isError: true },
+      ...[source, target].flatMap((file, index) => [
+        { type: "tool_execution_start", toolCallId: `c${index}`, toolName: "codemode", args: {} },
+        {
+          type: "tool_execution_start",
+          toolCallId: `r${index}`,
+          parentToolCallId: `c${index}`,
+          toolName: "read",
+          args: { path: file },
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: `r${index}`,
+          toolName: "read",
+          isError: false,
+          result: { content: [{ type: "text", text: "move-me bottom" }] },
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: `c${index}`,
+          toolName: "codemode",
+          isError: false,
+        },
+      ]),
+    ];
+    expect(validateRoute(rollback, route("1A4YVAE"), "codemode").passed).toBe(true);
+    expect(validateRoute(rollback, route("1A4YVAE|move-me"), "codemode").passed).toBe(true);
+    // `begin` selects the first line, not move-me.
+    expect(validateRoute(rollback, route("begin"), "codemode").passed).toBe(false);
   });
   test("distinguishes direct calls from real nested Codemode calls", () => {
     expect(validateRoute(task, events, "codemode").passed).toBe(false);
