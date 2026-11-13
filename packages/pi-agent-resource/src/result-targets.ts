@@ -52,8 +52,8 @@ export const resultInputSchema = Type.Union([
 ]);
 
 const prefix = "RESULT#";
-/** An issued result reference: `RESULT#<uuid>` or the bare UUID. */
-const referencePattern = /^(?:RESULT#)?[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
+/** The UUID that identifies an issued result. */
+const uuidPattern = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
 const event = "pi-agent-resource:result-targets";
 const unknownReference =
   "Result reference expired or unknown. Run Read/Search again and use the new result.";
@@ -360,7 +360,8 @@ export class ResultTargetStore {
     const valueId = resultValueId(input);
     if (valueId !== undefined) {
       // A value's id is a reference, never a path: an id the store did not issue is unknown.
-      if (!referencePattern.test(valueId) && !this.#matchReferences.has(valueId))
+      const uuid = valueId.startsWith(prefix) ? valueId.slice(prefix.length) : valueId;
+      if (!uuidPattern.test(uuid) && !this.#matchReferences.has(valueId))
         throw new Error(unknownReference);
       return this.source(valueId, cwd, allowResource);
     }
@@ -370,7 +371,7 @@ export class ResultTargetStore {
     const envelope =
       /^<system-result\b[^>]*><uuid>([a-f\d-]{36})<\/uuid><\/system-result>(?:\n|$)/u.exec(input);
     const id = envelope?.[1] ?? (input.startsWith(prefix) ? input.slice(prefix.length) : input);
-    const isId = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u.test(id);
+    const isId = uuidPattern.test(id);
     if (!envelope && !isId) {
       if (input.startsWith("<system-result")) throw new Error("Invalid system result reference.");
       return input;

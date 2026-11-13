@@ -2507,7 +2507,7 @@ add(
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
-// Values with an id come from the Read and Search values; until then the script builds one.
+// Until Read and Search return values with an id (LPT-1362, LPT-1398), the script builds one.
 add(
   "value-id-source",
   ["compose.value-id-source"],
