@@ -1,6 +1,7 @@
 import { once } from "node:events";
 import { readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend, type SshTarget } from "#src/backend/ssh.ts";
 
@@ -11,6 +12,8 @@ export async function startSshCarrierFixture(
 ) {
   const fixture = await startSshFixture(tools, environment);
   let proxy: net.Server | undefined;
+  let accepted = 0;
+  let closeBeforeHandshake = 0;
   const connections = new Set<{
     client: net.Socket;
     upstream: net.Socket;
@@ -32,6 +35,12 @@ export async function startSshCarrierFixture(
     if (!portLine) throw new Error("No private fixture SSH port");
     const upstreamPort = Number(portLine[1]);
     proxy = net.createServer((client) => {
+      accepted++;
+      if (closeBeforeHandshake > 0) {
+        closeBeforeHandshake--;
+        client.destroy();
+        return;
+      }
       const upstream = net.createConnection({ host: "127.0.0.1", port: upstreamPort });
       const closed = Promise.all(
         [client, upstream].map(
@@ -75,23 +84,49 @@ export async function startSshCarrierFixture(
       target,
       direct,
       dropConnections,
+      /** Close the next count connections as soon as they arrive, before any SSH byte. */
+      closeNextConnections(count: number) {
+        closeBeforeHandshake = count;
+      },
+      /** Connections the proxy has accepted so far, including closed ones. */
+      get acceptedConnections() {
+        return accepted;
+      },
+      /** Stop listening, so new connections to the target's port are refused. */
+      async refuseConnections() {
+        await dropConnections();
+        await closeProxy(ownedProxy);
+        // Right after close() a connection can still be accepted and then reset.
+        while (!(await portRefuses(address.port))) await delay(10);
+      },
       async stop() {
         await dropConnections();
-        await new Promise<void>((resolve, reject) =>
-          ownedProxy.close((error) => (error ? reject(error) : resolve())),
-        );
+        await closeProxy(ownedProxy);
         await fixture.stop();
       },
     };
   } catch (error) {
     await dropConnections();
-    if (proxy?.listening) {
-      const ownedProxy = proxy;
-      await new Promise<void>((resolve, reject) =>
-        ownedProxy.close((failure) => (failure ? reject(failure) : resolve())),
-      );
-    }
+    if (proxy) await closeProxy(proxy);
     await fixture.stop();
     throw error;
   }
+}
+
+function portRefuses(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: "127.0.0.1", port });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once("error", (error: NodeJS.ErrnoException) => resolve(error.code === "ECONNREFUSED"));
+  });
+}
+
+async function closeProxy(proxy: net.Server): Promise<void> {
+  if (!proxy.listening) return;
+  await new Promise<void>((resolve, reject) =>
+    proxy.close((error) => (error ? reject(error) : resolve())),
+  );
 }

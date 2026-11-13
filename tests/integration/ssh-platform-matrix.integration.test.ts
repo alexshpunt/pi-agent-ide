@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { SshBackend } from "#src/backend/ssh.ts";
 import { remotePython } from "#src/backend/ssh-transport.ts";
+import { remoteShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 import {
   selectedDirections,
   startTargetFixture,
@@ -88,6 +89,30 @@ describe.each(selectedDirections())("SSH direction %s", (direction) => {
     await expect(channel.completion).resolves.toEqual({ exitCode: 5 });
     expect(Buffer.concat(chunks)).toEqual(Buffer.from([255, 3, 2, 1]));
   });
+
+  test("a terminal command that runs for a minute reports all its output and its exit code", async () => {
+    // The shell and PTY that remote_powershell and Bash over SSH use.
+    const shell = remoteShellProfile(targetOs);
+    const command =
+      targetOs === "windows"
+        ? '1..60 | ForEach-Object { Start-Sleep -Seconds 1; "tick $_" }; exit 3'
+        : 'for i in $(seq 1 60); do sleep 1; echo "tick $i"; done; exit 3';
+    const channel = await backend.startProcess(
+      shell.executable,
+      shell.commandArgs(command),
+      fixture.workspace,
+      { pty: { cols: 120, rows: 30 } },
+    );
+    const chunks: Buffer[] = [];
+    channel.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+    channel.stderr.resume();
+    const started = performance.now();
+    await expect(channel.completion).resolves.toEqual({ exitCode: 3 });
+    expect(performance.now() - started).toBeGreaterThan(55_000);
+    const output = Buffer.concat(chunks).toString("utf8");
+    expect(output).toContain("tick 1\r\n");
+    expect(output).toContain("tick 60\r\n");
+  }, 120_000);
 
   test.runIf(targetOs === "windows")(
     "refuses to replace a file another process holds open, without changing it",
