@@ -38,6 +38,40 @@ test("formats a Rust 2024 crate using cargo and rustfmt on the source owner", as
     expect(
       (await owner.backend.read(`${fixture.workspace}/lib.rs`)).bytes.toString("utf8"),
     ).toContain("if let Some(x) = Some(1)");
+    const before = 'pub fn example(){println!("original");}\n';
+    const edited = before.replace("original", "changed");
+    const current = await owner.backend.read(`${fixture.workspace}/lib.rs`);
+    await owner.backend.write(`${fixture.workspace}/lib.rs`, Buffer.from(edited), current.version);
+    expect(
+      await createFormatter(createOwnedFormatterRuntime(registry)).format(
+        { filePath: `${root}/lib.rs`, before },
+        { cwd: root },
+      ),
+    ).toMatchObject({ ok: true, edits: 0, formatter: "rustfmt", skipped: "style" });
+    expect((await owner.backend.read(`${fixture.workspace}/lib.rs`)).bytes.toString("utf8")).toBe(
+      edited,
+    );
+
+    const formattedBefore = 'pub fn example() {\n    println!("original");\n}\n';
+    const formattedEdit = formattedBefore.replace(
+      'println!("original");',
+      'println!( "changed" );',
+    );
+    const latest = await owner.backend.read(`${fixture.workspace}/lib.rs`);
+    await owner.backend.write(
+      `${fixture.workspace}/lib.rs`,
+      Buffer.from(formattedEdit),
+      latest.version,
+    );
+    expect(
+      await createFormatter(createOwnedFormatterRuntime(registry)).format(
+        { filePath: `${root}/lib.rs`, before: formattedBefore },
+        { cwd: root },
+      ),
+    ).toMatchObject({ ok: true, edits: 1, formatter: "rustfmt" });
+    expect((await owner.backend.read(`${fixture.workspace}/lib.rs`)).bytes.toString("utf8")).toBe(
+      formattedBefore.replace("original", "changed"),
+    );
   } finally {
     await fixture.stop();
   }

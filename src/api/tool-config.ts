@@ -431,6 +431,7 @@ export async function toolRuntimeEvidence(
 export interface ConfiguredProcessContext {
   readonly projectRoot: string;
   readonly filePath: string;
+  readonly input?: string;
   readonly env?: NodeJS.ProcessEnv;
   readonly signal?: AbortSignal;
   readonly processAccess?: ConfiguredProcessAccess;
@@ -470,7 +471,7 @@ export async function runConfiguredProcess(
       // A process group lets cancellation stop the processes the command starts, such as the
       // cargo, clippy-driver and rustc processes behind the rustup `cargo` proxy.
       detached: process.platform !== "win32",
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [context.input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
     const stop = () => killProcessTree(child.pid);
     const onAbort = () => {
@@ -501,6 +502,15 @@ export async function runConfiguredProcess(
     childStderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
+    if (context.input !== undefined && child.stdin) {
+      child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+        if (error.code !== "EPIPE") {
+          stop();
+          reject(error);
+        }
+      });
+      child.stdin.end(context.input);
+    }
     child.on("error", (error) => {
       settle();
       reject(error);

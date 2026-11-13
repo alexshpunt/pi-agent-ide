@@ -122,8 +122,8 @@ export function createOwnedFormatterRuntime(registry: SshBackendRegistry): Forma
               throw error;
             }
           },
-          run: (config) =>
-            runConfiguredProcess(config, { projectRoot, filePath: source, processAccess }),
+          run: (config, input) =>
+            runConfiguredProcess(config, { projectRoot, filePath: source, processAccess, input }),
         },
       };
     },

@@ -47,7 +47,7 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
       else await loadRegistry(context.cwd);
       return true;
     },
-    async format({ filePath }, context) {
+    async format({ filePath, before }, context) {
       if (!runtime && (filePath.includes("://") || context.cwd.includes("://")))
         throw Object.assign(new Error("Formatter requires its resource owner"), {
           code: "UNSUPPORTED_SOURCE",
@@ -83,6 +83,16 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
                 access: localRustfmtAccess(projectRoot, filePath),
               };
           formatter = await rustfmtWithEdition(formatter, selected.file, selected.access);
+          if (before !== undefined && before.length > 0) {
+            const command = formatter.run.command.filter((part) => part !== "{file}");
+            const baseline = await selected.access.run(
+              { ...formatter.run, command: [...command, "--emit", "stdout"], cwd: "file" },
+              before,
+            );
+            if (!baseline.ok) return { ok: false, edits: 0, formatter: "rustfmt" };
+            if (baseline.stdout !== before)
+              return { ok: true, edits: 0, formatter: "rustfmt", skipped: "style" };
+          }
         } catch {
           return { ok: false, edits: 0, formatter: "rustfmt" };
         }

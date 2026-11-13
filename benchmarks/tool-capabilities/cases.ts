@@ -742,6 +742,31 @@ add(
 );
 
 add(
+  "rust-style-preservation",
+  ["edit.rust-style-preservation"],
+  "In unformatted.rs replace the text value=1 with value=2. In formatted.rs replace the line let value = 1; with let value=2;. Keep all other content. Use replace for both files.",
+  [
+    { tool: "replace", args: { path: "unformatted.rs", start: "value=1", text: "value=2" } },
+    {
+      tool: "replace",
+      args: { path: "formatted.rs", start: "let value = 1;", text: "let value=2;" },
+    },
+  ],
+  {
+    files: {
+      "Cargo.toml": '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n',
+      "unformatted.rs": 'fn main(){let value=1;println!("{}",value);}\n',
+      "formatted.rs": "fn main() {\n    let value = 1;\n}\n",
+    },
+    expected: {
+      "unformatted.rs": 'fn main(){let value=2;println!("{}",value);}\n',
+      "formatted.rs": "fn main() {\n    let value = 2;\n}\n",
+    },
+    prerequisite: "command -v cargo && command -v rustfmt",
+  },
+);
+
+add(
   "codemode-child-presentation",
   ["compose.codemode-child-result"],
   "In one native Codemode call, read task.txt and pass the unchanged Read result to text(). Keep the file unchanged. After the call, answer only CODEMODE-CHILD-MARKER. Do not use shell commands or substitute a standalone Read.",
