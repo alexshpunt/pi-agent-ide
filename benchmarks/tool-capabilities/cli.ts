@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
+import { parseArguments } from "./options.ts";
 import { capabilityCases } from "./cases.ts";
 import { capabilityMatrix } from "./matrix.ts";
 import {
@@ -95,45 +96,7 @@ function connectorEvidence(run: ConnectorRun | undefined): unknown {
 }
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const repository = findRepositoryRoot(import.meta.url);
-const args = process.argv.slice(2).filter((arg) => arg !== "--");
-const flags = new Set([
-  "--help",
-  "--list",
-  "--list-connectors",
-  "--check",
-  "--record-contracts",
-  "--preflight",
-  "--run",
-  "--tui",
-  "--tui-history",
-  "--dedicated-auth",
-]);
-const options = new Set([
-  "--model",
-  "--case",
-  "--mode",
-  "--attempts",
-  "--concurrency",
-  "--timeout",
-  "--results",
-  "--pi",
-  "--auth-dir",
-  "--connector",
-  "--connector-root",
-  "--claude-state",
-  "--claude-executable",
-]);
-for (let index = 0; index < args.length; index++) {
-  const arg = args[index] ?? "";
-  if (flags.has(arg)) continue;
-  if (!options.has(arg) || !args[index + 1] || args[index + 1]?.startsWith("--"))
-    throw Error(`Unknown or incomplete option: ${arg}`);
-  index++;
-}
-const value = (flag: string, fallback?: string): string | undefined => {
-  const index = args.indexOf(flag);
-  return index < 0 ? fallback : args[index + 1];
-};
+const { args, value } = parseArguments(process.argv.slice(2));
 const json = async (file: string, data: unknown) => {
   await writeFile(file, JSON.stringify(data, null, 2) + "\n");
 };
@@ -688,8 +651,6 @@ async function main(): Promise<void> {
     ["--connector-root", "--claude-state", "--claude-executable"].some((flag) => value(flag))
   )
     throw Error("Connector-specific options require --connector");
-  if (args.filter((arg) => arg === "--connector").length > 1)
-    throw Error("Select exactly one connector per invocation");
   if (args.includes("--list")) {
     for (const task of capabilityCases)
       console.log(`${task.id} [${task.modes.join(",")}] ${task.capabilities.join(", ")}`);
