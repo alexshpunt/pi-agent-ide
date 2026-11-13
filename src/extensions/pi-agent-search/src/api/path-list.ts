@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { NULL_FIELD } from "./null-fields.ts";
+
 const resultReference =
   /^(?:RESULT#|SEARCH#|<system-result\b)|^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
 
@@ -50,37 +52,9 @@ export function pathMachine(item: string, cwd: string): string {
   return `${url.protocol}//${url.host}`;
 }
 
-/**
- * Stands in for an explicit `path: null`. Pi drops a null optional property before `execute`
- * runs, so a tool cannot tell it from an omitted path. Its `prepareArguments` swaps the null for
- * this string, which holds a NUL character that no file path can contain.
- */
-export const NULL_SCOPE = "\0null";
-
-/** Why a search refuses a null `path`. */
-export const nullScopeMessage =
-  "path is null, so there is no source to search: the call that produced it probably failed or selected no text. Omit path to search the working directory.";
-
-/** `prepareArguments` for a search tool: keeps an explicit `path: null` visible to `execute`. */
-export function markNullScope(arguments_: unknown): unknown {
-  if (
-    typeof arguments_ !== "object" ||
-    arguments_ === null ||
-    Array.isArray(arguments_) ||
-    (arguments_ as { path?: unknown }).path !== null
-  )
-    return arguments_;
-  return { ...arguments_, path: NULL_SCOPE };
-}
-
-/** Whether a validated `path` is the marker of an explicit `path: null`. */
-export function isNullScope(value: unknown): boolean {
-  return value === NULL_SCOPE;
-}
-
 /** A short label of a `path` argument for tool call headers. */
 export function describePathArgument(value: unknown): string {
-  if (typeof value === "string") return value === NULL_SCOPE ? "null" : value;
+  if (typeof value === "string") return value === NULL_FIELD ? "null" : value;
   if (Array.isArray(value) && value.length > 0 && !value.some(isResultReference))
     return (value as string[]).join(", ");
   return "result scope";

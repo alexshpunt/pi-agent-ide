@@ -2,9 +2,8 @@ import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-ag
 import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
 import {
   describePathArgument,
-  isNullScope,
-  markNullScope,
-  nullScopeMessage,
+  markNullFields,
+  nullFieldsMessage,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -93,7 +92,8 @@ export async function registerLspSearchTool(
           "Find symbols, references, declarations and call graphs through language servers",
         parameters: lspSearchSchema,
         outputSchema: searchOutputSchema,
-        prepareArguments: (arguments_) => markNullScope(arguments_) as LspSearchParameters,
+        prepareArguments: (arguments_) =>
+          markNullFields(arguments_, lspSearchSchema) as LspSearchParameters,
         renderCall(parameters, theme, context) {
           return toolCallHeader(
             context.lastComponent,
@@ -158,7 +158,8 @@ export async function registerLspSearchTool(
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
-          if (isNullScope(parameters.path)) return failure(nullScopeMessage);
+          const nulls = nullFieldsMessage(parameters);
+          if (nulls !== undefined) return failure(nulls);
           const label = parameters.query ?? parameters.declaration ?? parameters.calls;
           const modes = [parameters.query, parameters.declaration, parameters.calls].filter(
             (value) => value !== undefined,

@@ -4,9 +4,8 @@ import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-docu
 import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
 import {
   describePathArgument,
-  isNullScope,
-  markNullScope,
-  nullScopeMessage,
+  markNullFields,
+  nullFieldsMessage,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -99,7 +98,8 @@ export async function registerAstSearchTool(
         promptSnippet: "Find code by syntax with ast-grep patterns and relational rules",
         parameters: astSearchSchema,
         outputSchema: searchOutputSchema,
-        prepareArguments: (arguments_) => markNullScope(arguments_) as AstSearchParameters,
+        prepareArguments: (arguments_) =>
+          markNullFields(arguments_, astSearchSchema) as AstSearchParameters,
         renderCall(parameters, theme, context) {
           return toolCallHeader(
             context.lastComponent,
@@ -152,7 +152,8 @@ export async function registerAstSearchTool(
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
-          if (isNullScope(parameters.path)) return failure(nullScopeMessage);
+          const nulls = nullFieldsMessage(parameters);
+          if (nulls !== undefined) return failure(nulls);
           if ((parameters.pattern === undefined) === (parameters.rule === undefined))
             return failure("Pass exactly one of pattern or rule.");
           if (parameters.rule !== undefined && parameters.language === undefined)
