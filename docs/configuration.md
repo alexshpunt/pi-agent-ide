@@ -182,7 +182,7 @@ Pi Agent IDE ships formatter, linter, and LSP mappings. You do not need to copy 
 
 Built-in formatters run only when the project contains matching evidence, such as `go.mod`, `Cargo.toml`, `.clang-format`, or a formatter configuration file. An executable being present on the machine and a matching file extension are not enough. Explicit project or global formatter entries remain opt-in configuration and do not require built-in evidence.
 
-Built-in `rustfmt` runs after an edit only if the file's original content already matches `rustfmt` output. This preserves existing formatting elsewhere in the file. Explicit formatter entries are unaffected.
+Built-in `rustfmt` runs after an edit only if the file's original content already matches `rustfmt` output. This preserves existing formatting elsewhere in the file. It formats only the edited file, leaving child modules untouched. Explicit formatter entries are unaffected.
 
 You can replace built-in entries or add custom entries in either of these directories:
 
