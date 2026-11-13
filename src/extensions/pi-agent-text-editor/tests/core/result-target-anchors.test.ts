@@ -93,6 +93,25 @@ test("an edit's RESULT source survives a write between its resolution and the fi
   });
 });
 
+test("a RESULT source without filesystem tracking still rejects changed text", async () => {
+  const store = new ResultTargetStore();
+  const reference = store.register(
+    [
+      {
+        source: "memory://example/note",
+        expectedContent: original,
+        readCurrent: async () => `peer\n${original}`,
+        ranges: [{ start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 3 } }],
+      },
+    ],
+    "/workspace",
+  );
+  const resources = requiredValue(createResultTargetAnchors(store).resources);
+  expect(await resources.tryResolve(reference, { cwd: "/workspace" })).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "stale" },
+  });
+});
 test("a RESULT source read survives a concurrent write outside its selection", async () => {
   const { source, resolve } = await racedSource();
   expect(await resolve()).toMatchObject({
