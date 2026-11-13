@@ -132,8 +132,9 @@ for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   const argument = uses.matches[0].captures.ARG[0].id;
   const replaced = await tools.replace({path:argument,text:String(1000 + round)});
   check(typeof replaced === "string", "Round " + round + ": capture replace returned " + JSON.stringify(replaced));
-  // Wait for a new peer write before the next round, even when the edits run quickly.
-  await tools.bash({command:'n=$(cat peer-ast-edit.mjs.writes 2>/dev/null || echo 0); while [ "$(cat peer-ast-edit.mjs.writes 2>/dev/null || echo 0)" -le "$n" ]; do sleep 0.05; done'});
+  // Wait up to 5 s for a new peer write before the next round, even when the edits run quickly.
+  // A stopped peer then fails the write-count check below instead of hanging the script.
+  await tools.bash({command:'n=$(cat peer-ast-edit.mjs.writes 2>/dev/null || echo 0); for i in $(seq 100); do [ "$(cat peer-ast-edit.mjs.writes 2>/dev/null || echo 0)" -gt "$n" ] && break; sleep 0.05; done'});
 }
 for (const session of ${JSON.stringify([peers.searched.session, peers.edited.session])})
   await tools.delete({path:"shell:" + session});

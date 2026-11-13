@@ -218,7 +218,7 @@ test("silent Write keeps large file content out of the following provider result
     expect(JSON.stringify(panels)).toContain(marker);
     // The large panel can scroll out of the final screen; inspect the rendered stream.
     const terminal = stripVTControlCharacters(run.terminalOutput);
-    expect(terminal).toContain("write");
+    expect(terminal).toMatch(/\bwrite\s+\{"path":"large\.txt"/u);
     expect(terminal).toContain("+400 ~0 -0");
   });
 });
