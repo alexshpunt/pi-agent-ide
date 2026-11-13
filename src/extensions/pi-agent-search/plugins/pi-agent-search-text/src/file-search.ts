@@ -12,6 +12,7 @@ export interface FileSearchResult {
   readonly complete: boolean;
 }
 
+/** List matching files in sort order: the first `request.limit` (default 100); `Infinity` lists all. */
 export async function searchFiles(
   query: string,
   request: SearchRequest,

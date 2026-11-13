@@ -35,7 +35,11 @@ export const fileSearchSchema = Type.Object(
     include: Type.Optional(Type.String({ description: "Include glob" })),
     exclude: Type.Optional(Type.String({ description: "Exclude glob" })),
     limit: Type.Optional(
-      Type.Integer({ minimum: 1, maximum: 1000, description: "Maximum files (default 100)." }),
+      Type.Integer({
+        minimum: 1,
+        maximum: 1000,
+        description: "Maximum files (default 100; in Codemode, all files).",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -49,6 +53,15 @@ export function registerFileSearchTool(
   resolver: SearchResolver,
   search: Promise<SearchPluginApi>,
 ): void {
+  // A call from a script, such as Codemode, lists every match unless it sets a limit.
+  const nestedCalls = new Set<string>();
+  pi.on("tool_execution_start", (event) => {
+    if (event.toolName === "file_search" && event.parentToolCallId !== undefined)
+      nestedCalls.add(event.toolCallId);
+  });
+  pi.on("tool_execution_end", (event) => {
+    nestedCalls.delete(event.toolCallId);
+  });
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
@@ -119,13 +132,17 @@ export function registerFileSearchTool(
           );
         },
         async execute(
-          _id,
+          id,
           parameters: FileSearchParameters,
           signal,
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
-          const options: FileSearchOptions = { pattern: parameters.pattern };
+          const script = nestedCalls.has(id);
+          const options: FileSearchOptions = {
+            pattern: parameters.pattern,
+            ...(script && { uncapped: true }),
+          };
           if (parameters.path !== undefined && [parameters.path].flat().some(isResultReference))
             return fileSearchFailure(
               "file_search takes file and directory paths, not Read/Search results. Pass the paths themselves.",
@@ -148,6 +165,8 @@ export function registerFileSearchTool(
               ...(signal !== undefined && { signal }),
               ...(onUpdate !== undefined && { onUpdate }),
             },
+            // A script's call returns every path, however large the list.
+            script ? "script" : "agent",
           )) as AgentToolResult<SearchToolDetails>;
         },
       },
