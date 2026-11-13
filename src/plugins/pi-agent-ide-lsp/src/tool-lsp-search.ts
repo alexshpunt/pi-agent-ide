@@ -9,6 +9,7 @@ import {
   describePathArgument,
   markNullFields,
   nullFieldsMessage,
+  searchCallPolicy,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -191,7 +192,7 @@ export async function registerLspSearchTool(
               "lsp_search needs the Search module (search.core), which is not loaded.",
             );
           const { api, resolver: lsp } = resolved;
-          const script = scriptCall(id);
+          const { limit, audience } = searchCallPolicy(parameters.limit, scriptCall(id), "matches");
           return (await api.searchWith(
             lsp,
             {
@@ -200,12 +201,7 @@ export async function registerLspSearchTool(
               ...(parameters.path === undefined ? {} : { path: parameters.path }),
               ...(parameters.include === undefined ? {} : { include: parameters.include }),
               ...(parameters.exclude === undefined ? {} : { exclude: parameters.exclude }),
-              // A script's call lists every match unless it sets a limit.
-              ...(parameters.limit === undefined
-                ? script
-                  ? { limit: Number.MAX_SAFE_INTEGER }
-                  : {}
-                : { limit: parameters.limit }),
+              ...(limit === undefined ? {} : { limit }),
               options: { lsp: options },
             },
             {
@@ -213,7 +209,7 @@ export async function registerLspSearchTool(
               ...(signal !== undefined && { signal }),
               ...(onUpdate !== undefined && { onUpdate }),
             },
-            script ? "script" : "agent",
+            audience,
           )) as AgentToolResult<SearchToolDetails>;
         },
       },
