@@ -262,6 +262,7 @@ const groups: [string[], string[]][] = [
   [["compose.value-id-source"], ["value-id-source"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
   // Out-of-scope selectors fail; a scope-only exact miss leaves later exact edits enabled.
+  // Anchor-rejection card causes are presentation only; renderer tests decode all four codes.
   [["compose.result-selector-scope"], ["result-selector-scope", "result-selector-exact-retry"]],
   [
     [

@@ -2888,6 +2888,7 @@ add(
 );
 
 add(
+  // Agent-facing scope refusals are unchanged; native anchor-rejection cards have scripted Pi coverage.
   "result-selector-scope",
   ["compose.result-selector-scope"],
   "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as start and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Then pass the same line-2 result as path with the anchor the first Read shows before line 2 as start and text NEW followed by a newline. Preserve all other bytes.",
