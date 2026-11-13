@@ -26,6 +26,7 @@ test.each([false, true])(
         testName: `semantic-${indexed}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
+        environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
         extensions: [extension, "builtin:codemode", "builtin:tool-search"],
         tools: ["semantic_search", "codemode", "tool_search"],
         conversation: [
@@ -96,7 +97,10 @@ test("disabling semantic search leaves ordinary text search available", async ()
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
       tools: ["semantic_search", "search"],
-      environment: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` },
+      environment: {
+        PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+        PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent"),
+      },
       conversation: [
         assistantMessage(
           [
@@ -168,6 +172,7 @@ test("the full IDE selects Vera from project settings and refreshes it before se
       tools: ["semantic_search"],
       environment: {
         PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+        PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent"),
         XDG_DATA_HOME: data,
         TEST_LOG: log,
       },
@@ -215,7 +220,10 @@ test("the full IDE uses an existing index without rebuilding it", async () => {
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
       tools: ["semantic_search"],
-      environment: { PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}` },
+      environment: {
+        PATH: `${bin}${path.delimiter}${process.env.PATH ?? ""}`,
+        PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent"),
+      },
       conversation: [
         assistantMessage(
           [toolCall({ id: "semantic", name: "semantic_search", arguments: { query: "example" } })],
