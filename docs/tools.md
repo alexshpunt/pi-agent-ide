@@ -113,8 +113,6 @@ A resolver decides whether it understands a query. The first successful resolver
 
 Local text search tries literal terms first. If there are no matches, it retries unquoted terms as regex. If that also finds nothing, an ordinary multi-word query falls back to separate words. Each fallback is reported. Invalid optional regex is skipped, while I/O errors, cancellation, and regex runtime errors stay errors. The exception is a path that ripgrep cannot read while it searches the rest of the scope, such as a WSL symlink seen from Windows through `\\wsl.localhost`: the search returns the matches it found with one notice that counts the skipped paths and names the first. `regex:<pattern>` forces regex-only matching and reports invalid patterns.
 
-A directory scope follows the ignore files above it, as a search from the repository root does, so a scope such as `packages/app` skips its own `node_modules` when the root `.gitignore` lists them. A scope that Git ignores itself, such as a build output directory, is searched in full. Outside a Git repository, or when Git is unavailable, the ignore files above the scope are not applied.
-
 After all ordinary attempts finish with zero matches, a single unquoted ASCII identifier can return separate possible-name groups. They cover naming-style changes, one extra or missing edge component, and small typos, strongest first. Each name is verified exactly in the same scope. These are spelling suggestions, not synonyms, automatic corrections, or proof of equivalent behavior. Quoted, Boolean, explicit regex and other protocol queries do not use this branch.
 
 Local groups provide current Read selections; a complete candidate all-reference refreshes only its exact alternative. URL groups reuse the already converted page text and provide URL line ranges without editable Search references. Name collection, capture and output have fixed budgets; a skip or limited capture is explicit. Narrow the scope if a budget is reached.
@@ -123,6 +121,8 @@ Boolean queries keep their conditions across literal and regex attempts. They su
 Boolean text searches also work with registered result scopes. Each selected range is searched on its own: terms outside it, in sparse gaps, or on another line cannot satisfy a condition.
 
 Empty protocol queries such as `regex:` and unhandled prefixes such as `unknown:needle` search their original text, including the prefix. The tool reports this fallback. Nonempty installed protocols keep their specialized behavior; service errors, timeouts, and successful protocol searches with no results do not launch local text search. Plugins mark a local fallback resolver with `fallback: true`; these resolvers run after specialists regardless of numeric priority and receive empty protocol queries directly.
+
+An omitted `path` searches the session directory. An explicit `path: null` fails the call in `search`, `file_search`, `ast_search` and `lsp_search`: a null source means the call that produced it failed or selected no text, such as a directory copy or a `delete`, and searching everything instead would hide that. In Codemode the failed call resolves to `null` and is listed in the script's failure block. Pi drops a null optional property before a tool runs, so each tool keeps the null visible in `prepareArguments` and refuses it in `execute`.
 
 A complete search call times out after 30 seconds by default, including resolver work and result formatting. The timeout cancels the active resolver and tells the agent to retry with a smaller `path` scope. Global and project `search.json` files can change or disable the timeout as described in [Configuration](./configuration.md#search-timeout).
 
@@ -145,7 +145,7 @@ When an `:all` form cannot be used, the error says why and what to do: the searc
 
 ## File search
 
-`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored, including those above `path` on the same terms as text search. Paths that ripgrep cannot read are summarized in one notice, as in text search. Results are sorted, limited by `limit` (default 100), and mark an incomplete list when the limit is reached. In Codemode, `file_search` resolves to the paths as a `string[]`, and without `limit` it lists every matching file.
+`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored. Results are sorted, limited by `limit` (default 100), and mark an incomplete list when the limit is reached. In Codemode, `file_search` resolves to the paths as a `string[]`, and without `limit` it lists every matching file.
 
 ## Syntax search
 
