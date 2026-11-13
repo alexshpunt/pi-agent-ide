@@ -91,11 +91,7 @@ for (const mode of ["standalone", "codemode"] as const) {
         await mkdir(path.dirname(path.join(cwd, source)), { recursive: true });
         await writeFile(path.join(cwd, source), "before\n");
         const checks = `const result=await tools.write({path:${JSON.stringify(source)},content:"after\\n"});
-const receipt=result.split("\\n\\n---\\n\\n# Guide:")[0]||"";
-if(!receipt.includes("Saved file.")) throw Error("Missing saved-file receipt: "+receipt);
-if(receipt.includes("Formatting:")) throw Error("Duplicate raw formatting status: "+receipt);
-if(receipt.includes("Final text") || receipt.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Write leaked saved file text: "+receipt);
-if(receipt.includes("Formatting failed.")!==${fixture.name === "failed.note"}) throw Error("Wrong formatting failure notice: "+receipt);
+if(typeof result!=="string" || !result.startsWith("RESULT#")) throw Error("Write did not resolve to the id of the saved file: "+result);
 const saved=await tools.read({path:result});
 if(!saved.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Read lost saved final text: "+saved);
 text("Formatting checked.");`;
@@ -139,6 +135,12 @@ text("Formatting checked.");`;
           expect(result).not.toContain("Formatting:");
           expect(result.includes("Formatting failed.")).toBe(fixture.name === "failed.note");
           expect(result).not.toContain("Extra check finished");
+        } else {
+          // The script gets only the id; the parent result keeps the formatting failure notice.
+          const parent = getToolResultText(run, "formatted").split("\n\n---\n\n# Guide:")[0] ?? "";
+          expect(parent).not.toContain("Final text");
+          expect(parent).not.toContain("Formatting:");
+          expect(parent.includes("Formatting failed.")).toBe(fixture.name === "failed.note");
         }
         if (fixture.name === "unavailable.txt") {
           await expect(

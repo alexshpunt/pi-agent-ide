@@ -47,19 +47,20 @@ test("file Write without a completion still returns a compact uncertain receipt"
 });
 
 // A completion-hook remark is not proof that post-edit processing was interrupted.
-test.each(["muted", "warning", "error"] as const)(
-  "compact Write preserves %s hook feedback without claiming interruption",
-  (tone) => {
-    const result = new FileMutationResult({
-      ok: true,
-      diffStatuses: [
-        { text: "Review the saved change", tone, origin: "after-edit" },
-        { text: "Extra check finished", tone: "success" },
-      ],
-    });
-    expect(writeProblemNotices([result])).toEqual(["Review the saved change"]);
-  },
-);
+test.each(
+  (["muted", "warning", "error"] as const).flatMap((tone) =>
+    (["after-edit", "pre-edit"] as const).map((origin) => [tone, origin] as const),
+  ),
+)("compact Write preserves %s %s feedback without claiming interruption", (tone, origin) => {
+  const result = new FileMutationResult({
+    ok: true,
+    diffStatuses: [
+      { text: "Review the saved change", tone, origin },
+      { text: "Extra check finished", tone: "success" },
+    ],
+  });
+  expect(writeProblemNotices([result])).toEqual(["Review the saved change"]);
+});
 
 test("hook feedback does not hide an independent recovery or formatting problem", () => {
   const result = new FileMutationResult({

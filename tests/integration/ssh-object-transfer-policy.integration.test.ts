@@ -99,7 +99,8 @@ subprocess.run(['git','-C',str(p),'add',sys.argv[2]],check=True)
               arguments: {
                 code:
                   expectedError === undefined
-                    ? `const result=await tools.move(${JSON.stringify(args)});text(result);const searched=await tools.search({path:result,query:'data'});if(searched!==null)throw Error('Object receipt granted text authority');`
+                    ? // An object transfer selects no text, so the script gets null, not a target.
+                      `const result=await tools.move(${JSON.stringify(args)});if(result!==null)throw Error('Object transfer granted text authority: '+result);text('moved');`
                     : `const moved=await tools.move(${JSON.stringify(args)});if(moved!==null)throw Error('Removal bypassed owner policy');`,
               },
             });
@@ -133,12 +134,12 @@ subprocess.run(['git','-C',str(p),'add',sys.argv[2]],check=True)
               await targetOwner.read(`${targetOwner.target.workspace}/${names[1]}/data`)
             ).bytes.toString(),
           ).toBe("source");
-          expect(getToolResultText(run, "transfer")).toContain("move: applied");
-          // In Codemode the refused Search resolves to null and the result lists its reason.
-          if (!scenario.startsWith("direct"))
-            expect(codemodeFailures(getToolResultText(run, "transfer"))).toMatch(
-              /^1 of 2 IDE calls failed:\n- search RESULT#\S+\n[\s\S]*no reusable text selection/u,
-            );
+          if (scenario.startsWith("direct"))
+            expect(getToolResultText(run, "transfer")).toContain("move: applied");
+          else {
+            expect(getToolResultText(run, "transfer")).toContain("moved");
+            expect(codemodeFailures(getToolResultText(run, "transfer"))).toBe("");
+          }
           expect(getToolResultText(run, "transfer")).not.toContain("Post-processing failed");
           expect(run.tuiRenderedOutput).toContain("Applied");
         } else {

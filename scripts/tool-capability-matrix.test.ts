@@ -344,6 +344,37 @@ describe("capability route evidence", () => {
     expect(validateRoute(task, bypass, "direct").passed).toBe(false);
   });
 
+  test("accepts the RESULT# id that a Codemode value gives an enveloped result", () => {
+    const byId = (path: string) =>
+      events.map((event) =>
+        event.toolCallId === "s" && event.type === "tool_execution_start"
+          ? { ...event, args: { path, query: "marker" } }
+          : event,
+      );
+    expect(
+      validateRoute(task, byId("RESULT#9b901a2b-a965-4729-8abb-3c09c3cbc6c2"), "direct").passed,
+    ).toBe(true);
+    expect(
+      validateRoute(task, byId("RESULT#00000000-a965-4729-8abb-3c09c3cbc6c2"), "direct").passed,
+    ).toBe(false);
+  });
+
+  test("a step limited to other routes is skipped, and nothing can reuse it", () => {
+    const readOnly = events.slice(0, 2);
+    const searchFor = (modes: string[]) => ({
+      steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" }, modes }],
+    });
+    expect(validateRoute(searchFor(["direct"]), readOnly, "direct").passed).toBe(false);
+    expect(validateRoute(searchFor(["codemode"]), readOnly, "direct").passed).toBe(true);
+    const skippedSource = {
+      steps: [
+        { tool: "read", modes: ["codemode"] },
+        { tool: "search", reuse: { from: 0, field: "path" } },
+      ],
+    };
+    expect(validateRoute(skippedSource, events, "direct").passed).toBe(false);
+  });
+
   test("accepts fixture path spellings and returned selectors, not invented references", () => {
     const readOnly = { steps: [{ tool: "read", args: { path: "task.txt" } }] };
     const absolute = events.map((event) =>

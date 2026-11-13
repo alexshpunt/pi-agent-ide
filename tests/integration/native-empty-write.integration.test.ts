@@ -37,7 +37,7 @@ for (const mode of ["standalone", "codemode"] as const) {
                 code:
                   textResultChecks +
                   `const written=await tools.write({path:"empty.txt",content:""});
-check(written.includes("empty.txt"),"Write lost its file effect");
+check(typeof written==="string" && written.startsWith("RESULT#"),"Write did not resolve to the id of the empty file: "+written);
 const read=await tools.read({path:written});
 check(body(read)==="[Empty source.]","Read did not explain the empty source");
 text(written);`,

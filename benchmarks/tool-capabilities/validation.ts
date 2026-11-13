@@ -139,6 +139,8 @@ export interface RouteStep {
   /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
   finalMaxBytes?: number;
   image?: boolean;
+  /** Routes that need this step, such as one only a direct call can take; others skip it. */
+  modes?: string[];
   /** Native text calls can be accepted before their parent reports a write failure. */
   error?: boolean | "direct";
   reuse?: ResultReuse | ResultReuse[];
@@ -235,7 +237,11 @@ function reuses(value: unknown, output: string, kind = "result"): boolean {
   const ids =
     kind === "result"
       ? [
-          ...[...output.matchAll(/<uuid>([a-f0-9-]+)<\/uuid>/gi)].map((match) => match[1] ?? ""),
+          // A Codemode value names an enveloped result by its `RESULT#<uuid>` id.
+          ...[...output.matchAll(/<uuid>([a-f0-9-]+)<\/uuid>/gi)].flatMap((match) => [
+            match[1] ?? "",
+            `RESULT#${match[1] ?? ""}`,
+          ]),
           ...[
             ...output.matchAll(/SEARCH#[A-F0-9]+:(?:all|\d+):(?:line|match)|RESULT#[a-f0-9-]+/g),
           ].map((match) => match[0]),
@@ -328,11 +334,14 @@ export function validateRoute(
   function walk(
     stepIndex: number,
     previousStart: number,
-    selected: { event: RunEvent; end: number; parent?: string; call?: string }[],
+    // A step that another route skips leaves its slot empty; steps reusing it cannot match.
+    selected: ({ event: RunEvent; end: number; parent?: string; call?: string } | undefined)[],
   ): boolean {
     furthest = Math.max(furthest, stepIndex);
     const step = task.steps[stepIndex];
     if (!step) return true;
+    if (step.modes && !step.modes.includes(mode))
+      return walk(stepIndex + 1, previousStart, [...selected, undefined]);
     for (const start of starts) {
       const event = start.event;
       const end = ends.get(event.toolCallId ?? "");

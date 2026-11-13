@@ -372,7 +372,8 @@ test("large nested write arguments keep results and honest warnings through rest
     expect(getToolExecution(run, "parent").isError).toBe(false);
     expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(content);
     const parent = getToolResultMessage(run, "parent");
-    expect(JSON.stringify(parent.content)).toContain("Saved file");
+    // The script printed the id of the written file; the nested panel keeps the receipt.
+    expect(JSON.stringify(parent.content)).toMatch(/RESULT#[a-f0-9-]{36}/u);
     const saved = await PiRun.open(run.artifacts.run);
     const line = saved.session
       ?.split("\n")

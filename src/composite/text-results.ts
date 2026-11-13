@@ -21,17 +21,10 @@ import { limitIdeOutput } from "./output-limits.ts";
 import { nullableValueSchema, scriptValueOf } from "./script-values/index.ts";
 import type { ImageBlock } from "./script-values/read.ts";
 import { batchOperations, CodemodeCallLedger, fileEffects } from "./script-values/failures.ts";
+import { envelopePattern, resultReference } from "./script-values/result-reference.ts";
 
-/** The system-result envelope that starts a readable result; its group is the result's UUID. */
-const envelopePattern = /^<system-result\b[^>]*><uuid>([a-f\d-]{36})<\/uuid><\/system-result>\n?/u;
 /** Longest source label in the Codemode failure block. */
 const maxLabelLength = 200;
-
-/** `RESULT#<uuid>` for text that starts with a system-result envelope. */
-function resultReference(value: string): string | undefined {
-  const uuid = envelopePattern.exec(value)?.[1];
-  return uuid === undefined ? undefined : `RESULT#${uuid}`;
-}
 
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
@@ -187,8 +180,11 @@ export function createIdeTextResults(
   const refusals = new Map<string, string>();
   const labels = new Map<string, string | undefined>();
   const ledger = new CodemodeCallLedger();
-  /** Nested IDE calls that failed; their script value becomes null when their execution ends. */
-  const failedNested = new Set<string>();
+  /**
+   * Nested IDE calls whose script value is null: failed calls, and edits that select no text.
+   * Their value becomes null when their execution ends.
+   */
+  const nullNested = new Set<string>();
   const parents = new Map<string, string>();
   const images = new Map<string, ImageBlock[]>();
   /** Forget the calls of the last agent run. */
@@ -196,7 +192,7 @@ export function createIdeTextResults(
     refusals.clear();
     labels.clear();
     ledger.clear();
-    failedNested.clear();
+    nullNested.clear();
   };
   const clear = () => {
     parents.clear();
@@ -209,17 +205,17 @@ export function createIdeTextResults(
   pi.on("agent_end", clearCalls);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
-      'Direct IDE calls return readable text. In Codemode, search, ast_search and lsp_search return { result, hasMatches, complete }; pass its result string to other tools for composition. file_search returns every matching path as a string array unless you set limit; semantic_search returns its files in rank order. Terminal tools return { output, exit_code, truncated, full_output_path, wall_time_seconds, session }; a non-zero exit_code is a value, not a failure. Diff returns the complete unified diff, or "" when the sources are equal. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. A failed IDE call returns null (a resource provider\'s action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.';
+      "Direct IDE calls return readable text. In Codemode, search, ast_search and lsp_search return { result, hasMatches, complete }; pass its result string to other tools for composition. file_search returns every matching path as a string array unless you set limit; semantic_search returns its files in rank order. Terminal tools return { output, exit_code, truncated, full_output_path, wall_time_seconds, session }; a non-zero exit_code is a value, not a failure. Diff returns the complete unified diff, or \"\" when the sources are equal. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. Replace, insert, write, copy, move and undo return the RESULT#<uuid> id of the text they produced, or null when they select no text, such as a directory copy; delete returns null. Pass an edit's id to the next tool's source parameter. A failed IDE call returns null (a resource provider's action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
       parents.set(event.toolCallId, parents.get(event.parentToolCallId) ?? event.parentToolCallId);
   });
   pi.on("tool_execution_end", (event) => {
-    if (!failedNested.delete(event.toolCallId)) return;
+    if (!nullNested.delete(event.toolCallId)) return;
     // Pi drops a null structuredContent that a tool_result hook returns, because the agent loop
     // merges it with `??`. It hands this same result object to the calling script after the
-    // event, so the failure value is set here.
+    // event, so the null value is set here.
     const result: unknown = event.result;
     if (result !== null && typeof result === "object")
       Object.assign(result, { structuredContent: null });
@@ -509,15 +505,21 @@ export function createIdeTextResults(
               }
             : undefined,
         );
-        if (scriptFailed && value === undefined) failedNested.add(event.toolCallId);
+        if (value === null || (scriptFailed && value === undefined))
+          nullNested.add(event.toolCallId);
       }
       return {
         content: [
           { type: "text" as const, text: failed ? reason : shown },
           ...event.content.filter((block) => block.type !== "text"),
         ],
-        // Keep private records hidden; only the declared public script value survives.
-        ...(value !== undefined && { structuredContent: value }),
+        // Keep private records hidden; only the declared public script value survives. A direct
+        // result is the text its edit id refers to, so it keeps its readable shape without the id.
+        ...(value !== undefined &&
+          value !== null &&
+          (parent !== undefined || value !== resultReference(shown)) && {
+            structuredContent: value,
+          }),
       };
     });
   };

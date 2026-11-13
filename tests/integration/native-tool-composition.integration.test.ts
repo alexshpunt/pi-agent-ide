@@ -208,7 +208,7 @@ test.each(["structured", "legacy"] as const)(
           ? `const source=await tools.search({path:"source.txt",query:"format_me"}).then(value => value.result);
 const destination=await tools.search({path:"format.txt",query:"format_me"}).then(value => value.result);
 const same=await tools.replace({path:matches(destination)[0],text:"format_me"});
-check(same.includes("No changes: every target already has this text."),"Identical Replace did not explain its outcome: "+same);
+check(typeof same==="string" && same.startsWith("RESULT#"),"Identical Replace did not resolve to the id of its text: "+same);
 const copied=await tools.copy({path:source,target:matches(destination)[0]});`
           : `const copied=await tools.copy({path:"source.txt",start:"format_me",target:"format.txt",targetStart:"format_me\\n",targetEnd:"format_me\\n"});`;
       const run = await runComposition(
@@ -218,8 +218,7 @@ const copied=await tools.copy({path:source,target:matches(destination)[0]});`
           `const before=await tools.fixture_copy_stat({});\n` +
             copy +
             `
-check(copied.includes("No changes:"),"No-op Copy did not explain its outcome");
-text(copied);
+check(typeof copied==="string" && copied.startsWith("RESULT#"),"No-op Copy did not resolve to the id of its destination: "+copied);
 check(matches(await tools.search({path:copied,query:"format_me"}).then(value => value.result)).length===1,"No-op Copy lost or widened its destination");
 check(matches(await tools.search({path:copied,query:"outside"}).then(value => value.result)).length===0,"No-op Copy includes neighbors");
 check(await tools.fixture_copy_stat({})===before,"No-op Copy wrote its destination");`,
@@ -396,7 +395,7 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));`,
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("new\nNEW\n");
   });
 });
-test("empty Copy explains its no-op in the agent result and TUI", async () => {
+test("empty Copy explains its no-op in the TUI and selects nothing", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "source.txt"), "source\n");
     await writeFile(path.join(cwd, "destination.txt"), "destination\n");
@@ -404,8 +403,7 @@ test("empty Copy explains its no-op in the agent result and TUI", async () => {
       `const source=await tools.search({path:"source.txt",query:"ABSENT"}).then(value => value.result);
 const destination=await tools.search({path:"destination.txt",query:"ABSENT"}).then(value => value.result);
 const copied=await tools.copy({path:source,target:destination});
-check(copied.includes("No changes: empty selection."),"Empty Copy did not explain its outcome");
-text(copied);
+check(typeof copied==="string" && copied.startsWith("RESULT#"),"Empty Copy did not resolve to the id of its empty selection: "+copied);
 check(matches(await tools.search({path:copied,query:"source"}).then(value => value.result)).length===0,"Empty Copy gained source authority");`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
@@ -1111,8 +1109,8 @@ const destination = await tools.search({path:"destination.txt",query:"regex:LEFT
 await rejects(()=>tools.copy({path:source,target:matches(destination)[0]}));
 await rejects(()=>tools.move({path:source,target:source}));
 await rejects(()=>tools.copy({path:"RESULT#forged",target:destination}));
-const empty=await tools.copy({path:[],target:[]});
-check(empty.includes("No changes: empty selection."),"Empty pairing changed sources");
+// An empty pairing succeeds without changes; a failure would be a fifth entry below.
+await tools.copy({path:[],target:[]});
 await tools.replace({path:"source.txt",start:"ONE",text:"NEW"});
 await rejects(()=>tools.move({path:source,target:destination}));
 text({refusals:4,empty:true});`,
@@ -1197,24 +1195,21 @@ text({effect:changed});`,
   },
 );
 
-test("delete receipts describe removals without publishing a live point", async () => {
+test("delete reports its removal and resolves to null instead of a live point", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "removed.txt"), "keep\r\n😀 old\r\nold outside");
     const run = await runComposition(cwd, "delete-structured-removal-receipt", [
       `const window = await tools.read({path:"removed.txt",offset:2,limit:1});
 const found = await tools.search({path:window,query:"old"}).then(value => value.result);
 const removed = await tools.delete({path:found});
-await rejects(()=>tools.search({path:removed,query:"old"}));
+check(removed===null,"Delete must leave no text to select: "+removed);
 const receipt = await tools.read({path:"removed.txt"});
-if (!receipt.includes("😀 "+String.fromCharCode(13,10))) throw Error("Delete widened its selected range");
-text(removed);`,
+if (!receipt.includes("😀 "+String.fromCharCode(13,10))) throw Error("Delete widened its selected range");`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([
-      expect.stringContaining("no reusable text selection"),
-    ]);
+    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([]);
     expect(await readFile(path.join(cwd, "removed.txt"), "utf8")).toBe(
       "keep\r\n😀 \r\nold outside",
     );
@@ -1277,20 +1272,14 @@ test("whole-file operations preserve binary bytes without granting a text target
     await writeFile(path.join(cwd, "source.bin"), bytes);
     await writeFile(path.join(cwd, "existing.bin"), bytes);
     const run = await runComposition(cwd, "file-operation-binary-and-refusal", [
-      `const copied=await tools.copy({path:"source.bin",target:"copy.bin"});
-check(copied.includes("No verified text selection"),"Binary Copy did not explain unavailable authority");
-await rejects(()=>tools.search({path:copied,query:"BAD"}));
-const moved = await tools.move({path:"copy.bin",target:"existing.bin"});
-await rejects(()=>tools.search({path:moved,query:"BAD"}));
-text(copied);`,
+      `// A binary file has no text to select, so both whole-file operations resolve to null.
+check(await tools.copy({path:"source.bin",target:"copy.bin"})===null,"Binary Copy granted a text target");
+check(await tools.move({path:"copy.bin",target:"existing.bin"})===null,"Binary Move granted a text target");`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([
-      expect.stringContaining("no reusable text selection"),
-      expect.stringContaining("no reusable text selection"),
-    ]);
+    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([]);
     expect(run.tuiRenderedOutput).toContain("no verified text selection");
     for (const name of ["source.bin", "existing.bin"])
       expect(await readFile(path.join(cwd, name))).toEqual(bytes);
@@ -1306,15 +1295,13 @@ test("whole-file structured delete removes text, while a string path removes the
 const textRemoval=await tools.delete({path:source});
 const empty=await tools.read({path:"whole.txt"});
 check(body(empty)==="[Empty source.]","Read did not explain the source emptied by text delete");
-await rejects(()=>tools.replace({path:textRemoval,text:"BAD"}));
-text(await tools.delete({path:"whole.txt"}));`,
+check(textRemoval===null,"Text Delete selected the removed text");
+check(await tools.delete({path:"whole.txt"})===null,"File Delete selected text");`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([
-      expect.stringContaining("no reusable text selection"),
-    ]);
+    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([]);
     await expect(readFile(path.join(cwd, "whole.txt"))).rejects.toThrow("ENOENT");
   });
 });
@@ -1409,8 +1396,10 @@ test("keeps empty results distinct from unsupported or forged source data", asyn
     await writeFile(path.join(cwd, "empty.txt"), "safe\n");
     const run = await runComposition(cwd, "composition-empty-and-unsupported", [
       `const empty = await tools.search({path:"empty.txt",query:"absent"}).then(value => value.result);
+// Empty targets are a successful no-op: the id selects the same empty set, not the file.
 const nothing = await tools.replace({path:empty,text:"WRONG"});
-if (typeof nothing !== "string") throw Error("Empty targets should be a successful no-op");
+check(typeof nothing==="string" && nothing.startsWith("RESULT#"),"Empty targets lost their id: "+nothing);
+check(matches(await tools.search({path:nothing,query:"safe"}).then(value => value.result)).length===0,"Empty targets widened to the file");
 const emptyScope = await tools.search({path:[],query:"safe"}).then(value => value.result);
 if (typeof emptyScope !== "string" || matches(emptyScope).length !== 0) throw Error("Empty array widened to cwd");
 // Objects are not valid source arguments, so Pi rejects them; an unknown reference fails in the IDE.
@@ -1419,14 +1408,12 @@ let rejected = false;
 try { await tools.replace({path:input,text:"WRONG"}); } catch { rejected = true; }
 check(rejected,"Unsupported input gained write authority");
 }
-check(await tools.replace({path:"RESULT#expired",text:"WRONG"})===null,"Unknown reference gained write authority");
-text(nothing);`,
+check(await tools.replace({path:"RESULT#expired",text:"WRONG"})===null,"Unknown reference gained write authority");`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
     expect(await readFile(path.join(cwd, "empty.txt"), "utf8")).toBe("safe\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Empty result target set; no changes.");
     expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([
       expect.stringMatching(/^replace RESULT#expired\n/u),
     ]);

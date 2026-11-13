@@ -5,6 +5,7 @@ import {
   getToolExecution,
   getToolExecutionDetails,
   getToolExecutionResult,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -12,6 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import {
   enableNativeCodemode,
   withTempWorkspace,
@@ -222,12 +224,13 @@ test("whole-file operations finalize only surviving text targets and preserve bi
               name: "codemode",
               arguments: {
                 code: `
-const check = result => { if(typeof result!=="string") throw Error("Expected readable result"); return result; };
-check(await tools.copy({path:"source.note",target:"temporary.note"}));
-check(await tools.move({path:"temporary.note",target:"final.note"}));
-check(await tools.copy({path:"source.note",target:"discard.note"}));
-check(await tools.delete({path:"discard.note"}));
-check(await tools.copy({path:"binary.note",target:"binary-copy.note"}));
+const id = result => { if(typeof result!=="string" || !result.startsWith("RESULT#")) throw Error("Expected the id of the new text: "+result); return result; };
+id(await tools.copy({path:"source.note",target:"temporary.note"}));
+id(await tools.move({path:"temporary.note",target:"final.note"}));
+id(await tools.copy({path:"source.note",target:"discard.note"}));
+// Delete and a binary copy select no text; a failure would be listed in the result.
+if((await tools.delete({path:"discard.note"}))!==null) throw Error("Delete must select no text");
+if((await tools.copy({path:"binary.note",target:"binary-copy.note"}))!==null) throw Error("A binary copy must select no text");
 `,
               },
             }),
@@ -242,6 +245,7 @@ check(await tools.copy({path:"binary.note",target:"binary-copy.note"}));
       ],
     }).run("Copy and move text and binary files");
     expect(getToolExecution(run, "files").isError).toBe(false);
+    expect(codemodeFailures(getToolResultText(run, "files"))).toBe("");
     expect(await readFile(path.join(cwd, "source.note"), "utf8")).toBe("copied");
     expect(await readFile(path.join(cwd, "final.note"), "utf8")).toBe("COPIED");
     expect(await readFile(path.join(cwd, "binary-copy.note"))).toEqual(binary);
