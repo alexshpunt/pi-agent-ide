@@ -38,6 +38,9 @@ export const directSshRoute: SshRoute = { options: [], release() {}, masterDiagn
 const logSuffix = ".log";
 /** Enough of the log for the lines OpenSSH writes as the connection ends. */
 const LOG_TAIL_BYTES = 4096;
+/** Keepalive of a master when the user's configuration sets none: OpenSSH's default count. */
+const DEFAULT_KEEPALIVE_SECONDS = 15;
+const DEFAULT_KEEPALIVE_COUNT = 3;
 
 interface Master {
   readonly socket: string;
@@ -52,6 +55,8 @@ interface Master {
 interface Pool {
   readonly target: SshTarget;
   readonly name: string;
+  /** `ServerAlive*` options for the pool's masters. */
+  readonly keepalive: readonly string[];
   readonly members: Master[];
   /** Processes waiting for a free session, woken in order. */
   readonly waiters: (() => void)[];
@@ -149,15 +154,18 @@ export function stopSshMasters(): void {
 }
 
 async function createPool(key: string, target: SshTarget): Promise<Pool | undefined> {
+  const configuration = await userConfiguration(target);
+  // An unreadable configuration fails the same way for every process; stay out of the way.
   // Respect a user's own ControlMaster/ControlPath; never override or share their socket.
-  if (await userMultiplexes(target)) return undefined;
+  if (configuration === undefined || multiplexingConfigured(configuration)) return undefined;
   const directory = await (socketDirectory ??= privateSocketDirectory());
   if (directory === undefined) return undefined;
   const name = path.join(
     directory,
     `${process.pid}-${createHash("sha256").update(`${instance}\0${key}`).digest("hex").slice(0, 16)}`,
   );
-  return { target, name, members: [], waiters: [], launched: 0 };
+  const keepalive = masterKeepaliveOptions(configuration);
+  return { target, name, keepalive, members: [], waiters: [], launched: 0 };
 }
 
 function launchMember(pool: Pool): void {
@@ -167,7 +175,7 @@ function launchMember(pool: Pool): void {
     socket,
     sessions: 0,
     started: false,
-    ready: launch(pool.target, socket),
+    ready: launch(pool.target, socket, pool.keepalive),
   };
   // Registered first, so the pool is updated before any waiter sees the result.
   void member.ready.then((ready) => {
@@ -232,7 +240,11 @@ function slot(pool: Pool, waitMs: number, signal?: AbortSignal): Promise<boolean
 }
 
 /** Start a backgrounded master; OpenSSH exits the foreground process once it is authenticated. */
-async function launch(target: SshTarget, socket: string): Promise<boolean> {
+async function launch(
+  target: SshTarget,
+  socket: string,
+  keepalive: readonly string[],
+): Promise<boolean> {
   const log = `${socket}${logSuffix}`;
   await Promise.all([unlink(socket).catch(() => {}), unlink(log).catch(() => {})]);
   const child = spawn(
@@ -245,11 +257,8 @@ async function launch(target: SshTarget, socket: string): Promise<boolean> {
       `ControlPath=${socket}`,
       "-o",
       `ControlPersist=${IDLE_SECONDS}`,
-      // A dead network ends the master, and with it its sessions, within 15 s.
-      "-o",
-      "ServerAliveInterval=5",
-      "-o",
-      "ServerAliveCountMax=3",
+      // A dead network ends the master, and with it its sessions.
+      ...keepalive,
       // The reason the shared connection ended, for the processes it carried.
       "-o",
       "LogLevel=VERBOSE",
@@ -280,8 +289,10 @@ async function launch(target: SshTarget, socket: string): Promise<boolean> {
   return exitCode === 0 && (await listening(socket));
 }
 
-async function userMultiplexes(target: SshTarget): Promise<boolean> {
-  const output = await new Promise<string | undefined>((resolve) => {
+/** The user's effective OpenSSH configuration for the target (`ssh -G`); undefined when it cannot
+ * be read. */
+async function userConfiguration(target: SshTarget): Promise<string | undefined> {
+  return await new Promise<string | undefined>((resolve) => {
     execFile(
       "ssh",
       [
@@ -294,23 +305,43 @@ async function userMultiplexes(target: SshTarget): Promise<boolean> {
       (error, stdout) => resolve(error ? undefined : stdout),
     );
   });
-  // An unreadable configuration fails the same way for every process; stay out of the way.
-  return output === undefined || multiplexingConfigured(output);
 }
 
-/** Whether `ssh -G` output shows the user's own ControlMaster or ControlPath. */
-export function multiplexingConfigured(output: string): boolean {
-  const options = new Map(
+function configurationOptions(output: string): Map<string, string> {
+  return new Map(
     output.split("\n").map((line) => {
       const [name = "", ...value] = line.trim().split(" ");
       return [name.toLowerCase(), value.join(" ")];
     }),
   );
+}
+
+/** Whether `ssh -G` output shows the user's own ControlMaster or ControlPath. */
+export function multiplexingConfigured(output: string): boolean {
+  const options = configurationOptions(output);
   const controlPath = options.get("controlpath");
   return (
     (options.get("controlmaster") ?? "false") !== "false" ||
     (controlPath !== undefined && controlPath !== "none")
   );
+}
+
+/** Keepalive options of a master. A master carries every process to the target, so it keeps the
+ * user's own `ServerAliveInterval` and `ServerAliveCountMax`, which a direct connection would use.
+ * Without them it closes a connection after 45 s without an answer, as OpenSSH's default count
+ * of 3 does at a 15 s interval: long enough for a short network gap, short enough that a dead
+ * network does not hold the processes it carries. */
+export function masterKeepaliveOptions(output: string): string[] {
+  const options = configurationOptions(output);
+  const interval = Number(options.get("serveraliveinterval"));
+  const count = Number(options.get("serveralivecountmax"));
+  const configured = Number.isSafeInteger(interval) && interval > 0;
+  return [
+    "-o",
+    `ServerAliveInterval=${configured ? interval : DEFAULT_KEEPALIVE_SECONDS}`,
+    "-o",
+    `ServerAliveCountMax=${configured && Number.isSafeInteger(count) && count > 0 ? count : DEFAULT_KEEPALIVE_COUNT}`,
+  ];
 }
 
 /** A short directory only this user can use: Unix socket paths hold about 104 bytes. */

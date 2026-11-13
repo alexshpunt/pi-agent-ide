@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { multiplexingConfigured, sshRoute } from "./ssh-master.ts";
+import { masterKeepaliveOptions, multiplexingConfigured, sshRoute } from "./ssh-master.ts";
 import { systemSshArguments } from "./ssh-transport.ts";
 
 describe("multiplexingConfigured", () => {
@@ -16,6 +16,38 @@ describe("multiplexingConfigured", () => {
       true,
     );
     expect(multiplexingConfigured("controlmaster true\n")).toBe(true);
+  });
+});
+
+describe("masterKeepaliveOptions", () => {
+  test("a master keeps the user's own keepalive settings", () => {
+    expect(masterKeepaliveOptions("serveraliveinterval 15\nserveralivecountmax 3\n")).toEqual([
+      "-o",
+      "ServerAliveInterval=15",
+      "-o",
+      "ServerAliveCountMax=3",
+    ]);
+    expect(masterKeepaliveOptions("serveraliveinterval 30\nserveralivecountmax 6\n")).toEqual([
+      "-o",
+      "ServerAliveInterval=30",
+      "-o",
+      "ServerAliveCountMax=6",
+    ]);
+  });
+
+  test("without the user's keepalive, a master waits 45 s for an answer", () => {
+    expect(masterKeepaliveOptions("serveraliveinterval 0\nserveralivecountmax 3\n")).toEqual([
+      "-o",
+      "ServerAliveInterval=15",
+      "-o",
+      "ServerAliveCountMax=3",
+    ]);
+    expect(masterKeepaliveOptions("user user\n")).toEqual([
+      "-o",
+      "ServerAliveInterval=15",
+      "-o",
+      "ServerAliveCountMax=3",
+    ]);
   });
 });
 
