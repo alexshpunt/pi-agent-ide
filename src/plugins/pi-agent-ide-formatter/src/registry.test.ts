@@ -84,7 +84,7 @@ test("selects the first available shipped formatter", async () => {
   const project = await temporaryDirectory("formatter-available-project-");
   process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("formatter-available-agent-");
   const bin = path.join(project, "node_modules", ".bin");
-  const executable = path.join(bin, "oxfmt");
+  const executable = path.join(bin, process.platform === "win32" ? "oxfmt.cmd" : "oxfmt");
   await mkdir(bin, { recursive: true });
   await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
   await chmod(executable, 0o755);
@@ -133,8 +133,9 @@ test("external-project mode excludes global overrides and unevidenced built-ins"
   });
   const bin = path.join(project, "node_modules", ".bin");
   await mkdir(bin, { recursive: true });
-  await writeFile(path.join(bin, "oxfmt"), "#!/bin/sh\nexit 0\n");
-  await chmod(path.join(bin, "oxfmt"), 0o755);
+  const executable = path.join(bin, process.platform === "win32" ? "oxfmt.cmd" : "oxfmt");
+  await writeFile(executable, "#!/bin/sh\nexit 0\n");
+  await chmod(executable, 0o755);
 
   const registry = await FormatterCommandRegistry.fromDirectory(project, {
     environment: { PATH: "", PI_CODING_AGENT_DIR: agentDirectory },
@@ -172,7 +173,7 @@ test.each([
     const bin = path.join(project, "node_modules", ".bin");
     await mkdir(bin, { recursive: true });
     for (const tool of ["prettier", "biome", "oxfmt", "ruff", "black"]) {
-      const executable = path.join(bin, tool);
+      const executable = path.join(bin, `${tool}${process.platform === "win32" ? ".cmd" : ""}`);
       await writeFile(executable, "#!/bin/sh\nexit 0\n");
       await chmod(executable, 0o755);
     }

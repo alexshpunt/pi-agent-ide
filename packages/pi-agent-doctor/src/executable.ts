@@ -65,7 +65,7 @@ export async function isExecutableAvailable(
         ]
       : [];
   const candidates = locations.flatMap((location) => [
-    location,
+    ...(process.platform !== "win32" || path.extname(location) ? [location] : []),
     ...suffixes.map((suffix) => `${location}${suffix}`),
   ]);
   for (const candidate of candidates) {

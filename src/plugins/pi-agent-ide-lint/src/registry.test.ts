@@ -44,7 +44,7 @@ test("selects the first available shipped linter", async () => {
   const project = await temporaryDirectory("linter-available-project-");
   process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("linter-available-agent-");
   const bin = path.join(project, "node_modules", ".bin");
-  const executable = path.join(bin, "oxlint");
+  const executable = path.join(bin, process.platform === "win32" ? "oxlint.cmd" : "oxlint");
   await mkdir(bin, { recursive: true });
   await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
   await chmod(executable, 0o755);
