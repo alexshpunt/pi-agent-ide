@@ -119,11 +119,11 @@ test("native Codemode keeps the same issued-reference argument and selection bou
           name: "codemode",
           arguments: {
             code: String.raw`
-for (const [index, form] of ["uuid", "text", "prefix"].entries()) {
+for (const [index, form] of ["uuid", "value", "prefix"].entries()) {
   const shown = await tools.read({ path: "note.txt", offset: 2, limit: 1 });
-  const id = /<uuid>([^<]+)<\/uuid>/u.exec(shown)?.[1];
+  const id = /^RESULT#([a-f\d-]{36})$/u.exec(shown?.id)?.[1];
   if (!id) throw Error("Read did not issue a reference");
-  const source = form === "text" ? shown : form === "uuid" ? id : "RESULT#" + id;
+  const source = form === "value" ? shown : form === "uuid" ? id : "RESULT#" + id;
   // A refused call resolves to null; the Codemode result lists each reason.
   for (const selector of [{ start: "beta" }, { start: "beta", end: "beta" }])
     if ((await tools.replace({ path: source, ...selector, text: "BAD" })) !== null)

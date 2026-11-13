@@ -7,7 +7,11 @@ import {
   type ReadPlugin,
   type ReadPluginApi,
 } from "#src/api/plugin-protocol.ts";
-import { readParameters, describeReadParameters } from "#src/api/read-parameters.ts";
+import {
+  readParameters,
+  readToolParameters,
+  describeReadParameters,
+} from "#src/api/read-parameters.ts";
 import { createReadCore } from "#src/core/read-core.ts";
 
 test("puts plugin syntax on its parameter without changing accepted arguments", async () => {
@@ -31,8 +35,9 @@ test("puts plugin syntax on its parameter without changing accepted arguments", 
     {},
     { path: "example:x", views: ["outline:depth=2"] },
     { offset: -3, limit: 0 },
+    { path: ["example:x", { id: "RESULT#x" }] },
   ]) {
-    expect(Value.Check(schema, request)).toBe(Value.Check(readParameters, request));
+    expect(Value.Check(schema, request)).toBe(Value.Check(readToolParameters, request));
   }
   expect(description(readParameters, "path")).not.toContain("example:<id>");
 });
@@ -137,7 +142,7 @@ function plugin(id: string, setup: (api: ReadPluginApi) => void | Promise<void>)
 }
 
 function description(
-  schema: typeof readParameters,
+  schema: typeof readParameters | typeof readToolParameters,
   parameter: keyof typeof readParameters.properties,
 ): string {
   const metadata = schema.properties[parameter] as { description?: unknown };

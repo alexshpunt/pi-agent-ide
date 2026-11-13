@@ -170,3 +170,12 @@ test("view changes safely replace native and IDE components in both slots", () =
     }).render(80),
   ).toEqual(panel.render(80));
 });
+
+test("a Read of several paths names every path and their shared window", () => {
+  const args = { path: ["a.txt", "b.txt"], offset: 2, limit: 3 };
+  const header = renderReadCall(args, theme, context({ path: "a.txt" }));
+  const shown = header.render(120).join("\n");
+  expect(shown).toContain("read a.txt, b.txt");
+  expect(shown).toContain("lines 2-4");
+  expect(shown).not.toContain("inherited source");
+});

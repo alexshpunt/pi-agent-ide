@@ -390,8 +390,8 @@ test("stresses write-result scopes, verified anchors and annotation views withou
       let checked = 0;
       const verify = (value, limit, resources, whole = false) => {
         // Scripts get the whole requested text; only explicit ranges bound it.
-        if (/\\[Output truncated:|Showing lines|Code overview/u.test(value)) throw new Error("Script text was cut");
-        const body = value.replace(/^<system-result[^\\n]*>\\n/u,"");
+        if (/\\[Output truncated:|Showing lines|Code overview/u.test(value.text)) throw new Error("Script text was cut");
+        const body = value.text;
         const needles = (body.match(/needle_[ab]_\\d+/gu)??[]).length;
         if (needles > limit*resources) throw new Error("Explicit range overflow");
         if (whole && needles < 300) throw new Error("Script text is incomplete");
@@ -403,7 +403,7 @@ test("stresses write-result scopes, verified anchors and annotation views withou
         }
       }
       const selected = await tools.read({path:"a.ts",offset:299,limit:1,views:["anchors"]});
-      const anchor = /^([A-Z\\d]+)\\|const needle_a_298 /mu.exec(selected)?.[1];
+      const anchor = /^([A-Z\\d]+)\\|const needle_a_298 /mu.exec(selected.text)?.[1];
       if (!anchor) throw new Error("Verified source anchor is missing");
       for (const offset of [-1,0,1,2]) for (const limit of [0,1,1000000]) {
         verify(await tools.read({path:"a.ts#"+anchor,offset,limit,views:["anchors","ast"]}),limit,1);
@@ -527,7 +527,7 @@ test("bounds Git change views and keeps large stage, unstage and undo effects co
               id: "git-calls",
               name: "codemode",
               arguments: {
-                code: 'for (const name of ["stage","unstage","undo"]) { const current=await tools.read({path:"tracked.txt",views:["changes","anchors"],limit:1}); const change=/CHANGE#[A-F\\d]+/u.exec(current)?.[0]; if (!change) throw new Error("No change anchor"); text(await tools[name]({file:"tracked.txt",change})); }',
+                code: 'for (const name of ["stage","unstage","undo"]) { const current=await tools.read({path:"tracked.txt",views:["changes","anchors"],limit:1}); const change=/CHANGE#[A-F\\d]+/u.exec(current.text)?.[0]; if (!change) throw new Error("No change anchor"); text(await tools[name]({file:"tracked.txt",change})); }',
               },
             }),
           ],

@@ -233,6 +233,18 @@ function values(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
+/** A Codemode value passed on unchanged, such as a Read image block, reuses the result it came from. */
+function passesValue(value: unknown, prior: RunEvent): boolean {
+  const own = prior.result?.structuredContent;
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    own !== null &&
+    typeof own === "object" &&
+    isDeepStrictEqual(value, own)
+  );
+}
+
 function reuses(value: unknown, output: string, kind = "result"): boolean {
   const ids =
     kind === "result"
@@ -453,8 +465,10 @@ export function validateRoute(
           return (
             !prior ||
             prior.end >= start.index ||
-            !(Array.isArray(reference.field) ? reference.field : [reference.field]).some((field) =>
-              reuses(fieldValue(event.args, field), resultText(prior.event), reference.kind),
+            !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
+              (field) =>
+                reuses(fieldValue(event.args, field), resultText(prior.event), reference.kind) ||
+                passesValue(fieldValue(event.args, field), prior.event),
             ) ||
             (reference.newParent && prior.parent === execution.parent)
           );

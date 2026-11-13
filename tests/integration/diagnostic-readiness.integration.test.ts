@@ -32,7 +32,8 @@ test("unavailable diagnostics remain visible without entering source selections"
               arguments: {
                 code: String.raw`
 const result = await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]});
-if(typeof result !== "string" || !result.includes("unavailable") || !result.includes("lint:") || !result.includes("lsp:")) throw Error(result);
+// Readiness and ignored-view notices reach the model, not the script's text.
+if(typeof result?.text !== "string" || !result.text.includes("beta") || /unavailable|lint:|lsp:|ghost/.test(result.text)) throw Error(JSON.stringify(result));
 const outside = await tools.search({path:result,query:"regex:unavailable|lint:|lsp:|ghost"}).then(value => value.result);
 if(!outside.includes("No matches found")) throw Error(outside);
 store("diagnosticReadiness",result);
@@ -51,7 +52,7 @@ store("diagnosticReadiness",result);
                 code: String.raw`
 const beta = await tools.search({path:load("diagnosticReadiness"),query:"beta"}).then(value => value.result);
 const value = await tools.read({path:beta});
-if(!value.includes("beta") || value.includes("alpha") || value.includes("gamma")) throw Error(value);
+if(!value.text.includes("beta") || value.text.includes("alpha") || value.text.includes("gamma")) throw Error(value.text);
 await tools.read({path:"notes.unknown",views:["diagnostics","anchors","ghost"]});
 `,
               },
@@ -102,15 +103,15 @@ if(!session) throw Error(created);
 try {
   await tools.read({path:session});
   const source = await tools.read({path:session+"/source",views:["anchors"]});
-  const anchor = /(?:^|\n)(2#[A-F\d]+)\|/.exec(source)?.[1];
-  if(!anchor) throw Error(source);
+  const anchor = /(?:^|\n)(2#[A-F\d]+)\|/.exec(source.text)?.[1];
+  if(!anchor) throw Error(source.text);
   await tools.insert({path:session+"/source",anchor,text:"breakpoint"});
   const pending = await tools.read({path:session+"/breakpoints"});
-  if(!pending.includes("(pending)") || !pending.includes("demo.mjs:2")) throw Error(pending);
+  if(!pending.text.includes("(pending)") || !pending.text.includes("demo.mjs:2")) throw Error(pending.text);
   await tools.insert({path:session,text:"start"});
   await tools.read({path:session});
   const verified = await tools.read({path:session+"/breakpoints"});
-  if(!verified.includes("(verified)") || !verified.includes("demo.mjs:2")) throw Error(verified);
+  if(!verified.text.includes("(verified)") || !verified.text.includes("demo.mjs:2")) throw Error(verified.text);
 } finally {
   await tools.delete({path:session});
 }

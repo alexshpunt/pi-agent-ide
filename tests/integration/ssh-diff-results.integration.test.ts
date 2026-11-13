@@ -117,7 +117,7 @@ const rows=lines.slice(3).map((row)=>row.replace(/\\r$/,""));
 check(rows.length===4410 && rows.every((row,index)=>row===(index<2205?"-left café row "+index:"+right café row "+(index-2205))),"Script diff is not complete");
 text(await tools.write({path:right,content:"new remote snapshot\\r\\n"}));
 const current=await tools.read({path:right});
-check(current.includes("new remote snapshot"),"Owner file was not changed");
+check(current.text==="new remote snapshot\\r\\n","Owner file was not changed");
 text({before:left,after:right,rows:rows.length});
 `,
             },

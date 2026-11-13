@@ -226,7 +226,7 @@ test("preserves AST input forms across calls and rejects captures after a depend
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runAstComposition(cwd, "ast-forms-cross-call-stale", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:1});
-for(const input of [window,uuid(window),"RESULT#"+uuid(window)]) {
+for(const input of [window,window.id.slice("RESULT#".length),window.id]) {
  const found=await tools.ast_search({path:input,pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
  check(matches(found).length===1,"Read input forms differ");
  store("ast-capture",capture(found,"OPTIONS"));

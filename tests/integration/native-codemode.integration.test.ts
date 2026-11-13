@@ -237,7 +237,7 @@ test("editor batches commit automatically without a checkpoint tool", async () =
       `if (ALL_TOOLS.some(tool => tool.name === "flush")) throw Error("Unexpected editor checkpoint tool");
 await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
 const shown = await tools.read({path:"note.txt"});
-if (!shown.includes("ALPHA")) throw Error("Read did not see the committed edit");
+if (!shown.text.includes("ALPHA")) throw Error("Read did not see the committed edit");
 const changed = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 await tools.replace({path:changed,text:"FINAL"+String.fromCharCode(10)});
 text(await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"}));`,
@@ -254,7 +254,7 @@ test("read and search finish a batch before dependent work starts", async () => 
     const run = await runScripts(cwd, "native-codemode-read-boundary", [
       `text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added"}));
 const shown = await tools.read({path:"note.txt",views:["anchors"]});
-if (!shown.includes(${JSON.stringify(anchor(3, "beta"))})) throw new Error("read saw an uncommitted file");
+if (!shown.text.includes(${JSON.stringify(anchor(3, "beta"))})) throw new Error("read saw an uncommitted file");
 text(await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(3, "beta"))},text:"BETA"}));
 text(await tools.search({path:"note.txt",query:"BETA"}).then(value => value.result));`,
     ]);

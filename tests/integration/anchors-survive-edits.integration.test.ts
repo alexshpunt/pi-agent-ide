@@ -40,7 +40,7 @@ test("Search results and line anchors survive edits made elsewhere in the file",
 const file=${JSON.stringify(source)};
 await tools.write({path:file,content:"one\\ntwo\\nthree\\nfour\\nfive\\n"});
 const anchored=await tools.read({path:file,views:["anchors"]});
-const anchorOf=(word)=>new RegExp("([0-9A-HJKMNP-TV-Z]{7})\\\\|"+word).exec(anchored)[1];
+const anchorOf=(word)=>new RegExp("([0-9A-HJKMNP-TV-Z]{7})\\\\|"+word).exec(anchored.text)[1];
 const four=await tools.search({path:file,query:"four"}).then(value => value.result);
 const two=await tools.search({path:file,query:"two"}).then(value => value.result);
 const five=anchorOf("five");
@@ -48,7 +48,7 @@ const three=anchorOf("three");
 await tools.bash({command:"sed -i '1i zero' "+file});
 await tools.replace({path:matches(four)[0],text:"FOUR"});
 await tools.replace({path:file,start:five,text:"LAST\\n"});
-check(body(await tools.read({path:file})).startsWith("zero\\none\\ntwo\\nthree\\nFOUR\\nLAST"),"Edits above did not keep the targets");
+check((await tools.read({path:file})).text.startsWith("zero\\none\\ntwo\\nthree\\nFOUR\\nLAST"),"Edits above did not keep the targets");
 await tools.bash({command:"sed -i 's/two/2/' "+file});
 await rejects(()=>tools.replace({path:matches(two)[0],text:"X"}));
 await tools.bash({command:"sed -i 's/three/3/' "+file});
@@ -103,7 +103,7 @@ const [r3,r110,r112,r115,r117,r120]=[3,110,112,115,117,120].map(ref);
 await tools.bash({command:"sed -i '2~2s/other(/different(/' "+file+" && sed -i '1i top' "+file});
 await tools.replace({path:[r3,r110,r112],text:"renamed"});
 const after=await tools.read({path:file});
-check(body(String(after)).includes("v_2 = renamed(a_2)")&&body(String(after)).includes("v_109 = renamed(a_109)")&&body(String(after)).includes("v_111 = renamed(a_111)"),"Targets were not applied at their new lines: "+String(after).slice(0,500));
+check(after.text.includes("v_2 = renamed(a_2)")&&after.text.includes("v_109 = renamed(a_109)")&&after.text.includes("v_111 = renamed(a_111)"),"Targets were not applied at their new lines: "+after.text.slice(0,500));
 // Two matches change their own text: one call names both and leaves the file untouched.
 await tools.bash({command:"sed -i '116s/rename_me/x_me/;118s/rename_me/y_me/' "+file});
 await rejects(()=>tools.replace({path:[r115,r117,r120],text:"renamed"}));
@@ -233,7 +233,7 @@ test("Anchors of repeated lines stay exact when other sessions insert lines abov
       `
 const file=${JSON.stringify(source)};
 await tools.write({path:file,content:"${block("a")}${block("b")}${block("c")}"});
-const anchored=String(await tools.read({path:file,views:["anchors"]}));
+const anchored=(await tools.read({path:file,views:["anchors"]})).text;
 const rows=anchored.split("\\n").filter((row)=>/^[0-9A-HJKMNP-TV-Z]{7}\\|/.test(row)).map((row)=>{const at=row.indexOf("|"); return {anchor:row.slice(0,at), text:row.slice(at+1)};});
 const closes=rows.filter((row)=>row.text==="}");
 check(new Set(rows.map((row)=>row.anchor)).size===rows.length,"Two lines share an anchor");
@@ -242,7 +242,7 @@ const secondClose=closes[1].anchor;
 // Another session inserts a repeated line and a new line above the whole file.
 await tools.bash({command:"sed -i '1i }' "+file+" && sed -i '1i zero' "+file});
 await tools.delete({path:file,start:secondTemplate,end:secondClose});
-const after=body(await tools.read({path:file}));
+const after=(await tools.read({path:file})).text;
 check(!after.includes("T b(T v)") && after.includes("T a(T v)") && after.includes("T c(T v)"),"The wrong block was deleted: "+after);
 check(after.startsWith("zero\\n}\\n// a"),"Lines above changed: "+after);
 // A changed landmark makes the anchors of its repeated lines stale.

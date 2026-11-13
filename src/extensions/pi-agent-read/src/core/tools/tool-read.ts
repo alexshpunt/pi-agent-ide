@@ -36,6 +36,7 @@ import {
   type FragmentResolverRegistration,
   type ReadHandlerRegistration,
   type ReadPipelineContext,
+  type ReadRequest,
   type ReadFailure,
   type ReadPipelineStage,
   type ReadResultDetails,
@@ -60,13 +61,14 @@ import {
 import { TempResourceStore } from "pi-agent-resource";
 
 import {
-  type readParameters,
+  type readToolParameters,
   describeReadParameters,
   type ReadParameterText,
-  readRequestOf,
+  readRequestsOf,
 } from "#src/api/read-parameters.ts";
 import { readRaw } from "#src/core/tools/read/raw-read.ts";
 import { readOutputSchema, structuredRead } from "./read/structured-result.ts";
+import { listReadResult } from "./read/list-result.ts";
 
 const fallbackReadRenderer = createReadResultRenderer({ kind: "source" });
 
@@ -122,7 +124,7 @@ export interface ReadTool {
   saveTemporary(text: string): Promise<string>;
   /** Sets the saver used before agent-facing text is truncated. */
   setOutputSaver(saver: (text: string) => Promise<string>): void;
-  readonly tool: ToolDefinition<typeof readParameters, ReadResultDetails>;
+  readonly tool: ToolDefinition<typeof readToolParameters, ReadResultDetails>;
   execute(
     request: ReadPipelineContext["request"],
     context: ResourceResolverContext,
@@ -234,35 +236,46 @@ export function createReadTool(
           cwd: context.cwd,
           ...(signal !== undefined && { signal }),
         };
-        const request = readRequestOf(parameters);
-        try {
-          const result = await executeRead(
-            request,
-            resolverContext,
-            resolvers,
-            handlers,
-            views,
-            temporaryResources,
-            fragments,
-            targetResolvers,
-            resourceGuards,
-            "agent",
-            outputSaver,
-            isNestedCall?.(toolCallId) === true ? "none" : "model",
-          );
-          return withoutScriptData(
-            structuredRead(withReadCancellation(result, request.path, signal)),
-          );
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          return structuredRead(
-            failureResult({
-              code: "READ_FAILED",
-              source: request.path,
-              message: error instanceof Error ? error.message : String(error),
-            }),
-          );
-        }
+        // A Read that another tool issued, such as a Codemode script, gets complete data.
+        const nested = isNestedCall?.(toolCallId) === true;
+        const readOne = async (request: ReadRequest): Promise<ReadToolResult> => {
+          try {
+            const result = await executeRead(
+              request,
+              resolverContext,
+              resolvers,
+              handlers,
+              views,
+              temporaryResources,
+              fragments,
+              targetResolvers,
+              resourceGuards,
+              "agent",
+              outputSaver,
+              nested ? "none" : "model",
+            );
+            return withoutScriptData(
+              structuredRead(withReadCancellation(result, request.path, signal), {
+                complete: nested,
+              }),
+            );
+          } catch (error) {
+            if (signal?.aborted) throw error;
+            return structuredRead(
+              failureResult({
+                code: "READ_FAILED",
+                source: request.path,
+                message: error instanceof Error ? error.message : String(error),
+              }),
+            );
+          }
+        };
+        const requests = readRequestsOf(parameters);
+        if (!Array.isArray(parameters.path)) return readOne(requests[0] ?? {});
+        return listReadResult(
+          requests.map((request) => request.path ?? ""),
+          await Promise.all(requests.map(readOne)),
+        );
       },
     },
     async execute(request, context, audience = "agent"): Promise<ReadToolResult> {
@@ -409,6 +422,7 @@ async function executeRead(
       [...resolvers]
         .sort((left, right) => left.priority - right.priority || left.order - right.order)
         .map(({ resolver }) => resolver),
+      outputLimit,
     );
   resolverContext = { ...resolverContext, audience };
   const limitOutput = readOutputLimiter(audience, outputLimit, outputSaver);
@@ -1130,6 +1144,7 @@ async function resolveSource(
         state: createReadState(content, resource.source, resolver.id, {
           preserveTruncatedOutput: registeredResolver.preserveTruncatedOutput,
           textMode: resolver.id === "temp" ? "final" : "normal",
+          ...(resource.entries === undefined ? {} : { entries: resource.entries }),
         }),
       },
     };

@@ -151,7 +151,7 @@ const sources=${JSON.stringify(sources)};
 for(let i=0;i<sources.length;i++) {
  const result=await tools.read({path:sources[i],views:["anchors"]});
  const expected=["LEFT VERIFIED","right café"][i];
- if(!result.includes(expected)) throw Error("Target text crossed a namespace: "+result);
+ if(!result.text.includes(expected)) throw Error("Target text crossed a namespace: "+result.text);
  const found=await tools.search({path:result,query:expected}).then(value => value.result);
  if(!found.includes(sources[i])) throw Error("Read receipt lost its namespace owner: "+found);
  text(found);
@@ -159,19 +159,16 @@ for(let i=0;i<sources.length;i++) {
 async function inspect(request) {
  // A failed Read resolves to null; the Codemode result lists its reason.
  const value=await tools.read(request);
- return value === null ? {error:true} : {text:value};
+ return value === null ? {error:true} : {text:value.text};
 }
 const local=await inspect({path:"invalid.txt"});
 const remote=await inspect({path:${JSON.stringify(invalidSource)}});
 if(("error" in local)!==("error" in remote)) throw Error("Invalid UTF-8 changed Read semantics");
-if("text" in local && "text" in remote) {
- const body=s=>s.replace(/^<system-result[^\\n]*>\\n/,"").trim();
- if(body(local.text)!==body(remote.text)) throw Error("Invalid UTF-8 text differs");
-}
+if("text" in local && "text" in remote && local.text!==remote.text) throw Error("Invalid UTF-8 text differs");
 const before=await tools.read({path:"comparison.txt",offset:2,limit:1});
 const after=await tools.read({path:sources[1],offset:2,limit:1});
-if(!before.includes("last") || !after.includes("last") || after.includes("right café")) throw Error("No-final-LF window differs");
-text({local,remote,lastLine:after});
+if(before.text!=="last" || after.text!=="last") throw Error("No-final-LF window differs");
+text({local,remote,lastLine:after.text});
 `,
             },
           }),

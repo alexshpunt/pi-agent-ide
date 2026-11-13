@@ -31,6 +31,7 @@ export function createSshResourceResolver(
         }
         let version: string | null | undefined;
         let sourceBytes: Uint8Array | undefined;
+        let names: readonly string[] | undefined;
         const snapshot = async (operationContext: ResourceOperationContext) => {
           try {
             const current = await backend.read(location.path, operationContext);
@@ -43,8 +44,12 @@ export function createSshResourceResolver(
         };
         const read = async (operationContext: ResourceOperationContext): Promise<AgentContent> => {
           sourceBytes = undefined;
+          names = undefined;
           if (directory) {
             const entries = await backend.list(location.path, operationContext);
+            names = entries.map((entry) =>
+              entry.kind === "directory" ? `${entry.name}/` : entry.name,
+            );
             const rows = entries.map(
               (entry) =>
                 `  ${entry.kind === "directory" ? "📁" : entry.kind === "file" ? "📄" : "🔗"} ${entry.name}`,
@@ -76,6 +81,9 @@ export function createSshResourceResolver(
               read,
               get sourceBytes() {
                 return sourceBytes;
+              },
+              get entries() {
+                return names;
               },
               ...(directory ? {} : { readBytes }),
             },

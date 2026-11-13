@@ -58,7 +58,7 @@ test.each([
                 id: "chain",
                 name: "codemode",
                 arguments: {
-                  code: `text(await tools.write({path:${JSON.stringify(canonical)},content:"changed\\n"}));\ntext(await tools.read({path:${JSON.stringify(canonical)}}));\ntext("unavailable:" + (await tools.write({path:${JSON.stringify(unavailable)},content:"updated\\n"})));\ntext(await tools.read({path:${JSON.stringify(unavailable)}}));`,
+                  code: `text(await tools.write({path:${JSON.stringify(canonical)},content:"changed\\n"}));\ntext((await tools.read({path:${JSON.stringify(canonical)}})).text);\ntext("unavailable:" + (await tools.write({path:${JSON.stringify(unavailable)},content:"updated\\n"})));\ntext((await tools.read({path:${JSON.stringify(unavailable)}})).text);`,
                 },
               }),
             ];

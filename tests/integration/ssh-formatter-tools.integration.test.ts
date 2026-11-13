@@ -136,7 +136,7 @@ test("ordinary SSH writes run the owner formatter and reread its final content",
             id: "diagnostics-ready",
             name: "codemode",
             arguments: {
-              code: `const deadline=Date.now()+10000; let ready=false; for(let attempt=0;attempt<20 && Date.now()<deadline;attempt++){ const result=await tools.read({path:${JSON.stringify(`diagnostics:${source}`)}}); if(JSON.stringify(result).includes("Owned lint BEFORE")){text(result);ready=true;break;} } if(!ready) throw new Error("Owned lint did not complete for the saved revision");`,
+              code: `const deadline=Date.now()+10000; let ready=false; for(let attempt=0;attempt<20 && Date.now()<deadline;attempt++){ const result=await tools.read({path:${JSON.stringify(`diagnostics:${source}`)}}); if(result?.text.includes("Owned lint BEFORE")){text(result.text);ready=true;break;} } if(!ready) throw new Error("Owned lint did not complete for the saved revision");`,
             },
           }),
         ]),

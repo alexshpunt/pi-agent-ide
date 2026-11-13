@@ -71,10 +71,14 @@ function resolveFilesystemSource(
     }
   })();
   let sourceBytes: Uint8Array | undefined;
+  let entries: readonly string[] | undefined;
   const read = async ({ signal }: { readonly signal?: AbortSignal }) => {
     sourceBytes = undefined;
+    entries = undefined;
     return isDirectory
-      ? readDirectoryContent(filePath, signal)
+      ? readDirectoryContent(filePath, signal, (names) => {
+          entries = names;
+        })
       : readFilesystemContent(filePath, contentHost, signal, (bytes) => {
           sourceBytes = bytes;
         });
@@ -85,6 +89,9 @@ function resolveFilesystemSource(
     read,
     get sourceBytes() {
       return sourceBytes;
+    },
+    get entries() {
+      return entries;
     },
   };
 
@@ -125,7 +132,11 @@ function resolveFilesystemSource(
   };
 }
 
-function readDirectoryContent(filePath: string, signal: AbortSignal | undefined) {
+function readDirectoryContent(
+  filePath: string,
+  signal: AbortSignal | undefined,
+  capture: (entries: readonly string[]) => void,
+) {
   throwIfAborted(signal);
 
   const entries = readdirSync(filePath, { withFileTypes: true });
@@ -140,6 +151,7 @@ function readDirectoryContent(filePath: string, signal: AbortSignal | undefined)
     lines.push(`  ${icon} ${entry.name}`);
   }
 
+  capture(entries.map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name)));
   return [{ type: "text" as const, text: lines.join("\n") }] as const;
 }
 

@@ -25,7 +25,7 @@ const none = await tools.file_search({path:"logs",pattern:"*.absent"});
 check(Array.isArray(none) && none.length === 0, "No match is not an empty list");
 check((await tools.file_search({path:"missing",pattern:"*"})) === null, "A failed file_search is not null");
 const content = await tools.read({path: all.find((file) => file.endsWith("entry-137.log"))});
-check(content.includes("PASS-137"), "The listed path did not read the file");
+check(content.text === "PASS-137\\n", "The listed path did not read the file");
 text("file_search paths verified");`;
 
 test("file_search resolves to every matching path in Codemode and keeps the capped direct view", async () => {

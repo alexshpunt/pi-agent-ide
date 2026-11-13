@@ -112,15 +112,14 @@ test.each([
           call("bounded", "read", { path: "large.ts", offset: 2, limit: 3 }),
           call("script", "codemode", {
             code: String.raw`
-const strip = (value) => value.replace(/^<system-result[^\n]*\n/u, "");
-const source = strip(await tools.read({ path: "large.ts" }));
+const source = (await tools.read({ path: "large.ts" })).text;
 await tools.write({ path: "copy.ts", content: source });
-const json = strip(await tools.read({ path: "large.json" }));
+const json = (await tools.read({ path: "large.json" })).text;
 const rows = JSON.parse(json);
 await tools.write({ path: "copy.json", content: json });
 const page = await tools.read({ path: "large.ts", offset: 2, limit: 3 });
-if (!page.includes(${JSON.stringify(window)}) || !page.includes("more lines in source"))
-  throw Error("Expected an explicit page with its continuation");
+if (page.text !== ${JSON.stringify(`${window}\n`)})
+  throw Error("Expected the exact page without its continuation: " + JSON.stringify(page.text));
 text(JSON.stringify({ sourceLength: source.length, rows: rows.length }));
 `,
           }),
@@ -137,6 +136,7 @@ text(JSON.stringify({ sourceLength: source.length, rows: rows.length }));
       expect(getToolExecutionResult(run, "full")).not.toHaveProperty("structuredContent");
       const bounded = getToolResultText(run, "bounded");
       expect(bounded).toContain(window);
+      expect(bounded).toContain("more lines in source");
       expect(getToolExecutionResult(run, "bounded")).not.toHaveProperty("structuredContent");
       expect(getToolExecution(run, "script").isError).toBe(false);
       const scriptText = getToolResultText(run, "script");

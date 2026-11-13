@@ -42,7 +42,7 @@ test.each([true, false])(
                 arguments: {
                   code: `
 const file = await tools.read({path: "source.ts"});
-if(typeof file!=="string"||!file.includes("Example")) throw Error(file);
+if(typeof file?.text!=="string"||!file.text.includes("Example")) throw Error(JSON.stringify(file));
 let available = false;
 try { const symbol=await tools.lsp_search({declaration:"source.ts#Example"}).then(value => value.result); available=typeof symbol==="string" && symbol.includes("Example"); } catch {}
 if (available !== ${!disabled}) throw new Error("Wrong LSP module state");

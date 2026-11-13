@@ -888,6 +888,89 @@ test("a Read that another tool issued returns its whole text and keeps window no
   }
 });
 
+test("a Read that another tool issued keeps complete data with its exact text", async () => {
+  const lines = Array.from({ length: 2500 }, (_, index) => `line ${index + 1}`);
+  const source = `${lines.join("\n")}\n`;
+  const read = createReadTool(undefined, "compact", undefined, (id) => id.startsWith("codemode/"));
+  read.registerContributions("dynamic-plugin", {
+    resolvers: [{ resolver: textResolver(source), preserveTruncatedOutput: true }],
+  });
+  const execute = (id: string, request: { path: string; offset?: number; limit?: number }) =>
+    read.tool.execute(id, request, undefined, undefined, { cwd: "/workspace" } as never);
+  const data = (result: { structuredContent?: unknown }) =>
+    (result.structuredContent as { data: Record<string, unknown> }).data;
+
+  try {
+    const whole = data(await execute("codemode/1", { path: "dynamic:report" }));
+    expect(whole.text).toBe(source);
+    expect(whole.lines).toHaveLength(2500);
+    expect(whole.truncated).toBe(false);
+    const page = data(await execute("codemode/2", { path: "dynamic:report", offset: 2, limit: 2 }));
+    expect(page.text).toBe("line 2\nline 3\n");
+    const direct = data(await execute("model-call", { path: "dynamic:report" }));
+    expect(direct.text).toBeUndefined();
+    expect(direct.lines).toHaveLength(2000);
+  } finally {
+    await read.dispose();
+  }
+});
+
+test("an array path reads each source on its own and keeps the failures", async () => {
+  const read = createReadTool();
+  read.registerContributions("dynamic-plugin", {
+    resolvers: [
+      {
+        resolver: {
+          id: "fixture-list",
+          async tryResolve(source) {
+            if (source.endsWith("missing"))
+              return { kind: "failed", error: new Error("Source not found.") };
+            return {
+              kind: "resolved",
+              resource: { source, read: async () => [{ type: "text", text: `${source}\n` }] },
+            };
+          },
+        },
+        preserveTruncatedOutput: true,
+      },
+    ],
+  });
+  const execute = (path: string[]) =>
+    read.tool.execute("list-read", { path }, undefined, undefined, {
+      cwd: "/workspace",
+    } as never);
+
+  try {
+    const partial = await execute(["dynamic:a", "dynamic:missing", "dynamic:b"]);
+    expect(partial.isError).toBe(true);
+    expect(partial.structuredContent).toMatchObject({
+      status: "partial",
+      data: {
+        kind: "list",
+        items: [
+          { status: "success", data: { kind: "text", source: "dynamic:a" } },
+          { status: "error" },
+          { status: "success", data: { kind: "text", source: "dynamic:b" } },
+        ],
+      },
+      errors: [{ source: "dynamic:missing" }],
+    });
+    expect(partial.content.map((block) => (block.type === "text" ? block.text : ""))).toEqual([
+      "--- dynamic:a ---",
+      "dynamic:a\n",
+      "--- dynamic:missing ---",
+      expect.stringContaining("Source not found."),
+      "--- dynamic:b ---",
+      "dynamic:b\n",
+    ]);
+    const complete = await execute(["dynamic:a", "dynamic:b"]);
+    expect(complete.isError).toBe(false);
+    expect(complete.structuredContent).toMatchObject({ status: "success", errors: [] });
+  } finally {
+    await read.dispose();
+  }
+});
+
 test("does not save an explicit range as a temporary resource", async () => {
   const read = createReadTool();
   read.registerContributions("dynamic-plugin", {

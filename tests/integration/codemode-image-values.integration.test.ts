@@ -62,7 +62,7 @@ test("an IDE image read feeds image() and a classifier, and text reads stay comp
     const run = await runScripts(cwd, "codemode-image-values", [
       String.raw`
 const shown = await tools.read({path:"pixel.png"});
-if (typeof shown === "string" || shown.type !== "image" || shown.mimeType !== "image/png" || typeof shown.note !== "string")
+if (shown?.type !== "image" || shown.mimeType !== "image/png" || Object.keys(shown).length !== 3)
   throw Error("Expected an image block, got " + JSON.stringify(shown).slice(0, 200));
 image(shown);
 const model = await models.getModelOfType("classifier", "fixture-vision", "colour");
@@ -73,11 +73,13 @@ text("failed:" + failed.stopReason + ":" + (failed.answers.colour === undefined)
 const aborted = await models.classify(model, {state:{abort:true}, images:[shown], questions:${colour}});
 text("aborted:" + aborted.stopReason + ":" + (aborted.answers.colour === undefined));
 const note = await tools.read({path:"note.txt"});
-if (typeof note !== "string") throw Error("Text Read must stay a string");
+if (note?.text !== "alpha\nbeta\n" || !note.id.startsWith("RESULT#")) throw Error("Text Read must be { text, id }");
 const found = await tools.search({path:note, query:"beta"});
 text("composed:" + found.hasMatches);
 const missing = await tools.read({path:"missing.png"});
 text("missing:" + (missing === null));
+const both = await tools.read({path:["note.txt", "pixel.png"]});
+text("listed:" + (both[0]?.text === "alpha\nbeta\n" && both[1]?.type === "image" && both[1].data === shown.data));
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -90,6 +92,7 @@ text("missing:" + (missing === null));
       "aborted:aborted:true",
       "composed:true",
       "missing:true",
+      "listed:true",
     ])
       expect(output).toContain(expected);
     expect(images(run, "script-0")).toEqual([
@@ -120,7 +123,7 @@ text("read:" + shown.type);
 `,
       String.raw`
 const frames = await tools.read({path:"fixture-frames:"});
-if (frames.type !== "images" || typeof frames.note !== "string") throw Error(JSON.stringify(frames).slice(0, 200));
+if (frames.type !== "images" || Object.keys(frames).length !== 2) throw Error(JSON.stringify(frames).slice(0, 200));
 frames.images.forEach((frame) => image(frame));
 text("frames:" + frames.images.length);
 `,

@@ -35,6 +35,11 @@ export interface ResourceBase {
   readonly link?: string;
   /** Original file bytes captured by the most recent read, before conversion. Never set for listings or generated content. Consumers must not mutate this snapshot. */
   readonly sourceBytes?: Uint8Array;
+  /**
+   * Entry names of the directory listing returned by the most recent read, in listing order;
+   * directory names end with `/`. Set only for directory listings.
+   */
+  readonly entries?: readonly string[];
   /** Optional original-byte access, without content conversion or text annotations. */
   readonly readBytes?: ResourceByteRead;
   /** Skip document post-edit processing for stateful resources such as terminals. */

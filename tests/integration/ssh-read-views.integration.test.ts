@@ -126,40 +126,44 @@ async function invalid(action, label) {
   check(failure, label+" unexpectedly succeeded");
 }
 const local=await tools.read({path:"note.txt"});
-check(local.includes("local same basename"),"Local routing changed");
+check(local.text==="local same basename\\n","Local routing changed");
 const note=await tools.read({path:root+"/note.txt",offset:2,limit:1,views:["anchors"]});
-check(note.includes("café second") && !note.includes("first") && /[0-9A-HJKMNP-TV-Z]{7}\\|/.test(note),"Anchored text window changed");
+check(note.text.includes("café second") && !note.text.includes("first") && /[0-9A-HJKMNP-TV-Z]{7}\\|/.test(note.text),"Anchored text window changed");
+// Base64 of the bytes 0a 0d, the last two of the file.
 const raw=await tools.read({path:"raw:"+root+"/bytes.bin",offset:-2,limit:2});
-check(raw.includes("Bytes 3..5") && raw.includes("0a 0d"),"Raw tail was decoded");
+check(raw.bytes==="Cg0=","Raw tail was decoded");
 const eof=await tools.read({path:"raw:"+root+"/bytes.bin",offset:100,limit:2});
-check(eof.includes("Bytes 5..5"),"Raw EOF did not clamp");
+check(eof.bytes==="","Raw EOF did not clamp");
 const zero=await tools.read({path:"raw:"+root+"/bytes.bin",limit:0});
-check(zero.includes("Bytes 0..0") && zero.includes("5 bytes total"),"Zero byte read changed bounds");
+check(zero.bytes==="","Zero byte read changed bounds");
 const long=await tools.read({path:root+"/long.txt"});
-check(long.includes("row 2204") && !/offset=|temp:/.test(long),"A script Read was clipped");
+check(long.text.includes("row 2204") && !/offset=|temp:/.test(long.text),"A script Read was clipped");
+// A window holds exactly the requested rows; its continuation hint is not part of the value.
 const page=await tools.read({path:root+"/long.txt",limit:2000});
-check(page.includes("row 1999") && !page.includes("row 2000") && page.includes("offset=2001"),"Window clipping was hidden");
+check(page.text.includes("row 1999") && !page.text.includes("row 2000") && !page.text.includes("offset="),"Window was not exact");
 const next=await tools.read({path:root+"/long.txt",offset:2001,limit:2});
-check(next.includes("row 2000") && next.includes("row 2001"),"Continuation skipped rows");
+check(next.text==="row 2000\\r\\nrow 2001\\r\\n","Continuation skipped rows");
 const records=await tools.read({path:root+"/records.jsonl",views:["jq:.id"]});
-check(records.includes("2204") && !/offset=|temp:/.test(records),"A script JSON Read was clipped");
+check(records.text.includes("2204") && !/offset=|temp:/.test(records.text),"A script JSON Read was clipped");
 const recordPage=await tools.read({path:root+"/records.jsonl",views:["jq:.id"],limit:2000});
-check(recordPage.includes("offset=2001"),"JSON window clipping was hidden");
+check(recordPage.text.split("\\n").filter(Boolean).length===2000 && !recordPage.text.includes("offset="),"JSON window was not exact");
 const recordTail=await tools.read({path:root+"/records.jsonl",views:["jq:.id"],offset:2001,limit:1});
-check(recordTail.includes("2000"),"JSON continuation changed offset");
+check(recordTail.text.includes("2000"),"JSON continuation changed offset");
 const last=await tools.read({path:root+"/records.jsonl",views:["jq:.message"],offset:2205,limit:1});
-check(last.includes('"remote café"'),"JSONL output window was not transformed first");
+check(last.text.includes('"remote café"'),"JSONL output window was not transformed first");
 for(const path of ["identity.json",root+"/identity.json"]) {
  const identity=await tools.read({path,views:["jq:."]});
- check(identity.includes("42"),"Identity jq output changed");
+ check(identity.text.includes("42"),"Identity jq output changed");
  await rejected(()=>tools.replace({path:identity,text:"BAD"}),"jq edit authority");
 }
 const environment=await tools.read({path:root+"/records.jsonl",views:["jq:env | keys"],limit:10});
-check(!environment.includes("SSH_AUTH_SOCK") && !environment.includes('"HOME"'),"jq inherited account environment");
+check(!environment.text.includes("SSH_AUTH_SOCK") && !environment.text.includes('"HOME"'),"jq inherited account environment");
 const picture=await tools.read({path:root+"/picture.data"});
 const pdf=await tools.read({path:root+"/document.data"});
-check(pdf.includes("Owned second page 43"),"PDF lost second page");
-for(const result of [raw,zero,pdf]) await rejected(()=>tools.replace({path:result,text:"BAD"}),"readonly edit authority");
+check(pdf.text.includes("Owned second page 43"),"PDF lost second page");
+await rejected(()=>tools.replace({path:pdf,text:"BAD"}),"readonly edit authority");
+// Byte values carry no id, so they are not source parameters either.
+for(const result of [raw,zero]) await invalid(()=>tools.replace({path:result,text:"BAD"}),"byte edit authority");
 check(picture?.type === "image","SSH image Read lost its image block");
 await invalid(()=>tools.replace({path:picture,text:"BAD"}),"image edit authority");
 for (const request of [
@@ -212,10 +216,10 @@ text({note,raw,next,last,picture,pdf,readonly:true});
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     for (const id of ["denied", "broken-json", "broken-image", "broken-pdf"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(true);
-    // Two jq edits, three readonly edits and nine Reads were refused and resolved to null.
+    // Two jq edits, one readonly edit and nine Reads were refused and resolved to null.
     const refusals = codemodeFailures(getToolResultText(run, "native"));
-    expect(refusals).toMatch(/^14 of \d+ IDE calls failed:\n/u);
-    expect(refusals.match(/^- replace /gmu)).toHaveLength(5);
+    expect(refusals).toMatch(/^12 of \d+ IDE calls failed:\n/u);
+    expect(refusals.match(/^- replace /gmu)).toHaveLength(3);
     expect(refusals.match(/^- read /gmu)).toHaveLength(9);
     expect(refusals).toContain(`- read ${remote}/denied.txt`);
     expect(refusals).not.toContain("private synthetic denied content");
