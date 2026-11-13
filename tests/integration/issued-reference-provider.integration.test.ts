@@ -22,6 +22,7 @@ test("issued references survive split argument tokens and independent tool calls
     const token = "$issued-result:source-long-id";
     const explicit = JSON.stringify({ path: "explicit.txt", content: token });
     const split = explicit.indexOf(token) + "$issued-result:source".length;
+    const progressivePrefix = JSON.stringify({ path: "progressive.txt", content: token }).slice(0, -1);
     const defaultPrefix = "x".repeat(
       1024 - JSON.stringify({ path: "default.txt", content: "" }).indexOf('"}') - 8,
     );
@@ -82,6 +83,13 @@ test("issued references survive split argument tokens and independent tool calls
               arguments: { path: "default.txt", content: defaultPrefix + token },
             }),
             toolCall({
+              id: "progressive",
+              name: "issued_reference_probe",
+              argumentsJson: progressivePrefix + "}",
+              chunks: { kind: "explicit", chunks: [progressivePrefix, "}"] },
+              delayMs: 0,
+            }),
+            toolCall({
               id: "no-end",
               name: "issued_reference_probe",
               arguments: { path: "no-end.txt", content: "$issued-result:other" },
@@ -105,6 +113,7 @@ test("issued references survive split argument tokens and independent tool calls
     const expected = {
       characters: `${shown}\n${uuid}\n${secondAnchor}\n${shown}`,
       explicit: shown,
+      progressive: shown,
       default: defaultPrefix + shown,
       "no-end": getToolResultText(run, "other"),
     };
@@ -119,6 +128,12 @@ test("issued references survive split argument tokens and independent tool calls
         return call?.type === "toolCall" && call.id === id ? [update.delta] : [];
       });
       expect(JSON.parse(deltas.join(""))).toMatchObject({ content });
+      if (id === "progressive") {
+        expect(deltas).toEqual([
+          JSON.stringify({ path: "progressive.txt", content: shown }).slice(0, -1),
+          "}",
+        ]);
+      }
     }
   });
 });
