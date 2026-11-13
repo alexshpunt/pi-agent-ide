@@ -14,6 +14,7 @@ import {
   booleanQueryNotice,
   createSearchRecipe,
   runSearchRecipe,
+  tokenSelectionWarning,
   type SearchRecipe,
 } from "#src/search-recipe.ts";
 import { renderSearchResult } from "#src/search-renderer.ts";
@@ -63,6 +64,7 @@ interface FilePayload extends FileSearchResult {
 
 /** What a search registered its anchors for; a concurrent writer can make it differ from the backend's matches. */
 interface RegisteredMatches {
+  readonly query: string;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
   readonly notices: readonly string[];
@@ -247,9 +249,16 @@ function createMatchResolver(
       };
       const sessionId = formatted.sessionId;
       const shown = registered.get(result) ?? result;
+      const editWarning = tokenSelectionWarning(
+        result.recipe,
+        registered.get(result)?.query ?? result.request.query,
+        shown.matches.length,
+        shown.complete,
+      );
       return {
         ...selectionData(shown.matches, shown.complete, sessionId, formatted),
         notices: [...shown.notices],
+        ...(editWarning === undefined ? {} : { editWarning }),
         ...(formatted.fuzzy === undefined ? {} : { fuzzy: formatted.fuzzy }),
       };
     },
@@ -303,7 +312,11 @@ function createMatchResolver(
       // Another session may write a matched file between a search and the read of its text. The
       // captured text is the snapshot, with the matches a search of that text finds.
       const capture = (
-        found: { readonly matches: readonly TextSearchMatch[]; readonly complete: boolean },
+        found: {
+          readonly matches: readonly TextSearchMatch[];
+          readonly complete: boolean;
+          readonly query?: string;
+        },
         signal?: AbortSignal,
       ) =>
         captureCurrentMatches(found, context.cwd, {
@@ -320,12 +333,26 @@ function createMatchResolver(
             ? await runSearchRecipe(result.recipe, context.cwd, signal, context.environment)
             : await rerun(signal);
         const again = await capture(found, signal);
-        return { ...again, notices: [...found.notices, ...again.notices] };
+        return {
+          ...again,
+          query: again.query ?? found.query,
+          notices: [...found.notices, ...again.notices],
+        };
       };
       const captured = await capture(result, context.signal);
-      const notices = [...result.notices, ...captured.notices];
+      const warning = tokenSelectionWarning(
+        result.recipe,
+        captured.query ?? result.request.query,
+        captured.matches.length,
+        captured.complete,
+      );
+      const notices = [
+        ...result.notices,
+        ...captured.notices,
+        ...(warning === undefined ? [] : [warning]),
+      ];
       const session = await sessions.register(
-        result.request.query,
+        captured.query ?? result.request.query,
         captured.matches,
         captured.complete,
         context.cwd,
@@ -337,6 +364,7 @@ function createMatchResolver(
         captured.contents,
       );
       registered.set(result, {
+        query: captured.query ?? result.request.query,
         matches: session.matches,
         complete: session.complete,
         notices,

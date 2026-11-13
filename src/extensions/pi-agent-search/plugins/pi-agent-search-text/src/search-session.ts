@@ -30,7 +30,7 @@ import {
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
 import type { TextAnchorResourceResolver } from "pi-agent-text-editor/api/plugin-protocol";
-import { runSearchRecipe, type SearchRecipe } from "#src/search-recipe.ts";
+import { runSearchRecipe, tokenSelectionWarning, type SearchRecipe } from "#src/search-recipe.ts";
 
 const searchAnchorPattern = /^SEARCH#([A-F0-9]{4,64}):(all|[1-9]\d*):(line|match)$/u;
 const minimumSearchSessionIdLength = 4;
@@ -48,6 +48,7 @@ export interface TextSearchSession {
 }
 
 interface SearchSnapshot {
+  readonly editWarning?: string;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
   /** Digests, not text: a retained snapshot must not keep a copy of every searched file. */
@@ -67,6 +68,7 @@ interface StoredSearchSession extends TextSearchSession, SearchSnapshot {
   readonly environment?: SearchEnvironment;
   readonly refresh?: SearchSelectionRegistration["refresh"];
   readonly recipe: SearchRecipe;
+  readonly editWarning?: string;
   readonly snapshotByteBudget?: number;
   readonly cwd: string;
   readonly refreshedComplete?: SearchSnapshot;
@@ -251,8 +253,10 @@ export class SearchSessionStore {
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
     const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
+    const editWarning = tokenSelectionWarning(recipe, query, matches.length, complete);
     const session: StoredSearchSession = {
       id,
+      ...(editWarning === undefined ? {} : { editWarning }),
       query,
       matches,
       complete,
@@ -266,6 +270,7 @@ export class SearchSessionStore {
         cwd,
         complete,
         (source, abort) => readOwnedText(source, abort, environment, read),
+        editWarning,
       ),
       ...(snapshotByteBudget === undefined ? {} : { snapshotByteBudget }),
       recipe,
@@ -484,6 +489,8 @@ export class SearchSessionStore {
     if (parsed === undefined) return { kind: "not-handled" };
     const session = this.#sessions.get(parsed.id);
     if (session === undefined) return staleAnchor();
+    if (parsed.selector === "all" && session.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     const source = canonicalSource(contextSource);
     let snapshot: SearchSnapshot = session;
@@ -538,6 +545,8 @@ export class SearchSessionStore {
       ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
       if (!snapshot.complete) return missingCompleteAnchor(true);
     }
+    if (parsed.selector === "all" && snapshot.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: snapshot.editWarning } };
     const contentOf = (candidate: string) =>
       refreshedContents === undefined
         ? candidate === source
@@ -581,6 +590,8 @@ export class SearchSessionStore {
     if (parsed === undefined) return { kind: "not-handled" };
     const session = this.#sessions.get(parsed.id);
     if (session === undefined || session.cwd !== canonicalSource(cwd)) return staleAnchor();
+    if (edit !== undefined && parsed.selector === "all" && session.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     if (parsed.selector !== "all") {
       const bound = this.#resolveBound(value, session.cwd);
@@ -636,6 +647,8 @@ export class SearchSessionStore {
         contents.set(first.source, current);
       }
     }
+    if (edit !== undefined && parsed.selector === "all" && snapshot.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: snapshot.editWarning } };
     const selected = selectMatches(snapshot, parsed.selector, parsed.mode, (source) =>
       contents.get(source),
     );
@@ -733,6 +746,9 @@ export class SearchSessionStore {
       matches: matches.sort(compareMatches),
       complete: confirmed.snapshot.complete,
       digestBySource: digestContents(contents),
+      ...(confirmed.snapshot.editWarning === undefined
+        ? {}
+        : { editWarning: confirmed.snapshot.editWarning }),
     };
     this.#sessions.set(session.id, { ...session, refreshedComplete: snapshot });
     return { snapshot, contents };
@@ -745,12 +761,19 @@ export class SearchSessionStore {
     let matches: TextSearchMatch[];
     let complete: boolean;
     let contents: ReadonlyMap<string, string>;
+    let editWarning: string | undefined;
     try {
       const result =
         session.refresh === undefined
           ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
           : await session.refresh(signal);
       complete = result.complete;
+      editWarning = tokenSelectionWarning(
+        session.recipe,
+        result.query ?? session.query,
+        result.matches.length,
+        complete,
+      );
       matches = result.matches
         .map((match) => ({ ...match, source: canonicalSource(match.source) }))
         .sort(compareMatches);
@@ -773,6 +796,7 @@ export class SearchSessionStore {
     const snapshot: SearchSnapshot = {
       matches,
       complete,
+      ...(editWarning === undefined ? {} : { editWarning }),
       digestBySource: digestContents(contents),
     };
     this.#sessions.set(session.id, { ...session, refreshedComplete: snapshot });
@@ -788,6 +812,7 @@ function registerResultReferences(
   cwd: string,
   complete: boolean,
   read: SnapshotReader,
+  editWarning?: string,
 ): Pick<TextSearchSession, "target" | "matchTargets"> {
   if (store === undefined) return {};
   // Registered targets outlive this call. Their readers come from `sourceReader`, so no closure
@@ -826,7 +851,7 @@ function registerResultReferences(
     store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:match`, matchTarget, cwd);
     matchTargets.push(matchTarget);
   }
-  return { target: store.register(targets, cwd, complete), matchTargets };
+  return { target: store.register(targets, cwd, complete, editWarning), matchTargets };
 }
 function parseSearchAnchor(value: string): ParsedSearchAnchor | undefined {
   const match = searchAnchorPattern.exec(value);

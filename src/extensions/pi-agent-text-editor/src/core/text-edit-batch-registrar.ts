@@ -163,7 +163,7 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
             (registration.anchors ?? []).some(({ field }) => call.arguments[field] !== undefined)
           )
             return;
-          const resolved = resultTargets.resolve(input, context.cwd);
+          const resolved = resultTargets.resolve(input, context.cwd, { forEdit: true });
           if (!resolved.complete || resolved.targets.length !== 1) return;
           selection = resolved.targets[0];
           if (
