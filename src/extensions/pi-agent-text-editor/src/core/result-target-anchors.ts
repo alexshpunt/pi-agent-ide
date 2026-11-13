@@ -22,7 +22,7 @@ export function createResultTargetAnchors(
         if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
         try {
           const target = store
-            .resolve(value, context.cwd)
+            .resolve(value, context.cwd, { forEdit: true })
             .targets.find((target) => target.source === context.source);
           if (target === undefined)
             return {
@@ -57,7 +57,9 @@ export function createResultTargetAnchors(
       async tryResolve(value, context) {
         if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
         try {
-          const selected = store.resolve(value, context.cwd);
+          const selected = store.resolve(value, context.cwd, {
+            forEdit: context.edit !== undefined,
+          });
           // An edit compares each target with its file under the file lock and runs again on newer
           // text, so a write by another session after this point must not fail it here. Other
           // consumers, such as Read, use the selected lines now and need them to match the file.

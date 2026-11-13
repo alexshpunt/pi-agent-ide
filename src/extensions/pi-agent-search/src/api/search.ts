@@ -164,6 +164,8 @@ export interface SearchSelectionSnapshot {
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
   readonly notices?: readonly string[];
+  /** Effective matching query after any broadening. */
+  readonly query?: string;
   /**
    * Text of each source as the backend searched it. A refresh that returns it is checked against
    * this text instead of reading the file again, which another writer may change in between.

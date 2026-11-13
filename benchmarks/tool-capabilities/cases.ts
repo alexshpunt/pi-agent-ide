@@ -569,6 +569,29 @@ add(
     },
   },
 );
+add(
+  "token-search-edit-guard",
+  ["compose.token-search-edit-guard"],
+  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole returned search result with BAD; it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN, using its :match reference in direct calls or the match or its id in Codemode. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
+  [
+    { tool: "search", args: { path: "split.txt", query: /^alpha beta$/u } },
+    {
+      tool: "replace",
+      args: { text: "BAD" },
+      reuse: reuse(0),
+      error: true,
+      contains: "alpha beta",
+    },
+    { tool: "search", args: { path: "split.txt", query: "alpha OR beta" } },
+    { tool: "replace", args: { path: matchReference(1), text: "GREEN" }, reuse: reuse(2) },
+    { tool: "search", args: { path: "literal.txt", query: /^"alpha beta"$/u } },
+    { tool: "replace", args: { text: "LITERAL" }, reuse: reuse(4) },
+  ],
+  {
+    files: { "split.txt": "alpha\nbeta\n", "literal.txt": "alpha beta\n" },
+    expected: { "split.txt": "GREEN\nbeta\n", "literal.txt": "LITERAL\n" },
+  },
+);
 const rows = Array.from({ length: 150 }, (_, index) => `row ${String(index + 1)}`);
 add(
   "search-script-match-ids",
