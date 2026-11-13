@@ -75,7 +75,7 @@ export function resultValueId(input: unknown): string | undefined {
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 3;
+export const RESULT_TARGET_STORE_VERSION = 4;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -109,6 +109,7 @@ export class ResultTargetStore {
   public readonly version: number = RESULT_TARGET_STORE_VERSION;
   readonly #entries = new Map<string, ResultEntry>();
   readonly #matchReferences = new Map<string, string>();
+  readonly #editWarnings = new Map<string, string>();
   readonly #referenceNames = new Map<string, string>();
   readonly #snapshots = new Map<string, FileSnapshot>();
   readonly #results = new Map<
@@ -128,6 +129,7 @@ export class ResultTargetStore {
   public clear(): void {
     this.#entries.clear();
     this.#matchReferences.clear();
+    this.#editWarnings.clear();
     this.#referenceNames.clear();
     this.#snapshots.clear();
     this.#results.clear();
@@ -135,7 +137,12 @@ export class ResultTargetStore {
   }
 
   /** Register trusted resolver data, not a live Resource or agent-supplied coordinates. */
-  public register(targets: readonly ResultSourceTarget[], cwd: string, complete = true): string {
+  public register(
+    targets: readonly ResultSourceTarget[],
+    cwd: string,
+    complete = true,
+    editWarning?: string,
+  ): string {
     for (const target of targets) this.refresh(target.source, cwd);
     const reference = `${prefix}${randomUUID()}`;
     const aligned = this.#align(targets, cwd);
@@ -150,6 +157,7 @@ export class ResultTargetStore {
             cwd: path.resolve(cwd),
           },
     );
+    if (editWarning !== undefined) this.#editWarnings.set(reference, editWarning);
     return reference;
   }
 
@@ -191,10 +199,17 @@ export class ResultTargetStore {
   public resolve(
     input: unknown,
     cwd: string,
-    options: { readonly allowAdjusted?: boolean } = {},
+    options: { readonly allowAdjusted?: boolean; readonly forEdit?: boolean } = {},
   ): ResolvedResultTargets {
     input = this.source(input, cwd);
     const references = this.#references(input);
+    if (options.forEdit === true) {
+      for (const reference of references) {
+        const warning = this.#editWarnings.get(reference);
+        if (warning !== undefined)
+          throw Object.assign(new Error(warning), { code: "UNSAFE_TOKEN_SELECTION" });
+      }
+    }
     this.#refreshEntries(references, cwd);
     const targets: ResultSourceTarget[] = [];
     let complete = true;
@@ -208,7 +223,7 @@ export class ResultTargetStore {
 
   /** Resolve individual ranges in declared handle order for one-to-one source/destination pairs. */
   public resolveOrdered(input: unknown, cwd: string): ResolvedResultTargets {
-    const resolved = this.resolve(input, cwd);
+    const resolved = this.resolve(input, cwd, { forEdit: true });
     const targets: ResultSourceTarget[] = [];
     const seen = new Set<string>();
     // The files were refreshed once above; collect without another refresh so a write landing
@@ -422,6 +437,7 @@ export class ResultTargetStore {
         entry.targets.some((target) => sourcePath(target.source, entry.cwd) === source)
       ) {
         this.#entries.delete(reference);
+        this.#editWarnings.delete(reference);
         removed.add(reference);
       }
     }

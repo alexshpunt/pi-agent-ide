@@ -22,7 +22,7 @@ export function createResultTargetAnchors(
         if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
         try {
           const target = store
-            .resolve(value, context.cwd)
+            .resolve(value, context.cwd, { forEdit: true })
             .targets.find((target) => target.source === context.source);
           if (target === undefined)
             return {
@@ -57,7 +57,9 @@ export function createResultTargetAnchors(
       async tryResolve(value, context) {
         if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
         try {
-          const selected = store.resolve(value, context.cwd);
+          const selected = store.resolve(value, context.cwd, {
+            forEdit: context.edit !== undefined,
+          });
           // Filesystem selections are mapped onto the text acquired by the consumer. Sources
           // without filesystem tracking still need verification before their selections are used.
           await store.verifyUnfollowed(selected, context.signal);

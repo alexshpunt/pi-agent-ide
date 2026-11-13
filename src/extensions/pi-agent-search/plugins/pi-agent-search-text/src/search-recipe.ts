@@ -79,6 +79,21 @@ export async function runSearchRecipe(
   return { ...result, query, notices };
 }
 
+/** Explain a selection made of separate terms, not one literal phrase. */
+export function tokenSelectionWarning(
+  recipe: SearchRecipe,
+  selectedQuery: string,
+  count: number,
+  complete: boolean,
+): string | undefined {
+  if (count === 0 || recipe.originalQuery === undefined) return undefined;
+  const fallback = recipe.fallbacks?.find((step) => step.query === selectedQuery);
+  const condition = fallback === undefined ? recipe.condition : fallback.condition;
+  if (fallback?.mode !== "words" && (condition === undefined || condition.kind === "term"))
+    return undefined;
+  const query = recipe.originalQuery;
+  return `Search query ${JSON.stringify(query)} matched ${String(count)}${complete ? "" : "+"} separate tokens, not the phrase. Editing the whole result is unsafe; use an individual match or search for ${JSON.stringify(query)} as a quoted literal.`;
+}
 /** Tell the agent how a broadened search may be used, because its matches can differ from the query. */
 export function fallbackNotice(mode: SearchFallback["mode"]): string {
   const hint = "Use these matches as location hints; refine the query before editing.";
