@@ -12,7 +12,11 @@ interface BackgroundCase {
 
 /** Exercises real custom-run boundaries with a late Read plugin and observable file effects. */
 export default async function backgroundRunProbe(pi: ExtensionAPI): Promise<void> {
-  const config = JSON.parse(await readFile(path.resolve("background-case.json"), "utf8")) as BackgroundCase;
+  let config: BackgroundCase;
+  pi.on("before_agent_start", async () => {
+    if (config !== undefined) return;
+    config = JSON.parse(await readFile(path.resolve("background-case.json"), "utf8")) as BackgroundCase;
+  });
   let firstSettlement = true;
   let customStarts = 0;
   let activeRuns = 0;

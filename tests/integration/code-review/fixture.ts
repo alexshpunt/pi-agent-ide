@@ -6,9 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** Deterministic classifier at Pi's real provider boundary; no network or real credentials. */
 export default async function registerReviewFixture(pi: ExtensionAPI): Promise<void> {
-  const { mode } = JSON.parse(await readFile(path.resolve("review-case.json"), "utf8")) as {
-    mode: string;
-  };
+  let mode: string;
   let releaseIdle: (() => void) | undefined;
   const idle = new Promise<void>((resolve) => {
     releaseIdle = resolve;
@@ -23,49 +21,55 @@ export default async function registerReviewFixture(pi: ExtensionAPI): Promise<v
     releaseIdle = undefined;
   });
   pi.on("session_shutdown", () => releaseIdle?.());
-  pi.registerProvider("typesafe", {
-    ...(mode === "disconnected" ? {} : { apiKey: "test-key" }),
-    models:
-      mode === "disconnected"
-        ? []
-        : [
-            {
-              type: "classifier",
-              id: "jev-test",
-              name: "Jev fixture",
+  pi.on("before_agent_start", async () => {
+    if (mode !== undefined) return;
+    ({ mode } = JSON.parse(await readFile(path.resolve("review-case.json"), "utf8")) as {
+      mode: string;
+    });
+    pi.registerProvider("typesafe", {
+      ...(mode === "disconnected" ? {} : { apiKey: "test-key" }),
+      models:
+        mode === "disconnected"
+          ? []
+          : [
+              {
+                type: "classifier",
+                id: "jev-test",
+                name: "Jev fixture",
+                api: "review-test",
+                input: ["text"],
+                contextWindow: 32768,
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+              },
+            ],
+      classifiers: {
+        "review-test": {
+          async classify(model, context) {
+            if (mode === "idle" || mode === "linked") await idle;
+            await appendFile(path.resolve("review-calls.jsonl"), JSON.stringify(context) + "\n");
+            return {
               api: "review-test",
-              input: ["text"],
-              contextWindow: 32768,
-              cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            },
-          ],
-    classifiers: {
-      "review-test": {
-        async classify(model, context) {
-          if (mode === "idle" || mode === "linked") await idle;
-          await appendFile(path.resolve("review-calls.jsonl"), JSON.stringify(context) + "\n");
-          return {
-            api: "review-test",
-            provider: model.provider,
-            model: model.id,
-            timestamp: Date.now(),
-            stopReason: mode === "failure" ? "error" : "stop",
-            ...(mode === "failure" ? { errorMessage: "Fixture provider failed" } : {}),
-            answers: Object.fromEntries(
-              Object.keys(context.questions).map((id) => [
-                id,
-                {
-                  type: "choice",
-                  choice: "violation",
-                  confidence: 0.95,
-                  probabilities: { violation: 0.95, clear: 0.03, unknown: 0.02 },
-                },
-              ]),
-            ),
-          } satisfies ClassifierResult;
+              provider: model.provider,
+              model: model.id,
+              timestamp: Date.now(),
+              stopReason: mode === "failure" ? "error" : "stop",
+              ...(mode === "failure" ? { errorMessage: "Fixture provider failed" } : {}),
+              answers: Object.fromEntries(
+                Object.keys(context.questions).map((id) => [
+                  id,
+                  {
+                    type: "choice",
+                    choice: "violation",
+                    confidence: 0.95,
+                    probabilities: { violation: 0.95, clear: 0.03, unknown: 0.02 },
+                  },
+                ]),
+              ),
+            } satisfies ClassifierResult;
+          },
         },
       },
-    },
+    });
   });
   pi.registerTool({
     name: "wait_review",
