@@ -168,6 +168,8 @@ In Codemode, Search and `ast_search` return `{ id, complete, matches }` with an 
 
 The `write-json-text` case checks that Write saves JSON text byte for byte, including `1.0`, spacing and escaped quotes. Its direct route matters most on Anthropic models: their tool-call layer converts parameter text by the declared schema, so a field that also accepts objects would receive JSON text as an object. Providers that pass the model's JSON arguments unchanged do not exercise that conversion. `read-image-write` passes the image through Write `image`, not `content`.
 
+Windows executable discovery ignores extensionless project shims, including POSIX launchers in WSL-installed `node_modules`. The existing edit cases cover the unchanged editing route, not this Windows/WSL setup. Focused executable and registry tests cover availability; unrun paid routes remain unverified.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
