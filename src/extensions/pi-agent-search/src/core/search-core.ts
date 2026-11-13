@@ -201,8 +201,9 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
       if (input.query.trim().length === 0) {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
-      // A list of plain paths is searched root by root; a list of results is a result scope.
-      let pathInput = input.path;
+      // An empty path names the working directory, as an omitted path does. A list of plain
+      // paths is searched root by root; a list of results is a result scope.
+      let pathInput = input.path === "" ? undefined : input.path;
       let paths: readonly string[] | undefined;
       try {
         paths = Array.isArray(input.path) ? plainPathList(input.path) : undefined;
