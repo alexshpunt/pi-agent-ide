@@ -47,7 +47,9 @@ export async function piRuntime(
     while (directory !== path.dirname(directory)) {
       let manifest: { name: string; version: string; bin?: { pi?: string } } | undefined;
       try {
-        manifest = JSON.parse(await readFile(path.join(directory, "package.json"), "utf8"));
+        manifest = JSON.parse(
+          await readFile(path.join(directory, "package.json"), "utf8"),
+        ) as typeof manifest;
       } catch {
         /* Keep looking above this entrypoint. */
       }
