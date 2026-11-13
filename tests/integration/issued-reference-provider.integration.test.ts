@@ -1,9 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { AssistantMessageEvent } from "@earendil-works/pi-ai";
 import { expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -33,8 +35,9 @@ test("issued references survive split argument tokens and independent tool calls
       extensions: [
         path.resolve("tests/integration/fixtures/issued-reference-provider.ts"),
         path.resolve("src/pi-agent-ide.ts"),
+        path.resolve("tests/integration/fixtures/issued-reference-probe.ts"),
       ],
-      tools: ["read", "write"],
+      tools: ["read", "issued_reference_probe"],
       conversation: [
         assistantMessage(
           [
@@ -54,7 +57,7 @@ test("issued references survive split argument tokens and independent tool calls
           [
             toolCall({
               id: "characters",
-              name: "write",
+              name: "issued_reference_probe",
               arguments: {
                 path: "characters.txt",
                 content: `${token}\n$issued-uuid:source-long-id\n$issued-anchor:source-long-id:2\n${token}`,
@@ -64,7 +67,7 @@ test("issued references survive split argument tokens and independent tool calls
             }),
             toolCall({
               id: "explicit",
-              name: "write",
+              name: "issued_reference_probe",
               argumentsJson: explicit,
               chunks: {
                 kind: "explicit",
@@ -74,12 +77,12 @@ test("issued references survive split argument tokens and independent tool calls
             }),
             toolCall({
               id: "default",
-              name: "write",
+              name: "issued_reference_probe",
               arguments: { path: "default.txt", content: defaultPrefix + token },
             }),
             toolCall({
               id: "no-end",
-              name: "write",
+              name: "issued_reference_probe",
               arguments: { path: "no-end.txt", content: "$issued-result:other" },
               chunks: { kind: "fixed", size: 3 },
               delayMs: 0,
@@ -98,13 +101,21 @@ test("issued references survive split argument tokens and independent tool calls
     const secondAnchor = [...shown.matchAll(/(?:^|\n)\s*([A-Z\d]{7})\|/gu)][1]?.[1];
     expect(uuid).toBeDefined();
     expect(secondAnchor).toBeDefined();
-    expect(await readFile(path.join(cwd, "characters.txt"), "utf8")).toBe(
-      `${shown}\n${uuid}\n${secondAnchor}\n${shown}`,
-    );
-    expect(await readFile(path.join(cwd, "explicit.txt"), "utf8")).toBe(shown);
-    expect(await readFile(path.join(cwd, "default.txt"), "utf8")).toBe(defaultPrefix + shown);
-    expect(await readFile(path.join(cwd, "no-end.txt"), "utf8")).toBe(
-      getToolResultText(run, "other"),
-    );
+    const expected = {
+      characters: `${shown}\n${uuid}\n${secondAnchor}\n${shown}`,
+      explicit: shown,
+      default: defaultPrefix + shown,
+      "no-end": getToolResultText(run, "other"),
+    };
+    for (const [id, content] of Object.entries(expected)) {
+      expect(getToolExecutionDetails(run, id)).toMatchObject({ content });
+      const deltas = run.traceEvents.flatMap((event) => {
+        const update = event.assistantMessageEvent as AssistantMessageEvent | undefined;
+        if (update?.type !== "toolcall_delta") return [];
+        const call = update.partial.content[update.contentIndex];
+        return call?.type === "toolCall" && call.id === id ? [update.delta] : [];
+      });
+      expect(JSON.parse(deltas.join(""))).toMatchObject({ content });
+    }
   });
 });
