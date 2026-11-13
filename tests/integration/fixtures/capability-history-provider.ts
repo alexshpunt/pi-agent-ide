@@ -84,5 +84,7 @@ export default function capabilityHistoryProvider(pi: ExtensionAPI): void {
       return stream;
     },
   });
-  pi.on("agent_settled", () => process.stdout.write("\nHISTORY_LIVE_SETTLED\n"));
+  pi.on("agent_settled", () => {
+    process.stdout.write("\nHISTORY_LIVE_SETTLED\n");
+  });
 }
