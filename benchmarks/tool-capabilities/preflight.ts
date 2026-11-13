@@ -7,6 +7,7 @@ import type * as PiSdk from "@earendil-works/pi-coding-agent";
 import type { AgentSession, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectorCatalog, connectorEnvironment, prepareConnector } from "./connectors.ts";
 import { piRuntime } from "./inventory.ts";
+import { CAPABILITY_DEFAULT_TOOLS } from "./run-policy.ts";
 import { prepareTrial, runProcess, sandboxArgs, snapshotSource } from "./sandbox.ts";
 
 const syntheticAccess = "sk-ant-oat01-PREFLIGHT_ONLY_NOT_A_CREDENTIAL";
@@ -78,21 +79,7 @@ async function capturePreflightChild(): Promise<void> {
   if (!sdkPath || !provider) throw Error("Missing preflight runtime identity");
   const sdk = (await import(pathToFileURL(sdkPath).href)) as typeof PiSdk;
   const settingsManager = sdk.SettingsManager.inMemory({
-    defaultTools: [
-      "read",
-      "write",
-      "bash",
-      "search",
-      "replace",
-      "insert",
-      "delete",
-      "copy",
-      "move",
-      "diff",
-      "undo",
-      "codemode",
-      "tool_search",
-    ],
+    defaultTools: [...CAPABILITY_DEFAULT_TOOLS],
     codemode: { mode: "on" },
     cacheWarming: "off",
     compaction: { enabled: false },

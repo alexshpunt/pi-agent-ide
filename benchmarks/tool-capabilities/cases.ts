@@ -22,15 +22,9 @@ add(
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
   "Discover ast_search, lsp_search, diff and undo through tool_search before using them. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then undo that last edit. Read task.txt and report its restored marker. Preserve both files.",
   [
-    // One search may load several of these tools; a Codemode route may search before its script.
-    ...["ast_search", "lsp_search", "diff", "undo"].map((name, index): RouteStep => ({
-      tool: "tool_search",
-      loads: name,
-      outsideScript: true,
-      ...(index > 0 && { sharesPrevious: true }),
-    })),
+    { tool: "tool_search", discovers: ["ast_search", "lsp_search", "diff", "undo"] },
     { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, contains: "probe(1)" },
-    { tool: "lsp_search", args: { path: "task.ts", query: "probe" }, contains: "probe" },
+    { tool: "lsp_search", args: { query: "probe" }, contains: "task.ts#probe" },
     { tool: "diff", args: { before: "task.ts", after: "task.ts" }, scriptResult: "" },
     { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
     { tool: "undo", args: { file: "task.txt", change: "last" } },
@@ -56,7 +50,10 @@ add(
   ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
   "Only standalone resource hosts are loaded; the full IDE is not enabled. Discover the demo namespace through tool_search. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. Finally reread memory://demo/note. Use demo tools, not the sibling namespace or filesystem tools.",
   [
-    { tool: "tool_search", args: { query: /demo/ }, outsideScript: true },
+    {
+      tool: "tool_search",
+      discovers: ["demo_read", "demo_search", "demo_replace", "demo_copy"],
+    },
     {
       tool: "demo_read",
       args: { path: "memory://demo/note", offset: 1, limit: 1 },
@@ -235,13 +232,17 @@ add(
       args: { path: "docs:terminal", query: "regex:(?!)" },
       contains: "No matches",
     },
-    // The prompt names no query for the two refused scopes.
-    { tool: "search", args: { path: "docs:" }, error: true, contains: "Use docs:all" },
     {
       tool: "search",
-      args: { path: "docs:lpt-723-missing" },
+      args: { path: "docs:lpt-723-missing", query: "unused" },
       error: true,
       contains: "Unknown documentation ID: lpt-723-missing",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:", query: "unused" },
+      error: true,
+      contains: "Use docs:all",
     },
   ],
   { expected: textFile },
@@ -759,9 +760,7 @@ add(
     { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
     {
       tool: "read",
-      args: { views: ["jq:.status, .untouched"], offset: 2, limit: 1 },
-      // The first whole-file Read result names the same complete JSON source.
-      reuse: { ...reuse(0), explicit: "config.json" },
+      args: { path: "config.json", views: ["jq:.status, .untouched"], offset: 2, limit: 1 },
       contains: "7",
     },
   ],
@@ -778,12 +777,7 @@ add(
   ["read.jq-bounded-input"],
   "Read the first line of config.json. Pass that unchanged Read result or its UUID to Read with views jq:.status; the bounded-input query must be refused. Then query jq:.status using the explicit config.json path and report its value. Do not edit or widen the issued selection.",
   [
-    {
-      tool: "read",
-      args: { path: "config.json", limit: 1 },
-      // Read starts at line 1 when offset is omitted.
-      argsAny: [{ offset: 1 }, { offset: undefined }],
-    },
+    { tool: "read", args: { path: "config.json", offset: 1, limit: 1 } },
     { tool: "read", args: { views: ["jq:.status"] }, reuse: reuse(0), error: true },
     { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
   ],
@@ -1028,11 +1022,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
         ...(operation === "replace"
           ? { args: { text: "NEW\n" } }
           : operation === "insert"
-            ? {
-                args: { before: true },
-                // Inserting before a whole-line selection adds the line break when it is missing.
-                argsAny: [{ text: "ADDED" }, { text: "ADDED\n" }],
-              }
+            ? { args: { text: "ADDED", before: true } }
             : {}),
       })),
       ...(operation === "replace"
@@ -2921,14 +2911,13 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  "Start a background Bash command that waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
+  "Start a background Bash command that waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
     { tool: "insert", args: { text: "Enter" }, reuse: reuse(0, "path", "shell") },
-    // A Codemode script gets null for terminal input, so only a direct route can read its result.
-    { tool: "read", reuse: reuse(1), contains: "hello", modes: ["direct"] },
-    { tool: "read", reuse: reuse(2), contains: "hello", modes: ["direct"] },
+    { tool: "read", reuse: reuse(1), contains: "hello" },
+    { tool: "read", reuse: reuse(2), contains: "hello" },
     { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello" },
     {
       tool: "replace",
