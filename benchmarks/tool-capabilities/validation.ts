@@ -171,6 +171,8 @@ export interface CapabilityCase {
   prerequisite?: string;
   setup?: string;
   git?: boolean;
+  /** Keep IDE post-processing, such as formatting, which the runner otherwise disables. */
+  postProcessing?: boolean;
 }
 
 /** A durable capability and its executable checks. */

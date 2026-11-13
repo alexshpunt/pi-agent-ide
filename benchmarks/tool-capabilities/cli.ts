@@ -371,7 +371,7 @@ async function attempt(
       profile.thinking,
       "--exclude-tools",
       `edit,grep,find,ls${mode === "direct" ? ",codemode" : ""}`,
-      ...(task.setup === "standalone-resource"
+      ...(task.setup === "standalone-resource" || task.postProcessing
         ? []
         : ["--pi-agent-ide-no-post-processing", "true"]),
     ];
