@@ -99,6 +99,8 @@ export interface ResultReuse {
   field: string | string[];
   kind?: string;
   newParent?: boolean;
+  /** An explicit argument accepted instead of the reference, such as the path it was read from. */
+  explicit?: unknown;
 }
 
 function fieldValue(value: unknown, field: string): unknown {
@@ -223,12 +225,11 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
         matches(value, (actual as Record<string, unknown>)[key], key),
       )
     );
-  if (
-    ["path", "file", "target"].includes(field) &&
-    typeof expected === "string" &&
-    typeof actual === "string"
-  )
-    return fixturePath(expected) === fixturePath(actual);
+  if (["path", "file", "target"].includes(field) && typeof expected === "string") {
+    // A list of one source, such as a file_search value, names the same source.
+    const source = Array.isArray(actual) && actual.length === 1 ? (actual[0] as unknown) : actual;
+    return typeof source === "string" && fixturePath(expected) === fixturePath(source);
+  }
   if (
     field === "query" &&
     typeof expected === "string" &&
@@ -518,12 +519,19 @@ export function validateRoute(
             prior.end >= start.index ||
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
+                (reference.explicit !== undefined &&
+                  matches(
+                    reference.explicit,
+                    fieldValue(event.args, field),
+                    field.split(".").at(-1),
+                  )) ||
                 reuses(
                   fieldValue(event.args, field),
                   resultText(prior.event),
                   reference.kind,
                   valueIds(prior.event.result?.structuredContent),
-                ) || passesValue(fieldValue(event.args, field), prior.event),
+                ) ||
+                passesValue(fieldValue(event.args, field), prior.event),
             ) ||
             (reference.newParent && prior.parent === execution.parent)
           );
