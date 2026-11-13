@@ -200,7 +200,7 @@ The exact resolver, validation, capability, pipeline, and failure behavior is de
 
 ## Prompt contributions
 
-`api.describe()` contributes syntax to the matching `path`, `views`, `offset` or `limit` description in Read's parameter schema. Each value is static text or a lazy callback; `undefined` omits that parameter contribution from the snapshot. Registration and delivery are defined in [prompt-contributions.md](prompt-contributions.md).
+`api.describe()` contributes syntax to the matching `views`, `offset` or `limit` description in Read's parameter schema. The `path` description stays generic; source-specific path metadata remains accepted for compatibility but is not published in that field. Each value is static text or a lazy callback; `undefined` omits that parameter contribution from the snapshot. Registration and delivery are defined in [prompt-contributions.md](prompt-contributions.md).
 
 ## Testing contract
 
