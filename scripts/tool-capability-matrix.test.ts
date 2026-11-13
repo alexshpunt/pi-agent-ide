@@ -260,6 +260,39 @@ describe("capability route evidence", () => {
       validateRoute(route, [...child, parent("3 replacements in 1 file", true)], "codemode").passed,
     ).toBe(false);
   });
+  test("a parent summary must contain every required fragment", () => {
+    const route = {
+      steps: [{ tool: "read", error: true, parentContains: ["read source", "fixture-recovery"] }],
+    };
+    const events = [
+      { type: "tool_execution_start", toolCallId: "parent", toolName: "codemode" },
+      {
+        type: "tool_execution_start",
+        toolCallId: "child",
+        parentToolCallId: "parent",
+        toolName: "read",
+      },
+      {
+        type: "tool_execution_end",
+        toolCallId: "child",
+        isError: true,
+        result: { content: [{ type: "text", text: "failed" }] },
+      },
+    ];
+    const parent = (text: string) => ({
+      type: "tool_execution_end",
+      toolCallId: "parent",
+      isError: false,
+      result: { content: [{ type: "text", text }] },
+    });
+    expect(
+      validateRoute(route, [...events, parent("read source fixture-recovery")], "codemode").passed,
+    ).toBe(true);
+    expect(validateRoute(route, [...events, parent("read source")], "codemode").passed).toBe(false);
+    expect(validateRoute(route, [...events, parent("fixture-recovery")], "codemode").passed).toBe(
+      false,
+    );
+  });
   test("final feedback checks do not confuse validation events with transcript results", () => {
     const route = { steps: [{ tool: "insert", error: true, finalContains: "is stale" }] };
     const validation = [

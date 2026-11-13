@@ -18,7 +18,14 @@ const groups: [string[], string[]][] = [
     ["read.failure", "read.provider-failure-ownership"],
     ["read-error-direct", "read-error-codemode"],
   ],
-  [["codemode.failed-call-null", "codemode.failed-call-summary"], ["read-error-codemode"]],
+  [
+    [
+      "codemode.failed-call-null",
+      "codemode.failed-call-summary",
+      "codemode.provider-failure-context",
+    ],
+    ["read-error-codemode"],
+  ],
   [["read.jq", "read.jq-paging"], ["read-jq"]],
   [["read.jq-bounded-input"], ["read-jq-bounded-input"]],
   [["read.ssh-guide"], ["ssh-guide"]],

@@ -128,8 +128,8 @@ export interface RouteStep {
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
   parentExcludes?: string;
-  /** Require actual summary text in the completed Codemode parent. */
-  parentContains?: string;
+  /** Require each fragment in the completed Codemode parent. */
+  parentContains?: string | readonly string[];
   /** Require the source object, unchanged by text(receipt), in a completed native Codemode parent. */
   parentStructuredValue?: boolean;
   /** Require a registered transparent local alias to forward the source execution. */
@@ -471,7 +471,10 @@ export function validateRoute(
           (step.parentExcludes !== undefined &&
             resultText(parent.event).includes(step.parentExcludes)) ||
           (step.parentContains !== undefined &&
-            !resultText(parent.event).includes(step.parentContains))
+            (typeof step.parentContains === "string"
+              ? [step.parentContains]
+              : step.parentContains
+            ).some((fragment) => !resultText(parent.event).includes(fragment)))
         )
           continue;
       }
