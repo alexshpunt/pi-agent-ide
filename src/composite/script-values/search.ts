@@ -39,7 +39,7 @@ export const searchValue: ScriptValue = {
       data.fallback === "regex" || data.fallback === "words" ? data.fallback : undefined;
     const notices =
       Array.isArray(data.notices) && data.notices.every((notice) => typeof notice === "string")
-        ? (data.notices as string[])
+        ? data.notices
         : [];
     const selection = {
       ...(list.id !== undefined && { id: list.id }),
