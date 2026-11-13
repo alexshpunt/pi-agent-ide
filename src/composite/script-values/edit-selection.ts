@@ -13,7 +13,7 @@ export const editSelectionValue: ScriptValue = {
       {
         type: "string",
         description:
-          "RESULT#<uuid> that selects the text the edit produced; pass it to a source parameter. Null when the edit selects no text.",
+          "RESULT#<uuid> that selects the text the edit produced; pass it to a source parameter. Null when the edit selects no text or its selection cannot be verified, even if the edit succeeded. Check the failure block; read the file before further edits when no selection is verified.",
       },
       providerValueSchema,
     ],

@@ -164,6 +164,7 @@ async function found(file, query, round, what, expected) {
     "Round " + round + ": the " + what + " result of " + file + " has " + matches.length + " matches instead of " + expected + ": " + JSON.stringify(result).slice(0, 2000));
   return result;
 }
+try {
 // A large file a peer rewrites while every search of it runs.
 for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
   await found("search.cpp", "regex:alpha_token_\\\\d+", round, "identifier", ${String(searched.tokenOccurrences)});
@@ -174,15 +175,19 @@ for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   // The whole result as an edit source: every occurrence of the identifier is renamed at once.
   const whole = await found("edit.cpp", "regex:alpha_token_\\\\d+", round, "identifier", ${String(edited.tokenOccurrences)});
   const renamed = await tools.replace({path:whole,text:"alpha_token_" + String(round)});
-  check(typeof renamed === "string", "Round " + round + ": whole-result rename returned " + JSON.stringify(renamed));
+  check(renamed === null || (typeof renamed === "string" && renamed.startsWith("RESULT#")), "Round " + round + ": invalid whole-result rename value: " + JSON.stringify(renamed));
   // Match ids of a result with many matches: one marker of each round is retired.
   // The count is left open: the peer rewrites what it last read, so it can drop a retired marker.
   const markers = await found("edit.cpp", ${JSON.stringify(edited.markerQuery)}, round, "marker");
   const retired = await tools.replace({path:markers.matches[0].id,text:"beta_done_" + String(round)});
-  check(typeof retired === "string", "Round " + round + ": numbered rename returned " + JSON.stringify(retired));
+  check(retired === null || (typeof retired === "string" && retired.startsWith("RESULT#")), "Round " + round + ": invalid numbered rename value: " + JSON.stringify(retired));
+  // Give the slower peer a write window even when the edit rounds finish quickly.
+  await tools.bash({command:"sleep 0.6"});
 }
-for (const session of ${JSON.stringify([peers.searched.session, peers.edited.session])})
-  await tools.delete({path:"shell:" + session});
+} finally {
+  for (const session of ${JSON.stringify([peers.searched.session, peers.edited.session])})
+    await tools.delete({path:"shell:" + session});
+}
 text("searches " + searches);`,
     );
 
@@ -190,6 +195,8 @@ text("searches " + searches);`,
     expect(getToolResultText(run, "stress")).toContain(
       `searches ${String(searchRounds * 2 + editRounds * 2)}`,
     );
+    // A failed IDE call also resolves to null; the failure ledger must stay empty.
+    expect(codemodeFailures(getToolResultText(run, "stress"))).toBe("");
     // Both peers really wrote their file throughout the rounds.
     expect(await peers.searched.writes()).toBeGreaterThan(searchRounds);
     expect(await peers.edited.writes()).toBeGreaterThan(editRounds);
