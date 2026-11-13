@@ -175,6 +175,46 @@ test("an edit returns the formatter result instead of the requested intermediate
   });
 }, 60_000);
 
+test.skipIf(process.platform !== "win32" || !process.env.PI_TEST_WSL_FORMATTER_PROJECT)(
+  "Windows edits a WSL project without selecting its POSIX-only formatter shim",
+  async () => {
+    const project = process.env.PI_TEST_WSL_FORMATTER_PROJECT!;
+    const shim = path.join(project, "node_modules", ".bin", "oxfmt");
+    expect(await readFile(shim, "utf8")).toContain("#!/bin/sh");
+    await expect(readFile(`${shim}.cmd`)).rejects.toMatchObject({ code: "ENOENT" });
+    const directory = await mkdtemp(path.join(project, ".tmp", "lpt1450-edit-"));
+    const file = path.join(directory, "fixture.ts");
+    const before = "export const value = 1;\n";
+    try {
+      await writeFile(file, before);
+      const scenario = await runTextToolScenario({
+        extensions: generatedExtensions.paths,
+        cwd: project,
+        testName: "windows-wsl-posix-formatter",
+        environment: { PATH: path.dirname(process.execPath) },
+        tool: "replace",
+        arguments: {
+          path: file,
+          start: formatLineHashAnchor(before, 1),
+          text: "export const value = 2;",
+        },
+      });
+      expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+      expect(await readFile(file, "utf8")).toBe("export const value = 2;\n");
+      expect(getToolResultText(scenario.result, scenario.mutationCallId)).toContain(
+        "No formatter is available for this file.",
+      );
+      expect(
+        getToolExecutionDetails(getToolExecution(scenario.result, scenario.mutationCallId)),
+      ).toMatchObject({
+        results: [{ data: { formatting: { status: "unavailable" } } }],
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  60_000,
+);
 async function withTempDirectory(callback: (directory: string) => Promise<void>): Promise<void> {
   await mkdir(tempRoot, { recursive: true });
   const directory = await mkdtemp(path.join(tempRoot, "project-"));
