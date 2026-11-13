@@ -172,6 +172,37 @@ test("the anchor capture matches a file another session wrote after a match-limi
   ]);
   expect(ripgrep.resolveRipgrepExecutable).toHaveBeenCalledTimes(2);
 });
+test("a scoped capture keeps the matching mode of its retry", async () => {
+  const cwd = await fixture("native");
+  const source = path.join(cwd, "input.txt");
+  const oldMatch = {
+    source,
+    lineNumber: 1,
+    startColumn: 0,
+    endColumn: 10,
+    matchedText: "alpha beta",
+    lineText: "alpha beta",
+  };
+  const retryMatch = {
+    source,
+    lineNumber: 1,
+    startColumn: 0,
+    endColumn: 5,
+    matchedText: "alpha",
+    lineText: "alpha",
+  };
+  const captured = await captureCurrentMatches(
+    { query: "alpha beta", complete: true, matches: [oldMatch] },
+    cwd,
+    {
+      request: { query: "alpha beta" },
+      inContent: false,
+      read: async () => "alpha\n",
+      rerun: async () => ({ query: "alpha|beta", complete: true, matches: [retryMatch] }),
+    },
+  );
+  expect(captured.query).toBe("alpha|beta");
+});
 test("a text search reports the match-limit failure of both engines instead of hiding it", async () => {
   const cwd = await fixture("match-limit");
   const error = await searchTextContent(

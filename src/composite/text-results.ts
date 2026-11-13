@@ -186,6 +186,7 @@ export function createIdeTextResults(
    */
   const nullNested = new Set<string>();
   const parents = new Map<string, string>();
+  const searchWarnings = new Map<string, string[]>();
   const images = new Map<string, ImageBlock[]>();
   /** Forget the calls of the last agent run. */
   const clearCalls = () => {
@@ -193,6 +194,7 @@ export function createIdeTextResults(
     labels.clear();
     ledger.clear();
     nullNested.clear();
+    searchWarnings.clear();
   };
   const clear = () => {
     parents.clear();
@@ -403,8 +405,20 @@ export function createIdeTextResults(
           batchOperations(event.details, (source) => displayPath(source, context.cwd)),
         );
         const failures = ledger.take(event.toolCallId);
+        const warnings = searchWarnings.get(event.toolCallId) ?? [];
+        searchWarnings.delete(event.toolCallId);
         const content = event.content.filter((block) => !metadata.includes(block));
-        const limited = await limitIdeOutput([...content, ...generated], "", saveFullOutput);
+        const limited = await limitIdeOutput(
+          [
+            ...content,
+            ...generated,
+            ...(warnings.length
+              ? [{ type: "text" as const, text: `\n\n${warnings.join("\n")}` }]
+              : []),
+          ],
+          "",
+          saveFullOutput,
+        );
         // Whether the script completed or threw, the result ends with its failed IDE calls, after
         // any guides, within its own output limit.
         const block =
@@ -415,7 +429,12 @@ export function createIdeTextResults(
           content: [
             ...(limited.textTruncated
               ? [{ type: "text" as const, text: limited.text }]
-              : content.filter((block) => block.type === "text")),
+              : [
+                  ...content.filter((block) => block.type === "text"),
+                  ...(warnings.length
+                    ? [{ type: "text" as const, text: `\n\n${warnings.join("\n")}` }]
+                    : []),
+                ]),
             ...limited.images,
             ...(limited.notices.length
               ? [{ type: "text" as const, text: `\n\n${limited.notices.join("\n")}` }]
@@ -494,6 +513,16 @@ export function createIdeTextResults(
       // Error text carries no envelope: a failed result selects nothing to compose with.
       const reason = readable.replace(envelopePattern, "");
       if (parent !== undefined) {
+        if (
+          event.toolName === "search" &&
+          !scriptFailed &&
+          data !== null &&
+          typeof data === "object" &&
+          "editWarning" in data &&
+          typeof data.editWarning === "string"
+        ) {
+          searchWarnings.set(parent, [...(searchWarnings.get(parent) ?? []), data.editWarning]);
+        }
         const generated = event.content.filter((block) => block.type === "image");
         if (generated.length) images.set(parent, [...(images.get(parent) ?? []), ...generated]);
         ledger.record(

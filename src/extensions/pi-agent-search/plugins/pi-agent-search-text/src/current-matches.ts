@@ -6,6 +6,7 @@ import { canonicalSource, matchDescribesText, type TextSearchMatch } from "#src/
 
 /** Matches with the text they describe, ready to register without reading the files again. */
 export interface CapturedMatches {
+  readonly query?: string;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
   /** Text of every source the matches were captured from, by canonical source. */
@@ -28,6 +29,7 @@ export interface CaptureOptions {
   readonly rerun?: (signal?: AbortSignal) => Promise<{
     readonly matches: readonly TextSearchMatch[];
     readonly complete: boolean;
+    readonly query?: string;
   }>;
   /**
    * Keeps only the matches the backend itself would keep when the captured text is searched
@@ -58,12 +60,17 @@ const rerunAttempts = 3;
  * incomplete; a capture that keeps nothing fails, naming the sources and that reason.
  */
 export async function captureCurrentMatches(
-  snapshot: { readonly matches: readonly TextSearchMatch[]; readonly complete: boolean },
+  snapshot: {
+    readonly matches: readonly TextSearchMatch[];
+    readonly complete: boolean;
+    readonly query?: string;
+  },
   cwd: string,
   options: CaptureOptions,
 ): Promise<CapturedMatches> {
   let matches = snapshot.matches;
   let complete = snapshot.complete;
+  let query = snapshot.query;
   for (let attempt = 1; ; attempt += 1) {
     const { contents, unreadable } = await readSources(matches, options);
     const kept = matches.filter((match) => !unreadable.has(match.source));
@@ -73,12 +80,12 @@ export async function captureCurrentMatches(
     const covered = complete && unreadable.size === 0;
     const notices = unreadableNotices(unreadable, cwd);
     const changed = changedSources(kept, contents);
-    if (changed.size === 0) return { matches: kept, complete: covered, contents, notices };
+    if (changed.size === 0) return { matches: kept, complete: covered, contents, notices, query };
     if (options.inContent) {
       const current = await matchesInCapturedText(kept, contents, changed, cwd, options);
       const stale = changedSources(current, contents);
       if (stale.size > 0) throw notDescribed(stale, cwd);
-      return { matches: current, complete: covered, contents, notices };
+      return { matches: current, complete: covered, contents, notices, query };
     }
     if (options.rerun === undefined || attempt >= rerunAttempts) throw sourceChanged(changed, cwd);
     const next = await options.rerun(options.signal);
@@ -87,6 +94,7 @@ export async function captureCurrentMatches(
       source: canonicalSource(match.source),
     }));
     complete = next.complete;
+    query = next.query;
   }
 }
 
