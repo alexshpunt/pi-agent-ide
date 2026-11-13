@@ -985,6 +985,9 @@ function wholeFileFailureCause(code: string): string {
     case "INVALID_REQUEST": {
       return "the request was invalid";
     }
+    case "UNSAFE_TOKEN_SELECTION": {
+      return "search selected separate tokens; choose a match or quote the query";
+    }
     case "RESULT_INPUT_REJECTED": {
       return "result input was rejected";
     }
