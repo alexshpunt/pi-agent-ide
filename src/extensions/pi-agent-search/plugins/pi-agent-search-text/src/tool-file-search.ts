@@ -2,7 +2,10 @@ import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-ag
 import { Text } from "@earendil-works/pi-tui";
 import {
   describePathArgument,
+  isNullScope,
   isResultReference,
+  markNullScope,
+  nullScopeMessage,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -80,6 +83,7 @@ export function registerFileSearchTool(
         promptSnippet: "Find file paths by glob or partial name",
         parameters: fileSearchSchema,
         outputSchema: searchOutputSchema,
+        prepareArguments: (arguments_) => markNullScope(arguments_) as FileSearchParameters,
         renderCall(parameters, theme, context) {
           return toolCallHeader(
             context.lastComponent,
@@ -138,6 +142,7 @@ export function registerFileSearchTool(
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
+          if (isNullScope(parameters.path)) return fileSearchFailure(nullScopeMessage);
           const script = nestedCalls.has(id);
           const options: FileSearchOptions = {
             pattern: parameters.pattern,
