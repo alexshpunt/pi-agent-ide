@@ -83,32 +83,55 @@ class BooleanQueryParser {
     let expression = this.#parseAnd();
     while (this.#current().type === "or") {
       const operator = this.#take();
-      const right = this.#parseRequiredPrimary(`after ${operator.value}`);
-      expression = { kind: "or", left: expression, right: this.#parseAndTail(right) };
+      expression = {
+        kind: "or",
+        left: expression,
+        right: this.#parseAnd(`after ${operator.value}`),
+      };
     }
     return expression;
   }
 
-  #parseAnd(): SearchCondition {
-    return this.#parseAndTail(this.#parseRequiredPrimary());
-  }
-
-  #parseAndTail(initial: SearchCondition): SearchCondition {
-    let expression = initial;
+  // A line passes a conjunction when it has every plain factor and none of the NOT factors, so
+  // `a NOT b`, `a AND NOT b` and `NOT b AND a` mean the same.
+  #parseAnd(context?: string): SearchCondition {
+    const start = this.#current().offset;
+    const kept: SearchCondition[] = [];
+    const excluded: SearchCondition[] = [];
+    let operandContext = context;
     for (;;) {
+      if (this.#current().type === "not") {
+        const operator = this.#take();
+        excluded.push(this.#parseRequiredPrimary(`after ${operator.value}`));
+      } else {
+        kept.push(this.#parseRequiredPrimary(operandContext));
+      }
       const token = this.#current();
-      if (token.type === "and" || token.type === "not") {
+      if (token.type === "and") {
         this.#take();
-        const right = this.#parseRequiredPrimary(`after ${token.value}`);
-        expression = { kind: token.type, left: expression, right };
-        continue;
+        operandContext = `after ${token.value}`;
+      } else if (token.type === "term" || token.type === "left" || token.type === "not") {
+        operandContext = undefined;
+      } else {
+        break;
       }
-      if (token.type === "term" || token.type === "left") {
-        expression = { kind: "and", left: expression, right: this.#parseRequiredPrimary() };
-        continue;
-      }
-      return expression;
     }
+
+    const [first, ...rest] = kept;
+    if (first === undefined) {
+      throw syntaxError(
+        start,
+        'NOT only excludes lines; add a term to match, such as "alpha AND NOT beta".',
+      );
+    }
+    const expression = rest.reduce<SearchCondition>(
+      (left, right) => ({ kind: "and", left, right }),
+      first,
+    );
+    return excluded.reduce<SearchCondition>(
+      (left, right) => ({ kind: "not", left, right }),
+      expression,
+    );
   }
 
   #parseRequiredPrimary(context?: string): SearchCondition {

@@ -61,8 +61,11 @@ const scenarios = [
   ["missing OR absent", []],
   ["alpha AND beta", [1]],
   ["alpha NOT ignored", [1, 7, 8, 9]],
+  ["alpha AND NOT ignored", [1, 7, 8, 9]],
+  ["NOT ignored AND alpha", [1, 7, 8, 9]],
   ["alpha beta OR gamma", [1, 4]],
   ["(alpha OR gamma) AND (beta OR delta) NOT ignored", [1, 4]],
+  ["(alpha OR gamma) AND (beta OR delta) AND NOT ignored", [1, 4]],
   ['"alpha beta"', [1]],
 ] as const;
 test.each(["native", "no-pcre2"] as const)(
