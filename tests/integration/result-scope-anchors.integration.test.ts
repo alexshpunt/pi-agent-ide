@@ -40,11 +40,7 @@ async function run(
     tools: ["read", "search", "replace", "delete", "insert", "copy", "codemode"],
     conversation: [
       ...steps.map((step) =>
-        // One chunk keeps each $issued placeholder whole for the provider to replace.
-        assistantMessage(
-          [toolCall({ ...step, delayMs: 0 })],
-          { stopReason: "toolUse" },
-        ),
+        assistantMessage([toolCall({ ...step, delayMs: 0 })], { stopReason: "toolUse" }),
       ),
       assistantMessage([text("Done", { delayMs: 0 })]),
     ],

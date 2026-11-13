@@ -60,10 +60,7 @@ async function run(cwd: string, name: string, steps: readonly Step[]) {
     tools: ["read", "search", "file_search", "ast_search", "lsp_search"],
     conversation: [
       ...steps.map((step) =>
-        assistantMessage(
-          [toolCall({ ...step, delayMs: 0 })],
-          { stopReason: "toolUse" },
-        ),
+        assistantMessage([toolCall({ ...step, delayMs: 0 })], { stopReason: "toolUse" }),
       ),
       assistantMessage([text("Done", { delayMs: 0 })]),
     ],
