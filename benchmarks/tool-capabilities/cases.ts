@@ -828,6 +828,7 @@ add(
       "child.rs": 'pub fn child(){println!("untouched");}\n',
     },
     prerequisite: "command -v cargo && command -v rustfmt",
+    postProcessing: true,
   },
 );
 
