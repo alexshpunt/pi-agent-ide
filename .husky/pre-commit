@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
+# Runs in every checkout and worktree, before or without `pnpm install`: core.hooksPath lives in
+# the shared Git config, and the check needs only Node and Git.
 node --experimental-strip-types scripts/check-no-task-evidence.ts --staged
