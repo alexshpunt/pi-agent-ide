@@ -10,7 +10,7 @@ export default async function readSchemaPlugin(pi: ExtensionAPI): Promise<void> 
     apiVersion: READ_API_VERSION,
     id: "schema-lazy",
     setup(api) {
-      api.describe({ path: () => format });
+      api.describe({ offset: () => format });
     },
   });
   pi.on("session_start", async () => {
@@ -20,7 +20,10 @@ export default async function readSchemaPlugin(pi: ExtensionAPI): Promise<void> 
       apiVersion: READ_API_VERSION,
       id: "schema-late",
       setup(api) {
-        api.addView({ view: "late-view", presenter: { id: "late-view", present: (document) => document } });
+        api.addView({
+          view: "late-view",
+          presenter: { id: "late-view", present: (document) => document },
+        });
         api.describe({ views: "late-view — a presentation registered at session start." });
       },
     });

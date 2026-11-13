@@ -214,15 +214,23 @@ export async function registerLspWithOwner(
           resources: createDeclarationTargets(managerForFile),
           describeInPrompt: false,
         });
-        for (const operation of ["copy", "move", "delete", "replace"]) {
+        const declarationEdits = ["copy", "move", "delete", "replace"];
+        pi.on("before_agent_start", (event) => {
+          const enabled = pi
+            .getAllTools()
+            .some((tool) => declarationEdits.includes(tool.name) && tool.exposure !== "hidden");
+          event.systemPromptOptions.sections.ide_symbol_edits = enabled
+            ? "For copy, move, delete and replace, symbol:<file>#<selector> selects one declaration without start; imports and references are not updated. Use a name or parent/child path as selector; select an overload by its parameter types, such as clamp(int, float)."
+            : "";
+        });
+        for (const operation of declarationEdits) {
           api
             .tool(operation)
             .describeField(
               "path",
-              "symbol:<file>#<selector> selects one declaration without start; imports and references are not updated. A selector is a name or parent/child path; name one overload by its parameter types, such as clamp(int, float)." +
-                (operation === "replace"
-                  ? " symbol:<file>#<selector>#name renames it, with the new name in text."
-                  : ""),
+              operation === "replace"
+                ? "symbol:<file>#<selector>#name renames the symbol, with the new name in text."
+                : "Also accepts symbol: declaration selectors.",
             );
           if (operation === "replace")
             api

@@ -17,15 +17,12 @@ export function sourceRangeProperties(descriptions: Partial<Record<"start" | "en
     start: Type.Optional(
       Type.String({
         description:
-          descriptions.start ??
-          "Where the selection begins. Without end, selects only this text, or only this one line for a line anchor; add end to select several lines. Omit when path is a result that already selects text.",
+          descriptions.start ?? "Start selector; omit when path selects the intended text.",
       }),
     ),
     end: Type.Optional(
       Type.String({
-        description:
-          descriptions.end ??
-          "Where the selection ends, inclusive. Omit when start selects everything.",
+        description: descriptions.end ?? "Inclusive end selector; omit for start alone.",
       }),
     ),
   };

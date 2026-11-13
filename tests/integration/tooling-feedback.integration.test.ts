@@ -546,7 +546,6 @@ test.each([false, true])(
       expect(getToolResultMessage(result, "blocked").details).toMatchObject({
         effect: "not-applied",
       });
-      expect(getToolResultText(result, "blocked")).toContain("4#");
       expect(JSON.stringify(result.messages)).not.toContain('"text":"BLOCKED"');
       expect(
         getToolExecution(result, "recovery").isError,

@@ -198,3 +198,5 @@ When an IDE tool or a supported composition changes:
 5. With paid permission, run the affected routes and preserve both failures and successes. Leave unrun routes unverified.
 
 The schema gate detects structural drift and broken coverage links. It cannot infer semantic completeness or detect every behavior change from code. Do not just regenerate `contracts.json` to bypass a failure; the matrix/case review is mandatory even when the schema stays unchanged.
+
+Codemode value guidance is shared once in the system prompt, and editing workflows are emitted once when mutation tools are enabled, rather than repeated in each tool's catalog entry. Output declarations retain the same values and validation; focused value tests and real-Pi interface exports cover the presentation. Existing Read/Search/edit composition, fallback, terminal, AST and LSP cases remain the relevant paid routes. The `deferred-navigation-recovery` case covers discovery and execution of AST search, LSP search, Diff and Undo after they move out of the initial catalog. Its direct and Codemode routes remain unverified until paid execution.

@@ -36,6 +36,7 @@ import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 import { createResultTargetAnchors } from "#src/core/result-target-anchors.ts";
 import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.ts";
 import { createTextTool } from "#src/core/text-mutation.ts";
+import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.ts";
 import { registerDiff } from "#src/core/diff-tool.ts";
 import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.ts";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
@@ -72,6 +73,12 @@ export default async function registerTextEditorCore(
       ),
     );
   }, resultTargets);
+  pi.on("before_agent_start", (event) => {
+    const enabled = pi
+      .getAllTools()
+      .some((tool) => mutationTools.has(tool.name) && tool.exposure !== "hidden");
+    event.systemPromptOptions.sections.ide_editing = enabled ? EDITING_GUIDELINES.join("\n") : "";
+  });
   registerTextEditOrigins(pi, core);
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
   core.onDidEdit((completion) => {

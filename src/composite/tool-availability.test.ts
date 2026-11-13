@@ -153,3 +153,47 @@ test.each([undefined, { name: "external_fixture", description: "Fixture namespac
     expect(tools.get(name)).toBe(loader);
   },
 );
+
+test.each(["ast_search", "lsp_search", "diff", "undo"])(
+  "optional IDE tool %s stays deferred through exclusion and restoration",
+  (name) => {
+    let selection: string[] = [];
+    let metadata: ToolDefinition["parameters"] = Type.Object({ initial: Type.String() });
+    const tools = new Map<string, ToolDefinition>();
+    const registerTool: ExtensionAPI["registerTool"] = (definition) => {
+      tools.set(definition.name, defineTool(definition));
+    };
+    const availability = createIdeToolAvailability({
+      registerTool,
+      getSettings: () => ({ defaultTools: selection }),
+      getAllTools: () => [],
+      getActiveTools: () => [],
+      setActiveTools: () => {},
+    });
+    const definition = defineTool({
+      name,
+      label: name,
+      exposure: "direct",
+      namespace: { name: "ide_fixture", description: "Fixture namespace" },
+      description: "Fixture tool",
+      get parameters() {
+        return metadata;
+      },
+      async execute() {
+        return { content: [], details: undefined };
+      },
+    });
+    availability.api.registerTool(definition);
+    expect(tools.get(name)?.exposure).toBe("deferred");
+    metadata = Type.Object({ updated: Type.Number() });
+    expect(tools.get(name)?.parameters).toBe(metadata);
+    expect(tools.get(name)?.execute).toBe(definition.execute);
+    selection = [`-${name}`];
+    availability.reconcile();
+    expect(tools.get(name)?.exposure).toBe("hidden");
+    selection = [];
+    availability.reconcile();
+    expect(tools.get(name)?.exposure).toBe("deferred");
+    expect(tools.get(name)?.parameters).toBe(metadata);
+  },
+);

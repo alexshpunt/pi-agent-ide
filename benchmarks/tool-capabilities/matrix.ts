@@ -5,6 +5,10 @@ import type { Capability } from "./validation.ts";
 // Native cards and receipt visibility have deterministic real-Pi coverage.
 const groups: [string[], string[]][] = [
   [
+    ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
+    ["deferred-navigation-recovery"],
+  ],
+  [
     ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
     ["standalone-resource-host"],
   ],

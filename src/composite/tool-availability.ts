@@ -1,4 +1,24 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+
+const DEFERRED_IDE_TOOLS = new Set(["ast_search", "lsp_search", "diff", "undo"]);
+
+function withExposure<
+  T extends Pick<ToolDefinition, "description" | "promptGuidelines" | "parameters">,
+>(definition: T, exposure: "deferred" | "hidden") {
+  return {
+    ...definition,
+    get description() {
+      return definition.description;
+    },
+    get promptGuidelines() {
+      return definition.promptGuidelines;
+    },
+    get parameters() {
+      return definition.parameters;
+    },
+    exposure,
+  };
+}
 
 interface ToolAvailability {
   hide(): void;
@@ -30,24 +50,17 @@ function resolveToolSelection(entries: readonly string[]) {
 export function createIdeToolAvailability<TApi extends AvailabilityApi>(pi: TApi) {
   const definitions = new Map<string, ToolAvailability>();
   const hidden = new Set<string>();
-  const registerTool: ExtensionAPI["registerTool"] = (definition) => {
+  const registerTool: ExtensionAPI["registerTool"] = (registered) => {
+    const definition =
+      registered.namespace?.name.startsWith("ide_") &&
+      registered.exposure !== "hidden" &&
+      DEFERRED_IDE_TOOLS.has(registered.name)
+        ? withExposure(registered, "deferred")
+        : registered;
     const capabilityLoader = definition.name.startsWith("ide_capability_");
     if (definition.namespace?.name.startsWith("ide_") === true || capabilityLoader) {
       definitions.set(definition.name, {
-        hide: () =>
-          pi.registerTool({
-            ...definition,
-            get description() {
-              return definition.description;
-            },
-            get promptGuidelines() {
-              return definition.promptGuidelines;
-            },
-            get parameters() {
-              return definition.parameters;
-            },
-            exposure: "hidden",
-          }),
+        hide: () => pi.registerTool(withExposure(definition, "hidden")),
         restore: () => pi.registerTool(definition),
       });
     }

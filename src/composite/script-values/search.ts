@@ -13,8 +13,6 @@ export const searchValue: ScriptValue = {
   schema: matchListSchema(scriptMatchSchema, {
     fallback: {
       type: "object",
-      description:
-        "A broader search tried after the original query found no matches. Its id and matches select only the broadened results.",
       properties: {
         mode: { type: "string", enum: ["regex", "words"] },
         id: { type: "string" },
@@ -27,11 +25,9 @@ export const searchValue: ScriptValue = {
     notices: {
       type: "array",
       items: { type: "string" },
-      description: "Search notices, including fallback and coverage details.",
     },
     editWarning: {
       type: "string",
-      description: "Why editing this selection as a whole is unsafe.",
     },
   }),
   project(input) {

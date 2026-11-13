@@ -22,12 +22,10 @@ export const scriptMatchSchema = {
   type: "object",
   properties: {
     path: { type: "string" },
-    line: { type: "integer" },
+    // Keep integer validation without a redundant multiline TypeScript property annotation.
+    line: { allOf: [{ type: "integer" }] },
     text: { type: "string" },
-    id: {
-      type: "string",
-      description: "Selects this match. Absent when the source has no selections.",
-    },
+    id: { type: "string" },
   },
   required: ["path", "line", "text"],
   additionalProperties: false,

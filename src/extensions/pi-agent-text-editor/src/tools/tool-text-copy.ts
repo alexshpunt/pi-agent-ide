@@ -14,7 +14,7 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 export const copySchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Source: a path, an unchanged Read/Search result or its UUID, or an array of SEARCH# references and results (never paths; if any item cannot be used, the call changes nothing and its error lists all of them). A path without start copies the whole file, directory or symlink. Omit to use the file of the start anchor.",
+      "Source selection, or a path without start to copy the whole file, directory or symlink. Omit to use the start anchor’s file.",
     ),
     ...sourceRangeProperties(),
     ...targetProperties(
