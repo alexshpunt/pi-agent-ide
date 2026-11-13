@@ -110,7 +110,8 @@ test("issued references survive split argument tokens and independent tool calls
     for (const [id, content] of Object.entries(expected)) {
       expect(getToolExecutionDetails(getToolExecution(run, id))).toMatchObject({ content });
       const deltas = run.traceEvents.flatMap((event) => {
-        const update = event.assistantMessageEvent as AssistantMessageEvent | undefined;
+        const update = (event.event as { assistantMessageEvent?: AssistantMessageEvent } | undefined)
+          ?.assistantMessageEvent;
         if (update?.type !== "toolcall_delta") return [];
         const call = update.partial.content[update.contentIndex];
         return call?.type === "toolCall" && call.id === id ? [update.delta] : [];
