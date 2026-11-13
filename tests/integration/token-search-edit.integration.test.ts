@@ -25,9 +25,10 @@ test("token search selections cannot silently rewrite every match", async () => 
     await writeFile(path.join(cwd, "literal.txt"), "const x = await f\n");
     const code = `
 function check(v, message) { if (!v) throw Error(message); }
-const found = await tools.search({path:"words.txt",query:"const x = await f"});
-check(found.matches.length > 1,"word fallback");
-check(Object.keys(found).sort().join() === "complete,id,matches", "compact search value");
+const result = await tools.search({path:"words.txt",query:"const x = await f"});
+const found = result.fallback;
+check(found.mode === "words" && found.matches.length > 1,"word fallback");
+check(Object.keys(found).sort().join() === "complete,id,matches,mode", "compact fallback value");
 check(await tools.replace({path:found,text:"BAD"}) === null,"whole value must fail");
 check(await tools.replace({path:found.id,text:"BAD"}) === null,"whole id must fail");
 check(await tools.read({path:found}) !== null,"whole selection is readable");
