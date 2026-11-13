@@ -216,4 +216,8 @@ This is the shared data path for native tool composition and Diff, not a new par
 
 ## Reads issued by another tool
 
-A `read` tool call that another tool issued, such as `tools.read` in a Codemode script, reaches Read with Pi's `parentToolCallId`. Read keeps the agent audience and its window notices for that call, but sets `context.outputLimit` to `"none"` and returns the whole text instead of fitting it to the model's output budget. Overflow handlers must leave such results unchanged; the AST overflow handler does. Model-issued calls have `outputLimit` `"model"`. Raw byte reads keep their bounded hex view.
+A `read` tool call that another tool issued, such as `tools.read` in a Codemode script, reaches Read with Pi's `parentToolCallId`. Read keeps the agent audience and its window notices for that call, but sets `context.outputLimit` to `"none"` and returns the whole text instead of fitting it to the model's output budget. Overflow handlers must leave such results unchanged; the AST overflow handler does. Model-issued calls have `outputLimit` `"model"`.
+
+The structured data of such a call is complete: every selected line and byte, without the 1 MiB record limit. Text data adds `text`, the requested window as the requested views present it, without notices, and directory data adds `entries`, the names a resource reported in `Resource.entries`. Raw byte reads return every requested byte as data and keep their bounded hex view as content.
+
+The Read tool also takes an array `path`. It reads each source on its own and returns `{ kind: "list", items }`, one structured outcome per source in order. The call succeeds when every source does, is `partial` when some fail, and fails when all fail; its errors carry each failed source's readable failure text.

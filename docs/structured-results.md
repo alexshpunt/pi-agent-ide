@@ -2,7 +2,7 @@
 
 IDE tools expose readable text in direct calls. In native Codemode, Search returns `{ result, hasMatches, complete }`. `result` is the unchanged readable Search string used for composition. The two nullable facts describe original matches and query coverage, independently of display truncation. Unknown facts are `null`.
 
-An image Read in Codemode returns the native image block `{ type: "image", data, mimeType, note }`, or `{ type: "images", note, images }` for several frames, so scripts can pass it to `image()`, `models.classify()` or Write `image` to save it as a file. Its `note` is the readable result string used for composition. Diff returns the complete unified diff as a string, without the system-result envelope or the truncation of a direct call, and `""` when the sources are equal. Replace, insert, write, copy, move and undo return the `RESULT#<uuid>` id of the text they produced, or `null` when they select no text; delete returns `null` (see [Tools](./tools.md)). Successful text Reads and other text tools return strings. Private result records remain hidden.
+A text Read in Codemode returns `{ text, id }`. `text` is exactly the requested text without the envelope, notices or continuation hints: the whole source without `offset` and `limit`, the exact window with them, or the presentation of the requested views, such as anchors, jq output or an AST view. `JSON.parse(r.text)` works on a JSON file, and writing `r.text` back leaves the file unchanged. `id` is the `RESULT#<uuid>` of the result, and the value or its id selects the same text or window as the readable result. A `raw:` Read returns `{ bytes }`, the base64 of every requested byte; a directory returns `{ entries }`, whose directory names end with `/`. An image Read returns Pi's image block `{ type: "image", data, mimeType }`, or `{ type: "images", images }` for several frames, so scripts can pass it to `image()`, `models.classify()` or Write `image` to save it as a file. Read also takes an array `path`: it reads each source on its own and returns an array in the same order, with `null` for each source that failed; the Codemode result lists only the failed sources. These values come from Read's complete data for a call another tool issued: no line, byte or output limit applies, and a direct call keeps its bounded readable text. Diff returns the complete unified diff as a string, without the system-result envelope or the truncation of a direct call, and `""` when the sources are equal. Replace, insert, write, copy, move and undo return the `RESULT#<uuid>` id of the text they produced, or `null` when they select no text; delete returns `null` (see [Tools](./tools.md)). Other text tools return strings. Private result records remain hidden.
 
 ## Composition
 
@@ -10,13 +10,13 @@ Each readable result string starts with a labelled system-result envelope contai
 
 ```js
 const source = await tools.read({ path: "notes.txt", offset: 10, limit: 20 });
-if (typeof source === "string") {
+if (source !== null) {
   const matches = await tools.search({ path: source, query: "regex:old\\w*" });
   if (matches !== null) text(await tools.replace({ path: matches.result, text: "new" }));
 }
 ```
 
-Pass the unchanged result string to a supported source parameter. Use Search's `result` field inside Codemode. Direct calls also accept the issued UUID. A source parameter also accepts an object whose `id` holds a `RESULT#` reference, alone or in a list, such as a value a tool returned to the script; the IDE resolves the id and ignores the object's other fields. An id the IDE did not issue fails like an unknown reference, even when it names a file. `file_search` and `semantic_search` take paths only, not results or values. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
+Pass a Read value, its `id`, an edit's id or an unchanged result string to a supported source parameter. Use Search's `result` field inside Codemode. Direct calls also accept the issued UUID. A source parameter accepts any object whose `id` holds a `RESULT#` reference, alone or in a list; the IDE resolves the id and ignores the object's other fields. An id the IDE did not issue fails like an unknown reference, even when it names a file. `file_search` and `semantic_search` take paths only, not results or values. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
 
 A result identifies its backend-owned ranges, not the text in its preview. Shortened output does not clip a complete selection or make an incomplete selection complete. Read around a selection may show context without granting authority to edit it.
 
