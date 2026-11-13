@@ -31,9 +31,10 @@ export interface ScriptValue {
   /**
    * The value of a successful call. Never derived from rendered prose or private records.
    *
-   * Never throw and never return `null`: Pi keeps the original result, with its private record,
-   * when a tool_result hook throws, and drops a `null` structuredContent the same way. When the data
-   * the value needs is missing, return `shown`.
+   * Never throw: Pi keeps the original result, with its private record, when a tool_result hook
+   * throws. `null` is a valid value for a script's call, such as an edit that selects no text; Pi
+   * drops a `null` structuredContent from the hook, so the IDE sets it when the call ends. When the
+   * data the value needs is missing, return `shown`.
    */
   project(input: ScriptValueInput): JsonValue;
   /**
