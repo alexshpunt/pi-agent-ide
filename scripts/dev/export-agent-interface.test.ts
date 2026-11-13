@@ -71,3 +71,14 @@ test("keeps nested code fences intact in the initial request text", () => {
   );
   expect(markdown).toContain(`\`\`\`\`text\n${raw}\n\`\`\`\``);
 });
+
+test("preserves dollar sequences in formatted declaration blocks", async () => {
+  const literal = "$$$ARGS $$ $& $` $' $1 $<name>";
+  const code = `declare const pattern: "${literal}";`;
+  const markdown = await exporter.renderDeclarationsMarkdown(
+    [{ name: "pattern", description: `\`\`\`ts\n${code}\n\`\`\`` }],
+    process.cwd(),
+  );
+  const formattedBlock = markdown.match(/```ts\n([\s\S]*?)\n```/)?.[1];
+  expect(formattedBlock).toBe(code);
+});
