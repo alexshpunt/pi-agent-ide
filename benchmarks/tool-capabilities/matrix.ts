@@ -32,6 +32,7 @@ const groups: [string[], string[]][] = [
   [["compose.codemode-child-result"], ["codemode-child-presentation"]],
   [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],
   [["search.script-match-list", "compose.search-match-id"], ["search-script-match-ids"]],
+  [["compose.token-search-edit-guard"], ["token-search-edit-guard"]],
   // Reuse the same byte/provenance contracts across native and explicitly selected connector runs.
   [["compose.provider-reference-roundtrip"], ["read-search-replace"]],
   [["compose.provider-cross-call-reference"], ["codemode-store"]],
