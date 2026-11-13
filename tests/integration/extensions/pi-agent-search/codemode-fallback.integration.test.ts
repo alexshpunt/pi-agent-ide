@@ -23,6 +23,9 @@ if (!found || !found.complete || found.matches.length || found.id) throw Error("
 if (found.fallback?.mode !== "words" || !found.fallback.complete || found.fallback.matches.length !== 2 || !found.fallback.id) throw Error("Missing fallback: " + JSON.stringify(found));
 const selected = await tools.read({path:found.fallback.matches[0].id});
 if (!selected.text.includes("alpha")) throw Error("Fallback id did not select its match");
+const scope = await tools.read({path:"input.txt"});
+const scoped = await tools.search({path:scope,query:"a.ph."});
+if (!scoped || scoped.matches.length || scoped.fallback?.mode !== "regex" || scoped.fallback.matches.length !== 1 || scoped.fallback.matches[0].text !== "alpha") throw Error("Scoped regex fallback was lost: " + JSON.stringify(scoped));
 text("fallback contract passed");
 `;
   const result = await new PiIntegrationTest({
