@@ -1,5 +1,10 @@
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
+import {
+  resultError,
+  resultInputSchema,
+  trackScriptCalls,
+  withStructuredResult,
+} from "pi-agent-resource";
 import {
   describePathArgument,
   markNullFields,
@@ -52,7 +57,11 @@ export const lspSearchSchema = Type.Object(
     include: Type.Optional(Type.String({ description: "Include glob for query" })),
     exclude: Type.Optional(Type.String({ description: "Exclude glob for query" })),
     limit: Type.Optional(
-      Type.Integer({ minimum: 1, maximum: 1000, description: "Maximum matches (default 100)." }),
+      Type.Integer({
+        minimum: 1,
+        maximum: 1000,
+        description: "Maximum matches (default 100; in Codemode, all matches).",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -73,6 +82,8 @@ export async function registerLspSearchTool(
 ): Promise<void> {
   let resolved: LspSearchRuntime | undefined;
   void runtime.then((value) => (resolved = value));
+  // A call from a script, such as Codemode, gets every match with its whole text.
+  const scriptCall = trackScriptCalls(pi, "lsp_search");
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
@@ -152,7 +163,7 @@ export async function registerLspSearchTool(
           );
         },
         async execute(
-          _id,
+          id,
           parameters: LspSearchParameters,
           signal,
           onUpdate,
@@ -180,6 +191,7 @@ export async function registerLspSearchTool(
               "lsp_search needs the Search module (search.core), which is not loaded.",
             );
           const { api, resolver: lsp } = resolved;
+          const script = scriptCall(id);
           return (await api.searchWith(
             lsp,
             {
@@ -188,7 +200,12 @@ export async function registerLspSearchTool(
               ...(parameters.path === undefined ? {} : { path: parameters.path }),
               ...(parameters.include === undefined ? {} : { include: parameters.include }),
               ...(parameters.exclude === undefined ? {} : { exclude: parameters.exclude }),
-              ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+              // A script's call lists every match unless it sets a limit.
+              ...(parameters.limit === undefined
+                ? script
+                  ? { limit: Number.MAX_SAFE_INTEGER }
+                  : {}
+                : { limit: parameters.limit }),
               options: { lsp: options },
             },
             {
@@ -196,6 +213,7 @@ export async function registerLspSearchTool(
               ...(signal !== undefined && { signal }),
               ...(onUpdate !== undefined && { onUpdate }),
             },
+            script ? "script" : "agent",
           )) as AgentToolResult<SearchToolDetails>;
         },
       },

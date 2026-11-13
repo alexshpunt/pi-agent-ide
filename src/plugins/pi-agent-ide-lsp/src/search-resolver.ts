@@ -15,12 +15,20 @@ import {
   type SearchSelectionMatch,
 } from "pi-agent-search/api/search";
 import path from "node:path";
-import { readLspFileGraph, readLspSymbolGraph, resolveLspDeclaration } from "./lsp/code-views.ts";
+import { requiredValue } from "pi-agent-invariant";
+import {
+  readLspFileGraph,
+  readLspSymbolGraph,
+  resolveLspDeclaration,
+  type LspGraph,
+} from "./lsp/code-views.ts";
 import { coverageNotes, mergeCoverage, type ClangCoverage } from "./lsp/clang-coverage.ts";
 import type { LspManager } from "./lsp/manager.ts";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
+import { lspRangeMatch } from "./lsp/range-match.ts";
+import { createTextDocument, type TextDocument } from "pi-agent-text";
 
 /** Options the `lsp_search` tool passes in `SearchRequest.options.lsp`; their presence selects this resolver. */
 export interface LspSearchOptions {
@@ -54,7 +62,12 @@ type Payload =
       readonly match: SearchSelectionMatch;
       readonly data: unknown;
     }
-  | { readonly mode: "calls"; readonly text: string };
+  | {
+      readonly mode: "calls";
+      readonly text: string;
+      /** References, callers and callees as registered selections, for scripts. */
+      readonly data: unknown;
+    };
 
 function lspOptions(request: SearchRequest): LspSearchOptions | undefined {
   const value = request.options?.lsp;
@@ -91,7 +104,7 @@ export function createLspSearchResolver(
     toScriptData(payload) {
       const result = payload as Payload;
       return result.mode === "calls"
-        ? { kind: "custom", resolverId: "lsp", value: { calls: result.text } }
+        ? { kind: "custom", resolverId: "lsp", value: result.data }
         : result.data;
     },
     tryResolve(request, context) {
@@ -123,18 +136,61 @@ export function createLspSearchResolver(
           const reference = parseCodeViewReference(`graph:${options.calls}`, "graph");
           if (reference === undefined) throw new Error("calls requires a file path.");
           const filePath = resolveCodeViewPath(reference.path, context.cwd);
-          const manager = await managerFor(context.cwd, filePath, context.signal);
-          const text =
-            reference.selector === undefined
-              ? await backend.readLspFileGraph(manager, filePath, context.cwd, context.signal)
-              : await backend.readLspSymbolGraph(
-                  manager,
-                  filePath,
-                  reference.selector,
-                  context.cwd,
-                  context.signal,
-                );
-          return { kind: "resolved", payload: { mode: "calls", text } satisfies Payload };
+          const selector = reference.selector;
+          const graph = async (signal?: AbortSignal) => {
+            const manager = await managerFor(context.cwd, filePath, signal);
+            const found =
+              selector === undefined
+                ? await backend.readLspFileGraph(manager, filePath, context.cwd, signal)
+                : await backend.readLspSymbolGraph(
+                    manager,
+                    filePath,
+                    selector,
+                    context.cwd,
+                    signal,
+                  );
+            return { text: found.text, complete: found.complete, ...graphMatches(found) };
+          };
+          // References, callers and callees each register their own selection, so each match
+          // gets an id and the references' selection stands for the whole graph.
+          const lists = ["references", "incoming", "outgoing"] as const;
+          const { text, data } = await retryWhileSourceChanges(async () => {
+            const found = await graph(context.signal);
+            const sessions: Awaited<ReturnType<typeof register>>[] = [];
+            for (const list of lists)
+              sessions.push(
+                await register({
+                  request,
+                  matches: found[list],
+                  complete: found.complete,
+                  contents: found.contents,
+                  refresh: (signal) =>
+                    withLspDocuments(async () => {
+                      const next = await graph(signal);
+                      return {
+                        matches: next[list],
+                        complete: next.complete,
+                        contents: next.contents,
+                      };
+                    }),
+                }),
+              );
+            const [references, incoming, outgoing] = lists.map((list, index) => {
+              const session = requiredValue(sessions[index]);
+              return selectionData(found[list], found.complete, session.id, session);
+            });
+            return {
+              text: found.text,
+              data: {
+                target: requiredValue(sessions[0]).target,
+                complete: found.complete,
+                matches: references,
+                incoming,
+                outgoing,
+              },
+            };
+          }, context.signal);
+          return { kind: "resolved", payload: { mode: "calls", text, data } satisfies Payload };
         }
 
         if (options.declaration !== undefined) {
@@ -356,8 +412,12 @@ export function createLspSearchResolver(
     format(payload, context) {
       const result = payload as Payload;
       const display = (source: string) => displaySource(source, context.cwd);
+      // The rendered graph needs only its text; the selections stay out of the saved session.
       if (result.mode === "calls")
-        return { content: [{ type: "text", text: result.text }], details: result };
+        return {
+          content: [{ type: "text", text: result.text }],
+          details: { mode: "calls", text: result.text },
+        };
       if (result.mode === "declaration") {
         const { match } = result;
         // A selection ending at column 0 of the next line ends on the line before it.
@@ -406,6 +466,32 @@ export function createLspSearchResolver(
 /** A source as the result names it: relative to the workspace, or its ssh:// URI. */
 function displaySource(source: string, cwd: string): string {
   return source.startsWith("ssh://") ? source : path.relative(cwd, source);
+}
+
+/**
+ * A graph's places as selections: each reference exactly, each caller and callee as its whole
+ * declaration. The file texts are used to cut the matches and are not retained by them.
+ */
+function graphMatches(graph: LspGraph) {
+  const textOf = (source: string) => requiredValue(graph.contents.get(source));
+  const documents = new Map<string, TextDocument>();
+  const documentOf = (source: string) => {
+    const document = documents.get(source) ?? createTextDocument(source, textOf(source));
+    documents.set(source, document);
+    return document;
+  };
+  const declarations = (locations: LspGraph["incoming"]) =>
+    locations.map(({ source, range }) =>
+      structuredClone(declarationMatch(source, textOf(source), range)),
+    );
+  return {
+    references: graph.references.map(({ source, range }) =>
+      structuredClone(lspRangeMatch(source, documentOf(source), range)),
+    ),
+    incoming: declarations(graph.incoming),
+    outgoing: declarations(graph.outgoing),
+    contents: graph.contents,
+  };
 }
 
 /**

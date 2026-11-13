@@ -153,12 +153,19 @@ test("a graph names the call directions the server does not implement", async ()
   });
   vi.spyOn(manager, "readSourceText").mockResolvedValue("label\n");
 
-  const graph = await readLspSymbolGraph(manager, uri, ["label"], "/controller");
+  const { text: graph, complete } = await readLspSymbolGraph(
+    manager,
+    uri,
+    ["label"],
+    "/controller",
+  );
+  // The callees are unknown, not absent.
+  expect(complete).toBe(false);
   expect(graph).toContain("References: 1 in 1 file(s)");
   expect(graph).toContain("Incoming calls: 1");
   expect(graph).toContain("caller");
   expect(graph).toContain("Outgoing calls: not supported by fixture");
-  const fileGraph = await readLspFileGraph(manager, uri, "/controller");
+  const { text: fileGraph } = await readLspFileGraph(manager, uri, "/controller");
   expect(fileGraph).toContain("Outgoing calls: not supported by fixture");
 });
 

@@ -10,6 +10,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { nestedResultTexts } from "#integration/support/nested-results.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
@@ -146,11 +147,13 @@ test.each(["cold graph", "rename"] as const)(
               name: "codemode",
               arguments: {
                 code: `
-const definition = await tools.lsp_search({ query: ${JSON.stringify(mode === "rename" ? "welcome" : "greet")}, path: ${JSON.stringify(`${root}/note.ts`)} }).then(value => value.result);
-if(!definition.includes("definition ") || definition.includes("reference ")) throw Error(definition);
-const references = await tools.lsp_search({ query: ${JSON.stringify(mode === "rename" ? "welcome" : "greet")}, path: definition, references: true }).then(value => value.result);
-// The definition names its selector; both references point at that declaration.
-const declarations=[...references.matchAll(/declared at (.+)/g)].map(m=>m[1]); if(!/ definition \\S+ · selector /.test(references) || declarations.length!==2 || new Set(declarations).size!==1) throw Error(references);
+const name = ${JSON.stringify(mode === "rename" ? "welcome" : "greet")};
+const definition = await tools.lsp_search({ query: name, path: ${JSON.stringify(`${root}/note.ts`)} });
+// Inside its own file the name is only its definition.
+if(definition.matches.length!==1 || definition.matches[0].text!==name) throw Error(JSON.stringify(definition));
+const references = await tools.lsp_search({ query: name, path: definition, references: true });
+// The definition and both references; the readable result shows that they share one declaration.
+if(references.matches.length!==3 || references.matches.some(match=>match.text!==name)) throw Error(JSON.stringify(references));
 const inspected = await tools.bash({ command: ${JSON.stringify(command)}, cwd: ${JSON.stringify(root)} });
 text({ definition, references, inspected: inspected.output });
 if(!inspected.session) throw Error("No owned shell source"); await tools.delete({path:inspected.session});
@@ -183,6 +186,12 @@ if(!inspected.session) throw Error("No owned shell source"); await tools.delete(
       expect((await backend.read(`${fixture.workspace}/reference.ts`)).bytes.toString("utf8")).toBe(
         mode === "rename" ? reference.replaceAll("greet", "welcome") : reference,
       );
+      // The definition names its selector; both references point at that declaration.
+      const navigation = nestedResultTexts(run, "lsp_search").at(-1) ?? "";
+      const declarations = [...navigation.matchAll(/declared at (.+)/gu)].map((hit) => hit[1]);
+      expect(navigation).toMatch(/ definition \S+ · selector /u);
+      expect(declarations).toHaveLength(2);
+      expect(new Set(declarations).size).toBe(1);
       expect(await readFile(path.join(cwd, "note.ts"), "utf8")).toBe(note);
       expect(await readFile(path.join(cwd, "reference.ts"), "utf8")).toBe(reference);
       const marker = /OWNED_LSP_PIDS=(\[[\d, ]+\])/u.exec(getToolResultText(run, "native"));

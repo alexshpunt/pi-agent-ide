@@ -43,7 +43,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
               id: "semantic-edit",
               name: "codemode",
               arguments: {
-                code: 'const declaration=await tools.lsp_search({declaration:"source.ts#Example"}).then(value => value.result); if(typeof declaration!=="string") throw Error("Expected readable declaration"); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
+                code: 'const declaration=await tools.lsp_search({declaration:"source.ts#Example"}); if(declaration?.matches?.length!==1 || !declaration.matches[0].text.includes("class Example")) throw Error("Expected the whole declaration: "+JSON.stringify(declaration)); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
               },
             }),
           ],
@@ -244,7 +244,7 @@ test("native symbol search honors its file scope before the result limit", async
               arguments: {
                 code:
                   textResultChecks +
-                  'const hit=await tools.lsp_search({query:"ScopedExample",path:"second.ts",limit:1}).then(value => value.result); check(matches(hit).length===1 && hit.includes("second.ts") && !hit.includes("first.ts"),"Symbol scope escaped"); const excluded=await tools.lsp_search({query:"ScopedExample",path:"second.ts",exclude:"second.ts"}).then(value => value.result); check(matches(excluded).length===0,"Symbol excludes ignored"); text(hit);',
+                  'const hit=await tools.lsp_search({query:"ScopedExample",path:"second.ts",limit:1}); check(hit.matches.length===1 && hit.matches[0].path==="second.ts","Symbol scope escaped"); const excluded=await tools.lsp_search({query:"ScopedExample",path:"second.ts",exclude:"second.ts"}); check(excluded.matches.length===0,"Symbol excludes ignored"); text(JSON.stringify(hit));',
               },
             }),
           ],

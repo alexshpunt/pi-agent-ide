@@ -83,7 +83,7 @@ test.skipIf(!host)(
       expect(hits.hits.map((hit) => hit.source)).toEqual(
         expect.arrayContaining([`${root}/note.ts`, `${root}/reference.ts`]),
       );
-      const graph = await readLspSymbolGraph(manager, `${root}/note.ts`, ["greet"], root);
+      const { text: graph } = await readLspSymbolGraph(manager, `${root}/note.ts`, ["greet"], root);
       expect(graph).toContain(`${root}/reference.ts`);
       expect(graph).toContain("caller");
       expect(graph).toContain("Incoming calls: 1");

@@ -57,18 +57,18 @@ const expected = ${String(CALLS)} + 1;
 const peerWrites = async () =>
   Number(/^\d+$/mu.exec((await tools.bash({ command: "grep -c '// peer' main.cpp || true" })).output)?.[0] ?? 0);
 // clangd answers symbol searches from an index it fills after parsing the opened file.
-let warm = "";
+let warm;
 for (let attempt = 1; attempt <= 15; attempt += 1) {
-  warm = String((await tools.lsp_search({ query: "handle", path: "main.cpp", references: true })).result);
-  if (matches(warm).length === expected) break;
+  warm = await tools.lsp_search({ query: "handle", path: "main.cpp", references: true });
+  if (warm.matches.length === expected) break;
   await tools.bash({ command: "sleep 2" });
 }
-check(matches(warm).length === expected, "Without a writer the list is already short: " + warm.slice(0, 600));
+check(warm.matches.length === expected, "Without a writer the list is already short: " + JSON.stringify(warm).slice(0, 600));
 await tools.bash({ name: "peer-writer", background: true, command: "sh peer-writer.sh" });
 const report = [];
 const failures = [];
 const note = (label, result) => {
-  const found = matches(String(result.result)).length;
+  const found = result.matches.length;
   report.push(label + " hits=" + found + " complete=" + result.complete);
   if (found !== expected)
     failures.push(label + " listed " + found + " of " + expected + " (complete=" + result.complete + ")");
@@ -110,9 +110,9 @@ report.push("writes=" + writes);
 check(writes > ${String(MIN_WRITES)}, "The concurrent writer did not run: " + report.join("\n"));
 check(failures.length === 0, failures.join("\n") + "\n" + report.join("\n"));
 check(scoped > 0, "No round could use a result scope: " + report.join("\n"));
-const all = /SEARCH#[A-F\d]+:all:match/.exec(String(listed.result));
-check(all, "The reference list has no all-match anchor: " + String(listed.result).slice(0, 400));
-await tools.replace({ path: all[0], text: "dispatch" });
+// The list's id selects every reference it found.
+check(listed.complete === true, "The reference list is incomplete: " + JSON.stringify(listed).slice(0, 400));
+await tools.replace({ path: listed.id, text: "dispatch" });
 const counted = (await tools.bash({ command: "grep -c dispatch main.cpp; grep -c handle main.cpp || true" })).output;
 const counts = (counted.match(/^\d+$/gm) ?? []).map(Number);
 report.push("renamed=" + counts[0] + " left=" + counts[1]);

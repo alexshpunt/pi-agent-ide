@@ -1795,7 +1795,7 @@ add(
 add(
   "read-symbol-delete",
   ["compose.symbol-read-delete"],
-  "Use lsp_search with declaration task.ts#doomed, then pass its unchanged result or UUID to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
+  "Use lsp_search with declaration task.ts#doomed, then pass its unchanged result or UUID (in Codemode, its value or its one match) to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
   [
     { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
     { tool: "delete", args: { start: undefined, end: undefined }, reuse: reuse(0) },
@@ -3062,6 +3062,52 @@ add(
         "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clampVec(const Vec& v, float lo, float hi);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clampVec(const Vec& v, float lo, float hi) { return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y}; }\n\nint main() {\n  Vec v = clampVec(Vec{1, 2}, 0.0f, 1.0f);\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
     },
     prerequisite: "command -v clangd",
+  },
+);
+
+const callGraphSource = [
+  "export function validate(value: number): boolean {",
+  "  return value > 0;",
+  "}",
+  "",
+  "export function save(value: number): boolean {",
+  "  return validate(value);",
+  "}",
+  "",
+  "export function submit(): boolean {",
+  "  return save(1);",
+  "}",
+  "",
+  "export function retry(): boolean {",
+  "  return save(2);",
+  "}",
+  "",
+].join("\n");
+add(
+  "lsp-calls-script-value",
+  ["lsp.script-call-graph", "compose.lsp-caller-id"],
+  "In one Codemode call, use lsp_search with calls task.ts#save. Its value lists callers in incoming and callees in outgoing, each as its whole declaration. Check that the callers are submit and retry and the callee is validate. Then delete the caller retry by passing its incoming entry or that entry's id to delete, not a symbol or file path. Report the number of callers.",
+  [
+    {
+      tool: "lsp_search",
+      args: { calls: "task.ts#save" },
+      scriptResult: {
+        complete: true,
+        incoming: { length: 2 },
+        outgoing: { length: 1, 0: { path: "task.ts", line: 1 } },
+      },
+    },
+    { tool: "delete", args: { path: /^RESULT#[a-f\d-]{36}$/u }, reuse: reuse(0) },
+  ],
+  {
+    modes: ["codemode"],
+    files: {
+      "task.ts": callGraphSource,
+      "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
+    },
+    expected: { "task.ts": callGraphSource.replace(/export function retry[^}]*\}\n/u, "") },
+    answer: "2",
+    prerequisite: "command -v typescript-language-server",
   },
 );
 

@@ -15,6 +15,7 @@ import {
 import { LspManager } from "./manager.ts";
 import type { LspClient } from "./client.ts";
 import { requestReferences, type LspLocation } from "./navigation.ts";
+import { lspRangeMatch } from "./range-match.ts";
 import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import type { LspPosition } from "./types.ts";
 import {
@@ -252,36 +253,7 @@ async function searchSymbolsOnce(
         ? location.range
         : lineDiff(source, served, document.content, "toSnapshot").mapRange(location.range);
     if (range === undefined) throw sourceChanged("LSP range does not match its source snapshot.");
-    const { start, end } = range;
-    const positions = [start, end];
-    for (const position of positions) {
-      const line = document.lines[position.line];
-      if (
-        !Number.isInteger(position.line) ||
-        !Number.isInteger(position.character) ||
-        line === undefined ||
-        position.character < 0 ||
-        position.character > line.content.length
-      )
-        throw sourceChanged("LSP range does not match its source snapshot.");
-    }
-    const first = requiredValue(document.lines[start.line]);
-    const offset = (line: number) =>
-      document.lines
-        .slice(0, line)
-        .reduce((total, row) => total + row.content.length + row.lineEnding.length, 0);
-    const from = offset(start.line) + start.character;
-    const to = offset(end.line) + end.character;
-    if (to < from) throw new Error("LSP returned a reversed source range.");
-    return {
-      source,
-      lineNumber: start.line + 1,
-      endLineNumber: end.line + 1,
-      startColumn: start.character,
-      endColumn: end.character,
-      matchedText: document.content.slice(from, to),
-      lineText: first.content,
-    };
+    return lspRangeMatch(source, document, range);
   };
   /**
    * The declaration's position in the text the server holds now. Another search or edit in this

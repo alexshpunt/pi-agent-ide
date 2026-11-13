@@ -123,33 +123,92 @@ test("requires a selector for declarations", async () => {
   );
 });
 
-test("reads symbol and file call graphs as text without selections", async () => {
-  backend.readLspSymbolGraph.mockResolvedValue("## graph: App/start");
-  backend.readLspFileGraph.mockResolvedValue("## file graph: app.ts");
+test("registers a call graph's references, callers and callees as selections", async () => {
+  const source = path.join(cwd, "app.ts");
+  const content = [
+    "function save() {",
+    "  validate();",
+    "}",
+    "function submit() {",
+    "  save();",
+    "}",
+    "function validate() {}",
+    "",
+  ].join("\n");
+  const range = (line: number, from: number, endLine: number, to: number) => ({
+    start: { line, character: from },
+    end: { line: endLine, character: to },
+  });
+  const graph = {
+    text: "## graph: save",
+    references: [
+      { source, range: range(0, 9, 0, 13) },
+      { source, range: range(4, 2, 4, 6) },
+    ],
+    incoming: [{ source, range: range(3, 0, 5, 1) }],
+    outgoing: [{ source, range: range(6, 0, 6, 22) }],
+    complete: true,
+    contents: new Map([[source, content]]),
+  };
+  backend.readLspSymbolGraph.mockResolvedValue(graph);
+  backend.readLspFileGraph.mockResolvedValue(graph);
+  const selections: SearchSelectionRegistration[] = [];
+  const graphs = createLspSearchResolver(
+    async () => manager,
+    async (selection) => {
+      selections.push(selection);
+      const list = `RESULT#list-${String(selections.length)}`;
+      return {
+        id: `LSP${String(selections.length)}`,
+        target: list,
+        matchTargets: selection.matches.map((_, index) => `${list}-${String(index)}`),
+        matches: selection.matches,
+        complete: selection.complete,
+      };
+    },
+    backend,
+  );
 
-  const symbol = await resolver.tryResolve(request({ calls: "app.ts#App/start" }), { cwd });
-  const file = await resolver.tryResolve(request({ calls: "app.ts" }), { cwd });
+  const symbol = await graphs.tryResolve(request({ calls: "app.ts#save" }), { cwd });
 
   expect(backend.readLspSymbolGraph).toHaveBeenCalledWith(
     manager,
-    path.join(cwd, "app.ts"),
-    ["App", "start"],
+    source,
+    ["save"],
     cwd,
     undefined,
   );
-  expect(backend.readLspFileGraph).toHaveBeenCalledWith(
-    manager,
-    path.join(cwd, "app.ts"),
-    cwd,
-    undefined,
-  );
-  expect(registered).toBeUndefined();
-  if (symbol.kind !== "resolved" || file.kind !== "resolved") throw Error("calls failed");
-  expect(resolver.toScriptData?.(symbol.payload, {})).toEqual({
+  // References exactly; each caller and callee as its whole declaration.
+  expect(
+    selections.map((selection) => selection.matches.map((match) => match.matchedText)),
+  ).toEqual([
+    ["save", "save"],
+    ["function submit() {\n  save();\n}\n"],
+    ["function validate() {}\n"],
+  ]);
+  if (symbol.kind !== "resolved") throw Error("calls failed");
+  expect(graphs.toScriptData?.(symbol.payload, {})).toMatchObject({
     kind: "custom",
     resolverId: "lsp",
-    value: { calls: "## graph: App/start" },
+    value: {
+      target: "RESULT#list-1",
+      complete: true,
+      matches: { matches: [{ target: "RESULT#list-1-0" }, { target: "RESULT#list-1-1" }] },
+      incoming: { matches: [{ target: "RESULT#list-2-0", range: { startLine: 4 } }] },
+      outgoing: { matches: [{ target: "RESULT#list-3-0", range: { startLine: 7 } }] },
+    },
   });
+  // A direct call still shows the graph text.
+  const formatted = await graphs.format(symbol.payload, { cwd });
+  expect(formatted.content).toEqual([{ type: "text", text: "## graph: save" }]);
+  // A refresh takes the graph again and keeps each list to its own places.
+  await expect(selections[1]?.refresh()).resolves.toMatchObject({
+    matches: [{ matchedText: "function submit() {\n  save();\n}\n" }],
+  });
+  expect(backend.readLspSymbolGraph).toHaveBeenCalledTimes(2);
+
+  await graphs.tryResolve(request({ calls: "app.ts" }), { cwd });
+  expect(backend.readLspFileGraph).toHaveBeenCalledWith(manager, source, cwd, undefined);
 });
 
 test("follows references only when requested", async () => {

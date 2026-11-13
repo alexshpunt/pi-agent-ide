@@ -47,29 +47,19 @@ const script = (peer: {
   command: string;
   session: string;
 }) => String.raw`// @options: {"timeout_ms": 170000}
-function graphOf(result) {
-  const rows = String(result.result).split("\n");
-  const definition = /^Definition: main\.cpp (\d+) /.exec(rows.find((row) => row.startsWith("Definition:")) ?? "");
-  check(definition, "The graph has no definition line: " + String(result.result).slice(0, 600));
-  const section = (title) => {
-    const start = rows.findIndex((row) => row.startsWith(title));
-    if (start === -1) return [];
-    const end = rows.findIndex((row, index) => index > start && row === "");
-    return rows.slice(start, end === -1 ? undefined : end);
-  };
-  const references = section("References:");
-  const incoming = section("Incoming calls:");
+function graphOf(value) {
+  check(value && Array.isArray(value.matches) && Array.isArray(value.incoming), "The graph has no value: " + JSON.stringify(value).slice(0, 600));
+  // The declaration comes before its callers, so its name is the first reference.
+  const definition = Math.min(...value.matches.map((match) => match.line));
   return {
-    definition: Number(definition[1]),
-    references: references[0],
-    referenceLines: references.flatMap((row) => /^  - (\d+)$/.exec(row)?.slice(1).map(Number) ?? []),
-    incoming: incoming[0],
-    callers: incoming.flatMap((row) => {
-      const hit = /^- \S+ (\S+) — main\.cpp (\d+)$/.exec(row);
-      return hit ? [{ name: hit[1], line: Number(hit[2]) }] : [];
-    }),
-    outgoing: section("Outgoing calls:").join("\n"),
-    raw: String(result.result).slice(0, 1500),
+    definition,
+    references: value.matches.length,
+    referenceLines: value.matches.map((match) => match.line),
+    incoming: value.incoming.length,
+    // Each caller is its whole declaration, on its own line.
+    callers: value.incoming.map((match) => ({ name: /^int (\w+)\(/.exec(match.text)?.[1], line: match.line })),
+    outgoing: value.outgoing.map((match) => match.text).join(""),
+    raw: JSON.stringify(value).slice(0, 1500),
   };
 }
 const calls = async () => graphOf(await tools.lsp_search({ calls: "main.cpp#handle" }));
@@ -77,11 +67,11 @@ const calls = async () => graphOf(await tools.lsp_search({ calls: "main.cpp#hand
 let baseline;
 for (let attempt = 1; attempt <= 15; attempt += 1) {
   baseline = await calls();
-  if (baseline.incoming === "Incoming calls: ${String(CALLERS)}") break;
+  if (baseline.incoming === ${String(CALLERS)}) break;
   await tools.bash({ command: "sleep 2" });
 }
-check(baseline.incoming === "Incoming calls: ${String(CALLERS)}", "Without a writer the graph is already short: " + JSON.stringify(baseline));
-check(baseline.references === "References: ${String(CALLERS + 1)} in 1 file(s)", "Without a writer the references are already short: " + JSON.stringify(baseline));
+check(baseline.incoming === ${String(CALLERS)}, "Without a writer the graph is already short: " + JSON.stringify(baseline));
+check(baseline.references === ${String(CALLERS + 1)}, "Without a writer the references are already short: " + JSON.stringify(baseline));
 check(baseline.callers.length > 0 && baseline.referenceLines.length > 0, "The graph lists no lines: " + JSON.stringify(baseline));
 const relative = (graph) => JSON.stringify({
   references: graph.references,
