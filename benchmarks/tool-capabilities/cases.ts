@@ -2851,8 +2851,8 @@ add(
 
 add(
   "repeated-line-anchor-after-block-delete",
-  ["edit.repeated-line-anchor-block-change"],
-  "Read task.txt with anchors. Delete the first definition, from its first template line through its first } line, using anchors from that Read. Then delete the remaining template line using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
+  ["edit.repeated-line-anchor-block-recovery"],
+  "Read task.txt with anchors. Delete the first definition, from its first template line through its first } line, using anchors from that Read. Attempt to delete the remaining template line using its anchor from the first Read; this stale anchor must be rejected. Then read task.txt with anchors again and delete the remaining template line using its fresh anchor. Do not use exact text. Preserve every other byte.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -2868,6 +2868,13 @@ add(
       tool: "delete",
       args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: reuse(0, "start", "anchor"),
+      error: true,
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "delete",
+      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(3, "start", "anchor"),
     },
   ],
   {
