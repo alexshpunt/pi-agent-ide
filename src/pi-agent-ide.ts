@@ -12,6 +12,7 @@ import { createFeatureFlags } from "#src/composite/feature-flags.ts";
 import { connectAgentDocumentation } from "#src/api/documentation.ts";
 import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.ts";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.ts";
+import { buildIdeDiscoveryGuidance } from "#src/composite/tool-discovery-guidance.ts";
 import { createIdeCapabilities } from "#src/composite/capabilities.ts";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.ts";
 import { createIdeTextResults } from "#src/composite/text-results.ts";
@@ -103,43 +104,10 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         options.sections.rules = corrected;
       }
     }
-    const tools = pi.getAllTools().filter((tool) => tool.exposure !== "hidden");
-    const active = pi.getActiveTools();
-    const discovery = active.includes("tool_search")
-      ? "Use tool_search to find"
-      : active.includes("codemode")
-        ? "Use searchTools inside codemode to find"
-        : "Enable native tool_search to find";
-    const gitTools = tools
-      .filter((tool) => tool.namespace?.name === "ide_git")
-      .map((tool) => tool.name);
-    const guidance = [
-      ...(tools.some((tool) => tool.name === "ast_search")
-        ? [
-            `${discovery} ast_search for structural code search: syntax patterns, captures and enclosing functions or classes.`,
-          ]
-        : []),
-      ...(tools.some((tool) => tool.name === "lsp_search")
-        ? [
-            `${discovery} lsp_search for navigation through language servers: symbol definitions, references and call graphs.`,
-          ]
-        : []),
-      ...(tools.some((tool) => tool.name === "diff")
-        ? [`${discovery} diff when comparing text sources.`]
-        : []),
-      ...(tools.some((tool) => tool.name === "undo")
-        ? [`${discovery} undo when reverting the last text edit or an uncommitted Git change.`]
-        : []),
-      ...(gitTools.length === 0
-        ? []
-        : [
-            `${discovery} ${gitTools.join(" and ")} in ide_git when staging or unstaging selected Git changes.`,
-          ]),
-      ...(tools.some((tool) => tool.name === "debug" && tool.namespace?.name === "ide_debug")
-        ? [`${discovery} debug in ide_debug when creating a debugger session.`]
-        : []),
-    ];
-    options.sections.ide_discovery = guidance.join("\n");
+    options.sections.ide_discovery = buildIdeDiscoveryGuidance(
+      pi.getAllTools(),
+      pi.getActiveTools(),
+    );
   });
   const flags = createFeatureFlags(pi, {
     "pi-agent-ide-no-animations": config.noAnimations ?? false,

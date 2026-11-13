@@ -267,7 +267,12 @@ test.each(["exclude", "allow"])(
     expect(state.tools.map((tool) => tool.name)).not.toContain("stage");
     expect(state.nested?.isError).toBe(true);
     expect(getToolResultText(result, "script")).not.toMatch(/"(?:debug|stage|unstage)"/);
-    expect(getProviderSystemPrompt(result)).not.toContain("<ide_discovery>");
+    const guidance =
+      /<ide_discovery>\n([\s\S]*?)\n<\/ide_discovery>/u.exec(
+        getProviderSystemPrompt(result),
+      )?.[1] ?? "";
+    // Allowed active tools can still have usage guidance; excluded tools must not appear.
+    expect(guidance).not.toMatch(/\b(?:debug|stage|unstage)\b/u);
   },
 );
 
