@@ -127,18 +127,19 @@ export function createOwnedFormatterRuntime(registry: SshBackendRegistry): Forma
         },
       };
     },
-    async run(config, projectRoot, source) {
+    async run(config, projectRoot, source, stdin) {
       const owner = registry.resolve(source);
       if (!owner) {
         if (source.includes("://") || projectRoot.includes("://"))
           throw new SshBackendError("UNSUPPORTED_SOURCE", source, "not-applied");
-        return runConfiguredFormatter(config, { projectRoot, filePath: source });
+        return runConfiguredFormatter(config, { projectRoot, filePath: source, stdin });
       }
       const before = await owner.backend.read(owner.location.path);
       const result = await runConfiguredProcess(config.run, {
         projectRoot,
         filePath: source,
         processAccess,
+        input: stdin ? before.bytes.toString("utf8") : undefined,
       });
       const after = await owner.backend.read(owner.location.path);
       if (!result.ok) return { ok: false, changed: !after.bytes.equals(before.bytes) };

@@ -28,6 +28,7 @@ export interface FormatterRuntime {
     config: FormatterCommandConfig,
     projectRoot: string,
     source: string,
+    stdin?: boolean,
   ): Promise<{ ok: boolean; changed: boolean }>;
 }
 
@@ -74,6 +75,7 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
         return { ok: true, edits: 0, formatter: null };
       }
 
+      let stdin = false;
       if (entry?.layer === "built-in" && entry.id === "rustfmt") {
         try {
           const selected = runtime?.rustfmtAccess
@@ -83,12 +85,15 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
                 access: localRustfmtAccess(projectRoot, filePath),
               };
           formatter = await rustfmtWithEdition(formatter, selected.file, selected.access);
+          const command = formatter.run.command.filter((part) => part !== "{file}");
+          formatter = {
+            ...formatter,
+            output: "stdout",
+            run: { ...formatter.run, command: [...command, "--emit", "stdout"], cwd: "file" },
+          };
+          stdin = true;
           if (before !== undefined && before.length > 0) {
-            const command = formatter.run.command.filter((part) => part !== "{file}");
-            const baseline = await selected.access.run(
-              { ...formatter.run, command: [...command, "--emit", "stdout"], cwd: "file" },
-              before,
-            );
+            const baseline = await selected.access.run(formatter.run, before);
             if (!baseline.ok) return { ok: false, edits: 0, formatter: "rustfmt" };
             if (baseline.stdout !== before)
               return { ok: true, edits: 0, formatter: "rustfmt", skipped: "style" };
@@ -99,13 +104,14 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
       }
       const name = configuredExecutableName(formatter.run.command);
       if (runtime) {
-        const result = await runtime.run(formatter, projectRoot, filePath);
+        const result = await runtime.run(formatter, projectRoot, filePath, stdin);
         return { ok: result.ok, edits: result.changed ? 1 : 0, formatter: name };
       }
       try {
         const result = await runConfiguredFormatter(formatter, {
           projectRoot,
           filePath,
+          stdin,
         });
         return { ok: result.ok, edits: result.changed ? 1 : 0, formatter: name };
       } catch {

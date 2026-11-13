@@ -655,6 +655,26 @@ test("agent abort discards accepted but unwritten edits", async () => {
   });
 });
 
+test("a Rust Codemode batch preserves each file's original formatting", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(
+      path.join(cwd, "Cargo.toml"),
+      '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n',
+    );
+    await writeFile(path.join(cwd, "loose.rs"), "fn main(){let a=1;let b=2;}\n");
+    await writeFile(path.join(cwd, "styled.rs"), "fn main() {\n    let a = 1;\n}\n");
+    const run = await runScripts(cwd, "native-codemode-rust-style", [
+      'text(await tools.replace({path:"loose.rs",start:"a=1",text:"a=3"})); text(await tools.replace({path:"loose.rs",start:"b=2",text:"b=4"})); text(await tools.replace({path:"styled.rs",start:"let a = 1;",text:"let a=3;"}));',
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "loose.rs"), "utf8")).toBe(
+      "fn main(){let a=3;let b=4;}\n",
+    );
+    expect(await readFile(path.join(cwd, "styled.rs"), "utf8")).toBe(
+      "fn main() {\n    let a = 3;\n}\n",
+    );
+  });
+}, 60_000);
 test("a multi-file batch formats each final file once", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "a.note"), "alpha\nbeta\n");

@@ -52,7 +52,9 @@ test("formats a Rust 2024 crate using cargo and rustfmt on the source owner", as
       edited,
     );
 
-    const formattedBefore = 'pub fn example() {\n    println!("original");\n}\n';
+    const child = 'pub fn child(){println!("unchanged");}\n';
+    await owner.backend.write(`${fixture.workspace}/child.rs`, Buffer.from(child), null);
+    const formattedBefore = 'mod child;\n\npub fn example() {\n    println!("original");\n}\n';
     const formattedEdit = formattedBefore.replace(
       'println!("original");',
       'println!( "changed" );',
@@ -71,6 +73,9 @@ test("formats a Rust 2024 crate using cargo and rustfmt on the source owner", as
     ).toMatchObject({ ok: true, edits: 1, formatter: "rustfmt" });
     expect((await owner.backend.read(`${fixture.workspace}/lib.rs`)).bytes.toString("utf8")).toBe(
       formattedBefore.replace("original", "changed"),
+    );
+    expect((await owner.backend.read(`${fixture.workspace}/child.rs`)).bytes.toString("utf8")).toBe(
+      child,
     );
   } finally {
     await fixture.stop();

@@ -559,10 +559,14 @@ export async function runConfiguredFormatter(
     readonly projectRoot: string;
     readonly filePath: string;
     readonly env?: NodeJS.ProcessEnv;
+    readonly stdin?: boolean;
   },
 ): Promise<{ readonly ok: boolean; readonly changed: boolean }> {
   const before = await readFile(context.filePath, "utf8");
-  const result = await runConfiguredProcess(config.run, context);
+  const result = await runConfiguredProcess(config.run, {
+    ...context,
+    input: context.stdin ? before : undefined,
+  });
 
   if (!result.ok) {
     // Preserve actual writes: a formatter failure does not authorize overwriting this file.
@@ -571,6 +575,8 @@ export async function runConfiguredFormatter(
   }
 
   if (config.output === "stdout" && result.stdout !== before) {
+    if (context.stdin && (await readFile(context.filePath, "utf8")) !== before)
+      throw new Error("File changed during formatting");
     await writeFile(context.filePath, result.stdout, "utf8");
   }
 
