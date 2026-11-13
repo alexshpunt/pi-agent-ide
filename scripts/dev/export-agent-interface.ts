@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { format } from "oxfmt";
 import {
@@ -73,7 +73,15 @@ export async function exportAgentInterface(options: Options): Promise<void> {
     artifactsDir: artifacts,
     cwd,
     isolateUserResources: true,
-    extensions: [path.resolve(cwd, options.extension), "builtin:codemode", "builtin:tool-search"],
+    extensions: [
+      path.resolve(cwd, options.extension),
+      "builtin:codemode",
+      "builtin:tool-search",
+      // Without a tool selection, export the interface with codemode on, as the user runs it.
+      ...(options.tools === undefined
+        ? [fileURLToPath(new URL("activate-codemode.ts", import.meta.url))]
+        : []),
+    ],
     ...(options.tools === undefined ? {} : { tools: [...options.tools] }),
     ...(options.transport === undefined ? {} : { transport: options.transport }),
     conversation: [

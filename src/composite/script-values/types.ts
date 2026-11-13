@@ -21,7 +21,13 @@ export interface ScriptValueInput {
 export interface ScriptValue {
   /** JSON Schema of the value of a successful call. */
   readonly schema: Readonly<Record<string, unknown>>;
-  /** The value of a successful call. Never derived from rendered prose or private records. */
+  /**
+   * The value of a successful call. Never derived from rendered prose or private records.
+   *
+   * Never throw and never return `null`: Pi keeps the original result, with its private record,
+   * when a tool_result hook throws, and drops a `null` structuredContent the same way. When the data
+   * the value needs is missing, return `shown`.
+   */
   project(input: ScriptValueInput): JsonValue;
   /**
    * The value of a failed call that its resource provider chose to return to scripts, such as the
