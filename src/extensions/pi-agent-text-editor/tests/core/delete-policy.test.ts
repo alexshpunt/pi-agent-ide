@@ -116,6 +116,29 @@ test("requires approval for staged and committed directory contents", async () =
   expect(await remove(cwd, "folder", async () => true)).toMatchObject({ ok: true });
 });
 
+test("deletes a committed regular file without a dialog", async () => {
+  const cwd = await fixture();
+  await exec("git", ["-C", cwd, "add", "folder/data"]);
+  await exec("git", [
+    "-C",
+    cwd,
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "commit",
+    "-qm",
+    "fixture",
+  ]);
+  const confirm = vi.fn(async () => false);
+  expect(await remove(cwd, "folder/data", confirm)).toMatchObject({
+    ok: true,
+    effect: "applied",
+  });
+  expect(confirm).not.toHaveBeenCalled();
+  await expect(lstat(path.join(cwd, "folder", "data"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+
 test("asks for external, non-Git and failed-Git targets and refuses without a dialog", async () => {
   const cwd = await fixture();
   const outside = await fixture(false);
