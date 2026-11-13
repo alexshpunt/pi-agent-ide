@@ -247,12 +247,10 @@ export { searchSchema } from "#src/api/search-parameters.ts";
 export { renderSearchMatches } from "./presentation.ts";
 export { containsSearchMatch, currentScope, SearchScopeChangedError } from "./search-scope.ts";
 export { splitGlobList } from "./glob-list.ts";
+export { markNullFields, nullFieldsMessage } from "./null-fields.ts";
 export {
   describePathArgument,
-  isNullScope,
   isResultReference,
-  markNullScope,
-  nullScopeMessage,
   pathMachine,
   plainPathList,
   uniquePaths,

@@ -27,20 +27,15 @@ import {
   SEARCH_PROTOCOL,
 } from "#src/api/plugin-protocol.ts";
 import { createSearchCore } from "#src/core/search-core.ts";
-import {
-  describePathArgument,
-  isNullScope,
-  markNullScope,
-  nullScopeMessage,
-  plainPathList,
-} from "#src/api/path-list.ts";
+import { describePathArgument, plainPathList } from "#src/api/path-list.ts";
+import { markNullFields, nullFieldsMessage } from "#src/api/null-fields.ts";
 
 import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
 import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
 
 import type { SearchToolDetails } from "#src/api/search.ts";
 
-import { describeSearchParameters, type searchSchema } from "#src/api/search-parameters.ts";
+import { describeSearchParameters, searchSchema } from "#src/api/search-parameters.ts";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.ts";
 import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
 
@@ -127,7 +122,8 @@ export default async function registerSearchCore(
           return describeSearchParameters(core.renderDescriptions());
         },
         outputSchema: searchOutputSchema,
-        prepareArguments: (arguments_) => markNullScope(arguments_) as SearchParameters,
+        prepareArguments: (arguments_) =>
+          markNullFields(arguments_, searchSchema) as SearchParameters,
         renderCall(arguments_, theme, renderContext): Component {
           const mode = renderContext.expanded ? "full" : presentation();
           if (mode === "disabled") return new Text(theme.fg("toolTitle", "search"), 0, 0);
@@ -165,16 +161,17 @@ export default async function registerSearchCore(
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
-          if (isNullScope(parameters.path)) {
+          const nulls = nullFieldsMessage(parameters);
+          if (nulls !== undefined) {
             return withStructuredResult(
               {
-                content: [{ type: "text", text: nullScopeMessage }],
-                details: { failure: { code: "INVALID_REQUEST", message: nullScopeMessage } },
+                content: [{ type: "text", text: nulls }],
+                details: { failure: { code: "INVALID_REQUEST", message: nulls } },
               },
               searchDataSchema,
               {
                 status: "error",
-                errors: [resultError(new Error(nullScopeMessage), "SEARCH_FAILED")],
+                errors: [resultError(new Error(nulls), "SEARCH_FAILED")],
               },
             );
           }
