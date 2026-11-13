@@ -146,6 +146,13 @@ function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
+/** Snapshot the fixture's commit and index entries.
+ * Worktree bytes are compared by validateFiles, so cases may change tracked files on purpose.
+ */
+export function gitState(cwd: string): string {
+  return git(cwd, ["rev-parse", "HEAD"]) + git(cwd, ["ls-files", "--stage", "-z"]);
+}
+
 /** Freeze current source and dependencies in a disposable clone; never reset the development checkout. */
 export async function snapshotSource(
   repository: string,
@@ -218,7 +225,13 @@ export async function prepareTrial(
   parent: string,
   source: string,
   task: CapabilityCase,
-): Promise<{ root: string; cwd: string; state: string; initial: Record<string, Buffer> }> {
+): Promise<{
+  root: string;
+  cwd: string;
+  state: string;
+  initial: Record<string, Buffer>;
+  git?: string;
+}> {
   const root = await mkdtemp(path.join(parent, "trial-"));
   try {
     const workspace = path.join(root, "workspace");
@@ -315,7 +328,7 @@ export async function prepareTrial(
       await symlink("missing", path.join(cwd, "broken-link"));
     }
     const initial = await fixtureFiles(cwd, "", task.setup === "semantic-vera" ? "" : undefined);
-    return { root, cwd, state, initial };
+    return { root, cwd, state, initial, ...(task.git ? { git: gitState(cwd) } : {}) };
   } catch (error) {
     await cleanupTrial(parent, root);
     throw error;
