@@ -334,7 +334,8 @@ async function attempt(
         "undo",
         "codemode",
         "tool_search",
-        ...(task.id === "semantic-code-search" || task.setup === "semantic-vera"
+        ...(["semantic-code-search", "semantic-script-files"].includes(task.id) ||
+        task.setup === "semantic-vera"
           ? ["semantic_search"]
           : []),
       ],

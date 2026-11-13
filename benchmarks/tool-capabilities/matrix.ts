@@ -74,6 +74,7 @@ const groups: [string[], string[]][] = [
   [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
   [["search.path-list", "file_search.path-list", "ast_search.path-list"], ["search-path-list"]],
+  [["file_search.script-paths", "compose.file-search-paths-read"], ["file-search-script-paths"]],
   [["lsp_search.path-list"], ["lsp-path-list"]],
   [["search.literal-operators"], ["search-literal-operators"]],
   [
@@ -86,6 +87,7 @@ const groups: [string[], string[]][] = [
     ["semantic-code-search-vera"],
   ],
   [["search.semantic-vera-refresh"], ["semantic-vera-refresh"]],
+  [["search.semantic-script-files"], ["semantic-script-files"]],
   [["search.multiline", "compose.search-multiline-replace"], ["search-multiline-between"]],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],

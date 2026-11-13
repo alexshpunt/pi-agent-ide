@@ -1257,6 +1257,31 @@ add(
 );
 
 add(
+  "file-search-script-paths",
+  ["file_search.script-paths", "compose.file-search-paths-read"],
+  "Use native Codemode. The logs directory holds 150 .log files. Call file_search once for *.log in logs without a limit, and check in the script that its value lists all 150 paths. Then read the listed path that ends with entry-137.log and report its content. Do not parse display text.",
+  [
+    {
+      tool: "file_search",
+      args: { pattern: /\*\.log|\.log/, path: "logs" },
+      // A script's file_search has no default cap of 100 paths.
+      scriptResult: { length: 150 },
+    },
+    { tool: "read", args: { path: "logs/entry-137.log" }, contains: "PASS-137" },
+  ],
+  {
+    modes: ["codemode"],
+    files: Object.fromEntries(
+      Array.from({ length: 150 }, (_, index) => [
+        `logs/entry-${String(index)}.log`,
+        `PASS-${String(index)}\n`,
+      ]),
+    ),
+    answer: "PASS-137",
+  },
+);
+
+add(
   "lsp-path-list",
   ["lsp_search.path-list"],
   "Use lsp_search with query formatSymbolSelector once, passing the directories src/code-view and src/api together as one path list. Never search src/other. Report the files in which it finds formatSymbolSelector. Do not change files.",
@@ -2429,6 +2454,30 @@ add(
     answer: "fresh.ts",
   },
 );
+add(
+  "semantic-script-files",
+  ["search.semantic-script-files"],
+  "Use native Codemode. Call semantic_search for the function that expires a user session, take the first file of its ranked value, read that file in the same script and report the function name. Do not parse display text.",
+  [
+    {
+      tool: "semantic_search",
+      args: { query: /session/i },
+      // The value lists ranked files; ranges stay in the readable text.
+      scriptResult: { 0: "src with spaces/session.ts" },
+    },
+    { tool: "read", args: { path: "src with spaces/session.ts" }, contains: "expireSession" },
+  ],
+  {
+    modes: ["codemode"],
+    prerequisite: "command -v colgrep && colgrep init --yes --color never",
+    files: {
+      "src with spaces/session.ts":
+        "export function expireSession(session: { expiresAt: number }) { return Date.now() >= session.expiresAt; }\n",
+      "src with spaces/math.ts": "export function add(a: number, b: number) { return a + b; }\n",
+    },
+    answer: "expireSession",
+  },
+);
 const syntax = { "task.ts": "function first() { return 7; }\nfunction second() { return 9; }\n" };
 add(
   "ast-capture-rename",
@@ -2507,7 +2556,7 @@ add(
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
-// Until Read and Search return values with an id (LPT-1362, LPT-1398), the script builds one.
+// Values with an id come from the Read and Search values; until then the script builds one.
 add(
   "value-id-source",
   ["compose.value-id-source"],
