@@ -36,7 +36,7 @@ async function run(cwd: string, name: string, tools: string[], steps: Step[]) {
     conversation: [
       ...steps.map((step) =>
         assistantMessage(
-          [toolCall({ ...step, chunks: { kind: "fixed", size: 65536 }, delayMs: 0 })],
+          [toolCall({ ...step, delayMs: 0 })],
           { stopReason: "toolUse" },
         ),
       ),

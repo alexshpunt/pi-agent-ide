@@ -57,7 +57,7 @@ test("result scopes work when an extension with an older SDK created the shared 
       conversation: [
         ...steps.map((step) =>
           assistantMessage(
-            [toolCall({ ...step, chunks: { kind: "fixed", size: 65536 }, delayMs: 0 })],
+            [toolCall({ ...step, delayMs: 0 })],
             { stopReason: "toolUse" },
           ),
         ),

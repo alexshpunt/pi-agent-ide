@@ -21,7 +21,7 @@ test("issued references survive split argument tokens and independent tool calls
     await writeFile(path.join(cwd, "other.txt"), "another result\n");
     const token = "$issued-result:source-long-id";
     const explicit = JSON.stringify({ path: "explicit.txt", content: token });
-    const split = explicit.indexOf(token) + "$issued-res".length;
+    const split = explicit.indexOf(token) + "$issued-result:source".length;
     const defaultPrefix = "x".repeat(
       1024 - JSON.stringify({ path: "default.txt", content: "" }).indexOf('"}') - 8,
     );
@@ -69,6 +69,7 @@ test("issued references survive split argument tokens and independent tool calls
               id: "explicit",
               name: "issued_reference_probe",
               argumentsJson: explicit,
+              argumentSnapshots: [{ path: "explicit.txt", content: "$issued-result:source" }],
               chunks: {
                 kind: "explicit",
                 chunks: [explicit.slice(0, split), explicit.slice(split)],
@@ -110,8 +111,9 @@ test("issued references survive split argument tokens and independent tool calls
     for (const [id, content] of Object.entries(expected)) {
       expect(getToolExecutionDetails(getToolExecution(run, id))).toMatchObject({ content });
       const deltas = run.traceEvents.flatMap((event) => {
-        const update = (event.event as { assistantMessageEvent?: AssistantMessageEvent } | undefined)
-          ?.assistantMessageEvent;
+        const update = (
+          event.event as { assistantMessageEvent?: AssistantMessageEvent } | undefined
+        )?.assistantMessageEvent;
         if (update?.type !== "toolcall_delta") return [];
         const call = update.partial.content[update.contentIndex];
         return call?.type === "toolCall" && call.id === id ? [update.delta] : [];

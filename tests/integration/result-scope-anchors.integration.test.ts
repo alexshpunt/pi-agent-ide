@@ -42,7 +42,7 @@ async function run(
       ...steps.map((step) =>
         // One chunk keeps each $issued placeholder whole for the provider to replace.
         assistantMessage(
-          [toolCall({ ...step, chunks: { kind: "fixed", size: 65536 }, delayMs: 0 })],
+          [toolCall({ ...step, delayMs: 0 })],
           { stopReason: "toolUse" },
         ),
       ),

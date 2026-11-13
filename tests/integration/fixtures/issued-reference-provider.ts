@@ -69,14 +69,35 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
           return value;
         };
         const pattern = /\$issued-(uuid|result|item|search(?:match|allline|allmatch|id)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu;
+        // This fixture resolves references, not streaming timing. Wait for complete arguments so
+        // neither split tokens nor the delegate's partial argument snapshots can resolve an ID early.
+        const argumentsByIndex = new Map<number, string>();
         void (async () => {
           try {
             for await (const event of delegate(currentModel, transcript, options)) {
+              if (event.type === "toolcall_delta") {
+                argumentsByIndex.set(
+                  event.contentIndex,
+                  (argumentsByIndex.get(event.contentIndex) ?? "") + event.delta,
+                );
+                continue;
+              }
               const forwarded = JSON.parse(
                 JSON.stringify(event).replace(pattern, reference),
               ) as AssistantMessageEvent;
-              if (event.type === "toolcall_delta" && forwarded.type === "toolcall_delta")
-                forwarded.delta = event.delta.replace(pattern, reference);
+              if (forwarded.type === "toolcall_end" || forwarded.type === "done") {
+                for (const [contentIndex, argumentsJson] of argumentsByIndex) {
+                  if (forwarded.type === "toolcall_end" && contentIndex !== forwarded.contentIndex)
+                    continue;
+                  output.push({
+                    type: "toolcall_delta",
+                    contentIndex,
+                    delta: argumentsJson.replace(pattern, reference),
+                    partial: forwarded.type === "done" ? forwarded.message : forwarded.partial,
+                  });
+                  argumentsByIndex.delete(contentIndex);
+                }
+              }
               partial =
                 forwarded.type === "done"
                   ? forwarded.message
