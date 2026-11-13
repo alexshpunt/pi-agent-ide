@@ -34,6 +34,8 @@ describe("sshRoute", () => {
     ).toEqual([
       "-T",
       "-o",
+      "LogLevel=VERBOSE",
+      "-o",
       "BatchMode=yes",
       "-o",
       "StrictHostKeyChecking=yes",

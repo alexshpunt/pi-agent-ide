@@ -221,7 +221,18 @@ export function systemSshArguments(
   command: string,
   route: readonly string[] = [],
 ): string[] {
-  return ["-T", ...sshSecurityOptions(target), ...route, "--", target.host, command];
+  return [
+    "-T",
+    // VERBOSE adds "Authenticated to ..." and the reason a connection ended to stderr, which
+    // classifies a loss and shows when a retry cannot repeat anything on the target.
+    "-o",
+    "LogLevel=VERBOSE",
+    ...sshSecurityOptions(target),
+    ...route,
+    "--",
+    target.host,
+    command,
+  ];
 }
 
 /** Classify bounded SSH diagnostics without returning their text or credential paths.

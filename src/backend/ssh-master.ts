@@ -1,6 +1,6 @@
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, rmSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync, rmSync } from "node:fs";
 import { lstat, mkdir, readdir, unlink } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
@@ -26,10 +26,18 @@ export interface SshRoute {
   readonly options: readonly string[];
   /** Call once the process has exited. Repeated calls have no effect. */
   release(): void;
+  /** The end of the master's OpenSSH log, which says how the shared connection ended: a process
+   * that goes through a master reports nothing about it. Empty for a direct connection. */
+  masterDiagnostics(): string;
 }
 
 /** A new connection of its own, without a master. */
-export const directSshRoute: SshRoute = { options: [], release() {} };
+export const directSshRoute: SshRoute = { options: [], release() {}, masterDiagnostics: () => "" };
+
+/** The master's log beside its socket. */
+const logSuffix = ".log";
+/** Enough of the log for the lines OpenSSH writes as the connection ends. */
+const LOG_TAIL_BYTES = 4096;
 
 interface Master {
   readonly socket: string;
@@ -112,10 +120,13 @@ export async function sshRoute(
   }
 }
 
-/** Stop every master this process started and remove their sockets. Safe to call repeatedly. */
+/** Stop every master this process started and remove their sockets and logs. Safe to call
+ * repeatedly. */
 export function stopSshMasters(): void {
   const sockets = ownSockets();
   for (const [socket, target] of sockets) {
+    // A master that exited by itself leaves its log behind.
+    rmSync(`${socket}${logSuffix}`, { force: true });
     if (!existsSync(socket)) continue;
     spawnSync(
       "ssh",
@@ -174,6 +185,7 @@ function take(pool: Pool, member: Master): SshRoute {
   let released = false;
   return {
     options: ["-o", "ControlMaster=no", "-o", `ControlPath=${member.socket}`],
+    masterDiagnostics: () => fileTail(`${member.socket}${logSuffix}`, LOG_TAIL_BYTES),
     release() {
       if (released) return;
       released = true;
@@ -188,6 +200,7 @@ function remove(pool: Pool, member: Master): void {
   if (index >= 0) pool.members.splice(index, 1);
   ownSockets().delete(member.socket);
   void unlink(member.socket).catch(() => {});
+  void unlink(`${member.socket}${logSuffix}`).catch(() => {});
 }
 
 /** The socket and target of every master this process started, shared by every load of this
@@ -220,7 +233,8 @@ function slot(pool: Pool, waitMs: number, signal?: AbortSignal): Promise<boolean
 
 /** Start a backgrounded master; OpenSSH exits the foreground process once it is authenticated. */
 async function launch(target: SshTarget, socket: string): Promise<boolean> {
-  await unlink(socket).catch(() => {});
+  const log = `${socket}${logSuffix}`;
+  await Promise.all([unlink(socket).catch(() => {}), unlink(log).catch(() => {})]);
   const child = spawn(
     "ssh",
     [
@@ -236,6 +250,11 @@ async function launch(target: SshTarget, socket: string): Promise<boolean> {
       "ServerAliveInterval=5",
       "-o",
       "ServerAliveCountMax=3",
+      // The reason the shared connection ended, for the processes it carried.
+      "-o",
+      "LogLevel=VERBOSE",
+      "-E",
+      log,
       "-f",
       "-N",
       "--",
@@ -313,17 +332,35 @@ async function privateSocketDirectory(): Promise<string | undefined> {
   return directory;
 }
 
-/** Remove sockets that a Pi process which no longer runs left behind and nothing listens on. */
+/** Remove sockets that a Pi process which no longer runs left behind and nothing listens on,
+ * and their logs. */
 async function removeStaleSockets(directory: string): Promise<void> {
   const names = await readdir(directory).catch(() => []);
   await Promise.all(
     names.map(async (name) => {
-      const owner = Number(/^(\d+)-[0-9a-f]{16}-\d+$/u.exec(name)?.[1]);
+      const owner = Number(/^(\d+)-[0-9a-f]{16}-\d+(?:\.log)?$/u.exec(name)?.[1]);
       if (!Number.isSafeInteger(owner) || owner === process.pid || running(owner)) return;
       const socket = path.join(directory, name);
       if (!(await listening(socket))) await unlink(socket).catch(() => {});
     }),
   );
+}
+
+/** The last `bytes` of a small local file; empty when it cannot be read. Synchronous, so a closing
+ * channel can classify its loss before it settles. */
+function fileTail(file: string, bytes: number): string {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(file, "r");
+    const size = fstatSync(descriptor).size;
+    const tail = Buffer.alloc(Math.min(size, bytes));
+    readSync(descriptor, tail, 0, tail.length, size - tail.length);
+    return tail.toString("utf8");
+  } catch {
+    return "";
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
 }
 
 function running(pid: number): boolean {

@@ -1,9 +1,17 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { PassThrough, type Readable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 
 import { remoteLocation } from "./identity.ts";
+import {
+  sshAuthenticated,
+  sshConnectionLossReason,
+  sshConnectionLossTransient,
+  sshMasterConnectionLossReason,
+  type SshConnectionLoss,
+} from "./ssh-connection-loss.ts";
 import { SshBackendError, type SshTarget, type BackendOperationContext } from "./ssh.ts";
 import {
   interpreterCandidates,
@@ -114,18 +122,19 @@ export async function startSshProcess(
     ...(known === undefined ? [] : [known]),
     ...interpreterCandidates(os).filter((candidate) => candidate !== known),
   ];
+  // One deadline bounds every attempt, including the wait for a master and reconnections.
+  const deadline = performance.now() + timeout;
   let multiplex = true;
+  let retries = 0;
   for (let index = 0; index < candidates.length;) {
     const interpreter = candidates[index] ?? "";
-    // Waiting for the target's master is the connection this process would otherwise make,
-    // so it counts against the attempt's startup deadline.
-    const started = Date.now();
-    const attempt = multiplex ? await sshRoute(target, timeout, context.signal) : directSshRoute;
+    const attempt = multiplex
+      ? await sshRoute(target, Math.max(1, deadline - performance.now()), context.signal)
+      : directSshRoute;
     if (context.signal?.aborted) {
       attempt.release();
       context.signal.throwIfAborted();
     }
-    const budget = Math.max(1, timeout - (Date.now() - started));
     // Windows OpenSSH blocks on synchronous pipes when it runs outside an interactive desktop
     // session, for example under another SSH server: it stalls at startup or never exits.
     // Overlapped pipes avoid that; on other platforms they are ordinary pipes.
@@ -142,8 +151,12 @@ export async function startSshProcess(
       context.pty !== undefined,
       interpreter,
       context.signal,
+      attempt.masterDiagnostics,
     );
-    const timer = setTimeout(() => channel.cancel("TIMEOUT"), budget);
+    const timer = setTimeout(
+      () => channel.cancel("TIMEOUT"),
+      Math.max(1, deadline - performance.now()),
+    );
     try {
       const sent = channel.sendInitial(bootstrap, request);
       void sent.catch(() => {});
@@ -159,6 +172,15 @@ export async function startSshProcess(
         multiplex = false;
         continue;
       }
+      // The network may let the next connection through after a short pause.
+      if (channel.reconnectable && retries < CONNECTION_RETRY_DELAYS_MS.length) {
+        const pause = CONNECTION_RETRY_DELAYS_MS[retries++] ?? 0;
+        if (deadline - performance.now() > pause) {
+          const resumed = await delay(pause, true, { signal: context.signal }).catch(() => false);
+          if (!resumed) throw new SshBackendError("CANCELLED", source, "not-applied");
+          continue;
+        }
+      }
       if (!channel.interpreterMissing || index === candidates.length - 1) throw error;
       index++;
     } finally {
@@ -167,6 +189,9 @@ export async function startSshProcess(
   }
   throw new SshBackendError("DEPENDENCY_UNAVAILABLE", source, "not-applied");
 }
+
+/** Pauses before reconnecting after the network breaks a connection that was being set up. */
+const CONNECTION_RETRY_DELAYS_MS = [1000, 2000] as const;
 
 function validateDimensions(cols: number, rows: number): void {
   if (![cols, rows].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 1000))
@@ -185,6 +210,12 @@ class ProcessChannel implements SshProcessChannel {
   #rejectCompletion!: (error: Error) => void;
   #buffer = Buffer.alloc(0);
   #diagnostics = "";
+  /** OpenSSH reports how a connection ended last, after any startup noise in #diagnostics. */
+  #diagnosticsTail = "";
+  readonly #attemptStartedAt = performance.now();
+  #lastReceivedAt: number | undefined;
+  #stopUnconfirmed = false;
+  #connection: SshConnectionLoss | undefined;
   #failure: string | undefined;
   #failureEffect: SshBackendError["effect"] | undefined;
   #requested = false;
@@ -215,6 +246,8 @@ class ProcessChannel implements SshProcessChannel {
     readonly pty: boolean,
     readonly interpreter: string,
     signal?: AbortSignal,
+    /** How the master this process goes through saw its connection end, if there is one. */
+    private readonly masterDiagnostics: () => string = () => "",
   ) {
     this.ready = new Promise((resolve, reject) => {
       this.#resolveReady = resolve;
@@ -229,11 +262,14 @@ class ProcessChannel implements SshProcessChannel {
     void this.ready.catch(() => {});
     void this.completion.catch(() => {});
     child.stdout.on("data", (bytes: Buffer) => {
+      this.#lastReceivedAt = performance.now();
       this.#buffer = Buffer.concat([this.#buffer, bytes]);
       this.parse();
     });
     child.stderr.on("data", (bytes: Buffer) => {
-      if (this.#diagnostics.length < 16384) this.#diagnostics += bytes.toString();
+      const text = bytes.toString();
+      if (this.#diagnostics.length < 16384) this.#diagnostics += text;
+      this.#diagnosticsTail = (this.#diagnosticsTail + text).slice(-4096);
     });
     child.stdin.on("error", () => {});
     child.once("error", () => {
@@ -255,6 +291,7 @@ class ProcessChannel implements SshProcessChannel {
           ? "TRANSPORT_FAILED"
           : (transportCode ?? (this.#exitCode === undefined ? "TRANSPORT_FAILED" : undefined)));
       this.#transportCode = transportCode;
+      if (code === "TRANSPORT_FAILED") this.#connection = this.connectionLoss(exitCode);
       this.stdout.end();
       this.stderr.end();
       const inputError = this.error(code ?? "INPUT_CLOSED");
@@ -294,6 +331,15 @@ class ProcessChannel implements SshProcessChannel {
       !this.#handshake &&
       this.#failure === undefined &&
       this.#transportCode === "TRANSPORT_FAILED"
+    );
+  }
+  /** True when the network broke the connection before the target sent anything: the worker
+   * reports itself before it runs the request, so nothing ran, and another attempt may succeed. */
+  get reconnectable(): boolean {
+    return (
+      this.#closed &&
+      this.#connection?.phase === "connecting" &&
+      sshConnectionLossTransient(this.#connection.reason)
     );
   }
   /** True when the remote shell could not start this interpreter; nothing ran on the target. */
@@ -367,7 +413,10 @@ class ProcessChannel implements SshProcessChannel {
       void this.send({ kind: "stop" }).catch(() => {});
       // A disconnected transport or undrained output must not keep the local SSH child alive.
       this.#stopTimer = setTimeout(() => {
-        this.#failure ??= "TRANSPORT_FAILED";
+        if (this.#failure === undefined) {
+          this.#failure = "TRANSPORT_FAILED";
+          this.#stopUnconfirmed = true;
+        }
         this.child.kill("SIGKILL");
       }, 5000);
       this.child.stdout.resume();
@@ -404,7 +453,41 @@ class ProcessChannel implements SshProcessChannel {
     const effect =
       this.#failureEffect ??
       (!this.#requested || !this.#handshake || knownPreflightFailure ? "not-applied" : "unknown");
-    return new SshBackendError(code, this.source, effect);
+    return new SshBackendError(
+      code,
+      this.source,
+      effect,
+      code === "TRANSPORT_FAILED" && this.#connection
+        ? { connection: this.#connection }
+        : undefined,
+    );
+  }
+
+  /** True once OpenSSH authenticated a connection of its own or the target sent anything.
+   * A process that goes through a master never authenticates by itself. */
+  private connected(): boolean {
+    return (
+      this.#lastReceivedAt !== undefined ||
+      sshAuthenticated(this.#diagnostics) ||
+      sshAuthenticated(this.#diagnosticsTail)
+    );
+  }
+
+  private connectionLoss(exitCode: number | null): SshConnectionLoss {
+    const now = performance.now();
+    let reason = this.#stopUnconfirmed
+      ? "stop-unconfirmed"
+      : sshConnectionLossReason(exitCode, this.#diagnosticsTail);
+    // A process that goes through a master only sees the master's socket close.
+    if (reason === "unexplained") reason = sshMasterConnectionLossReason(this.masterDiagnostics());
+    return {
+      reason,
+      phase: this.#started ? "running" : this.connected() ? "starting" : "connecting",
+      afterMs: Math.round(now - this.#attemptStartedAt),
+      ...(this.#lastReceivedAt === undefined
+        ? {}
+        : { silentMs: Math.round(now - this.#lastReceivedAt) }),
+    };
   }
 
   /** Wait until the worker can take one more input frame without exceeding its INPUT_WINDOW. */
