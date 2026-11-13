@@ -15,15 +15,22 @@ class TransferError(Exception):
         self.code = code
 
 
+STOP_SIGNALS = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
+
+
+def ignore_stops():
+    for ignored in STOP_SIGNALS:
+        signal.signal(ignored, signal.SIG_IGN)
+
+
 def interrupted(_signal, _frame):
     # A stop closes input and sends SIGTERM at nearly the same time. Only the first interruption
     # raises, so a later one cannot skip the removal of the staging file.
-    for ignored in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
-        signal.signal(ignored, signal.SIG_IGN)
+    ignore_stops()
     raise TransferError("CANCELLED")
 
 
-for handled in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+for handled in STOP_SIGNALS:
     signal.signal(handled, interrupted)
 
 
@@ -56,7 +63,12 @@ try:
     fcntl.flock(parent_fd, fcntl.LOCK_EX)
     if revision(destination) != request["expected"]:
         raise TransferError("CONFLICT")
-    fd, temporary = tempfile.mkstemp(prefix=".pi-ide-transfer-", dir=parent)
+    # A stop held back until the name is recorded cannot leave an unknown staging file.
+    try:
+        signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+        fd, temporary = tempfile.mkstemp(prefix=".pi-ide-transfer-", dir=parent)
+    finally:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
     digest = hashlib.sha256()
     with os.fdopen(fd, "wb") as target:
         remaining = length
@@ -93,13 +105,18 @@ except OSError as error:
 except Exception:
     reply = {"ok": False, "code": "REMOTE_OPERATION_FAILED", "effect": effect}
 finally:
-    for ignored in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
-        signal.signal(ignored, signal.SIG_IGN)
-    if temporary is not None:
-        try:
-            os.unlink(temporary)
-        except FileNotFoundError:
-            pass
-    if parent_fd is not None:
-        os.close(parent_fd)
+    # The stop's SIGTERM can arrive as cleanup begins, before the stop signals are ignored. The
+    # interruption it raises is the only one, and the inner finally still removes the file.
+    try:
+        ignore_stops()
+    except TransferError:
+        pass
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+        if parent_fd is not None:
+            os.close(parent_fd)
 print(json.dumps(reply), flush=True)
