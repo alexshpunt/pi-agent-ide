@@ -252,7 +252,9 @@ export function createTextTool<TParameters extends TSchema>(
                     signal?.throwIfAborted();
                     return failureToolResult(
                       "",
-                      "RESULT_INPUT_REJECTED",
+                      (error as { code?: unknown })?.code === "UNSAFE_TOKEN_SELECTION"
+                        ? "UNSAFE_TOKEN_SELECTION"
+                        : "RESULT_INPUT_REJECTED",
                       errorMessage(error),
                       "not-applied",
                     );
@@ -333,7 +335,9 @@ export function createTextTool<TParameters extends TSchema>(
                     signal?.throwIfAborted();
                     return failureToolResult(
                       "",
-                      "RESULT_INPUT_REJECTED",
+                      (error as { code?: unknown })?.code === "UNSAFE_TOKEN_SELECTION"
+                        ? "UNSAFE_TOKEN_SELECTION"
+                        : "RESULT_INPUT_REJECTED",
                       errorMessage(error),
                       "not-applied",
                     );

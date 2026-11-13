@@ -86,8 +86,14 @@ test("token selections reject bulk edits but remain readable and individually ed
   matches[0] = { ...matches[0]!, lineText: "alpha beta" };
   const session = await store.register(recipe.query, matches, true, cwd, undefined, recipe);
   expect(() => targets.resolve(session.target, cwd, { forEdit: true })).toThrow(
-    /alpha AND beta.*2.*tokens/u,
+    /alpha AND beta.*2/u,
   );
+  try {
+    targets.resolve(session.target, cwd, { forEdit: true });
+    throw new Error("Unsafe selection was accepted");
+  } catch (error) {
+    expect(error).toMatchObject({ code: "UNSAFE_TOKEN_SELECTION" });
+  }
   expect(targets.resolve(session.target, cwd).targets).toHaveLength(1);
   expect(targets.resolve(session.matchTargets?.[0], cwd, { forEdit: true }).targets).toHaveLength(
     1,
@@ -128,7 +134,7 @@ test("an all anchor cannot broaden from a phrase to tokens during refresh", asyn
     store.resourceResolver().tryResolve(all, { cwd, edit: { attempt: 0 } }),
   ).resolves.toMatchObject({
     kind: "rejected",
-    rejection: { reason: expect.stringContaining("separate tokens") },
+    rejection: { reason: expect.stringContaining("alpha beta") },
   });
   await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
     targets: [{ source }],

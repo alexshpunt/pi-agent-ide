@@ -206,7 +206,8 @@ export class ResultTargetStore {
     if (options.forEdit === true) {
       for (const reference of references) {
         const warning = this.#editWarnings.get(reference);
-        if (warning !== undefined) throw new Error(warning);
+        if (warning !== undefined)
+          throw Object.assign(new Error(warning), { code: "UNSAFE_TOKEN_SELECTION" });
       }
     }
     this.#refreshEntries(references, cwd);
