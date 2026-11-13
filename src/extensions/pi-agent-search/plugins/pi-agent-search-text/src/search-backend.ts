@@ -4,7 +4,12 @@ import path from "node:path";
 import { splitGlobList, type SearchEnvironment } from "pi-agent-search/api/search";
 import { createInterface } from "node:readline";
 
-import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
+import {
+  mergeUnreadablePaths,
+  resolveRipgrepExecutable,
+  RipgrepStderr,
+  type UnreadablePaths,
+} from "#src/ripgrep.ts";
 
 import { type SearchCondition, satisfiesSearchCondition } from "#src/search-query.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
@@ -46,6 +51,8 @@ function multilineArguments(request: TextSearchRequest): string[] {
 export interface TextSearchBackendResult {
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
+  /** Paths ripgrep skipped because it could not read them; matches in them are missing. */
+  readonly unreadable?: UnreadablePaths;
 }
 
 interface RipgrepMatchEvent {
@@ -109,6 +116,7 @@ export async function searchEachPath(
   const matches: TextSearchMatch[] = [];
   const searched = new Set<string>();
   let complete = true;
+  let unreadable: UnreadablePaths | undefined;
   for (const root of paths) {
     const remaining = budget && { ...budget, matches: budget.matches - matches.length };
     if (remaining !== undefined && remaining.matches <= 0) {
@@ -124,9 +132,10 @@ export async function searchEachPath(
     }
     for (const source of found) searched.add(source);
     complete &&= result.complete;
+    unreadable = mergeUnreadablePaths(unreadable, result.unreadable);
   }
   matches.sort(compareMatches);
-  return { matches, complete };
+  return { matches, complete, ...(unreadable === undefined ? {} : { unreadable }) };
 }
 
 /** Reuse ordinary text-search scope, ignores, and glob parsing for the extra scan. */
@@ -382,7 +391,7 @@ function runRipgrep(
     });
     child.stdin.end(input);
     const matches: TextSearchMatch[] = [];
-    let stderr = "";
+    const stderr = new RipgrepStderr((printed) => path.resolve(cwd, printed));
     let parseError: unknown;
 
     const abort = (): void => {
@@ -395,7 +404,7 @@ function runRipgrep(
 
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
+      stderr.write(chunk);
     });
     output.on("line", (line) => {
       if (limited || parseError !== undefined || line.length === 0) {
@@ -448,13 +457,14 @@ function runRipgrep(
         return;
       }
 
-      if (!limited && code !== 0 && code !== 1) {
-        reject(new Error(stderr.trim() || `ripgrep exited with code ${String(code)}.`));
+      if (!limited && stderr.failed(code)) {
+        reject(new Error(stderr.message || `ripgrep exited with code ${String(code)}.`));
         return;
       }
 
       matches.sort(compareMatches);
-      resolve({ matches, complete: !limited });
+      const unreadable = limited ? undefined : stderr.unreadable(code);
+      resolve({ matches, complete: !limited, ...(unreadable === undefined ? {} : { unreadable }) });
     });
 
     signal?.addEventListener("abort", abort, { once: true });
@@ -480,6 +490,7 @@ async function runOwnedRipgrep(
   if (signal?.aborted) abort();
   let bytes = 0;
   const state = { limited: false };
+  let unreadable: UnreadablePaths | undefined;
   try {
     const result = await environment.runLines(
       arguments_,
@@ -513,8 +524,10 @@ async function runOwnedRipgrep(
       },
       controller.signal,
     );
-    if (result.code !== 0 && result.code !== 1)
-      throw new Error(result.stderr.trim() || "Ripgrep failed.");
+    const stderr = new RipgrepStderr((printed) => environment.resolve(cwd, printed));
+    stderr.write(result.stderr);
+    if (stderr.failed(result.code)) throw new Error(stderr.message || "Ripgrep failed.");
+    unreadable = stderr.unreadable(result.code);
   } catch (error) {
     signal?.throwIfAborted();
     if (!state.limited) throw error;
@@ -523,7 +536,11 @@ async function runOwnedRipgrep(
   }
   signal?.throwIfAborted();
   matches.sort(compareMatches);
-  return { matches, complete: !state.limited };
+  return {
+    matches,
+    complete: !state.limited,
+    ...(unreadable === undefined || state.limited ? {} : { unreadable }),
+  };
 }
 
 function isPcre2MatchLimitError(error: unknown): boolean {
