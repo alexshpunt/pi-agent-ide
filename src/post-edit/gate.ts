@@ -30,8 +30,23 @@ export async function runIdePostEditGate(
     const formatter = toolchain.formatters.find(matches);
     if (!formatter) return { formatting: { status: "unavailable" } };
     formatterName = formatter.name;
-    const result = await formatter.format({ filePath: transaction.resourceSource }, toolchain.ctx);
+    const result = await formatter.format(
+      { filePath: transaction.resourceSource, before: transaction.before.content },
+      toolchain.ctx,
+    );
     if (result.formatter === null) return { formatting: { status: "unavailable" } };
+    if (result.skipped === "style")
+      return {
+        formatting: { status: "skipped-style", formatter: result.formatter ?? formatter.name },
+        diffStatuses: [
+          {
+            text: "Formatting skipped (existing style)",
+            tone: "muted",
+            formatter: result.formatter ?? formatter.name,
+            formattingStatus: "skipped-style",
+          },
+        ],
+      };
     formatterName = result.formatter ?? formatter.name;
     return {
       formatting: {

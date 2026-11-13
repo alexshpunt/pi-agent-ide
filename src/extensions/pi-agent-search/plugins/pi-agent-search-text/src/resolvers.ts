@@ -55,6 +55,7 @@ interface TextPayload {
   readonly recipe: SearchRecipe;
   readonly notices: readonly string[];
   readonly fuzzy?: FuzzyResult;
+  readonly fallback?: "regex" | "words" | undefined;
 }
 
 interface FilePayload extends FileSearchResult {
@@ -64,6 +65,7 @@ interface FilePayload extends FileSearchResult {
 
 /** What a search registered its anchors for; a concurrent writer can make it differ from the backend's matches. */
 interface RegisteredMatches {
+  readonly fallback?: "regex" | "words" | undefined;
   readonly query: string;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
@@ -258,6 +260,7 @@ function createMatchResolver(
       return {
         ...selectionData(shown.matches, shown.complete, sessionId, formatted),
         notices: [...shown.notices],
+        ...(shown.fallback === undefined ? {} : { fallback: shown.fallback }),
         ...(editWarning === undefined ? {} : { editWarning }),
         ...(formatted.fuzzy === undefined ? {} : { fuzzy: formatted.fuzzy }),
       };
@@ -316,6 +319,7 @@ function createMatchResolver(
           readonly matches: readonly TextSearchMatch[];
           readonly complete: boolean;
           readonly query?: string;
+          readonly fallback?: "regex" | "words" | undefined;
         },
         signal?: AbortSignal,
       ) =>
@@ -336,7 +340,7 @@ function createMatchResolver(
         return {
           ...again,
           query: again.query ?? found.query,
-          notices: [...found.notices, ...again.notices],
+          notices: [...(again.rerunNotices ?? found.notices), ...again.notices],
         };
       };
       const captured = await capture(result, context.signal);
@@ -347,7 +351,7 @@ function createMatchResolver(
         captured.complete,
       );
       const notices = [
-        ...result.notices,
+        ...(captured.rerunNotices ?? result.notices),
         ...captured.notices,
         ...(warning === undefined ? [] : [warning]),
       ];
@@ -365,6 +369,7 @@ function createMatchResolver(
       );
       registered.set(result, {
         query: captured.query ?? result.request.query,
+        fallback: captured.fallback,
         matches: session.matches,
         complete: session.complete,
         notices,

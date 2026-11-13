@@ -28,9 +28,13 @@ export interface ToolContext {
 
 export interface FormatInput {
   filePath: string;
+  /** Content before the edit, when formatting follows a text mutation. */
+  before?: string;
 }
 
 export interface FormatResult {
+  /** The formatter was not run because it would replace the file's existing style. */
+  skipped?: "style";
   /** Actual formatter executable. Omit for a named formatter plugin; null means no formatter was selected. */
   formatter?: string | null;
   ok: boolean;

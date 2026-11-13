@@ -572,7 +572,7 @@ add(
 add(
   "token-search-edit-guard",
   ["compose.token-search-edit-guard"],
-  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole returned search result with BAD; it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN, using its :match reference in direct calls or the match or its id in Codemode. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
+  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN, using its :match reference in direct calls or the match or its id in Codemode. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
   [
     { tool: "search", args: { path: "split.txt", query: /^alpha beta$/u } },
     {
@@ -590,6 +590,29 @@ add(
   {
     files: { "split.txt": "alpha\nbeta\n", "literal.txt": "alpha beta\n" },
     expected: { "split.txt": "GREEN\nbeta\n", "literal.txt": "LITERAL\n" },
+  },
+);
+add(
+  "search-script-fallback",
+  ["search.script-fallback"],
+  "Use Codemode to search split.txt for alpha beta. Check that the original matches list is empty and complete, and that the word fallback has two matches. Read the first fallback match by its id and report its text. Do not edit the file.",
+  [
+    {
+      tool: "search",
+      args: { path: "split.txt", query: "alpha beta" },
+      scriptResult: {
+        complete: true,
+        matches: { length: 0 },
+        fallback: { mode: "words", complete: true, matches: { length: 2 } },
+      },
+    },
+    { tool: "read", args: { path: /^RESULT#[a-f\d-]{36}$/u }, reuse: reuse(0) },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "split.txt": "alpha\nbeta\n" },
+    expected: { "split.txt": "alpha\nbeta\n" },
+    answer: "alpha",
   },
 );
 const rows = Array.from({ length: 150 }, (_, index) => `row ${String(index + 1)}`);
@@ -739,6 +762,34 @@ add(
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
+  "rust-style-preservation",
+  ["edit.rust-style-preservation"],
+  "In unformatted.rs replace the text value=1 with value=2. In formatted.rs replace the line let value = 1; with let value=2;. Keep all other content. Use replace for both files.",
+  [
+    { tool: "replace", args: { path: "unformatted.rs", start: "value=1", text: "value=2" } },
+    {
+      tool: "replace",
+      args: { path: "formatted.rs", start: "let value = 1;", text: "let value=2;" },
+    },
+  ],
+  {
+    files: {
+      "Cargo.toml":
+        '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n[lib]\npath = "formatted.rs"\n',
+      "unformatted.rs": 'fn main(){let value=1;println!("{}",value);}\n',
+      "formatted.rs": "mod child;\n\nfn main() {\n    let value = 1;\n}\n",
+      "child.rs": 'pub fn child(){println!("untouched");}\n',
+    },
+    expected: {
+      "unformatted.rs": 'fn main(){let value=2;println!("{}",value);}\n',
+      "formatted.rs": "mod child;\n\nfn main() {\n    let value = 2;\n}\n",
+      "child.rs": 'pub fn child(){println!("untouched");}\n',
+    },
+    prerequisite: "command -v cargo && command -v rustfmt",
+  },
 );
 
 add(
@@ -1680,6 +1731,43 @@ add(
     },
   ],
   { modes: ["codemode"], expected: { "silent.txt": "SILENT_WRITE_BODY\n" } },
+);
+
+add(
+  "whole-file-script-receipts",
+  ["codemode.whole-file-receipts"],
+  "In one Codemode script, write saved.txt containing exactly RECEIPT_BODY plus a newline, copy copy-source.txt to copy-target.txt, then move move-source.txt to move-target.txt. Await each operation, and do not print, return, or log their values. Finish the script without output. Report completion from the script result.",
+  [
+    {
+      tool: "write",
+      args: { path: "saved.txt", content: "RECEIPT_BODY\n" },
+      parentContains: "saved.txt",
+      parentExcludes: "RECEIPT_BODY",
+    },
+    {
+      tool: "copy",
+      args: { path: "copy-source.txt", target: "copy-target.txt" },
+      parentContains: "copy-target.txt",
+      parentExcludes: "RECEIPT_BODY",
+    },
+    {
+      tool: "move",
+      args: { path: "move-source.txt", target: "move-target.txt" },
+      parentContains: "move-target.txt",
+      parentExcludes: "RECEIPT_BODY",
+    },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "copy-source.txt": "copy body\n", "move-source.txt": "move body\n" },
+    expected: {
+      "saved.txt": "RECEIPT_BODY\n",
+      "copy-source.txt": "copy body\n",
+      "copy-target.txt": "copy body\n",
+      "move-source.txt": null,
+      "move-target.txt": "move body\n",
+    },
+  },
 );
 
 add(

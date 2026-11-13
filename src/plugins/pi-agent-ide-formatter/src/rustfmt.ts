@@ -37,14 +37,14 @@ export function localRustfmtAccess(projectRoot: string, filePath: string): Rustf
         throw error;
       }
     },
-    run: (config) => runConfiguredProcess(config, { projectRoot, filePath }),
+    run: (config, input) => runConfiguredProcess(config, { projectRoot, filePath, input }),
   };
 }
 export interface RustfmtAccess {
   readonly paths: typeof path;
   readonly userConfigDirectories: readonly string[];
   readText(file: string): Promise<string | undefined>;
-  run(config: ProcessConfig): Promise<ProcessResult>;
+  run(config: ProcessConfig, input?: string): Promise<ProcessResult>;
 }
 
 /** Add Cargo's package edition unless rustfmt's selected configuration sets one. */

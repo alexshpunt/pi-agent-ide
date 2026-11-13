@@ -13,7 +13,10 @@ export interface MatchEntry {
  * readable result of a search whose results are not text matches, such as a provider's object
  * list.
  */
-export function matchListSchema(match: Readonly<Record<string, unknown>> = scriptMatchSchema) {
+export function matchListSchema(
+  match: Readonly<Record<string, unknown>> = scriptMatchSchema,
+  extra: Readonly<Record<string, unknown>> = {},
+) {
   return {
     anyOf: [
       {
@@ -30,6 +33,7 @@ export function matchListSchema(match: Readonly<Record<string, unknown>> = scrip
               "False when the search did not cover its whole scope: an empty list then proves nothing.",
           },
           matches: { type: "array", items: match },
+          ...extra,
         },
         required: ["complete", "matches"],
         additionalProperties: false,
