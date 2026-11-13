@@ -11,6 +11,7 @@ import {
   describePathArgument,
   markNullFields,
   nullFieldsMessage,
+  searchCallPolicy,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -181,7 +182,7 @@ export async function registerAstSearchTool(
               "ast_search needs the Search module (search.core), which is not loaded.",
             );
           const { api, resolver } = resolved;
-          const script = scriptCall(id);
+          const { limit, audience } = searchCallPolicy(parameters.limit, scriptCall(id), "matches");
           return (await api.searchWith(
             resolver,
             {
@@ -190,12 +191,7 @@ export async function registerAstSearchTool(
               ...(parameters.path === undefined ? {} : { path: parameters.path }),
               ...(parameters.include === undefined ? {} : { include: parameters.include }),
               ...(parameters.exclude === undefined ? {} : { exclude: parameters.exclude }),
-              // A script's call lists every match unless it sets a limit.
-              ...(parameters.limit === undefined
-                ? script
-                  ? { limit: Number.MAX_SAFE_INTEGER }
-                  : {}
-                : { limit: parameters.limit }),
+              ...(limit === undefined ? {} : { limit }),
               options: { ast: options },
             },
             {
@@ -203,7 +199,7 @@ export async function registerAstSearchTool(
               ...(signal !== undefined && { signal }),
               ...(onUpdate !== undefined && { onUpdate }),
             },
-            script ? "script" : "agent",
+            audience,
           )) as AgentToolResult<SearchToolDetails>;
         },
       },

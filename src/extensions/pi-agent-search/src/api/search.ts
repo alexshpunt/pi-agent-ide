@@ -1,6 +1,8 @@
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ResolvedResultTargets } from "pi-agent-resource";
 
+export { searchCallPolicy } from "./search-call-policy.ts";
+
 export interface SearchRequest {
   readonly query: string;
   readonly path?: string;

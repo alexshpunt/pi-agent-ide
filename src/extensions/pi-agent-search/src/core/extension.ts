@@ -33,7 +33,7 @@ import { markNullFields, nullFieldsMessage } from "#src/api/null-fields.ts";
 import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
 import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
 
-import type { SearchToolDetails } from "#src/api/search.ts";
+import { searchCallPolicy, type SearchToolDetails } from "#src/api/search.ts";
 
 import { describeSearchParameters, searchSchema } from "#src/api/search-parameters.ts";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.ts";
@@ -215,7 +215,8 @@ export default async function registerSearchCore(
                   ...(operationSignal !== undefined && { signal: operationSignal }),
                   ...(onUpdate !== undefined && { onUpdate }),
                 },
-                scriptCall(id) ? "script" : "agent",
+                // Text Search uses limit as a display budget, not a match cap.
+                searchCallPolicy(parameters.limit, scriptCall(id), "presentation").audience,
               );
             });
           } catch (error) {

@@ -1318,14 +1318,19 @@ add(
 
 add(
   "file-search-script-paths",
-  ["file_search.script-paths", "compose.file-search-paths-read"],
-  "Use native Codemode. The logs directory holds 150 .log files. Call file_search once for *.log in logs without a limit, and check in the script that its value lists all 150 paths. Then read the listed path that ends with entry-137.log and report its content. Do not parse display text.",
+  ["file_search.script-paths", "file_search.script-limit", "compose.file-search-paths-read"],
+  "Use native Codemode. The logs directory holds 150 .log files. Call file_search for *.log in logs without a limit and check that its value lists all 150 paths. Call it again with limit 2 and check that the value has two paths. Then read the first result's path that ends with entry-137.log and report its content. Do not parse display text.",
   [
     {
       tool: "file_search",
       args: { pattern: /\*\.log|\.log/, path: "logs" },
       // A script's file_search has no default cap of 100 paths.
       scriptResult: { length: 150 },
+    },
+    {
+      tool: "file_search",
+      args: { pattern: /\*\.log|\.log/, path: "logs", limit: 2 },
+      scriptResult: { length: 2 },
     },
     { tool: "read", args: { path: "logs/entry-137.log" }, contains: "PASS-137" },
   ],

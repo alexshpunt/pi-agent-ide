@@ -5,6 +5,7 @@ import {
   isResultReference,
   markNullFields,
   nullFieldsMessage,
+  searchCallPolicy,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -137,10 +138,14 @@ export function registerFileSearchTool(
         ): Promise<AgentToolResult<SearchToolDetails>> {
           const nulls = nullFieldsMessage(parameters);
           if (nulls !== undefined) return fileSearchFailure(nulls);
-          const script = scriptCall(id);
+          const { limit, audience, uncappedFiles } = searchCallPolicy(
+            parameters.limit,
+            scriptCall(id),
+            "files",
+          );
           const options: FileSearchOptions = {
             pattern: parameters.pattern,
-            ...(script && { uncapped: true }),
+            ...(uncappedFiles && { uncapped: true }),
           };
           if (parameters.path !== undefined && [parameters.path].flat().some(isResultReference))
             return fileSearchFailure(
@@ -156,7 +161,7 @@ export function registerFileSearchTool(
               ...(parameters.path === undefined ? {} : { path: parameters.path }),
               ...(parameters.include === undefined ? {} : { include: parameters.include }),
               ...(parameters.exclude === undefined ? {} : { exclude: parameters.exclude }),
-              ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+              ...(limit === undefined ? {} : { limit }),
               options: { files: options },
             },
             {
@@ -165,7 +170,7 @@ export function registerFileSearchTool(
               ...(onUpdate !== undefined && { onUpdate }),
             },
             // A script's call returns every path, however large the list.
-            script ? "script" : "agent",
+            audience,
           )) as AgentToolResult<SearchToolDetails>;
         },
       },
