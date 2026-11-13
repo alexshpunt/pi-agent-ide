@@ -58,7 +58,7 @@ For example, this script reads a section, finds a checklist item inside it, and 
 ```js
 const section = await tools.read({ path: "notes.md", offset: 10, limit: 20 });
 const item = await tools.search({ path: section, query: "- [ ] Update docs" });
-text(await tools.replace({ path: item.result, text: "- [x] Update docs" }));
+text(await tools.replace({ path: item.matches[0], text: "- [x] Update docs" }));
 ```
 
 ### Read anything through `read`
