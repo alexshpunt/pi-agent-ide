@@ -6,6 +6,7 @@ import {
   ResultTargetStore,
   currentResultTargets,
   describeAdjustedRanges,
+  resultValueReference,
   type ResultRange,
   type ResultSourceTarget,
 } from "./result-targets.ts";
@@ -37,6 +38,33 @@ describe("source result targets", () => {
     ).toThrow(/registered result target/u);
     store.invalidate(target.source);
     expect(() => store.resolve("SEARCH#ABCD:1:line", "/workspace")).toThrow(/expired/u);
+  });
+  test("a value with an id passed as a selector becomes one reference", () => {
+    const store = new ResultTargetStore();
+    const one = store.register([target], "/workspace");
+    expect(resultValueReference(store, { id: one, text: "b" }, "/workspace")).toBe(one);
+    expect(resultValueReference(store, "b", "/workspace")).toBe("b");
+    expect(resultValueReference(store, undefined, "/workspace")).toBeUndefined();
+    const other = store.register([{ ...target, source: "/workspace/b.txt" }], "/workspace");
+    const shown = store.publish(
+      { status: "success", data: { kind: "list", items: [{ target: one }, { target: other }] } },
+      "two files",
+      "/workspace",
+    );
+    const uuid = /<uuid>([a-f\d-]+)<\/uuid>/u.exec(shown)?.[1];
+    const both = resultValueReference(store, { id: `RESULT#${uuid ?? ""}` }, "/workspace");
+    expect(both).toMatch(/^RESULT#/u);
+    expect(store.resolve(both, "/workspace").targets.map(({ source }) => source)).toEqual([
+      "/workspace/a.txt",
+      "/workspace/b.txt",
+    ]);
+    expect(() =>
+      resultValueReference(
+        store,
+        { id: "RESULT#00000000-0000-4000-8000-000000000000" },
+        "/workspace",
+      ),
+    ).toThrow(/expired or unknown/u);
   });
   test("keeps snapshot authority out of projected JSON and returned coordinates", () => {
     const store = new ResultTargetStore();

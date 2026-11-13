@@ -581,6 +581,37 @@ describe("capability route evidence", () => {
     expect(validateRoute(scoped, included, "direct").passed).toBe(true);
     expect(validateRoute(route, included, "direct").passed).toBe(false);
   });
+  test("accepts a reused result of the expected file as its path", () => {
+    const uuid = "9b901a2b-a965-4729-8abb-3c09c3cbc6c2";
+    const read = (file: string) => [
+      { type: "tool_execution_start", toolCallId: "r", toolName: "read", args: { path: file } },
+      {
+        type: "tool_execution_end",
+        toolCallId: "r",
+        isError: false,
+        result: { content: [{ type: "text", text: `<uuid>${uuid}</uuid>\nFirst` }] },
+      },
+    ];
+    const edit = (path: unknown) => [
+      {
+        type: "tool_execution_start",
+        toolCallId: "d",
+        toolName: "delete",
+        args: { path, start: "A" },
+      },
+      { type: "tool_execution_end", toolCallId: "d", isError: false },
+    ];
+    const route = { steps: [{ tool: "delete", args: { path: "line.txt", start: "A" } }] };
+    for (const path of [{ id: uuid }, `RESULT#${uuid}`])
+      expect(validateRoute(route, [...read("line.txt"), ...edit(path)], "direct").passed).toBe(
+        true,
+      );
+    // A result of another file, or an id nothing issued, does not name the expected file.
+    expect(
+      validateRoute(route, [...read("other.txt"), ...edit({ id: uuid })], "direct").passed,
+    ).toBe(false);
+    expect(validateRoute(route, edit({ id: uuid }), "direct").passed).toBe(false);
+  });
   test("does not accept failed execution or incomplete evidence", () => {
     expect(validateRoute(task, events.slice(0, -1), "direct").passed).toBe(false);
     const failed = events.map((event) =>
