@@ -68,6 +68,13 @@ describe("scriptValueOf", () => {
     expect(scriptValueOf("replace").project(edit({ target }, "error"))).toBeNull();
   });
 
+  test("a successful edit with an unverified selection resolves to null and describes why", () => {
+    expect(
+      scriptValueOf("replace").project(edit({ effect: "applied", targetUnavailable: "changed" })),
+    ).toBeNull();
+    const schema = JSON.stringify(nullableValueSchema(scriptValueOf("replace")));
+    expect(schema).toMatch(/verif/iu);
+  });
   test("edit declarations stay one inline union with a single null", () => {
     const replace = nullableValueSchema(scriptValueOf("replace")).anyOf;
     expect(
