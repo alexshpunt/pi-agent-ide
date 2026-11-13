@@ -232,17 +232,13 @@ add(
       args: { path: "docs:terminal", query: "regex:(?!)" },
       contains: "No matches",
     },
+    // The prompt names no query for the two refused scopes.
+    { tool: "search", args: { path: "docs:" }, error: true, contains: "Use docs:all" },
     {
       tool: "search",
-      args: { path: "docs:lpt-723-missing", query: "unused" },
+      args: { path: "docs:lpt-723-missing" },
       error: true,
       contains: "Unknown documentation ID: lpt-723-missing",
-    },
-    {
-      tool: "search",
-      args: { path: "docs:", query: "unused" },
-      error: true,
-      contains: "Use docs:all",
     },
   ],
   { expected: textFile },
@@ -760,7 +756,9 @@ add(
     { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
     {
       tool: "read",
-      args: { path: "config.json", views: ["jq:.status, .untouched"], offset: 2, limit: 1 },
+      args: { views: ["jq:.status, .untouched"], offset: 2, limit: 1 },
+      // The first whole-file Read result names the same complete JSON source.
+      reuse: { ...reuse(0), explicit: "config.json" },
       contains: "7",
     },
   ],
@@ -777,7 +775,12 @@ add(
   ["read.jq-bounded-input"],
   "Read the first line of config.json. Pass that unchanged Read result or its UUID to Read with views jq:.status; the bounded-input query must be refused. Then query jq:.status using the explicit config.json path and report its value. Do not edit or widen the issued selection.",
   [
-    { tool: "read", args: { path: "config.json", offset: 1, limit: 1 } },
+    {
+      tool: "read",
+      args: { path: "config.json", limit: 1 },
+      // Read starts at line 1 when offset is omitted.
+      argsAny: [{ offset: 1 }, { offset: undefined }],
+    },
     { tool: "read", args: { views: ["jq:.status"] }, reuse: reuse(0), error: true },
     { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
   ],
@@ -1022,7 +1025,11 @@ for (const operation of ["replace", "delete", "insert"] as const) {
         ...(operation === "replace"
           ? { args: { text: "NEW\n" } }
           : operation === "insert"
-            ? { args: { text: "ADDED", before: true } }
+            ? {
+                args: { before: true },
+                // Inserting before a whole-line selection adds the line break when it is missing.
+                argsAny: [{ text: "ADDED" }, { text: "ADDED\n" }],
+              }
             : {}),
       })),
       ...(operation === "replace"
@@ -2911,13 +2918,14 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  "Start a background Bash command that waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
+  "Start a background Bash command that waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
     { tool: "insert", args: { text: "Enter" }, reuse: reuse(0, "path", "shell") },
-    { tool: "read", reuse: reuse(1), contains: "hello" },
-    { tool: "read", reuse: reuse(2), contains: "hello" },
+    // A Codemode script gets null for terminal input, so only a direct route can read its result.
+    { tool: "read", reuse: reuse(1), contains: "hello", modes: ["direct"] },
+    { tool: "read", reuse: reuse(2), contains: "hello", modes: ["direct"] },
     { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello" },
     {
       tool: "replace",

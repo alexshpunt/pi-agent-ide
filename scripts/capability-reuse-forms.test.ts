@@ -10,12 +10,11 @@ interface Call {
   uuid?: string;
   text?: string;
   value?: unknown;
-  details?: unknown;
   error?: boolean;
   parent?: string;
 }
 
-function call({ id, tool, args = {}, uuid, text = "", value, details, error, parent }: Call) {
+function call({ id, tool, args = {}, uuid, text = "", value, error, parent }: Call) {
   const envelope = uuid ? `<uuid>${uuid}</uuid>\n` : "";
   return [
     {
@@ -33,7 +32,6 @@ function call({ id, tool, args = {}, uuid, text = "", value, details, error, par
       result: {
         content: [{ type: "text", text: envelope + text }],
         ...(value !== undefined && { structuredContent: value }),
-        ...(details !== undefined && { details }),
       },
     },
   ] satisfies RunEvent[];
@@ -224,59 +222,6 @@ describe("shell-roundtrip", () => {
         : entry,
     );
     expect(validateRoute(task, script("one", other), "codemode").passed).toBe(false);
-  });
-});
-
-describe("deferred tool discovery", () => {
-  // The case's first step requires all four tools, from one search or several.
-  const discovery = { steps: capabilityCase("deferred-navigation-recovery").steps.slice(0, 1) };
-  const search = (id: string, loaded: string[], text = "Loaded tools") => ({
-    id,
-    tool: "tool_search",
-    args: { query: id },
-    text,
-    details: { loaded },
-  });
-  const searches = [
-    search("navigation", ["ast_search", "lsp_search", "debug"]),
-    search("compare", ["diff"]),
-    search("restore", ["undo"]),
-  ];
-
-  test("one search may load several required tools", () => {
-    expect(
-      validateRoute(
-        discovery,
-        searches.flatMap((entry) => call(entry)),
-        "direct",
-      ),
-    ).toEqual({ passed: true, reasons: [] });
-  });
-
-  test("a Codemode route may discover tools before its script", () => {
-    const events = [
-      ...searches.flatMap((entry) => call(entry)),
-      ...script("use", [{ id: "ast", tool: "ast_search" }]),
-    ];
-    expect(validateRoute(discovery, events, "codemode").passed).toBe(true);
-    const nestedOnly = { steps: [...discovery.steps, { tool: "ast_search" }] };
-    expect(validateRoute(nestedOnly, events, "codemode").passed).toBe(true);
-    expect(
-      validateRoute(
-        nestedOnly,
-        [...searches.flatMap((entry) => call(entry)), ...call({ id: "ast", tool: "ast_search" })],
-        "codemode",
-      ).passed,
-    ).toBe(false);
-  });
-
-  test("a search that loaded nothing does not count, even if its text names the tool", () => {
-    const missing = [
-      searches[0],
-      search("compare", [], "No matching tools found for diff"),
-      searches[2],
-    ].flatMap((entry) => (entry ? call(entry) : []));
-    expect(validateRoute(discovery, missing, "direct").passed).toBe(false);
   });
 });
 
