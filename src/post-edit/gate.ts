@@ -38,7 +38,14 @@ export async function runIdePostEditGate(
     if (result.skipped === "style")
       return {
         formatting: { status: "skipped-style", formatter: result.formatter ?? formatter.name },
-        diffStatuses: [{ text: "Formatting skipped (existing style)", tone: "muted" }],
+        diffStatuses: [
+          {
+            text: "Formatting skipped (existing style)",
+            tone: "muted",
+            formatter: result.formatter ?? formatter.name,
+            formattingStatus: "skipped-style",
+          },
+        ],
       };
     formatterName = result.formatter ?? formatter.name;
     return {

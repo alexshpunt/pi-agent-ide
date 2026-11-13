@@ -58,7 +58,16 @@ test("editing an unformatted Rust file preserves unrelated formatting", async ()
     expect(
       getToolExecutionDetails(getToolExecution(scenario.result, scenario.mutationCallId)),
     ).toMatchObject({
-      results: [{ data: { formatting: { status: "skipped-style", formatter: "rustfmt" } } }],
+      results: [
+        {
+          data: {
+            formatting: { status: "skipped-style", formatter: "rustfmt" },
+            diffStatuses: [
+              expect.objectContaining({ formattingStatus: "skipped-style", formatter: "rustfmt" }),
+            ],
+          },
+        },
+      ],
     });
   });
 }, 60_000);
