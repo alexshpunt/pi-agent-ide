@@ -470,7 +470,13 @@ export function createIdeTextResults(
           ? event.content.filter((block): block is ImageBlock => block.type === "image")
           : [],
       );
-      const valueInput = { shown, outcome, content: event.content, details: event.details };
+      const valueInput = {
+        shown,
+        outcome,
+        content: event.content,
+        details: event.details,
+        cwd: context.cwd,
+      };
       const scriptValue = scriptValueOf(event.toolName);
       // An error that scripts receive as a value, such as a non-zero exit code, is not a failure.
       const scriptFailed = failed && scriptValue.succeeded?.(valueInput) !== true;
