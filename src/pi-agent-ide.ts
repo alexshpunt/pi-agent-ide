@@ -89,12 +89,20 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         "Execute bash commands (ls, grep, find, etc.)",
         "Execute Bash commands",
       );
-    // Keep the legacy host-rule correction structured so portable providers can project it.
+    // A prior extension can force the complete prompt, making section overrides ineffective.
     const rules = /^<rules>\n([\s\S]*?)\n<\/rules>$/mu.exec(event.systemPrompt)?.[1];
-    if (rules?.includes("- Use bash for file operations like ls, rg, find"))
-      options.sections.rules = rules
-        .replace(/(?:^|\n)- Use bash for file operations like ls, rg, find(?=\n|$)/u, "")
-        .trim();
+    const bashRule = /(?:^|\n)- Use bash for file operations like ls, rg, find(?=\n|$)/u;
+    if (rules && bashRule.test(rules)) {
+      const corrected = rules.replace(bashRule, "").replace(/^\n/u, "");
+      if (options.forceSystemPrompt !== undefined) {
+        options.forceSystemPrompt = options.forceSystemPrompt.replace(
+          `<rules>\n${rules}\n</rules>`,
+          `<rules>\n${corrected}\n</rules>`,
+        );
+      } else {
+        options.sections.rules = corrected;
+      }
+    }
     const tools = pi.getAllTools().filter((tool) => tool.exposure !== "hidden");
     const active = pi.getActiveTools();
     const discovery = active.includes("tool_search")
