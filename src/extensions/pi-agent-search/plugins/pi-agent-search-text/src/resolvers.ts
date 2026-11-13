@@ -14,6 +14,7 @@ import {
   booleanQueryNotice,
   createSearchRecipe,
   runSearchRecipe,
+  tokenSelectionWarning,
   type SearchRecipe,
 } from "#src/search-recipe.ts";
 import { renderSearchResult } from "#src/search-renderer.ts";
@@ -247,9 +248,16 @@ function createMatchResolver(
       };
       const sessionId = formatted.sessionId;
       const shown = registered.get(result) ?? result;
+      const editWarning = tokenSelectionWarning(
+        result.recipe,
+        result.request.query,
+        shown.matches.length,
+        shown.complete,
+      );
       return {
         ...selectionData(shown.matches, shown.complete, sessionId, formatted),
         notices: [...shown.notices],
+        ...(editWarning === undefined ? {} : { editWarning }),
         ...(formatted.fuzzy === undefined ? {} : { fuzzy: formatted.fuzzy }),
       };
     },
@@ -320,10 +328,20 @@ function createMatchResolver(
             ? await runSearchRecipe(result.recipe, context.cwd, signal, context.environment)
             : await rerun(signal);
         const again = await capture(found, signal);
-        return { ...again, notices: [...found.notices, ...again.notices] };
+        return { ...again, query: found.query, notices: [...found.notices, ...again.notices] };
       };
       const captured = await capture(result, context.signal);
-      const notices = [...result.notices, ...captured.notices];
+      const warning = tokenSelectionWarning(
+        result.recipe,
+        result.request.query,
+        captured.matches.length,
+        captured.complete,
+      );
+      const notices = [
+        ...result.notices,
+        ...captured.notices,
+        ...(warning === undefined ? [] : [warning]),
+      ];
       const session = await sessions.register(
         result.request.query,
         captured.matches,

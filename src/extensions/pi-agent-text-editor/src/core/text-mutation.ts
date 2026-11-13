@@ -218,6 +218,7 @@ export function createTextTool<TParameters extends TSchema>(
                           )
                         : sourceInput,
                       context.cwd,
+                      { forEdit: true },
                     );
                     if (!selected.complete)
                       throw new Error(

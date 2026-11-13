@@ -68,6 +68,72 @@ test("numbered line aliases keep complete containing lines and expire after sour
   await writeFile(source, original);
   expect(() => targets.resolve(reference, cwd)).toThrow(/expired/u);
 });
+test("token selections reject bulk edits but remain readable and individually editable", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-token-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  const content = "alpha beta\n";
+  await writeFile(source, content);
+  const targets = new ResultTargetStore();
+  const store = new SearchSessionStore(undefined, targets);
+  const query = "alpha AND beta";
+  const { createSearchRecipe } = await import("#src/search-recipe.ts");
+  const recipe = { ...createSearchRecipe({ query }), originalQuery: query };
+  const matches = [
+    searchMatch(source, "alpha"),
+    { ...searchMatch(source, "beta"), startColumn: 6, endColumn: 10, lineText: "alpha beta" },
+  ];
+  matches[0] = { ...matches[0]!, lineText: "alpha beta" };
+  const session = await store.register(recipe.query, matches, true, cwd, undefined, recipe);
+  expect(() => targets.resolve(session.target, cwd, { forEdit: true })).toThrow(
+    /alpha AND beta.*2.*tokens/u,
+  );
+  expect(targets.resolve(session.target, cwd).targets).toHaveLength(1);
+  expect(targets.resolve(session.matchTargets?.[0], cwd, { forEdit: true }).targets).toHaveLength(
+    1,
+  );
+  const all = `SEARCH#${session.id}:all:match`;
+  await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
+    targets: [{ source }],
+  });
+  await expect(
+    store.anchorResolver().tryResolve(all, { source, content, lines: content.split("\n"), cwd }),
+  ).resolves.toMatchObject({
+    kind: "rejected",
+    rejection: { reason: expect.stringContaining(query) },
+  });
+});
+test("an all anchor cannot broaden from a phrase to tokens during refresh", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-refresh-token-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  await writeFile(source, "alpha beta\n");
+  const { createSearchRecipe } = await import("#src/search-recipe.ts");
+  const recipe = { ...createSearchRecipe({ query: "alpha beta" }), originalQuery: "alpha beta" };
+  const words = recipe.fallbacks?.find((fallback) => fallback.mode === "words");
+  if (words === undefined) throw new Error("Missing word fallback");
+  const store = new SearchSessionStore();
+  const session = await store.register(
+    recipe.query,
+    [searchMatch(source, "alpha beta")],
+    true,
+    cwd,
+    undefined,
+    recipe,
+    async () => ({ query: words.query, matches: [searchMatch(source, "alpha")], complete: true }),
+  );
+  await writeFile(source, "alpha\n");
+  const all = `SEARCH#${session.id}:all:match`;
+  await expect(
+    store.resourceResolver().tryResolve(all, { cwd, edit: { attempt: 0 } }),
+  ).resolves.toMatchObject({
+    kind: "rejected",
+    rejection: { reason: expect.stringContaining("separate tokens") },
+  });
+  await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
+    targets: [{ source }],
+  });
+});
 test("keeps changed search results displayable without registering anchors", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-changing-snapshot-"));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
