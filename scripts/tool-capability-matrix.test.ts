@@ -109,6 +109,85 @@ describe("capability route evidence", () => {
     expect(check(zero, 0).passed).toBe(true);
     expect(check(zero).passed).toBe(false);
   });
+  describe("tool discovery steps", () => {
+    const discovery = capabilityCases.find(
+      (candidate) => candidate.id === "deferred-navigation-recovery",
+    )?.steps[0];
+    if (!discovery?.discovers) throw new Error("Missing discovery step");
+    const task = { steps: [discovery, { tool: "ast_search" }] };
+    const search = (id: string, loaded: string[], parentToolCallId?: string) => [
+      { type: "tool_execution_start", toolCallId: id, toolName: "tool_search", parentToolCallId },
+      {
+        type: "tool_execution_end",
+        toolCallId: id,
+        toolName: "tool_search",
+        isError: false,
+        result: { content: [{ type: "text", text: "" }], details: { loaded } },
+      },
+    ];
+    const use = (mode: string) => [
+      ...(mode === "codemode"
+        ? [{ type: "tool_execution_start", toolCallId: "script", toolName: "codemode" }]
+        : []),
+      {
+        type: "tool_execution_start",
+        toolCallId: "ast",
+        toolName: "ast_search",
+        ...(mode === "codemode" && { parentToolCallId: "script" }),
+      },
+      { type: "tool_execution_end", toolCallId: "ast", toolName: "ast_search", isError: false },
+      ...(mode === "codemode"
+        ? [
+            {
+              type: "tool_execution_end",
+              toolCallId: "script",
+              toolName: "codemode",
+              isError: false,
+            },
+          ]
+        : []),
+    ];
+
+    // The first search also loads lsp_search, so the search for lsp_search itself finds nothing.
+    test.each(["direct", "codemode"])(
+      "accepts tools that direct searches loaded together (%s)",
+      (mode) => {
+        const events = [
+          ...search("first", ["ast_search", "lsp_search", "debug"]),
+          ...search("second", []),
+          ...search("third", ["diff", "stage"]),
+          ...search("fourth", ["undo"]),
+          ...use(mode),
+        ];
+        expect(validateRoute(task, events, mode)).toEqual({ passed: true, reasons: [] });
+      },
+    );
+
+    test.each(["direct", "codemode"])("rejects incomplete or late discovery (%s)", (mode) => {
+      const early = [...search("first", ["ast_search", "lsp_search", "diff"]), ...use(mode)];
+      expect(validateRoute(task, early, mode).passed).toBe(false);
+      expect(validateRoute(task, [...early, ...search("late", ["undo"])], mode).passed).toBe(false);
+      const failed = [
+        ...search("first", ["ast_search", "lsp_search", "diff"]),
+        ...search("second", ["undo"]).map((event) =>
+          event.type === "tool_execution_end" ? { ...event, isError: true } : event,
+        ),
+        ...use(mode),
+      ];
+      expect(validateRoute(task, failed, mode).passed).toBe(false);
+    });
+
+    test("does not count a nested call named tool_search", () => {
+      const events = [
+        ...search("first", ["ast_search", "lsp_search", "diff"]),
+        { type: "tool_execution_start", toolCallId: "outer", toolName: "codemode" },
+        ...search("nested", ["undo"], "outer"),
+        { type: "tool_execution_end", toolCallId: "outer", toolName: "codemode", isError: false },
+        ...use("codemode"),
+      ];
+      expect(validateRoute(task, events, "codemode").passed).toBe(false);
+    });
+  });
   test.each([
     {
       id: "exact-range-move",
