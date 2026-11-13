@@ -12,10 +12,14 @@ interface BackgroundCase {
 
 /** Exercises real custom-run boundaries with a late Read plugin and observable file effects. */
 export default async function backgroundRunProbe(pi: ExtensionAPI): Promise<void> {
-  let config: BackgroundCase;
+  // The shared Pi runner loads extensions before it copies the case workspace.
+  let config: BackgroundCase | undefined;
+  const current = (): BackgroundCase => {
+    if (config === undefined) throw new Error("The background case is not loaded yet");
+    return config;
+  };
   pi.on("before_agent_start", async () => {
-    if (config !== undefined) return;
-    config = JSON.parse(await readFile(path.resolve("background-case.json"), "utf8")) as BackgroundCase;
+    config ??= JSON.parse(await readFile(path.resolve("background-case.json"), "utf8")) as BackgroundCase;
   });
   let firstSettlement = true;
   let customStarts = 0;
@@ -30,14 +34,14 @@ export default async function backgroundRunProbe(pi: ExtensionAPI): Promise<void
     const kind = (event as { messageType?: string }).messageType;
     starts.push({ kind, idle: context.isIdle() });
     await record({ type: "before", kind, idle: context.isIdle() });
-    if (kind !== "custom" || ++customStarts !== 1 || !["queue", "abort"].includes(config.mode)) return;
+    if (kind !== "custom" || ++customStarts !== 1 || !["queue", "abort"].includes(current().mode)) return;
     pi.sendMessage(
       { customType: "startup-queued", content: "Queued during preparation", display: true },
       { triggerTurn: true, deliverAs: "steer" },
     );
     // Hold preparation open after delivery so a reentrant run has a chance to become observable.
     await new Promise((resolve) => setTimeout(resolve, 40));
-    if (config.mode === "abort") context.abort();
+    if (current().mode === "abort") context.abort();
   });
   pi.on("agent_start", () => {
     maxActiveRuns = Math.max(maxActiveRuns, ++activeRuns);
@@ -57,7 +61,7 @@ export default async function backgroundRunProbe(pi: ExtensionAPI): Promise<void
         id: "background-late-view",
         setup(api) {
           api.addView({
-            view: config.view,
+            view: current().view,
             presenter: {
               id: "background-generation",
               present(document) {
@@ -65,23 +69,23 @@ export default async function backgroundRunProbe(pi: ExtensionAPI): Promise<void
                   ...document,
                   lines: document.lines.map((line) => ({
                     ...line,
-                    presentation: { ...line.presentation, prefix: `${config.view}|` },
+                    presentation: { ...line.presentation, prefix: `${current().view}|` },
                   })),
                 };
               },
             },
           });
-          api.describe({ views: config.view });
+          api.describe({ views: current().view });
         },
       });
       await writeFile(path.join(context.cwd, "background-release"), "released");
-      if (config.mode === "queue" || config.mode === "abort") {
+      if (current().mode === "queue" || current().mode === "abort") {
         pi.sendMessage(
           { customType: "fixture-wakeup", content: "Inspect the late view", display: true },
           { triggerTurn: true, deliverAs: "followUp" },
         );
       }
-    } else if (config.mode === "abort" && aborted) {
+    } else if (current().mode === "abort" && aborted) {
       pi.sendMessage(
         { customType: "fixture-recovery", content: "Continue after startup cancellation", display: true },
         { triggerTurn: true, deliverAs: "followUp" },

@@ -6,7 +6,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 /** Deterministic classifier at Pi's real provider boundary; no network or real credentials. */
 export default async function registerReviewFixture(pi: ExtensionAPI): Promise<void> {
-  let mode: string;
+  // The shared Pi runner loads extensions before it copies the case workspace.
+  let mode: string | undefined;
   let releaseIdle: (() => void) | undefined;
   const idle = new Promise<void>((resolve) => {
     releaseIdle = resolve;
