@@ -125,6 +125,7 @@ const groups: [string[], string[]][] = [
     ["write-confirmed-readback"],
   ],
   [["codemode.silent-write"], ["write-silent"]],
+  [["codemode.whole-file-receipts"], ["whole-file-script-receipts"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
   [

@@ -1683,6 +1683,43 @@ add(
 );
 
 add(
+  "whole-file-script-receipts",
+  ["codemode.whole-file-receipts"],
+  "In one Codemode script, write saved.txt containing exactly RECEIPT_BODY plus a newline, copy copy-source.txt to copy-target.txt, then move move-source.txt to move-target.txt. Await each operation, and do not print, return, or log their values. Finish the script without output. Report completion from the script result.",
+  [
+    {
+      tool: "write",
+      args: { path: "saved.txt", content: "RECEIPT_BODY\n" },
+      parentContains: "saved.txt",
+      parentExcludes: "RECEIPT_BODY",
+    },
+    {
+      tool: "copy",
+      args: { path: "copy-source.txt", target: "copy-target.txt" },
+      parentContains: "copy-target.txt",
+      parentExcludes: "RECEIPT_BODY",
+    },
+    {
+      tool: "move",
+      args: { path: "move-source.txt", target: "move-target.txt" },
+      parentContains: "move-target.txt",
+      parentExcludes: "RECEIPT_BODY",
+    },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "copy-source.txt": "copy body\n", "move-source.txt": "move body\n" },
+    expected: {
+      "saved.txt": "RECEIPT_BODY\n",
+      "copy-source.txt": "copy body\n",
+      "copy-target.txt": "copy body\n",
+      "move-source.txt": null,
+      "move-target.txt": "move body\n",
+    },
+  },
+);
+
+add(
   "write-large-read",
   ["compose.write-large-read"],
   "Use one Codemode script to write large.txt with exactly 1024 copies of retained line followed by a newline (use repeat). Pass the returned Write result directly into Read with offset 1024 and limit 1. Print that Read result and report its last-line value. Do not shorten the saved content to match a display preview.",
