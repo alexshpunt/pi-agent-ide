@@ -327,7 +327,7 @@ Configure this in `<agent-dir>/pi-agent-ide/deletion.json` globally, or `<projec
 
 Relative global paths start at your home directory; relative project paths start at the worktree root, or cwd without Git. Absolute paths and a leading `~/` are supported. Globs and other shell expansion are not supported. Custom roots resolve symlinks; default name matching uses resolved parent paths, not a symlink spelling. Missing configured roots are skipped. Settings are read for each removal and checked again before effects. Invalid settings block directory/symlink removal rather than falling back.
 
-Tracked/staged contents, failed Git checks inside the current project, and protected project/Git/filesystem paths keep their safeguards. Parent links must resolve inside an allowed root or to a path with an eligible name. Unlinking the final symlink leaves its destination alone. Hooks still apply. Move checks its source and any replaced directory separately; a temporary source does not exempt an ordinary destination. Copy still merges directories and keeps destination-only files. Regular-file deletion is unchanged.
+Tracked/staged contents, failed Git checks inside the current project, and protected project/Git/filesystem paths keep their safeguards. Parent links must resolve inside an allowed root or to a path with an eligible name. Unlinking the final symlink leaves its destination alone. Hooks still apply. Move checks its source and any replaced directory separately; a temporary source does not exempt an ordinary destination. Copy still merges directories and keeps destination-only files. Deleting a regular file, tracked or not, never needs this confirmation; see [File hooks](./user-hooks.md).
 
 ### Exact text recovery
 

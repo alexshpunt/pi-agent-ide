@@ -2,7 +2,7 @@
 
 This checks whether a real model can execute our designed IDE operations and tool chains. It is not a model ranking, a reliability score, or a replacement for unit and integration tests.
 
-Each short task names the required route. The model must choose the arguments, use actual returned references, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass.
+Each short task names the required route. The model must choose the arguments, use actual returned references, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass. In a Git fixture, the commit and index must also stay as prepared; expected worktree changes, such as deleting a tracked directory, are part of the final bytes.
 
 ## Free checks
 
