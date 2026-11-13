@@ -59,6 +59,7 @@ const selectionProperties = {
   all: Type.Optional(references),
   notices: Type.Optional(Type.Array(Type.String())),
   editWarning: Type.Optional(Type.String()),
+  fallback: Type.Optional(Type.Union([Type.Literal("regex"), Type.Literal("words")])),
 };
 /** Separate possible-name groups with exact captured ranges and optional Read references. */
 export const fuzzyDataSchema = Type.Object(

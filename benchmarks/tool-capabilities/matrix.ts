@@ -33,6 +33,7 @@ const groups: [string[], string[]][] = [
   [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],
   [["search.script-match-list", "compose.search-match-id"], ["search-script-match-ids"]],
   [["compose.token-search-edit-guard"], ["token-search-edit-guard"]],
+  [["search.script-fallback"], ["search-script-fallback"]],
   // Reuse the same byte/provenance contracts across native and explicitly selected connector runs.
   [["compose.provider-reference-roundtrip"], ["read-search-replace"]],
   [["compose.provider-cross-call-reference"], ["codemode-store"]],
@@ -125,6 +126,7 @@ const groups: [string[], string[]][] = [
     ["write-confirmed-readback"],
   ],
   [["codemode.silent-write"], ["write-silent"]],
+  [["codemode.whole-file-receipts"], ["whole-file-script-receipts"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
   [

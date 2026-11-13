@@ -47,6 +47,54 @@ describe("searchValue", () => {
     expect(Value.Check(searchValue.schema, value)).toBe(true);
   });
 
+  test("separates fallback matches from matches of the original query", () => {
+    const value = searchValue.project(
+      success({
+        kind: "matches",
+        complete: true,
+        matches: [match(0)],
+        fallback: "words",
+      }),
+    );
+    expect(value).toEqual({
+      complete: true,
+      matches: [],
+      fallback: {
+        mode: "words",
+        id: `RESULT#${uuid}`,
+        complete: true,
+        matches: [
+          {
+            path: "src/file0.ts",
+            line: 1,
+            text: "text 0",
+            id: "RESULT#00000000-0000-4000-8000-000000000000",
+          },
+        ],
+      },
+    });
+    expect(Value.Check(searchValue.schema, value)).toBe(true);
+  });
+  test("keeps incomplete fallback coverage and warnings separate from the completed original search", () => {
+    const value = searchValue.project(
+      success({
+        kind: "matches",
+        complete: false,
+        matches: [match(0)],
+        fallback: "regex",
+        notices: ["Fallback tried"],
+        editWarning: "Refine before editing",
+      }),
+    );
+    expect(value).toMatchObject({
+      complete: true,
+      matches: [],
+      fallback: { mode: "regex", complete: false },
+      notices: ["Fallback tried"],
+      editWarning: "Refine before editing",
+    });
+    expect(Value.Check(searchValue.schema, value)).toBe(true);
+  });
   test("keeps the whole matched text however long it is", () => {
     const text = "x".repeat(20_000);
     const value = searchValue.project(
@@ -65,7 +113,7 @@ describe("searchValue", () => {
     }
   });
 
-  test("leaves out possible-name suggestions and notices", () => {
+  test("preserves notices but leaves out possible-name suggestions", () => {
     const value = searchValue.project(
       success({
         kind: "matches",
@@ -75,7 +123,12 @@ describe("searchValue", () => {
         fuzzy: { status: "ready", candidates: [{ identifier: "fooBar", matchCount: 3 }] },
       }),
     );
-    expect(value).toEqual({ id: `RESULT#${uuid}`, complete: true, matches: [] });
+    expect(value).toEqual({
+      id: `RESULT#${uuid}`,
+      complete: true,
+      matches: [],
+      notices: ["Boolean query"],
+    });
   });
 
   test("paths outside the session directory and remote paths stay as they are", () => {

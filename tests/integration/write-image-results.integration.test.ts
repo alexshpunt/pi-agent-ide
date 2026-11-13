@@ -125,6 +125,27 @@ test("Write saves the exact images of a Read named in image by its UUID or RESUL
   });
 });
 
+test("Codemode reports saved image files without printing Write values", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const result = await run(cwd, "write-image-silent-receipt", [
+      {
+        id: "script",
+        name: "codemode",
+        arguments: {
+          code: `
+const frames = await tools.read({ path: "fixture-frames:" });
+await tools.write({ path: "silent.png", image: frames });
+`,
+        },
+      },
+    ]);
+    const output = getToolResultText(result, "script");
+    expect(output).toContain("silent-01.png");
+    expect(output).toContain("silent-02.png");
+    for (const [index, file] of ["silent-01.png", "silent-02.png"].entries())
+      expect((await readFile(path.join(cwd, file))).toString("base64")).toBe(FIXTURE_FRAMES[index]);
+  });
+});
 test("Codemode Write saves a Read image value and numbers several frames", async () => {
   await withTempWorkspace(async (cwd) => {
     const result = await run(cwd, "write-image-codemode", [

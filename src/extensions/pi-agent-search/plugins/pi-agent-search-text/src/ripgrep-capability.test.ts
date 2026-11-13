@@ -198,10 +198,18 @@ test("a scoped capture keeps the matching mode of its retry", async () => {
       request: { query: "alpha beta" },
       inContent: false,
       read: async () => "alpha\n",
-      rerun: async () => ({ query: "alpha|beta", complete: true, matches: [retryMatch] }),
+      rerun: async () => ({
+        query: "alpha|beta",
+        complete: true,
+        matches: [retryMatch],
+        fallback: "words",
+        notices: ["Retry broadened"],
+      }),
     },
   );
   expect(captured.query).toBe("alpha|beta");
+  expect(captured.fallback).toBe("words");
+  expect(captured.rerunNotices).toEqual(["Retry broadened"]);
 });
 test("a text search reports the match-limit failure of both engines instead of hiding it", async () => {
   const cwd = await fixture("match-limit");
