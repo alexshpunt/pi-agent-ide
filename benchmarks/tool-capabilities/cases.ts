@@ -718,6 +718,7 @@ for (const mode of both)
           "read.provider-failure-ownership",
           "codemode.failed-call-null",
           "codemode.failed-call-summary",
+          "codemode.provider-failure-context",
         ]
       : ["read.failure", "read.provider-failure-ownership"],
     "Read absent.txt once, then fixture:read-provider#metadata once, then read task.txt. The synthetic provider declares the fragmented resource unavailable; do not retry its bare source or interpret metadata as text. Keep existing files unchanged and report the first line of task.txt. In Codemode, run the three Reads in one script: a failed Read resolves to null, so check each value for null and continue with the independent task.txt read. Do not catch errors or parse readable error text; the Codemode result lists the failed Reads.",
@@ -734,7 +735,11 @@ for (const mode of both)
         args: { path: "fixture:read-provider#metadata" },
         error: true,
         contains: "fixture:read-provider#metadata",
-        ...(mode === "codemode" ? { parentContains: "- read fixture:read-provider#metadata" } : {}),
+        ...(mode === "codemode"
+          ? {
+              parentContains: ["- read fixture:read-provider#metadata", "fixture-recovery-context"],
+            }
+          : {}),
       },
       { tool: "read", args: { path: "task.txt" }, contains: "keep" },
     ],

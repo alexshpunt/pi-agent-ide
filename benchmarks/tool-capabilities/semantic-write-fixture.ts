@@ -15,6 +15,15 @@ const scriptSource = /^fixture:semantic-script\/(applied|not-applied|unknown)$/;
 
 /** Synthetic provider failures and semantic actions; no external service or native input. */
 export default async function semanticWriteFixture(pi: ExtensionAPI): Promise<void> {
+  pi.on("tool_result", (event) => {
+    if (
+      event.toolName !== "read" ||
+      !event.isError ||
+      event.input.path !== "fixture:read-provider#metadata"
+    )
+      return;
+    return { content: [...event.content, { type: "text", text: "fixture-recovery-context" }] };
+  });
   await connectReadPlugin(pi, {
     protocol: READ_PROTOCOL,
     apiVersion: READ_API_VERSION,
