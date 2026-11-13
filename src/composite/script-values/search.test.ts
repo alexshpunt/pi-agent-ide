@@ -131,6 +131,15 @@ describe("searchValue", () => {
     });
   });
 
+  test("omits notices when any entry is not a string", () => {
+    for (const notices of [["valid", 42], [null], "not an array"]) {
+      const value = searchValue.project(
+        success({ kind: "matches", complete: true, matches: [], notices }),
+      );
+      expect(value).toEqual({ id: `RESULT#${uuid}`, complete: true, matches: [] });
+      expect(Value.Check(searchValue.schema, value)).toBe(true);
+    }
+  });
   test("paths outside the session directory and remote paths stay as they are", () => {
     const value = searchValue.project(
       success({
