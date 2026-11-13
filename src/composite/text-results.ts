@@ -22,6 +22,7 @@ import { limitIdeOutput } from "./output-limits.ts";
 import { nullableValueSchema, scriptValueOf } from "./script-values/index.ts";
 import type { ImageBlock } from "./script-values/read.ts";
 import { batchOperations, CodemodeCallLedger, fileEffects } from "./script-values/failures.ts";
+import { fileReceipts } from "./script-values/file-receipts.ts";
 import { envelopePattern, resultReference } from "./script-values/result-reference.ts";
 
 /** Longest source label in the Codemode failure block. */
@@ -188,6 +189,7 @@ export function createIdeTextResults(
   const nullNested = new Set<string>();
   const parents = new Map<string, string>();
   const searchWarnings = new Map<string, string[]>();
+  const receipts = new Map<string, string[]>();
   const images = new Map<string, ImageBlock[]>();
   /** Forget the calls of the last agent run. */
   const clearCalls = () => {
@@ -196,6 +198,7 @@ export function createIdeTextResults(
     ledger.clear();
     nullNested.clear();
     searchWarnings.clear();
+    receipts.clear();
   };
   const clear = () => {
     parents.clear();
@@ -408,7 +411,16 @@ export function createIdeTextResults(
         const failures = ledger.take(event.toolCallId);
         const warnings = searchWarnings.get(event.toolCallId) ?? [];
         searchWarnings.delete(event.toolCallId);
+        const confirmations = receipts.get(event.toolCallId) ?? [];
+        receipts.delete(event.toolCallId);
         const content = event.content.filter((block) => !metadata.includes(block));
+        const confirmationBlock = confirmations.length
+          ? await limitIdeOutput(
+              [{ type: "text", text: confirmations.join("\n") }],
+              "",
+              saveFullOutput,
+            )
+          : undefined;
         const limited = await limitIdeOutput(
           [
             ...content,
@@ -441,6 +453,14 @@ export function createIdeTextResults(
               ? [{ type: "text" as const, text: `\n\n${limited.notices.join("\n")}` }]
               : []),
             ...metadata,
+            ...(confirmationBlock === undefined
+              ? []
+              : [
+                  {
+                    type: "text" as const,
+                    text: `\n\n${confirmationBlock.text}${confirmationBlock.notices.length ? `\n\n${confirmationBlock.notices.join("\n")}` : ""}`,
+                  },
+                ]),
             ...(block === undefined
               ? []
               : [
@@ -538,6 +558,13 @@ export function createIdeTextResults(
       // Error text carries no envelope: a failed result selects nothing to compose with.
       const reason = readable.replace(envelopePattern, "");
       if (parent !== undefined) {
+        if (!scriptFailed) {
+          const completed = fileReceipts(event.toolName, outcome, event.details, (source) =>
+            displayPath(source, context.cwd),
+          );
+          if (completed.length)
+            receipts.set(parent, [...(receipts.get(parent) ?? []), ...completed]);
+        }
         if (
           event.toolName === "search" &&
           !scriptFailed &&

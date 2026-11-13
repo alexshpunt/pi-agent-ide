@@ -80,6 +80,7 @@ async function runComposition(
     testName: name,
     artifactsDir: testArtifactsDir(import.meta.filename),
     rawMode: ![
+      "whole-file-receipts",
       "insert-missing-source-cause",
       "copy-structured-scope-header",
       "move-structured-scope-header",
@@ -140,6 +141,46 @@ async function runComposition(
   }).run("Compose ordinary tools through source-aware results without rebuilding coordinates");
 }
 
+test("Codemode reports successful whole-file operations without repeating contents", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const payload = "unique-large-content-".repeat(500);
+    await writeFile(path.join(cwd, "source.txt"), payload);
+    const run = await runComposition(cwd, "whole-file-receipts", [
+      `await tools.write({path:"written.txt",content:"written"});
+await tools.copy({path:"source.txt",target:"copied.txt"});
+await tools.move({path:"copied.txt",target:"moved.txt"});
+await tools.copy({path:"missing.txt",target:"failed.txt"});`,
+    ]);
+    const output = getToolResultText(run, "compose-0");
+    expect(output).toContain("written.txt");
+    expect(output).toContain("source.txt");
+    expect(output).toContain("copied.txt");
+    expect(output).toContain("moved.txt");
+    expect(output).not.toContain(payload);
+    expect(codemodeFailures(output)).toContain("missing.txt");
+    expect(await readFile(path.join(cwd, "moved.txt"), "utf8")).toBe(payload);
+  });
+});
+test("whole-file confirmations survive large script output", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const run = await runComposition(cwd, "whole-file-receipt-large-output", [
+      `await tools.write({path:"large-output-receipt.txt",content:"saved"});
+text("x".repeat(100000));`,
+    ]);
+    expect(getToolResultText(run, "compose-0")).toContain("large-output-receipt.txt");
+    expect(await readFile(path.join(cwd, "large-output-receipt.txt"), "utf8")).toBe("saved");
+  });
+});
+
+test("successful unchanged whole-file writes are reported", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "unchanged.txt"), "same");
+    const run = await runComposition(cwd, "whole-file-receipt-unchanged", [
+      `await tools.write({path:"unchanged.txt",content:"same"});`,
+    ]);
+    expect(getToolResultText(run, "compose-0")).toContain("unchanged.txt");
+  });
+});
 test("insert reports the missing-source cause without creating a file", async () => {
   await withTempWorkspace(async (cwd) => {
     const run = await runComposition(cwd, "insert-missing-source-cause", [
