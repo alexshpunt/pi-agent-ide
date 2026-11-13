@@ -569,11 +569,17 @@ export function createIdeTextResults(
           event.toolName === "search" &&
           !scriptFailed &&
           data !== null &&
-          typeof data === "object" &&
-          "editWarning" in data &&
-          typeof data.editWarning === "string"
+          typeof data === "object"
         ) {
-          searchWarnings.set(parent, [...(searchWarnings.get(parent) ?? []), data.editWarning]);
+          const notices =
+            "notices" in data && Array.isArray(data.notices)
+              ? data.notices.filter((notice): notice is string => typeof notice === "string")
+              : [];
+          const warning =
+            "editWarning" in data && typeof data.editWarning === "string" ? [data.editWarning] : [];
+          searchWarnings.set(parent, [
+            ...new Set([...(searchWarnings.get(parent) ?? []), ...notices, ...warning]),
+          ]);
         }
         const generated = event.content.filter((block) => block.type === "image");
         if (generated.length) images.set(parent, [...(images.get(parent) ?? []), ...generated]);

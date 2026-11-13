@@ -572,7 +572,7 @@ add(
 add(
   "token-search-edit-guard",
   ["compose.token-search-edit-guard"],
-  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole returned search result with BAD; it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN, using its :match reference in direct calls or the match or its id in Codemode. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
+  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN, using its :match reference in direct calls or the match or its id in Codemode. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
   [
     { tool: "search", args: { path: "split.txt", query: /^alpha beta$/u } },
     {
@@ -590,6 +590,29 @@ add(
   {
     files: { "split.txt": "alpha\nbeta\n", "literal.txt": "alpha beta\n" },
     expected: { "split.txt": "GREEN\nbeta\n", "literal.txt": "LITERAL\n" },
+  },
+);
+add(
+  "search-script-fallback",
+  ["search.script-fallback"],
+  "Use Codemode to search split.txt for alpha beta. Check that the original matches list is empty and complete, and that the word fallback has two matches. Read the first fallback match by its id and report its text. Do not edit the file.",
+  [
+    {
+      tool: "search",
+      args: { path: "split.txt", query: "alpha beta" },
+      scriptResult: {
+        complete: true,
+        matches: { length: 0 },
+        fallback: { mode: "words", complete: true, matches: { length: 2 } },
+      },
+    },
+    { tool: "read", args: { path: /^RESULT#[a-f\d-]{36}$/u }, reuse: reuse(0) },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "split.txt": "alpha\nbeta\n" },
+    expected: { "split.txt": "alpha\nbeta\n" },
+    answer: "alpha",
   },
 );
 const rows = Array.from({ length: 150 }, (_, index) => `row ${String(index + 1)}`);
