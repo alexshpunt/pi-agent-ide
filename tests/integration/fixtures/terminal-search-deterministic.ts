@@ -5,7 +5,11 @@ import { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/s
 import { resolveShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 import { registerTerminalTools } from "#src/plugins/pi-agent-ide-terminal/src/tools.ts";
 
-/** Give the shell search regression a stable retained-output address. */
+/**
+ * Give the shell search regression a stable retained-output address. It registers only the terminal
+ * resolver, so a test that depends on resolver order must also load the text-search plugin
+ * (`pi-agent-search-text/index.ts`).
+ */
 export default async function registerTerminalSearchFixture(pi: ExtensionAPI): Promise<void> {
   const manager = new TerminalSessionManager(() => "abcdef123456");
   await registerTerminalSearch(pi, manager);
