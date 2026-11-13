@@ -9,6 +9,8 @@ export interface ScriptValueInput {
   readonly outcome: unknown;
   readonly content: AgentToolResult<unknown>["content"];
   readonly details: unknown;
+  /** Directory of the session that made the call; values show paths inside it relative to it. */
+  readonly cwd?: string;
 }
 
 /**

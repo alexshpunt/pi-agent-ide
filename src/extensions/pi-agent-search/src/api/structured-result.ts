@@ -101,7 +101,10 @@ export const searchDataSchema = Type.Union([
 ]);
 export const searchOutputSchema = structuredResultSchema(searchDataSchema);
 
-/** Project a registered selection in its original order. Columns are zero-based UTF-16 offsets. */
+/**
+ * Project a registered selection in its original order, with every match and its whole text: this
+ * data serves scripts, which need all of it. Columns are zero-based UTF-16 offsets.
+ */
 export function selectionData(
   matches: readonly {
     source: string;
@@ -118,9 +121,8 @@ export function selectionData(
   return {
     kind: "matches" as const,
     ...(targets?.target === undefined ? {} : { target: targets.target }),
-    truncated: matches.length > 100,
     complete,
-    matches: matches.slice(0, 100).map((match, index) => ({
+    matches: matches.map((match, index) => ({
       source: match.source,
       ...(targets?.matchTargets?.[index] === undefined
         ? {}
@@ -131,9 +133,7 @@ export function selectionData(
         endLine: match.endLineNumber ?? match.lineNumber,
         endColumn: match.endColumn,
       },
-      ...(Buffer.byteLength(match.matchedText) <= 4096
-        ? { matchedText: match.matchedText }
-        : { textTruncated: true }),
+      matchedText: match.matchedText,
       ...(sessionId === undefined
         ? {}
         : {
