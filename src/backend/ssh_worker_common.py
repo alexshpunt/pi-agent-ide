@@ -65,21 +65,31 @@ def run(platform):
         streaming = True
 
     try:
-        request = json.loads(sys.stdin.buffer.read(MAX_BYTES * 2))
-        if request.get("operation") == "stream":
-            data = stream(platform, request, output, started)
-        else:
-            data = platform.perform(request)
-        reply = {"ok": True, "data": data}
-    except OperationError as error:
-        reply = {"ok": False, "code": error.code, "effect": platform.effect}
-    except OSError as error:
-        # A platform can name failures that errno cannot, such as a file open elsewhere.
-        classify = getattr(platform, "error_code", None)
-        code = (classify and classify(error)) or errno.errorcode.get(error.errno, "REMOTE_OPERATION_FAILED")
-        reply = {"ok": False, "code": code, "effect": platform.effect}
-    except Exception:
-        reply = {"ok": False, "code": "REMOTE_OPERATION_FAILED", "effect": platform.effect}
+        try:
+            request = json.loads(sys.stdin.buffer.read(MAX_BYTES * 2))
+            if request.get("operation") == "stream":
+                data = stream(platform, request, output, started)
+            else:
+                data = platform.perform(request)
+            reply = {"ok": True, "data": data}
+        except OperationError as error:
+            reply = {"ok": False, "code": error.code, "effect": platform.effect}
+        except OSError as error:
+            # A platform can name failures that errno cannot, such as a file open elsewhere.
+            classify = getattr(platform, "error_code", None)
+            code = (classify and classify(error)) or errno.errorcode.get(error.errno, "REMOTE_OPERATION_FAILED")
+            reply = {"ok": False, "code": code, "effect": platform.effect}
+        except Exception:
+            reply = {"ok": False, "code": "REMOTE_OPERATION_FAILED", "effect": platform.effect}
+    finally:
+        # A stop can land in a finally block and skip its cleanup; the platform then removes what
+        # that block left. The stop's interruption can land here too, as cleanup begins.
+        try:
+            getattr(platform, "ignore_stops", lambda: None)()
+        except OperationError:
+            pass
+        finally:
+            getattr(platform, "release_owned", lambda: None)()
     if streaming:
         output.write(struct.pack(">I", 0))
     output.write(json.dumps(reply, ensure_ascii=True).encode("ascii") + b"\n")

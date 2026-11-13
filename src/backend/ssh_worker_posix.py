@@ -80,7 +80,14 @@ def check_version(path, request):
         raise OperationError("CONFLICT")
 
 
+STOP_SIGNALS = (signal.SIGHUP, signal.SIGTERM, signal.SIGINT)
+# Temporary files and directories this request created and has not yet removed or handed over.
+owned = {}
+
+
 def interrupted(signum, _frame):
+    # Only the first stop interrupts, so a later one cannot cut the cleanup it starts short.
+    ignore_stops()
     if active_process is not None:
         try:
             os.killpg(active_process.pid, signal.SIGTERM)
@@ -89,8 +96,52 @@ def interrupted(signum, _frame):
     raise OperationError("CANCELLED")
 
 
-for handled_signal in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT):
+for handled_signal in STOP_SIGNALS:
     signal.signal(handled_signal, interrupted)
+
+
+@contextmanager
+def held_stops():
+    """Defer stop signals, so creating or removing a temporary and recording it happen together."""
+    try:
+        signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+
+
+def own(path, kind):
+    owned[path] = kind
+    return path
+
+
+def release(path):
+    """Remove an owned temporary file or flat directory and stop owning it."""
+    with held_stops():
+        if owned.get(path) == "directory":
+            for name in os.listdir(path):
+                os.unlink(os.path.join(path, name))
+            os.rmdir(path)
+        else:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+        owned.pop(path, None)
+
+
+def ignore_stops():
+    for ignored in STOP_SIGNALS:
+        signal.signal(ignored, signal.SIG_IGN)
+
+
+def release_owned():
+    """Remove what a stop kept a finally block from removing; the request is over by now."""
+    for path in list(owned):
+        try:
+            release(path)
+        except OSError:
+            pass
 
 
 @contextmanager
@@ -236,7 +287,8 @@ def perform(request):
     if operation == "journal":
         source_info = regular(path, follow=False)
         source_revision = fingerprint(path, b"", source_info)
-        directory = tempfile.mkdtemp(prefix=".pi-ide-journal-")
+        with held_stops():
+            directory = own(tempfile.mkdtemp(prefix=".pi-ide-journal-"), "directory")
         backup = os.path.join(directory, "snapshot")
         complete = False
         try:
@@ -267,12 +319,11 @@ def perform(request):
         finally:
             # Only the private backup was changed; the original is always untouched.
             effect = "not-applied"
-            if not complete:
-                try:
-                    os.unlink(backup)
-                except FileNotFoundError:
-                    pass
-                os.rmdir(directory)
+            if complete:
+                # The reply hands the directory over to the host.
+                owned.pop(directory, None)
+            else:
+                release(directory)
     if operation == "journal-release":
         directory = os.path.abspath(path)
         if (os.path.dirname(directory) != tempfile.gettempdir() or
@@ -447,7 +498,9 @@ def perform(request):
                     mode = 0o666 & ~current_umask()
                     owner = None
                     attributes = {}
-                fd, temporary = tempfile.mkstemp(prefix=".pi-ide-", dir=parent)
+                with held_stops():
+                    fd, temporary = tempfile.mkstemp(prefix=".pi-ide-", dir=parent)
+                    own(temporary, "file")
                 with os.fdopen(fd, "wb") as target:
                     target.write(data)
                     target.flush()
@@ -461,7 +514,9 @@ def perform(request):
                     os.fsync(target.fileno())
                 check_version(path, request)
                 effect = "unknown"
-                os.replace(temporary, destination)
+                with held_stops():
+                    os.replace(temporary, destination)
+                    owned.pop(temporary)
                 temporary = None
                 effect = "applied"
                 return fingerprint(path, data, os.stat(destination))
@@ -469,7 +524,7 @@ def perform(request):
                 if existing_fd is not None:
                     os.close(existing_fd)
                 if temporary is not None:
-                    os.unlink(temporary)
+                    release(temporary)
     if operation in ("copy", "restore", "move"):
         # Refuse known conflicts before creating any missing parent directory.
         source_info = regular(path, follow=False)
@@ -494,7 +549,9 @@ def perform(request):
                 if fingerprint(path, b"", opened_info) != request["sourceRevision"]:
                     raise OperationError("CONFLICT")
                 attributes = {name: os.getxattr(source_fd, name) for name in os.listxattr(source_fd)}
-                target_fd, temporary = tempfile.mkstemp(prefix=".pi-ide-", dir=os.path.dirname(destination))
+                with held_stops():
+                    target_fd, temporary = tempfile.mkstemp(prefix=".pi-ide-", dir=os.path.dirname(destination))
+                    own(temporary, "file")
                 with os.fdopen(target_fd, "wb") as target:
                     while True:
                         chunk = os.read(source_fd, 1024 * 1024)
@@ -541,14 +598,16 @@ def perform(request):
                         os.close(linked_fd)
                 check_copy_destination(destination, opened_info, request["targetRevision"])
                 effect = "unknown"
-                os.replace(temporary, destination)
+                with held_stops():
+                    os.replace(temporary, destination)
+                    owned.pop(temporary)
                 temporary = None
                 effect = "applied"
                 return None
             finally:
                 os.close(source_fd)
                 if temporary is not None:
-                    os.unlink(temporary)
+                    release(temporary)
     if operation == "move":
         destination = request["destination"]
         parents = sorted({os.path.realpath(os.path.dirname(name)) for name in (path, destination)})
@@ -629,7 +688,9 @@ def write_git_index(request):
     index = git_command(cwd, ["rev-parse", "--git-path", "index"]).decode("utf8").strip()
     index = os.path.abspath(os.path.join(cwd, index))
     lock = index + ".lock"
-    fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with held_stops():
+        fd = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        own(lock, "file")
     directory = None
     try:
         if git_command(cwd, ["rev-parse", "HEAD"]).decode("ascii").strip() != request["expectedHead"]:
@@ -653,7 +714,8 @@ def write_git_index(request):
         check_git_worktree(cwd, repo_path, request)
         original_revision = git_index_revision(index)
         original_mode = stat.S_IMODE(os.stat(index).st_mode) if original_revision is not None else 0o666 & ~current_umask()
-        directory = tempfile.mkdtemp(prefix=".pi-ide-git-", dir=os.path.dirname(index))
+        with held_stops():
+            directory = own(tempfile.mkdtemp(prefix=".pi-ide-git-", dir=os.path.dirname(index)), "directory")
         staged_index = os.path.join(directory, "index")
         if original_revision is not None:
             with open(index, "rb") as original, open(staged_index, "wb") as staged:
@@ -685,11 +747,9 @@ def write_git_index(request):
         return None
     finally:
         os.close(fd)
-        os.unlink(lock)
+        release(lock)
         if directory is not None:
-            for name in os.listdir(directory):
-                os.unlink(os.path.join(directory, name))
-            os.rmdir(directory)
+            release(directory)
 
 
 def check_git_worktree(cwd, repo_path, request):
