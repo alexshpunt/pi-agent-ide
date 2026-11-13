@@ -194,6 +194,43 @@ test("exact text resolves inside the result even when it also occurs elsewhere",
   expect(await f.content("task.txt")).toBe("value = 1\nother = 2\nvalue = 3\n");
 });
 
+test.each([
+  { content: "keep\nOLD\nlast\n", query: "last" },
+  { content: "last\nOLD\nlast\n", query: "last" },
+  { content: "keep\nOLD\nlast\n", query: "OLD\nlast" },
+  { content: "\uFEFFkeep\r\nOLD\r\nlast\r\n", query: "\uFEFFlast\n" },
+])(
+  "a scope-only exact miss does not mark the file for blocking: $query",
+  async ({ content, query }) => {
+    const f = await fixture({ "task.txt": content });
+    const read = await f.lines("task.txt", 2, 2);
+    const { result } = await f.run(replaceMutationTool, {
+      path: read,
+      start: query,
+      text: "BAD",
+    });
+    expect(result.details.effect).toBe("not-applied");
+    expect(result.details.metadata?.exactTextFailures ?? []).toEqual([]);
+    expect(await f.content("task.txt")).toBe(content);
+  },
+);
+
+test.each(["absent", "\uFEFF"])(
+  "an exact selector absent from the file still marks it for blocking: %s",
+  async (query) => {
+    const content = "keep\nOLD\nlast\n";
+    const f = await fixture({ "task.txt": content });
+    const read = await f.lines("task.txt", 2, 2);
+    const { result } = await f.run(replaceMutationTool, {
+      path: read,
+      start: query,
+      text: "BAD",
+    });
+    expect(result.details.effect).toBe("not-applied");
+    expect(result.details.metadata?.exactTextFailures).toEqual([path.join(cwd, "task.txt")]);
+    expect(await f.content("task.txt")).toBe(content);
+  },
+);
 test("an anchor outside the result fails, names its range and changes nothing", async () => {
   const content = "keep\nOLD\nlast\n";
   const f = await fixture({ "task.txt": content });
