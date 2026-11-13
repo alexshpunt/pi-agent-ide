@@ -46,9 +46,7 @@ pnpm validate:tools:models --run --model luna-6-low \
 
 `--model` and `--case` accept comma-separated IDs. Use `--results NEW_DIRECTORY` when a specific destination was agreed; the directory must not already exist. Otherwise retain the newly printed directory under `.tmp/capability-results/`. Use `--pi /absolute/path/to/pi` only when an explicit installed runtime is needed.
 
-Run parallel attempts within one invocation and one ZinPC worker job slot, not as separate invocations. Web fixtures share a fixed local port across invocations, so do not overlap invocations on the same host. Let the runner freeze the source, create fresh case clones, stop owned processes, and clean case state. Do not load personal extensions or weaken isolation to rescue a failed case. Do not use host windows for vision checks or run `git reset`/`git clean` on the checkout.
-
-Use `--concurrency N` only within the approved attempt and cost scope; the default is 1. A stop cancels active attempts, but requests already started may incur cost. Web fixtures serialize within the invocation; TUI and mutable dedicated authentication require concurrency 1.
+Run one invocation at a time. Web/display fixtures use fixed local endpoints. Let the runner freeze the source, create fresh case clones, stop owned processes, and clean case state. Do not load personal extensions or weaken isolation to rescue a failed case. Do not use host windows for vision checks or run `git reset`/`git clean` on the checkout.
 
 Use a background terminal for a long run and inspect its progress. If cancelled, stop the owned invocation and inspect the partial report. A nonzero exit is not a reason to retry automatically.
 
