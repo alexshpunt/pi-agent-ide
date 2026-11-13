@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { JsonValue } from "@earendil-works/pi-ai";
 import path from "node:path";
 import type {
   MessageEndEvent,
@@ -501,10 +502,34 @@ export function createIdeTextResults(
       };
       const scriptValue = scriptValueOf(event.toolName);
       // An error that scripts receive as a value, such as a non-zero exit code, is not a failure.
-      const scriptFailed = failed && scriptValue.succeeded?.(valueInput) !== true;
-      const projected = scriptFailed
-        ? scriptValue.failed?.(valueInput)
-        : scriptValue.project(valueInput);
+      let scriptFailed: boolean;
+      let projected: JsonValue | undefined;
+      let failureReason: string | undefined;
+      try {
+        scriptFailed = failed && scriptValue.succeeded?.(valueInput) !== true;
+        projected = scriptFailed
+          ? scriptValue.failed?.(valueInput)
+          : scriptValue.project(valueInput);
+        if (scriptFailed && parent !== undefined)
+          failureReason = scriptValue.failureReason?.(valueInput);
+      } catch (error) {
+        const label = labels.get(event.toolCallId);
+        labels.delete(event.toolCallId);
+        // Pi leaves direct calls unchanged when a result hook throws.
+        if (parent === undefined) return undefined;
+        const reason = error instanceof Error ? error.message : String(error);
+        ledger.record(
+          parent,
+          {
+            id: event.toolCallId,
+            tool: event.toolName,
+            ...(label === undefined ? {} : { source: label }),
+          },
+          { reason, ...fileEffects(outcome, (source) => displayPath(source, context.cwd)) },
+        );
+        nullNested.add(event.toolCallId);
+        return { content: [{ type: "text" as const, text: reason }] };
+      }
       // A value that is the readable text stays off the record: Pi gives scripts the text then,
       // and direct results keep their shape.
       const value = projected === shown ? undefined : projected;
@@ -534,7 +559,7 @@ export function createIdeTextResults(
           },
           scriptFailed
             ? {
-                reason: scriptValue.failureReason?.(valueInput) ?? reason,
+                reason: failureReason ?? reason,
                 ...fileEffects(outcome, (source) => displayPath(source, context.cwd)),
               }
             : undefined,
