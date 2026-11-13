@@ -242,7 +242,7 @@ async function formatTypeScriptBlocks(source: string): Promise<string> {
     const result = await format("agent-interface.ts", match[1] ?? "", { printWidth: 90 });
     if (result.errors.length > 0)
       throw new Error(`Cannot format tool declaration: ${result.errors[0]?.message}`);
-    formatted = formatted.replace(match[0], fence("ts", result.code.trimEnd()));
+    formatted = formatted.replace(match[0], () => fence("ts", result.code.trimEnd()));
   }
   return formatted;
 }
