@@ -120,7 +120,7 @@ test.each(["on", "only"])(
         }),
         call("apply", "apply", { source: "removed" }),
         call("script", "codemode", {
-          code: 'text(await tools.read({path: "example.txt"})); text(await searchTools("stage", {namespace: "ide_git"})); text(await describeNamespace("ide_edit"));',
+          code: 'text((await tools.read({path: "example.txt"})).text); text(await searchTools("stage", {namespace: "ide_git"})); text(await describeNamespace("ide_edit"));',
         }),
         call("discover", "tool_search", { query: "ide_debug debug", limit: 1 }),
         mode === "on"
@@ -180,7 +180,7 @@ test("deferred Git tools execute through native Codemode after namespace discove
     [
       call("discover", "tool_search", { query: "ide_git stage unstage", limit: 2 }),
       call("git", "codemode", {
-        code: 'const first = await tools.read({path: "example.txt", views: ["changes"]}); const change = first.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.stage({file: "example.txt", change})); const staged = await tools.read({path: "example.txt", views: ["changes"]}); const next = staged.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.unstage({file: "example.txt", change: next}));',
+        code: 'const first = await tools.read({path: "example.txt", views: ["changes"]}); const change = first.text.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.stage({file: "example.txt", change})); const staged = await tools.read({path: "example.txt", views: ["changes"]}); const next = staged.text.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.unstage({file: "example.txt", change: next}));',
       }),
     ],
     { defaultTools: ["+codemode"] },

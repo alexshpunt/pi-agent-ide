@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -47,4 +47,16 @@ test("a write refuses to replace a file another process changed after the read",
   // A second write from the same read continues from what this process wrote.
   await theirs.write([{ type: "text", text: "their second edit\n" }], {});
   expect(await readFile(filePath, "utf8")).toBe("their second edit\n");
+});
+
+test("a directory read lists its entries; directory names end with a slash", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "pi-agent-filesystem-"));
+  directories.push(directory);
+  await mkdir(path.join(directory, "sub"));
+  await writeFile(path.join(directory, "file.txt"), "");
+  const attempt = await resolver.tryResolve(directory, { cwd: directory });
+  if (attempt.kind !== "resolved") throw new Error("not resolved");
+  expect(attempt.resource.entries).toBeUndefined();
+  await attempt.resource.read?.({});
+  expect([...(attempt.resource.entries ?? [])].sort()).toEqual(["file.txt", "sub/"]);
 });

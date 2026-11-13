@@ -639,6 +639,8 @@ export class ResultTargetStore {
     if (typeof value.target === "string" && value.target.startsWith(prefix)) return [value.target];
     if (value.kind === "resources" && Array.isArray(value.resources))
       return this.#references(value.resources);
+    // A Read of several paths: the outcome of each path, in order.
+    if (value.kind === "list" && Array.isArray(value.items)) return this.#references(value.items);
     throw new Error(
       "This result has no supported source target; do not use preview text as a source.",
     );

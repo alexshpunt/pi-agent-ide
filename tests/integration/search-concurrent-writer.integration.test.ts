@@ -180,8 +180,8 @@ try {
     check(all !== undefined, "Round " + round + ": the search shows no all reference: " + result);
     // Each selected line is a line of the identifier; the peer only moves them down.
     const read = await tools.read({path:all});
-    check(typeof read === "string", "Round " + round + ": the Read of " + all + " failed: " + JSON.stringify(read));
-    const shown = body(read);
+    check(typeof read?.text === "string", "Round " + round + ": the Read of " + all + " failed: " + JSON.stringify(read));
+    const shown = read.text;
     check((shown.match(/alphaTokenValue/gu) ?? []).length === ${String(source.tokenOccurrences)} && !shown.includes("total += compute("),
       "Round " + round + ": the Read of " + all + " shows other lines: " + shown);
     rounds += 1;

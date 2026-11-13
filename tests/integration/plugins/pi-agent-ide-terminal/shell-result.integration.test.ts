@@ -30,7 +30,7 @@ test.runIf(process.platform !== "win32")(
       const waiting = await tools.bash({command: "read -r line", timeoutSeconds: 0.1});
       // Only a command that cannot start resolves to null.
       const unstarted = await tools.bash({command: "true", cwd: "ssh://no-such-target/tmp"});
-      const observed = await tools.read({path: waiting.session});
+      const observed = (await tools.read({path: waiting.session})).text;
       const omitted = /\\n\\n\\[\\.\\.\\. (\\d+) bytes omitted \\.\\.\\.\\]\\n\\n/u.exec(large.output)?.[1];
       text("SHELL_RESULTS=" + JSON.stringify({
         empty, failed, waiting, unstarted, observed,
@@ -169,10 +169,10 @@ test.runIf(process.platform !== "win32")(
           if ((await tools.write({path: source, content: "hello"})) !== null) throw Error("Input selected text");
           if ((await tools.insert({path: source, text: "Enter"})) !== null) throw Error("Keys selected text");
           const observed = await tools.read({path: source});
-          if (!observed.includes("resource:hello")) throw Error("Input did not reach the live session");
+          if (!observed.text.includes("resource:hello")) throw Error("Input did not reach the live session");
           const refused = (await tools.replace({path: observed, start: "hello", text: "not a file"})) === null;
           if (!refused) throw Error("Terminal input granted file edit authority");
-          text(observed);
+          text(observed.text);
         } finally {
           await tools.delete({path: source});
         }

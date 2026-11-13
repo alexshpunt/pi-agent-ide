@@ -37,6 +37,9 @@ const text = Type.Object(
     ...common,
     kind: Type.Literal("text"),
     target: Type.Optional(Type.String()),
+    // Complete data of a Read that another tool issued: the requested text without notices.
+    text: Type.Optional(Type.String()),
+    entries: Type.Optional(Type.Array(Type.String())),
     lines: Type.Array(line),
     startLine: Type.Integer(),
     endLine: Type.Integer(),
@@ -67,7 +70,7 @@ const native = Type.Object(
   { ...common, kind: Type.Literal("native"), blocks: Type.Array(block) },
   { additionalProperties: false },
 );
-export const readDataSchema = Type.Union([
+const sourceData = Type.Union([
   Type.Object(
     {
       kind: Type.Literal("recovery"),
@@ -90,6 +93,14 @@ export const readDataSchema = Type.Union([
     { additionalProperties: false },
   ),
 ]);
+export const readDataSchema = Type.Union([
+  ...sourceData.anyOf,
+  // A Read of several paths: one outcome per path, in request order.
+  Type.Object(
+    { kind: Type.Literal("list"), items: Type.Array(structuredResultSchema(sourceData)) },
+    { additionalProperties: false },
+  ),
+]);
 export const readOutputSchema = structuredResultSchema(readDataSchema);
 
 function publicLine(value: TextLine) {
@@ -100,10 +111,13 @@ function publicLine(value: TextLine) {
     ...(value.anchors === undefined ? {} : { anchors: [...value.anchors] }),
   };
 }
-/** Bound selected data, not source snapshots or human-facing presentation. */
-function publicData(value: ReadScriptData): unknown {
+/**
+ * Bound selected data, not source snapshots or human-facing presentation. `complete` data, for a
+ * Read that another tool issued, keeps every selected line and byte and adds the requested text.
+ */
+function publicData(value: ReadScriptData, complete: boolean): unknown {
   if (value.kind === "resources") {
-    const resources = value.resources.map((resource) => publicData(resource));
+    const resources = value.resources.map((resource) => publicData(resource, complete));
     return {
       kind: value.kind,
       ...(value.source === undefined ? {} : { source: value.source }),
@@ -118,7 +132,7 @@ function publicData(value: ReadScriptData): unknown {
     };
   }
   if (value.kind === "bytes") {
-    const bytes = value.bytes.slice(0, 32768);
+    const bytes = complete ? [...value.bytes] : value.bytes.slice(0, 32768);
     const truncated = value.truncated === true || bytes.length < value.bytes.length;
     return {
       kind: value.kind,
@@ -149,8 +163,10 @@ function publicData(value: ReadScriptData): unknown {
   let size = 0;
   for (const line of value.lines) {
     const projected = publicLine(line);
-    size += Buffer.byteLength(JSON.stringify(projected));
-    if (lines.length >= 2000 || size > 512 * 1024) break;
+    if (!complete) {
+      size += Buffer.byteLength(JSON.stringify(projected));
+      if (lines.length >= 2000 || size > 512 * 1024) break;
+    }
     lines.push(projected);
   }
   if (lines.length === 0 && value.lines.length > 0)
@@ -164,6 +180,8 @@ function publicData(value: ReadScriptData): unknown {
     kind: value.kind,
     source: value.source,
     ...(value.target === undefined ? {} : { target: value.target }),
+    ...(complete && { text: value.presented ?? value.content }),
+    ...(complete && value.entries !== undefined && { entries: [...value.entries] }),
     lines,
     startLine: lines[0]?.lineNumber ?? 0,
     endLine: lines.at(-1)?.lineNumber ?? 0,
@@ -177,8 +195,15 @@ function publicData(value: ReadScriptData): unknown {
   };
 }
 
-/** Require resolver-owned script data. Never reconstruct it from rendered content or renderer details. */
-export function structuredRead(result: ReadToolResult): ReadToolResult {
+/**
+ * Require resolver-owned script data. Never reconstruct it from rendered content or renderer details.
+ * `complete` keeps all of it, for a Read that another tool issued, such as a Codemode script.
+ */
+export function structuredRead(
+  result: ReadToolResult,
+  options: { readonly complete?: boolean } = {},
+): ReadToolResult {
+  const complete = options.complete === true;
   const failure = result.details.failure;
   const safe = failure?.cause instanceof ResourceError ? failure.cause : undefined;
   const metadata = safe === undefined ? undefined : resourceErrorMetadataOf(safe);
@@ -209,15 +234,21 @@ export function structuredRead(result: ReadToolResult): ReadToolResult {
   try {
     if (result.script === undefined)
       throw new TypeError("Read handler must return structured script data");
-    const data = publicData(result.script);
-    return withStructuredResult(result, readDataSchema, {
-      status: "success",
-      data:
-        result.details.temporarySource !== undefined && typeof data === "object" && data !== null
-          ? { ...data, fullResult: result.details.temporarySource }
-          : data,
-      errors: [],
-    });
+    const data = publicData(result.script, complete);
+    return withStructuredResult(
+      result,
+      readDataSchema,
+      {
+        status: "success",
+        data:
+          result.details.temporarySource !== undefined && typeof data === "object" && data !== null
+            ? { ...data, fullResult: result.details.temporarySource }
+            : data,
+        errors: [],
+      },
+      // The value of a script's Read is as large as the text it asked for.
+      complete ? { maxBytes: Infinity } : {},
+    );
   } catch (error) {
     return withStructuredResult(result, readDataSchema, {
       status: "error",

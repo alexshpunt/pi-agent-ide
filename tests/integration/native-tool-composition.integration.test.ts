@@ -768,7 +768,7 @@ await rejects(()=>tools.copy({path:"source.txt",start:"alpha",target:"target.txt
 const source=await tools.search({path:"source.txt",query:"alpha"}).then(value => value.result);
 const copied=await tools.copy({path:source,target:"target.txt",targetStart:"head"});
 check(matches(await tools.search({path:copied,query:"alpha"}).then(value => value.result)).length===1,"Recovered Copy lost destination scope");
-check((await tools.read({path:"source.txt"})).endsWith("alpha\\nbeta\\n"),"Copy edited its recovery source");
+check((await tools.read({path:"source.txt"})).text==="alpha\\nbeta\\n","Copy edited its recovery source");
 await rejects(()=>tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}));
 await tools.replace({path:source,text:"ALPHA"});
 await tools.read({path:"source.txt"});
@@ -882,7 +882,7 @@ test("CHANGE undo exposes the whole restored file while keeping the Git route", 
     await writeFile(path.join(cwd, "restore.txt"), baseline.replace("old", "new"));
     const run = await runComposition(cwd, "change-undo-whole-restored-result", [
       `const current = await tools.read({path:"restore.txt",views:["changes"]});
-const change = current.match(/CHANGE#[A-F0-9]+/)?.[0];
+const change = current.text.match(/CHANGE#[A-F0-9]+/)?.[0];
 if (!change) throw Error("Missing Git change reference");
 const restored = await tools.undo({file:current,change});
 if (typeof restored !== "string" || !restored) throw Error(JSON.stringify(restored));
@@ -949,7 +949,7 @@ test("Write finishes formatting before composition and selects the final whole f
       [
         `const changed = await tools.write({path:"format.txt",content:"format_me\\r\\n"});
 const saved = await tools.read({path:changed});
-check(body(saved)==="FORMATTED\\r\\n","Write did not select the final formatted file");
+check(saved.text==="FORMATTED\\r\\n","Write did not select the final formatted file");
 const found = await tools.search({path:changed,query:"FORMATTED"}).then(value => value.result);
 check(matches(found).length===1,"Search could not consume the final Write target");
 check(matches(await tools.search({path:changed,query:"format_me"}).then(value => value.result)).length===0,"Write selected pre-format text"); text(found);`,
@@ -1024,9 +1024,9 @@ await tools.write({path:"peer.txt",content:"peer"});
 const whole = await tools.read({path:"whole.txt"});
 const peer = await tools.read({path:"peer.txt"});
 check(await tools.write({path:[whole,peer],content:"WRONG"})===null,"Write accepted multiple files");
-check(body(await tools.read({path:"peer.txt"}))==="peer","Rejected Write changed its peer file");
+check((await tools.read({path:"peer.txt"})).text==="peer","Rejected Write changed its peer file");
 const current = await tools.read({path:"whole.txt"});
-if (body(current)!==["keep","old","neighbor"].join(String.fromCharCode(13,10))) throw Error("Refused write changed source bytes");
+if (current.text!==["keep","old","neighbor"].join(String.fromCharCode(13,10))) throw Error("Refused write changed source bytes");
 const written = await tools.write({path:current,content:"fresh whole\\r\\n"});
 if (typeof written !== "string" || !written) throw Error("Whole-file input did not compose");
 const found = await tools.search({path:written,query:"fresh"}).then(value => value.result);
@@ -1204,7 +1204,7 @@ const found = await tools.search({path:window,query:"old"}).then(value => value.
 const removed = await tools.delete({path:found});
 check(removed===null,"Delete must leave no text to select: "+removed);
 const receipt = await tools.read({path:"removed.txt"});
-if (!receipt.includes("😀 "+String.fromCharCode(13,10))) throw Error("Delete widened its selected range");`,
+if (!receipt.text.includes("😀 "+String.fromCharCode(13,10))) throw Error("Delete widened its selected range");`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
@@ -1294,7 +1294,7 @@ test("whole-file structured delete removes text, while a string path removes the
       `const source = await tools.read({path:"whole.txt"});
 const textRemoval=await tools.delete({path:source});
 const empty=await tools.read({path:"whole.txt"});
-check(body(empty)==="[Empty source.]","Read did not explain the source emptied by text delete");
+check(empty.text==="","Read did not return the source emptied by text delete");
 check(textRemoval===null,"Text Delete selected the removed text");
 check(await tools.delete({path:"whole.txt"})===null,"File Delete selected text");`,
     ]);
@@ -1312,7 +1312,7 @@ test("searches only a Read window and replaces a JS-selected match", async () =>
     await writeFile(path.join(cwd, "scope.txt"), before);
     const run = await runComposition(cwd, "read-search-replace-window", [
       `const read = await tools.read({path:"scope.txt",offset:2,limit:2});
-if (typeof read !== "string") throw Error(JSON.stringify(read));
+if (read?.text !== "😀 old first\\r\\nold second\\r\\n") throw Error(JSON.stringify(read));
 const found = await tools.search({path:read,query:"old"}).then(value => value.result);
 if (typeof found !== "string") throw Error(JSON.stringify(found));
 if (matches(found).length !== 2) throw Error("Search escaped the read window");
@@ -1357,7 +1357,7 @@ test("retains complete targets beyond the Search preview", async () => {
     await writeFile(path.join(cwd, "large.txt"), before);
     const run = await runComposition(cwd, "composition-preview-is-not-scope", [
       `const read = await tools.read({path:"large.txt"});
-check(!read.includes("offset=2001") && read.split("\\n").filter(line => line==="old").length===2101,"Expected the whole text from a script Read");
+check(!read.text.includes("offset=2001") && read.text.split("\\n").filter(line => line==="old").length===2101,"Expected the whole text from a script Read");
 const found=await tools.search({path:read,query:"old",limit:1}).then(value => value.result);
 check(found.includes("2101 matches") && found.includes("(compacted)") && matches(found).length===1,"Expected compacted Search presentation with one example reference");
 store("completeSelection",found); text(found);`,
@@ -1379,7 +1379,7 @@ text(await tools.write({path:"stale.txt",content:"old updated old\\n"}));`,
       `const found = load("oldSelection");
 check(await tools.replace({path:found,text:"WRONG"})===null,"Stale result was not safely rejected");
 const current = await tools.read({path:"stale.txt"});
-if (!current.includes("old updated old")) throw Error("Stale edit wrote source bytes");
+if (current.text!=="old updated old\\n") throw Error("Stale edit wrote source bytes");
 text(await tools.replace({path:found.match(/SEARCH#[A-F0-9]+:all:match/)[0],text:"NEW"}));`,
     ]);
     for (const id of ["compose-0", "compose-1"])

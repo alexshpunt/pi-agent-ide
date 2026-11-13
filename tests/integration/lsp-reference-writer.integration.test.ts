@@ -98,7 +98,7 @@ try {
   await tools.bash({ command: "touch stop" });
 }
 for (let attempt = 1; attempt <= 20; attempt += 1) {
-  if (!String(await tools.read({ path: "shell:peer-writer" })).includes("status: running")) break;
+  if (!(await tools.read({ path: "shell:peer-writer" }))?.text.includes("status: running")) break;
   await tools.bash({ command: "sleep 0.3" });
 }
 const writes = await peerWrites();

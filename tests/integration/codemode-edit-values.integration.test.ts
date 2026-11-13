@@ -27,9 +27,9 @@ const chained = id(await tools.replace({path:replaced,text:"OMEGA"}), "Chained R
 id(await tools.replace({path:chained,text:"OMEGA"}), "Already-done Replace");
 check(await tools.delete({path:"a.txt",start:"beta "})===null, "Delete selected text");
 const written = id(await tools.write({path:"b.txt",content:"one\\ntwo\\n"}), "Write");
-check(body(await tools.read({path:written}))==="one\\ntwo\\n", "Write id lost the whole file");
+check((await tools.read({path:written})).text==="one\\ntwo\\n", "Write id lost the whole file");
 const copied = id(await tools.copy({path:"b.txt",target:"c.txt"}), "Whole-file Copy");
-check(body(await tools.read({path:copied}))==="one\\ntwo\\n", "Copy id lost the destination");
+check((await tools.read({path:copied})).text==="one\\ntwo\\n", "Copy id lost the destination");
 id(await tools.move({path:"c.txt",target:"d.txt"}), "Whole-file Move");
 const moved = id(await tools.move({path:"b.txt",start:"two\\n",target:"d.txt",targetStart:"begin"}), "Text Move");
 check((await tools.search({path:moved,query:"two"})).hasMatches===true, "Move id lost the moved text");

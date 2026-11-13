@@ -175,7 +175,7 @@ await shell({ command: ${JSON.stringify(commands.pause)}, cwd: ${JSON.stringify(
 await tools.write({ path: session, content: "verifier" });
 await tools.insert({ path: session, text: "Enter" });
 await shell({ command: ${JSON.stringify(commands.pause)}, cwd: ${JSON.stringify(root)} });
-text(String(await tools.read({ path: session })));
+text((await tools.read({ path: session })).text);
 `,
           }),
           call("git", "codemode", {
@@ -187,7 +187,7 @@ await tools.write({ path: root + "/repo/a.txt", content: "one\\ntwo\\nthree\\n" 
 await shell({ command: "git -C repo add -A; git -C repo commit -qm init", cwd: root });
 const committed = await tools.read({ path: root + "/repo/a.txt" });
 await tools.write({ path: committed, content: "one\\nTWO\\nthree\\n" });
-const anchor = (value) => String(value).match(/CHANGE#[0-9A-F]{4,64}/)?.[0];
+const anchor = (value) => value.text.match(/CHANGE#[0-9A-F]{4,64}/)?.[0];
 const change = anchor(await tools.read({ path: root + "/repo/a.txt", views: ["changes"] }));
 await tools.stage({ file: root + "/repo/a.txt", change });
 text("STAGED:" + JSON.stringify((await shell({ command: "git -C repo diff --cached --name-only", cwd: root })).output));

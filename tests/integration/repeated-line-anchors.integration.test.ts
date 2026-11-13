@@ -34,14 +34,14 @@ test("Anchors of repeated lines survive another session moving the block above",
       `
 const file=${JSON.stringify(source)};
 await tools.write({path:file,content:"#include <vector>\\n\\n${block("one")}\\n${block("two")}\\n// end\\n"});
-const anchored=String(await tools.read({path:file,views:["anchors"]}));
+const anchored=(await tools.read({path:file,views:["anchors"]})).text;
 const rows=anchored.split("\\n").filter((row)=>/^[0-9A-HJKMNP-TV-Z]{7}\\|/.test(row)).map((row)=>{const at=row.indexOf("|"); return {anchor:row.slice(0,at), text:row.slice(at+1)};});
 const nth=(line,index)=>rows.filter((row)=>row.text===line)[index].anchor;
 const secondTemplate=nth("template <typename T>",1);
 const secondClose=nth("}",1);
 const blankAfterFirst=nth("",1);
 await tools.bash({command:${JSON.stringify(moveFirst)}+file});
-check(body(await tools.read({path:file})).endsWith("// end\\n${block("one")}\\n"),"The block was not moved");
+check((await tools.read({path:file})).text.endsWith("// end\\n${block("one")}\\n"),"The block was not moved");
 await tools.delete({path:file,start:secondTemplate,end:secondClose});
 await rejects(()=>tools.insert({path:file,anchor:blankAfterFirst,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({

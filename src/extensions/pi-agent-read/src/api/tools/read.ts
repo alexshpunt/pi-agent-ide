@@ -129,6 +129,8 @@ export type ReadTextSnapshot = TextDocument;
 interface ReadStateBase {
   readonly source: string;
   readonly resolvedBy: string;
+  /** Entry names of a directory listing; directory names end with `/`. */
+  readonly entries?: readonly string[];
   readonly preserveTruncatedOutput: boolean;
   readonly textMode: "final" | "normal";
 }
@@ -226,7 +228,12 @@ export type ReadScriptData =
       /** Strict source-window handle, independent of preview truncation. */
       readonly target?: string;
       readonly source: string;
+      /** Original text of the selected lines, including every line ending. */
       readonly content: string;
+      /** The selected lines as the requested views present them; absent without a presentation. */
+      readonly presented?: string;
+      /** Entry names of a directory listing; directory names end with `/`. */
+      readonly entries?: readonly string[];
       readonly lines: readonly ReadTextLine[];
       readonly startLine: number;
       readonly endLine: number;

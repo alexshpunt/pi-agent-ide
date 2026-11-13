@@ -41,7 +41,8 @@ async function run(cwd: string, calls: readonly Call[]) {
   }).run("Pass IDE values with an id to source parameters");
 }
 
-// The values of LPT-1362 and LPT-1398 carry `id`; until then a script builds one from a result.
+// Read values carry `id`. The Search values of LPT-1398 will too; until then a script builds one
+// from a Search result.
 const helpers = `const idOf = (shown) => "RESULT#" + /<uuid>([a-f\\d-]{36})<\\/uuid>/u.exec(shown)[1];
 const body = (shown) => shown.replace(/^<system-result\\b[^>]*>.*?<\\/system-result>\\n?/u, "");`;
 
@@ -54,11 +55,11 @@ test("a value with an id selects the same text as its id, directly and in Codemo
         arguments: {
           code: `${helpers}
 const read = await tools.read({ path: "a.txt" });
-const readValue = { id: idOf(read), text: "ignored", path: "c.txt" };
+const readValue = { ...read, path: "c.txt" };
 const byValue = await tools.search({ path: readValue, query: "beta" });
-const byId = await tools.search({ path: idOf(read), query: "beta" });
+const byId = await tools.search({ path: read.id, query: "beta" });
 const other = await tools.read({ path: "c.txt" });
-const listed = await tools.search({ path: [readValue, { id: idOf(other) }], query: "regex:a$" });
+const listed = await tools.search({ path: [readValue, { id: other.id }], query: "regex:a$" });
 const compared = await tools.diff({ before: readValue, after: "a.txt" });
 // The value's own path names another file; only its id counts, so both sides are equal.
 const equal = typeof compared === "string" && !/^[+-](?![+-])/mu.test(compared);
@@ -76,11 +77,11 @@ const pair = async (a, c) => [
 ];
 const [search, window] = await pair("a.txt", "c.txt");
 const byValue = await tools.replace({
-  path: [{ id: idOf(search.result), complete: search.complete }, { id: idOf(window), text: "x" }],
+  path: [{ id: idOf(search.result), complete: search.complete }, window],
   text: "done",
 });
 const [searchId, windowId] = await pair("a-id.txt", "c-id.txt");
-const byId = await tools.replace({ path: [idOf(searchId.result), idOf(windowId)], text: "done" });
+const byId = await tools.replace({ path: [idOf(searchId.result), windowId.id], text: "done" });
 text("replace:" + (byValue !== null) + ":" + (byId !== null));`,
         },
       },

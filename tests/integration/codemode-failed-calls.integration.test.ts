@@ -74,7 +74,7 @@ throw new Error("stopped after " + value);`,
 
     const reads = getToolResultText(result, "reads");
     expect(getToolExecution(result, "reads").isError, reads).toBe(false);
-    expect(reads).toContain('shape:["string",null,"string"]');
+    expect(reads).toContain('shape:["object",null,"object"]');
     const block = failureBlock(reads);
     expect(block.startsWith("1 of 3 IDE calls failed:\n- read missing.txt\n")).toBe(true);
     expect(block).toContain("Search for the correct path.");
@@ -101,7 +101,8 @@ test("IDE refusals resolve to null while Pi's own rejections still throw", async
       script(
         "refused",
         `const expired = await tools.read({ path: "RESULT#00000000-0000-4000-8000-000000000000" });
-const shown = await tools.read({ path: "a.txt" });
+// A Search result string still starts with its system-result envelope.
+const shown = (await tools.search({ path: "a.txt", query: "alpha" })).result;
 const pasted = await tools.replace({ path: "a.txt", start: "alpha", text: shown });
 const listed = await tools.search({ path: ["a.txt", "missing-dir"], query: "alpha" });
 text("refused:" + (expired === null) + ":" + (pasted === null) + ":" + (listed === null));`,

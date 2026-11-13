@@ -20,7 +20,7 @@ describe("scriptValueOf", () => {
   test("a declared union gains null as one more variant", () => {
     const variants = nullableValueSchema(scriptValueOf("read")).anyOf;
     expect(Array.isArray(variants) && variants.at(-1)).toEqual({ type: "null" });
-    expect(Array.isArray(variants) && variants[0]).toEqual({ type: "string" });
+    expect(Array.isArray(variants) && variants[0]).toMatchObject({ required: ["text", "id"] });
   });
 
   test("an edit resolves to a provider's value when its semantic action returns one", () => {
@@ -86,17 +86,6 @@ describe("scriptValueOf", () => {
       effect: "unknown",
     });
     expect(scriptValueOf("insert").failed?.(input("failed"))).toBeUndefined();
-    expect(scriptValueOf("read").failed).toBeUndefined();
-  });
-
-  test("an image Read resolves to its image block with the readable note", () => {
-    const value = scriptValueOf("read").project({
-      ...input("shown"),
-      content: [
-        { type: "text", text: "shown" },
-        { type: "image", data: "AAAA", mimeType: "image/png" },
-      ],
-    });
-    expect(value).toEqual({ type: "image", data: "AAAA", mimeType: "image/png", note: "shown" });
+    expect(scriptValueOf("read").failed?.({ ...input("failed"), script: true })).toBeUndefined();
   });
 });

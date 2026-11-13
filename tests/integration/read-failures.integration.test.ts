@@ -43,17 +43,18 @@ async function rejected(request) {
 await rejected({path:"notes.txt#not-in-the-file"});
 // The test checks that the listed recovery Read names this file with the anchors view.
 const fresh = await tools.read({path:"notes.txt",views:["anchors"]});
-if(typeof fresh !== "string" || !fresh.includes("|beta")) throw Error(fresh);
+if(typeof fresh?.text !== "string" || !fresh.text.includes("|beta")) throw Error(JSON.stringify(fresh));
 const beta = await tools.search({path:fresh,query:"beta"}).then(value => value.result);
 const selected = await tools.read({path:beta});
-if(!selected.includes("beta") || selected.includes("alpha")) throw Error(selected);
+if(!selected.text.includes("beta") || selected.text.includes("alpha")) throw Error(selected.text);
 await rejected({});
 await rejected({path:"raw:notes.txt",views:["anchors"]});
+// Base64 of "alph", the first four bytes.
 const bytes = await tools.read({path:"raw:notes.txt",limit:4});
-if(!bytes.includes("Bytes 0..4 (end exclusive), 17 bytes total") || !bytes.includes("|alph|")) throw Error(bytes);
+if(bytes?.bytes !== "YWxwaA==") throw Error(JSON.stringify(bytes));
 await rejected({path:"items.txt",views:["jq:.items","anchors"]});
 const values = await tools.read({path:"items.txt",views:["jq:.items[]"]});
-if(!values.includes('"alpha"') || !values.includes('"beta"')) throw Error(values);
+if(!values.text.includes('"alpha"') || !values.text.includes('"beta"')) throw Error(values.text);
 `,
               },
             }),
@@ -68,7 +69,7 @@ if(!values.includes('"alpha"') || !values.includes('"beta"')) throw Error(values
               arguments: {
                 code: String.raw`
 const control = await tools.read({path:"notes.txt"});
-if(!control.endsWith("alpha\nbeta\ngamma\n")) throw Error(control);
+if(control?.text !== "alpha\nbeta\ngamma\n") throw Error(JSON.stringify(control));
 const again = await tools.read({path:"notes.txt#not-in-the-file"});
 if(again !== null) throw Error("A failed Read stopped resolving to null");
 `,
@@ -143,7 +144,7 @@ test("non-text line-range recovery preserves native image delivery", async () =>
 const failure = await tools.read({path:"pixel.png",offset:1,limit:1});
 if(failure !== null) throw Error("Expected failure: "+JSON.stringify(failure));
 const image = await tools.read({path:"pixel.png"});
-if(image.type !== "image" || typeof image.note !== "string") throw Error("Read must return an image block");
+if(image?.type !== "image" || typeof image.data !== "string") throw Error("Read must return an image block");
 `,
               },
             }),

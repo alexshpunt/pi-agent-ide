@@ -58,12 +58,14 @@ test("reads complete saved text through line and byte windows after direct and n
           const written = await tools.write({path:"written.txt",content:full});
           if (written.includes("RETAINED_ROW_")) throw new Error("Write leaked the file body");
           const inspected = await tools.read({path:"written.txt"});
-          if (!inspected.includes("RETAINED_ROW_0:") || !inspected.includes("RETAINED_ROW_5999")) throw new Error("Nested Read did not return the whole text");
-          if (inspected.includes("Full output:")) throw new Error("Nested Read was saved to a file");
+          if (!inspected.text.startsWith("RETAINED_ROW_0:") || !inspected.text.includes("RETAINED_ROW_5999")) throw new Error("Nested Read did not return the whole text");
+          if (inspected.text !== full) throw new Error("Nested Read text differs from the file");
+          if (inspected.text.includes("Full output:")) throw new Error("Nested Read was saved to a file");
           const tail = await tools.read({path:"written.txt",offset:-1,limit:1});
-          if (!tail.includes("RETAINED_ROW_5999")) throw new Error("Nested Read tail was lost");
+          if (!tail.text.startsWith("RETAINED_ROW_5999")) throw new Error("Nested Read tail was lost");
           const bytes = await tools.read({path:"raw:written.txt",offset:-200,limit:200});
-          if (!bytes.includes("Bytes")) throw new Error("Nested Read does not support byte reads");
+          // 200 bytes are 268 base64 characters.
+          if (bytes.bytes?.length !== 268) throw new Error("Nested Read does not support byte reads");
           // The failed replace resolves to null; its bounded error and saved path end the result.
           const refused = await tools.replace({path:"missing/"+"😀".repeat(30000),start:"x",text:"y"});
           if (refused !== null) throw new Error("Replace of a missing file succeeded");
@@ -91,7 +93,8 @@ test("reads complete saved text through line and byte windows after direct and n
             toolCall({
               id: "invalid-read",
               name: "read",
-              arguments: { path: ["😀".repeat(30000)] },
+              // An array path is valid; a nested one is not.
+              arguments: { path: [["😀".repeat(30000)]] },
             }),
           ],
           { stopReason: "toolUse" },

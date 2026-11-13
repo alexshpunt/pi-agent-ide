@@ -39,7 +39,8 @@ for (const mode of ["standalone", "codemode"] as const) {
                   `const written=await tools.write({path:"empty.txt",content:""});
 check(typeof written==="string" && written.startsWith("RESULT#"),"Write did not resolve to the id of the empty file: "+written);
 const read=await tools.read({path:written});
-check(body(read)==="[Empty source.]","Read did not explain the empty source");
+// The script gets the exact empty text; the "[Empty source.]" notice is for direct reads.
+check(read?.text==="" && read.id.startsWith("RESULT#"),"Read of the empty file was not exactly empty");
 text(written);`,
               },
             });

@@ -205,7 +205,7 @@ export function createIdeTextResults(
   pi.on("agent_end", clearCalls);
   pi.on("before_agent_start", (event) => {
     event.systemPromptOptions.sections[options.promptSection ?? "ide_results"] =
-      "Direct IDE calls return readable text. In Codemode, search, ast_search and lsp_search return { result, hasMatches, complete }; pass its result string to other tools for composition. file_search returns every matching path as a string array unless you set limit; semantic_search returns its files in rank order. Terminal tools return { output, exit_code, truncated, full_output_path, wall_time_seconds, session }; a non-zero exit_code is a value, not a failure. Diff returns the complete unified diff, or \"\" when the sources are equal. An image Read returns an image block: show it with image(), pass it to models.classify() images, and pass its note string to other tools. Successful text Reads and other text tools return strings. Replace, insert, write, copy, move and undo return the RESULT#<uuid> id of the text they produced, or null when they select no text, such as a directory copy; delete returns null. Pass an edit's id to the next tool's source parameter. A null argument, such as path: null in search, ast_search, lsp_search or file_search, fails the call instead of being treated as omitted; omit the argument to leave it unset, and omit path to search the working directory. A failed IDE call returns null (a resource provider's action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
+      "Direct IDE calls return readable text. In Codemode, search, ast_search and lsp_search return { result, hasMatches, complete }; pass its result string to other tools for composition. file_search returns every matching path as a string array unless you set limit; semantic_search returns its files in rank order. Terminal tools return { output, exit_code, truncated, full_output_path, wall_time_seconds, session }; a non-zero exit_code is a value, not a failure. Diff returns the complete unified diff, or \"\" when the sources are equal. A text Read returns { text, id }: text is exactly the requested text, without notices; pass the value or its id to a source parameter, such as tools.search({ path: r, query }). raw: returns { bytes } in base64, a directory { entries }, an image Pi's image block for image(), models.classify() images or Write's image, several frames { type: \"images\", images }, and an array path an array with null for each failed path. Replace, insert, write, copy, move and undo return the RESULT#<uuid> id of the text they produced, or null when they select no text, such as a directory copy; delete returns null. Pass an edit's id to the next tool's source parameter. Other text tools return strings. A null argument, such as path: null in search, ast_search, lsp_search or file_search, fails the call instead of being treated as omitted; omit the argument to leave it unset, and omit path to search the working directory. A failed IDE call returns null (a resource provider's action keeps its receipt object) and the script continues; the Codemode result lists every failed call with its reason and recovery steps. Calls Pi itself rejects, such as invalid arguments or calls blocked by other extensions, still throw. The leading system-result envelope is an internal reference, not file content; do not edit it. Compose tools by passing the unchanged result string to a source parameter. Outside Codemode, pass the same text or its UUID. Store/load preserves results within the session. Use returned anchors to choose individual selections. Changed snapshots and previous sessions cannot be reused.";
   });
   pi.on("tool_execution_start", (event) => {
     if (event.parentToolCallId !== undefined)
@@ -236,20 +236,22 @@ export function createIdeTextResults(
           "path" in value
         ) {
           input[field] = { ...value, path: store.source(value.path, context.cwd, true) };
+        } else if (event.toolName === "read") {
+          // A source whose result selects several ranges reads as one selection; an array path
+          // reads each of its sources on its own.
+          const readSource = (item: unknown) => {
+            const source = store.source(item, context.cwd, true);
+            if (!Array.isArray(source)) return source;
+            const selected = store.resolve(source, context.cwd);
+            return store.register(selected.targets, context.cwd, selected.complete);
+          };
+          input[field] = Array.isArray(value) ? value.map(readSource) : readSource(value);
         } else {
-          const source = store.source(
+          input[field] = store.source(
             value,
             context.cwd,
-            event.toolName === "read"
-              ? true
-              : ["write", "insert", "delete"].includes(event.toolName)
-                ? "live"
-                : false,
+            ["write", "insert", "delete"].includes(event.toolName) ? "live" : false,
           );
-          if (event.toolName === "read" && Array.isArray(source)) {
-            const selected = store.resolve(source, context.cwd);
-            input[field] = store.register(selected.targets, context.cwd, selected.complete);
-          } else input[field] = source;
         }
       }
       for (const field of ["text", "content"]) {
@@ -466,12 +468,17 @@ export function createIdeTextResults(
           ? event.content.filter((block): block is ImageBlock => block.type === "image")
           : [],
       );
+      const parent = parents.get(event.toolCallId);
+      parents.delete(event.toolCallId);
       const valueInput = {
         shown,
         outcome,
         content: event.content,
         details: event.details,
         cwd: context.cwd,
+        script: parent !== undefined,
+        publish: (part: unknown, text: string) =>
+          resultReference(store.publish(part, text, context.cwd, resultResources(part))),
       };
       const scriptValue = scriptValueOf(event.toolName);
       // An error that scripts receive as a value, such as a non-zero exit code, is not a failure.
@@ -482,8 +489,6 @@ export function createIdeTextResults(
       // A value that is the readable text stays off the record: Pi gives scripts the text then,
       // and direct results keep their shape.
       const value = projected === shown ? undefined : projected;
-      const parent = parents.get(event.toolCallId);
-      parents.delete(event.toolCallId);
       const label = labels.get(event.toolCallId);
       labels.delete(event.toolCallId);
       // Error text carries no envelope: a failed result selects nothing to compose with.
@@ -500,7 +505,7 @@ export function createIdeTextResults(
           },
           scriptFailed
             ? {
-                reason,
+                reason: scriptValue.failureReason?.(valueInput) ?? reason,
                 ...fileEffects(outcome, (source) => displayPath(source, context.cwd)),
               }
             : undefined,

@@ -1160,6 +1160,29 @@ add(
 );
 
 add(
+  "read-script-values",
+  ["codemode.read-bytes", "codemode.read-entries", "codemode.read-path-list"],
+  "In one Codemode script, read raw:data.bin and take its base64 bytes, read the folder directory and take its entries sorted, and read a.txt, missing.txt and c.txt in one Read call with an array path; a path that fails becomes null. Write summary.txt with three lines and a final newline: the base64 bytes, the entries joined by commas, and the array items' texts without their trailing newline joined by |, with missing for a null item. Do not use Bash.",
+  [
+    { tool: "read", args: { path: "raw:data.bin" } },
+    { tool: "read", args: { path: "folder" } },
+    { tool: "read", args: { path: ["a.txt", "missing.txt", "c.txt"] }, error: true },
+    { tool: "write", args: { path: "summary.txt" } },
+  ],
+  {
+    modes: ["codemode"],
+    files: {
+      "data.bin": "hi\n",
+      "folder/b.txt": "beta\n",
+      "folder/sub/x.txt": "x\n",
+      "a.txt": "alpha\n",
+      "c.txt": "gamma\n",
+    },
+    expected: { "summary.txt": "aGkK\nb.txt,sub/\nalpha|missing|gamma\n" },
+  },
+);
+
+add(
   "search-anchor-insert",
   ["search.text", "compose.search-insert", "edit.insert"],
   "Search for OLD using task.txt as path. Use the returned line anchor as insert.path, or use task.txt as path plus that anchor, to put NEW on the following line. Do not combine a result input with an anchor argument. Do not supply an extra blank line.",
@@ -2560,11 +2583,11 @@ add(
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
-// Values with an id come from the Read and Search values; until then the script builds one.
+// Read values carry an id. Until Search values do (LPT-1398), the script builds one from Search.
 add(
   "value-id-source",
   ["compose.value-id-source"],
-  "In one Codemode call, read task.txt. Build an object { id } whose id is RESULT# followed by the UUID in the Read result's system-result envelope, and pass that object as Search's path to find OLD. Build the same kind of object from the Search result and pass it as Replace's path to change OLD to NEW. Do not pass result strings, the file path or a bare UUID to Search or Replace.",
+  "In one Codemode call, read task.txt and pass the Read value itself as Search's path to find OLD. Build an object { id } whose id is RESULT# followed by the UUID in the Search result's system-result envelope, and pass that object as Replace's path to change OLD to NEW. Do not pass result strings, the file path or a bare UUID to Search or Replace.",
   [
     { tool: "read", args: { path: "task.txt" } },
     { tool: "search", args: { query: "OLD", path: { id: /^RESULT#/u } }, reuse: reuse(0) },
@@ -3039,7 +3062,7 @@ add(
   "Read pixel.png, then save the image that Read returned to copy.png with Write: pass that Read result as Write image (its UUID in a direct call, the returned image value in Codemode). Do not use Copy and do not change other files. Report the written path.",
   [
     { tool: "read", args: { path: "pixel.png" }, image: true },
-    { tool: "write", args: { path: "copy.png" }, reuse: reuse(0, ["image", "image.note"]) },
+    { tool: "write", args: { path: "copy.png" }, reuse: reuse(0, "image") },
   ],
   { files: {}, setup: "pixel", expected: { "copy.png": pixelPng } },
 );

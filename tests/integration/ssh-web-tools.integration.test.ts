@@ -144,7 +144,7 @@ test("ordinary explicit target web reads and searches retain their owner while b
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r=await tools.read({path:${JSON.stringify(source)}}); text(r);`,
+              code: `const r=await tools.read({path:${JSON.stringify(source)}}); text(r.text);`,
             },
           }),
         ]),

@@ -346,13 +346,21 @@ test("transfer refusals and deletion hooks leave both paths unchanged on both ro
         },
       }),
     );
+    // A Codemode directory value carries entries and no id; the issued listing result itself
+    // grants no transfer authority either.
     calls.push(
       toolCall({
-        id: "listing-refusal",
+        id: "listing-value",
         name: "codemode",
         arguments: {
-          code: 'const listing=await tools.read({path:"source"}); if((await tools.copy({path:listing,target:"listing-copy"}))!==null) throw Error("Directory listing granted transfer authority"); text("refused listing");',
+          code: 'const listing=await tools.read({path:"source"}); if(listing?.id!==undefined || listing.entries.join()!=="data") throw Error("Unexpected listing value: "+JSON.stringify(listing)); text("listing entries");',
         },
+      }),
+      toolCall({ id: "listing-read", name: "read", arguments: { path: "source" } }),
+      toolCall({
+        id: "listing-refusal",
+        name: "copy",
+        arguments: { path: "$previous-uuid", target: "listing-copy" },
       }),
     );
     const run = await new PiIntegrationTest({
@@ -362,6 +370,7 @@ test("transfer refusals and deletion hooks leave both paths unchanged on both ro
       cwd,
       extensions: [
         "builtin:codemode",
+        path.resolve("tests/integration/fixtures/forward-text-result.ts"),
         path.resolve("src/pi-agent-ide.ts"),
         path.resolve("tests/integration/support/user-hooks-extension.ts"),
       ],
@@ -380,10 +389,10 @@ test("transfer refusals and deletion hooks leave both paths unchanged on both ro
     for (const { name, arguments: args } of transfers)
       expect(refusals).toContain(`- ${name} ${args.path} → ${args.target}\n`);
     expect(refusals).toContain("fixture deletion lock");
-    expect(getToolExecution(run, "listing-refusal").isError).toBe(false);
-    expect(codemodeFailures(getToolResultText(run, "listing-refusal"))).toMatch(
-      /^1 of 2 IDE calls failed:\n- copy RESULT#[a-f\d-]{36} → listing-copy\n/u,
-    );
+    expect(getToolExecution(run, "listing-value").isError).toBe(false);
+    expect(getToolResultText(run, "listing-value")).toContain("listing entries");
+    expect(getToolExecution(run, "listing-read").isError).toBe(false);
+    expect(getToolExecution(run, "listing-refusal").isError).toBe(true);
     for (const name of ["source", "locked-delete", "throw-delete", "target-locked-delete"])
       expect(await readFile(path.join(cwd, name, "data"), "utf8")).toBe("keep");
     expect(await readFile(path.join(cwd, "sentinel"), "utf8")).toBe("untouched");

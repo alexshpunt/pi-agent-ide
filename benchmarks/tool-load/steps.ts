@@ -255,7 +255,7 @@ function codemodeBatch(
   const name = unitName(files.agent, index);
   return `const file = ${JSON.stringify(files.file)};
 const stepLine = ${JSON.stringify(stepLine)};
-const page = String(await tools.read({ path: file, offset: ${lineOf(files, index)}, limit: ${readLimit(files)}, views: ["anchors"] }));
+const page = (await tools.read({ path: file, offset: ${lineOf(files, index)}, limit: ${readLimit(files)}, views: ["anchors"] })).text;
 const line = page.split("\\n").find((candidate) => candidate.includes(stepLine));
 const match = line && /^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|(.*)$/.exec(line);
 if (!match) throw new Error("no anchored line with " + stepLine);
@@ -268,7 +268,7 @@ const [found, calls, diagnostics] = await Promise.all([
 if (!String(found.result).includes("1 match in 1 file")) throw new Error("search after replace: " + found.result);
 if (!calls.hasMatches) throw new Error("ast_search found no call of ${name}");
 // Other agents' error lines in a shared file are theirs to check.
-const errors = String(diagnostics).split("\\n").filter((entry) => entry.includes("[ERROR]") && !/broken_a\\d+_\\d+/i.test(entry));
+const errors = (diagnostics?.text ?? "").split("\\n").filter((entry) => entry.includes("[ERROR]") && !/broken_a\\d+_\\d+/i.test(entry));
 if (errors.length > 0) throw new Error("unexpected diagnostics: " + errors.join("\\n"));
 text("codemode batch ok");`;
 }

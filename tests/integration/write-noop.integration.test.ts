@@ -49,7 +49,7 @@ test("an identical Write commits pending edits without dropping their final post
                   textResultChecks +
                   `await tools.replace({path:"same.note",start:"alpha",text:"first"});
 const unchanged=await tools.write({path:"same.note",content:"first\\n"});
-check(body(await tools.read({path:unchanged}))==="first\\n","Write did not see the committed pending edit");
+check((await tools.read({path:unchanged})).text==="first\\n","Write did not see the committed pending edit");
 text(unchanged);`,
               },
             }),
@@ -100,9 +100,9 @@ test("an identical Write keeps whole-file targets for file URLs and returned sou
                   `const source=await tools.read({path:"same.txt"});
 const url=${JSON.stringify(pathToFileURL(path.join(cwd, "same.txt")).href)};
 const unchanged=await tools.write({path:url,content:"same\\n"});
-check(body(await tools.read({path:unchanged}))==="same\\n","File URL no-op lost its whole-file target");
+check((await tools.read({path:unchanged})).text==="same\\n","File URL no-op lost its whole-file target");
 const repeated=await tools.write({path:source,content:"same\\n"});
-check(body(await tools.read({path:repeated}))==="same\\n","Whole-file source no-op lost its target");
+check((await tools.read({path:repeated})).text==="same\\n","Whole-file source no-op lost its target");
 text(unchanged); text(repeated);`,
               },
             }),
@@ -144,8 +144,8 @@ for (const mode of ["standalone", "codemode"] as const) {
 const saved=await tools.read({path:unchanged});
 ${
   content.length === 0
-    ? `check(body(saved)==="[Empty source.]","Empty no-op Read lost its source");`
-    : `check(body(saved)===${JSON.stringify(content)},"No-op lost its whole-file target");`
+    ? `check(saved?.text==="","Empty no-op Read lost its source");`
+    : `check(saved?.text===${JSON.stringify(content)},"No-op lost its whole-file target");`
 }
 const found=await tools.search({path:unchanged,query:"same"}).then(value => value.result);
 check(matches(found).length===${content.length === 0 ? 0 : 2},"No-op lost its searchable whole-file target");

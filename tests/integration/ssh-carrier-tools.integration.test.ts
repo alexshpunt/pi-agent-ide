@@ -115,7 +115,7 @@ test("ordinary Pi reports a genuinely lost SSH terminal without inventing exit z
             id: "start-owned",
             name: "codemode",
             arguments: {
-              code: `const child=await tools.bash({command:${JSON.stringify(command)},cwd:${JSON.stringify(scope)},background:true}); const shown=await tools.read({path:child.session}); if(!shown.includes("shell: Bash over SSH") || !shown.includes(${JSON.stringify(scope)})) throw new Error("Missing native owner"); store("carrierChild",child.session); text(shown); text(await tools.write({path:${JSON.stringify(cutGate)},content:"cut only my fixture connection\\n"}));`,
+              code: `const child=await tools.bash({command:${JSON.stringify(command)},cwd:${JSON.stringify(scope)},background:true}); const shown=(await tools.read({path:child.session})).text; if(!shown.includes("shell: Bash over SSH") || !shown.includes(${JSON.stringify(scope)})) throw new Error("Missing native owner"); store("carrierChild",child.session); text(shown); text(await tools.write({path:${JSON.stringify(cutGate)},content:"cut only my fixture connection\\n"}));`,
             },
           }),
         ]),
@@ -124,7 +124,7 @@ test("ordinary Pi reports a genuinely lost SSH terminal without inventing exit z
             id: "observe-loss",
             name: "codemode",
             arguments: {
-              code: `const child=load("carrierChild"); const checked=await tools.bash({command:${JSON.stringify(`python3 -c ${quote(wait)} ${quote(cutDone)}`)},cwd:${JSON.stringify(cwd)}}); try { text(checked.output); text(await tools.read({path:child})); } finally { text(await tools.delete({path:checked.session})); text(await tools.delete({path:child})); }`,
+              code: `const child=load("carrierChild"); const checked=await tools.bash({command:${JSON.stringify(`python3 -c ${quote(wait)} ${quote(cutDone)}`)},cwd:${JSON.stringify(cwd)}}); try { text(checked.output); text((await tools.read({path:child})).text); } finally { text(await tools.delete({path:checked.session})); text(await tools.delete({path:child})); }`,
             },
           }),
         ]),

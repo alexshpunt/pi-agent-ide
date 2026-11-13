@@ -160,7 +160,7 @@ test("direct failed Write returns a short reason without the proposed file body"
 
 test("explicit Read after compact Write recovers the content and respects Codemode truncation", async () => {
   await withTempWorkspace(async (cwd) => {
-    const code = `// @options: {"max_output_tokens":1000}\nconst written = await tools.write(${writeArgs}); text(await tools.read({path:written,limit:400}));`;
+    const code = `// @options: {"max_output_tokens":1000}\nconst written = await tools.write(${writeArgs}); text((await tools.read({path:written,limit:400})).text);`;
     const run = await runScript(cwd, "write-context-read-truncated", code);
     expect(getToolExecution(run, "parent").isError).toBe(false);
     assertScriptArguments(run, code);

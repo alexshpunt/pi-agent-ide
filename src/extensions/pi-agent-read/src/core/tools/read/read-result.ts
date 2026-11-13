@@ -21,7 +21,12 @@ export function createReadState(
   content: AgentContent,
   source: string,
   resolverId: string,
-  options: { readonly preserveTruncatedOutput: boolean; readonly textMode: "final" | "normal" },
+  options: {
+    readonly preserveTruncatedOutput: boolean;
+    readonly textMode: "final" | "normal";
+    /** Entry names when the content is a directory listing. */
+    readonly entries?: readonly string[];
+  },
 ): ReadState {
   if (!isSingleTextContent(content)) {
     return {
@@ -40,6 +45,7 @@ export function createReadState(
     content,
     source,
     resolvedBy: resolverId,
+    ...(options.entries === undefined ? {} : { entries: [...options.entries] }),
     preserveTruncatedOutput: options.preserveTruncatedOutput,
     textMode: options.textMode,
     contentKind: "text",
@@ -121,6 +127,8 @@ export function projectReadState(
         plain && !stoppedEarly
           ? renderedText
           : lines.map((line) => line.content + line.lineEnding).join(""),
+      ...(plain ? {} : { presented: renderedText }),
+      ...(state.entries === undefined ? {} : { entries: state.entries }),
       lines,
       startLine: lines[0]?.lineNumber ?? 0,
       endLine: lines.at(-1)?.lineNumber ?? 0,

@@ -28,14 +28,14 @@ for (const mode of ["on", "only"] as const) {
         textResultChecks +
         `
 const created=await tools.write({path:${JSON.stringify(source)},content:"first\\nsecond\\n"});
-check(body(await tools.read({path:created}))==="FIRST\\nSECOND\\n","Creation lost the formatted whole-file target");
+check((await tools.read({path:created})).text==="FIRST\\nSECOND\\n","Creation lost the formatted whole-file target");
 check(matches(await tools.search({path:created,query:"SECOND"}).then(value => value.result)).length===1,"Search cannot consume creation");
 const overwritten=await tools.write({path:created,content:"😀 unique\\r\\nunique tail"});
-check(body(await tools.read({path:overwritten}))==="😀 UNIQUE\\r\\nUNIQUE TAIL","Overwrite lost final UTF16/CRLF text");
+check((await tools.read({path:overwritten})).text==="😀 UNIQUE\\r\\nUNIQUE TAIL","Overwrite lost final UTF16/CRLF text");
 const found=await tools.search({path:overwritten,query:"UNIQUE"}).then(value => value.result);
 check(matches(found).length===2,"Search lost part of the final whole file");
 const noop=await tools.write({path:overwritten,content:"😀 UNIQUE\\r\\nUNIQUE TAIL"});
-check(body(await tools.read({path:noop}))==="😀 UNIQUE\\r\\nUNIQUE TAIL","No-op lost the final snapshot");
+check((await tools.read({path:noop})).text==="😀 UNIQUE\\r\\nUNIQUE TAIL","No-op lost the final snapshot");
 await tools.replace({path:matches(found)[0],text:"FINAL"});
 await rejects(()=>tools.read({path:overwritten}));
 await rejects(()=>tools.replace({path:overwritten,text:"WRONG"}));
@@ -90,9 +90,9 @@ test("a NUL-containing Write keeps the same Read target when repeated unchanged"
       textResultChecks +
       `
 const created=await tools.write({path:"nul.txt",content:"A\\0B"});
-check(body(await tools.read({path:created}))==="A\\0B","Creation lost NUL bytes");
+check((await tools.read({path:created})).text==="A\\0B","Creation lost NUL bytes");
 const noop=await tools.write({path:created,content:"A\\0B"});
-check(body(await tools.read({path:noop}))==="A\\0B","No-op lost the supported text target");
+check((await tools.read({path:noop})).text==="A\\0B","No-op lost the supported text target");
 text(noop);`;
     const run = await new PiIntegrationTest({
       testName: "write-final-target-nul",

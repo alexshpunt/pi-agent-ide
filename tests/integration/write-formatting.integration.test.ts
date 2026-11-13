@@ -93,7 +93,7 @@ for (const mode of ["standalone", "codemode"] as const) {
         const checks = `const result=await tools.write({path:${JSON.stringify(source)},content:"after\\n"});
 if(typeof result!=="string" || !result.startsWith("RESULT#")) throw Error("Write did not resolve to the id of the saved file: "+result);
 const saved=await tools.read({path:result});
-if(!saved.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Read lost saved final text: "+saved);
+if(!saved.text.includes(${JSON.stringify(fixture.final.trim())})) throw Error("Read lost saved final text: "+saved.text);
 text("Formatting checked.");`;
         const run = await new PiIntegrationTest({
           testName: `write-formatting-${mode}-${fixture.name}`,

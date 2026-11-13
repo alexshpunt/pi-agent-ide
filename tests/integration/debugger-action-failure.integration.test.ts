@@ -36,7 +36,7 @@ const session = /debug:[a-f\\d]{12}/u.exec(String(native))?.[0];
 const started = await tools.insert({ path: session, text: "start" });
 const after = await tools.read({ path: session });
 await tools.delete({ path: session });
-return { created: String(created), started: String(started), after: String(after) };
+return { created: String(created), started: String(started), after: after.text };
 `;
     await writeFile(path.join(cwd, "missing-module.py"), "import module_that_does_not_exist\n");
     const run = await new PiIntegrationTest({

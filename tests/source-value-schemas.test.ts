@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { TSchema } from "typebox";
 import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
-import { readParameters } from "#src/extensions/pi-agent-read/src/api/read-parameters.ts";
+import { readToolParameters } from "#src/extensions/pi-agent-read/src/api/read-parameters.ts";
 import { searchSchema } from "#src/extensions/pi-agent-search/src/api/search-parameters.ts";
 import { astSearchSchema } from "#src/plugins/pi-agent-ide-ast/src/tool-ast-search.ts";
 import { lspSearchSchema } from "#src/plugins/pi-agent-ide-lsp/src/tool-lsp-search.ts";
@@ -20,7 +20,7 @@ const value = { id, text: "a\n", complete: true };
 
 /** Tool, schema, source fields, and whether those fields take a list of sources. */
 const tools: readonly (readonly [string, TSchema, readonly string[], boolean])[] = [
-  ["read", readParameters, ["path"], false],
+  ["read", readToolParameters, ["path"], true],
   ["search", searchSchema, ["path"], true],
   ["ast_search", astSearchSchema, ["path"], true],
   ["lsp_search", lspSearchSchema, ["path"], true],

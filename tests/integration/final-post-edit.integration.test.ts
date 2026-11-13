@@ -51,8 +51,8 @@ test.each([false, true])(
 const check = result => { if(typeof result!=="string") throw Error("Expected readable result"); return result; };
 check(await tools.write({path:"a.note",content:"first"}));
 check(await tools.write({path:"b.note",content:"second"}));
-const seen=check(await tools.read({path:"a.note"}));
-if(!seen.endsWith("FIRST")) throw Error("Write was not formatted before returning");
+const seen=(await tools.read({path:"a.note"})).text;
+if(seen!=="FIRST") throw Error("Write was not formatted before returning");
 check(await tools.replace({path:"a.note",start:"FIRST",text:"final"}));
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,

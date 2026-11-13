@@ -58,9 +58,9 @@ if(failure !== null) throw Error("Failure contract absent");
 const missing = await tools.read({path:"absent.txt"});
 if(missing !== null) throw Error("Plain failure contract absent");
 const kept = await tools.read({path:"note.txt"});
-if(typeof kept !== "string" || !kept.includes("fixture-kept")) throw Error("Text success changed");
+if(typeof kept?.text !== "string" || !kept.text.includes("fixture-kept")) throw Error("Text success changed");
 const image = await tools.read({path:"fixture-image:"});
-if(image.type !== "image" || image.mimeType !== "image/png" || typeof image.data !== "string" || typeof image.note !== "string") throw Error("Image success changed");
+if(image.type !== "image" || image.mimeType !== "image/png" || typeof image.data !== "string") throw Error("Image success changed");
 `,
               },
             }),

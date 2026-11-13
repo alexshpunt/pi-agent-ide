@@ -79,16 +79,17 @@ const transferRefused = (await tools.copy({path:source,target:${JSON.stringify(c
 if (!transferRefused) throw Error("BOM conversion must not grant source coordinates");
 const copied = await tools.copy({path:${JSON.stringify(local)},target:${JSON.stringify(copied)}});
 const copiedBytes = await tools.read({path:${JSON.stringify("raw:" + copied)},limit:3});
-if (!copiedBytes.includes("ef bb bf")) throw Error("Copy lost the UTF-8 BOM: " + copiedBytes);
+// "77u/" is the base64 of the UTF-8 BOM, ef bb bf.
+if (copiedBytes?.bytes !== "77u/") throw Error("Copy lost the UTF-8 BOM: " + JSON.stringify(copiedBytes));
 const copiedText = await tools.search({path:copied,query:"café"}).then(value => value.result);
 if (!copiedText.includes("café")) throw Error(copiedText);
 const moved = await tools.move({path:copied,target:${JSON.stringify(moved)}});
 const movedBytes = await tools.read({path:${JSON.stringify("raw:" + moved)},limit:3});
-if (!movedBytes.includes("ef bb bf")) throw Error("Move lost the UTF-8 BOM: " + movedBytes);
+if (movedBytes?.bytes !== "77u/") throw Error("Move lost the UTF-8 BOM: " + JSON.stringify(movedBytes));
 const movedText = await tools.search({path:moved,query:"café"}).then(value => value.result);
 if (!movedText.includes(${JSON.stringify(moved)})) throw Error(movedText);
 const written = await tools.write({path:moved,content:"changed café\\r\\n"});
-text(await tools.read({path:written}));
+text((await tools.read({path:written})).text);
 const saved = await tools.read({path:${JSON.stringify(moved)}});
 const restored = await tools.undo({file:saved,change:"last"});
 const found = await tools.search({path:restored,query:"prior"}).then(value => value.result);
@@ -97,7 +98,7 @@ text({copied,moved,restored,found});
 const created = await tools.write({path:${JSON.stringify(created)},content:"created café"});
 const cleared = await tools.delete({path:created});
 const emptyFile = await tools.read({path:${JSON.stringify(created)}});
-if (!emptyFile.includes("Empty source")) throw Error("Deleting a selection must leave the file present: " + emptyFile);
+if (emptyFile?.text !== "") throw Error("Deleting a selection must leave the file present: " + JSON.stringify(emptyFile));
 // Delete leaves no text to select: both the cleared selection and the removed file are null.
 if (cleared !== null) throw Error("Deleted text granted a selection: " + cleared);
 const removed = await tools.delete({path:${JSON.stringify(created)}});

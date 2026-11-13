@@ -11,6 +11,13 @@ export interface ScriptValueInput {
   readonly details: unknown;
   /** Directory of the session that made the call; values show paths inside it relative to it. */
   readonly cwd?: string;
+  /** Whether another tool, such as a Codemode script, issued the call. */
+  readonly script?: boolean;
+  /**
+   * Publish one part of the result, such as one path of a Read of several paths, as a result of
+   * its own: returns its `RESULT#<uuid>`, or `undefined` when the result has no reference.
+   */
+  readonly publish?: (outcome: unknown, text: string) => string | undefined;
 }
 
 /**
@@ -40,4 +47,9 @@ export interface ScriptValue {
    * does not list it as failed.
    */
   succeeded?(input: ScriptValueInput): boolean;
+  /**
+   * The reason the Codemode result lists for a failed call, when the readable result says more,
+   * such as the paths that failed in a Read of several paths. Without one, it is the readable text.
+   */
+  failureReason?(input: ScriptValueInput): string | undefined;
 }

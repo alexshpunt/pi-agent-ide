@@ -221,7 +221,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-first",
             name: "codemode",
             arguments: {
-              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read !== "string" || !read.includes("marker")) throw new Error("Readable content lost"); if (read.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); text(await tools.search({query:"marker",path:"example.ts"}).then(value => value.result)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
+              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); text(await tools.search({query:"marker",path:"example.ts"}).then(value => value.result)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
             },
           }),
         ],
@@ -233,7 +233,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-again",
             name: "codemode",
             arguments: {
-              code: 'text(await tools.read({path:"example.ts"}));',
+              code: 'text((await tools.read({path:"example.ts"})).text);',
             },
           }),
         ],

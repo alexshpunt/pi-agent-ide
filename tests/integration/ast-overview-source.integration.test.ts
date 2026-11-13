@@ -67,13 +67,13 @@ test.each([
           call("save", "codemode", {
             code: String.raw`
 const full = await tools.read({path:"large.ts"});
-if (full.includes("Some source text is omitted.") || !full.includes('consume("NEEDLE")')) throw Error("Expected the exact source text");
-for (const input of [full, /<uuid>([^<]+)<\/uuid>/u.exec(full)[1]]) {
+if (full.text.includes("Some source text is omitted.") || !full.text.includes('consume("NEEDLE")')) throw Error("Expected the exact source text");
+for (const input of [full, full.id]) {
   const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
   if (!found.includes("3 matches in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
 }
 const window = await tools.read({path:"large.ts",offset:2,limit:${rows + 3}});
-if (window.includes("outsideBefore") || !window.includes('consume("NEEDLE")')) throw Error("Expected the exact window text");
+if (window.text.includes("outsideBefore") || !window.text.includes('consume("NEEDLE")')) throw Error("Expected the exact window text");
 store("largeWindow",window);
 text("Exact sources saved");
 `,
@@ -81,7 +81,7 @@ text("Exact sources saved");
           call("reuse", "codemode", {
             code: String.raw`
 const window = load("largeWindow");
-for (const input of [window, /<uuid>([^<]+)<\/uuid>/u.exec(window)[1]]) {
+for (const input of [window, window.id]) {
   const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
   if (!found.includes("1 match in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
   for (const query of ["outsideBefore","outsideAfter","regex:Code overview|scope-begin|Some source text|requested text|…"]) {
@@ -102,7 +102,7 @@ text("Only the original window was searched and edited");
           call("stale", "codemode", {
             code: String.raw`
 const window = load("largeWindow");
-for (const input of [window, /<uuid>([^<]+)<\/uuid>/u.exec(window)[1]]) {
+for (const input of [window, window.id]) {
   // An exact window follows its region into the edited file instead of its old text.
   const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
   if (!found.includes("large.ts:2-${rows + 4}") || !found.includes("No matches found")) throw Error(found);
