@@ -13,6 +13,8 @@ Run one integration file with `npx pi-test run -- vitest run --config vitest.int
 
 To find a slow code path, profile a focused vitest file: `npx vitest run <file> --pool=forks --execArgv=--cpu-prof --execArgv=--cpu-prof-dir=<dir>` writes one `.cpuprofile` per test worker. Keep the profile directory outside the repository or in `.tmp/`.
 
+Before testing native Rust diagnostics against a large workspace, account for rustup/toolchain executable discovery: it can bypass a Cargo interceptor placed only in `PATH`. Set `CARGO` to the interceptor and add an independent `RUSTC_WRAPPER` that records and blocks compilation while allowing toolchain probes. Verify the guards on a small fixture before using a large workspace; see `tests/integration/rust-diagnostics-no-build.integration.test.ts`.
+
 # Tool capability checks
 
 When changing an IDE tool or its supported composition with another tool, review and update the paid capability matrix and affected executable cases in `benchmarks/tool-capabilities/`. This is required even when the tool schema stays the same.
