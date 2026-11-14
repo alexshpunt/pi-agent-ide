@@ -221,6 +221,17 @@ setInterval(() => {}, 1000);`,
       resolveExternalToolProjectRoot(currentProject, file, "formatters", []),
     ).resolves.toBe(externalProject);
   });
+  it("accepts optional linter enablement and rejects nonboolean values", () => {
+    const clippy = { extensions: [".rs"], check: { command: ["cargo", "clippy"] }, diagnostics: { format: "gcc" } };
+    for (const enabled of [undefined, true, false]) {
+      const config = { ...clippy, ...(enabled === undefined ? {} : { enabled }) };
+      expect(parseLintersConfig({ version: 1, linters: { clippy: config } }).linters.clippy?.enabled).toBe(enabled);
+    }
+    for (const enabled of [null, "false", 0]) {
+      expect(() => parseLintersConfig({ version: 1, linters: { clippy: { ...clippy, enabled } } })).toThrow();
+    }
+  });
+
   it("rejects unversioned and incomplete configs", () => {
     expect(() => parseFormattersConfig({ formatters: {} })).toThrow("version");
     expect(() =>

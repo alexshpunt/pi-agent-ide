@@ -126,7 +126,7 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
                 toolCall({
                   id: "symbols",
                   name: "lsp_search",
-                  arguments: { path: "src/main.rs", query: "main" },
+                  arguments: { declaration: "src/main.rs#main" },
                 }),
               ],
               { stopReason: "toolUse" },
