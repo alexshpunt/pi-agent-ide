@@ -188,7 +188,8 @@ describe("capability route evidence", () => {
       },
     );
 
-    test.each(["direct", "codemode"])("rejects incomplete or late discovery (%s)", (mode) => {
+    test("rejects incomplete, late or failed direct discovery", () => {
+      const mode = "direct";
       const early = [...search("first", ["ast_search", "lsp_search", "diff"]), ...use(mode)];
       expect(validateRoute(task, early, mode).passed).toBe(false);
       expect(validateRoute(task, [...early, ...search("late", ["undo"])], mode).passed).toBe(false);
@@ -208,9 +209,9 @@ describe("capability route evidence", () => {
         { type: "tool_execution_start", toolCallId: "outer", toolName: "codemode" },
         ...search("nested", ["undo"], "outer"),
         { type: "tool_execution_end", toolCallId: "outer", toolName: "codemode", isError: false },
-        ...use("codemode"),
+        ...use("direct"),
       ];
-      expect(validateRoute(task, events, "codemode").passed).toBe(false);
+      expect(validateRoute(task, events, "direct").passed).toBe(false);
     });
   });
   test.each([

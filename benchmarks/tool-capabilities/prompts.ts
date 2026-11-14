@@ -17,5 +17,9 @@ export function parallelCalls(api: string | undefined, count: number): string {
 /** Render a case for the selected model API and execution route. */
 export function capabilityPrompt(task: CapabilityCase, mode: string, api?: string): string {
   const body = task.promptForApi?.(api) ?? task.prompt;
-  return `This is a small tool capability check in a disposable fixture.\n${body}\nRequired execution route (in order; extra inspection is allowed): ${task.steps.map((step) => step.tool).join(" → ")}.\n${mode === "codemode" ? "Perform every requested IDE operation inside native Codemode. Keep tool results unchanged when passing them between calls." : "Use direct tool calls for the requested IDE operations, not Codemode."}\nUse the requested route, not shell/file-editing substitutes. Extra inspection is allowed. Do not modify unrelated files. Finish with a short factual answer.\n`;
+  const route = task.steps
+    .filter((step) => !step.modes || step.modes.includes(mode))
+    .map((step) => step.tool)
+    .join(" → ");
+  return `This is a small tool capability check in a disposable fixture.\n${body}\nRequired execution route (in order; extra inspection is allowed): ${route}.\n${mode === "codemode" ? "Perform every requested IDE operation inside native Codemode. Keep tool results unchanged when passing them between calls." : "Use direct tool calls for the requested IDE operations, not Codemode."}\nUse the requested route, not shell/file-editing substitutes. Extra inspection is allowed. Do not modify unrelated files. Finish with a short factual answer.\n`;
 }

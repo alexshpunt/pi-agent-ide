@@ -444,6 +444,13 @@ export function validateRoute(
     if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
       normalized.offset = 1;
     if (matches(expected, normalized)) return true;
+    // One Read may include other sources, but must satisfy every required argument on that call.
+    if (
+      tool === "read" &&
+      Array.isArray(normalized.path) &&
+      (typeof expected.path === "string" || expected.path instanceof RegExp)
+    )
+      return normalized.path.some((path: unknown) => matches(expected, { ...normalized, path }));
     if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
     const { path: file, ...rest } = expected;
     // A real issued line anchor can name the exact line required by the route.
