@@ -257,6 +257,7 @@ To enable rust-analyzer's compiler checks, build scripts, and procedural macros,
 These options can start Cargo compilation during workspace loading, not just after an edit. Enabling procedural macros also enables build scripts in rust-analyzer. Existing custom LSP entries retain their settings and replace the whole built-in entry; omitting these options in a custom entry uses the server's own defaults, which may compile.
 
 Use the global tool configuration directory for a machine-wide opt-in instead. Restart Pi or use `/reload` after changing either file. Remove the overrides to restore the safe defaults. See [rust-analyzer configuration](https://rust-analyzer.github.io/book/configuration.html) for its individual check options.
+
 ### Files without a language extension
 
 Formatter and linter `fileNames` entries match exact basenames, such as `Dockerfile` or `CMakeLists.txt`. A file can match either `extensions` or `fileNames`; existing `include` and `exclude` rules still apply. LSP entries put `fileNames` beside `extensions` inside each language. Basenames are case-insensitive on Windows.
