@@ -12,7 +12,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { enableNativeCodemode, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 function hasRustTools(): boolean {
   if (process.platform === "win32") return false;
@@ -43,6 +43,7 @@ test.runIf(hasRustTools())(
           'fn main() { panic!("diagnostic reads must not execute build scripts"); }\n',
         );
       }
+      await enableNativeCodemode(cwd);
       const guard = await mkdtemp(path.join(os.tmpdir(), "rust-diagnostics-guard-"));
       try {
         const realCargo = execFileSync("sh", ["-c", "command -v cargo"], {
@@ -65,6 +66,21 @@ process.exit(result.status ?? 1);
 `,
         );
         await chmod(cargo, 0o755);
+        // rustup can prepend its toolchain bin to PATH when starting the server.
+        // CARGO covers explicit executable lookup; RUSTC_WRAPPER is a second guard
+        // against a toolchain proxy bypassing the Cargo interceptor.
+        const rustcGuard = path.join(guard, "rustc-guard");
+        await writeFile(rustcGuard, `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const [rustc, ...args] = process.argv.slice(2);
+if (!args.includes("-vV") && !args.some(arg => arg.startsWith("--print"))) {
+  appendFileSync(${JSON.stringify(log)}, JSON.stringify(["rustc", ...args]) + "\\n");
+  process.exit(101);
+}
+process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
+`);
+        await chmod(rustcGuard, 0o755);
         const result = await new PiIntegrationTest({
           testName: "rust-diagnostics-no-build",
           artifactsDir: testArtifactsDir(import.meta.filename),
@@ -74,6 +90,8 @@ process.exit(result.status ?? 1);
           timeoutMs: 120_000,
           environment: {
             PATH: `${guard}${path.delimiter}${process.env.PATH ?? ""}`,
+            CARGO: cargo,
+            RUSTC_WRAPPER: rustcGuard,
             CARGO_TARGET_DIR: path.join(guard, "cold-target"),
             CARGO_NET_OFFLINE: "true",
             RAYON_NUM_THREADS: "4",
@@ -121,7 +139,7 @@ process.exit(result.status ?? 1);
           ),
         ).toEqual([]);
       } finally {
-        await rm(guard, { recursive: true, force: true });
+        await rm(guard, { recursive: true, force: true, maxRetries: 3 });
       }
     });
   },
