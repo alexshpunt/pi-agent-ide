@@ -12,6 +12,8 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { parseLintersConfig } from "#src/api/tool-config.ts";
+import { parseLspConfig } from "#src/plugins/pi-agent-ide-lsp/src/lsp/registry.ts";
 import {
   enableNativeCodemode,
   withTempWorkspace,
@@ -28,12 +30,12 @@ function hasRustTools(): boolean {
   }
 }
 
-test.runIf(hasRustTools())(
-  "Rust diagnostic reads do not compile a cold Cargo workspace",
-  async () => {
+test.runIf(hasRustTools()).each([false, true])(
+  "Rust diagnostic compilation requires opt-in (enabled: %s)",
+  async (optIn) => {
     await withTempWorkspace(async (temporary) => {
       // An optional real workspace exercises the same entry point without editing its source.
-      const cwd = process.env.PI_RUST_DIAGNOSTICS_WORKSPACE ?? temporary;
+      const cwd = (!optIn && process.env.PI_RUST_DIAGNOSTICS_WORKSPACE) || temporary;
       if (cwd === temporary) {
         await mkdir(path.join(cwd, "src"));
         await writeFile(
@@ -47,6 +49,35 @@ test.runIf(hasRustTools())(
         );
       }
       await enableNativeCodemode(cwd);
+      if (optIn) {
+        const configDirectory = path.join(cwd, ".pi", "pi-agent-ide");
+        await mkdir(configDirectory, { recursive: true });
+        const linters = parseLintersConfig(JSON.parse(await readFile("src/api/tool-config/linters.json", "utf8")));
+        await writeFile(
+          path.join(configDirectory, "linters.json"),
+          JSON.stringify({
+            version: 1,
+            linters: { clippy: { ...linters.linters.clippy, enabled: true } },
+          }),
+        );
+        const servers = parseLspConfig(JSON.parse(await readFile("src/api/tool-config/lsp-servers.json", "utf8")));
+        await writeFile(
+          path.join(configDirectory, "lsp-servers.json"),
+          JSON.stringify({
+            version: 1,
+            servers: {
+              "rust-analyzer": {
+                ...servers.servers["rust-analyzer"],
+                initializationOptions: {
+                  checkOnSave: true,
+                  cargo: { buildScripts: { enable: true } },
+                  procMacro: { enable: true },
+                },
+              },
+            },
+          }),
+        );
+      }
       const guard = await mkdtemp(path.join(os.tmpdir(), "rust-diagnostics-guard-"));
       try {
         const realCargo = execFileSync("sh", ["-c", "command -v cargo"], {
@@ -88,7 +119,7 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
         );
         await chmod(rustcGuard, 0o755);
         const result = await new PiIntegrationTest({
-          testName: "rust-diagnostics-no-build",
+          testName: optIn ? "rust-diagnostics-build-opt-in" : "rust-diagnostics-no-build",
           artifactsDir: testArtifactsDir(import.meta.filename),
           cwd,
           isolateUserResources: true,
@@ -146,13 +177,23 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
         // Toolchain proxies can bypass the Cargo wrapper for metadata. Prove that
         // the real server loaded the project through its symbol result instead.
         expect(getToolResultText(result, "symbols")).toContain("main");
-        expect(
-          calls.filter((args) =>
-            args.some((arg) =>
-              ["check", "clippy", "build", "test", "rustc", "doc", "run"].includes(arg),
+        if (optIn) {
+          expect(
+            calls.some((args) => args.includes("clippy")),
+            JSON.stringify(calls),
+          ).toBe(true);
+          expect(
+            calls.some((args) => args[0] === "check" || args[0] === "rustc"),
+            JSON.stringify(calls),
+          ).toBe(true);
+        } else
+          expect(
+            calls.filter((args) =>
+              args.some((arg) =>
+                ["check", "clippy", "build", "test", "rustc", "doc", "run"].includes(arg),
+              ),
             ),
-          ),
-        ).toEqual([]);
+          ).toEqual([]);
       } finally {
         await rm(guard, { recursive: true, force: true, maxRetries: 3 });
       }
