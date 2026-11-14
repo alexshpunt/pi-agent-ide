@@ -192,7 +192,9 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
         // Toolchain proxies can bypass the Cargo wrapper for metadata. Prove that
         // the real server loaded the project through its symbol result instead.
         expect(getToolResultText(result, "symbols")).toContain("main");
-        const details = getToolExecutionDetails(getToolExecution(result, "native-diagnostics")) as { diagnosticCheck?: { sources: readonly string[] } };
+        const details = getToolExecutionDetails(getToolExecution(result, "native-diagnostics")) as {
+          diagnosticCheck?: { sources: readonly string[] };
+        };
         expect(details.diagnosticCheck?.sources).toContain("rust-analyzer");
         if (optIn) {
           expect(
