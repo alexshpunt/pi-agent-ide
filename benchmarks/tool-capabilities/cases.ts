@@ -1,4 +1,5 @@
 import { pixelPng } from "./sandbox.ts";
+import { parallelCalls } from "./prompts.ts";
 import type { CapabilityCase, RouteStep } from "./validation.ts";
 
 // Directory/symlink approval is a host UI policy, not an agent calling requirement.
@@ -20,7 +21,7 @@ const cases: CapabilityCase[] = [];
 add(
   "codemode-search-value-batch",
   ["compose.codemode-search-value-batch"],
-  "In native Codemode, Search task.txt for beta and retain the returned value. Then in ONE script await three edits without any other tool between them: Insert added before alpha in task.txt; Replace beta by passing the first Search match value as path, with BETA; Delete gamma using exact text in task.txt. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
+  "In native Codemode, Search task.txt for beta and retain the returned value. Then in one script run the three independent edits concurrently with Promise.all, without any other tool between them: Insert added before alpha in task.txt; Replace beta by passing the first Search match value as path, with BETA; Delete gamma using exact text in task.txt. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
   [
     { tool: "search", args: { path: "task.txt", query: "beta" } },
     {
@@ -50,7 +51,7 @@ add(
 add(
   "codemode-search-anchor-batch",
   ["compose.codemode-search-anchor-batch"],
-  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in ONE script await these three edits without Read/Search or another tool between them: Insert added before alpha in task.txt; Replace beta using its issued SEARCH reference as start, omitting path, with BETA; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
+  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in one script run these three independent edits concurrently with Promise.all, without Read/Search or another tool between them: Insert added before alpha in task.txt; Replace beta using its issued SEARCH reference as start, omitting path, with BETA; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
   [
     { tool: "search", args: { path: "task.txt", query: "regex:beta|gamma" } },
     { tool: "read", args: { path: ".pi/issued-search.txt" } },
@@ -617,11 +618,20 @@ add(
 function add(
   id: string,
   capabilities: string[],
-  prompt: string,
+  prompt: string | NonNullable<CapabilityCase["promptForApi"]>,
   steps: RouteStep[],
   extras: Partial<CapabilityCase> = {},
 ): void {
-  cases.push({ id, capabilities, prompt, steps, modes: both, files: textFile, ...extras });
+  cases.push({
+    id,
+    capabilities,
+    prompt: typeof prompt === "function" ? prompt() : prompt,
+    ...(typeof prompt === "function" && { promptForApi: prompt }),
+    steps,
+    modes: both,
+    files: textFile,
+    ...extras,
+  });
 }
 
 add(
@@ -1058,7 +1068,8 @@ for (const operation of ["delete", "insert"] as const) {
       `edit.search-line-batch-${operation}`,
       ...(operation === "insert" ? ["compose.batch-insert-search"] : []),
     ],
-    `Search task.txt for OLD. In ONE assistant message issue three direct ${operation} calls with the three issued numbered SEARCH :line references as path. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    (api) =>
+      `Search task.txt for OLD. ${parallelCalls(api, 3)} Use the three issued numbered SEARCH :line references as path for the three ${operation} calls. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
     [
       { tool: "search", args: { path: "task.txt", query: "OLD" } },
       ...[1, 2, 3].map((index): RouteStep => ({
@@ -1106,7 +1117,8 @@ for (const operation of ["replace", "delete", "insert"] as const) {
       `edit.selection-batch-${operation}`,
       ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
     ],
-    `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset and limit 1) before editing. In ONE assistant message issue three direct ${operation} calls, forwarding each corresponding Read result or UUID without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+    (api) =>
+      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset and limit 1) before editing. ${parallelCalls(api, 3)} Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
     [
       ...[2, 4, 6].map((line): RouteStep => ({
         tool: "read",
@@ -2131,7 +2143,8 @@ add(
 add(
   "mixed-file-delete-text-edit",
   ["compose.file-delete-text-edit"],
-  "Submit Insert and three whole-file Deletes in one assistant message. Insert ADDED plus a newline after keep in note.txt. Delete a.txt, b.txt and c.txt by ordinary paths without start/end. Keep note.txt and its other bytes; do not turn the file deletions into text selections.",
+  (api) =>
+    `${parallelCalls(api, 4)} Include one Insert and three whole-file Deletes. Use Insert with path note.txt, anchor keep and text ${JSON.stringify("ADDED\n")} (no leading newline). Delete a.txt, b.txt and c.txt by ordinary paths without start/end. Keep note.txt and its other bytes; do not turn the file deletions into text selections.`,
   [
     { tool: "insert", args: { path: "note.txt", anchor: "keep", text: "ADDED\n" } },
     ...["a.txt", "b.txt", "c.txt"].map((source): RouteStep => ({
