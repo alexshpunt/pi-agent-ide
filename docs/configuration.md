@@ -205,6 +205,58 @@ Use direct argument arrays in tool commands. Available placeholders are `{file}`
 
 When `PI_CODING_AGENT_DIR` is set, the global directory follows it as `<PI_CODING_AGENT_DIR>/extensions/pi-agent-ide/`. Restart Pi or use `/reload` after changing a configuration file.
 
+### Rust diagnostics without compilation
+
+The built-in Rust diagnostics do not compile the workspace. Clippy is disabled by default. The built-in rust-analyzer starts with `checkOnSave: false`, `cargo.buildScripts.enable: false`, and `procMacro.enable: false`, before workspace loading begins. This applies to diagnostic Read views, `diagnostics:<file>`, and automatic post-edit diagnostics.
+
+rust-analyzer still loads Cargo metadata and indexes source for native diagnostics and navigation. Large workspaces can still take time and memory to index; these defaults prevent build-backed checks, not all background work. Native diagnostics are less complete than compiler or Clippy results. Generated build-script output and procedural macro expansion are unavailable. Pending or incomplete results are not a clean compiler check.
+
+Build-backed checks are independent opt-ins. To enable Clippy, put this complete entry in `<project>/.pi/pi-agent-ide/linters.json`:
+
+```json
+{
+  "version": 1,
+  "linters": {
+    "clippy": {
+      "enabled": true,
+      "extensions": [".rs"],
+      "check": {
+        "command": ["cargo", "clippy", "--message-format", "short"],
+        "successExitCodes": [0, 1, 101]
+      },
+      "diagnostics": { "format": "gcc" }
+    }
+  }
+}
+```
+
+An explicit linter entry is enabled when `enabled` is omitted. Set `enabled: false` in a complete entry to exclude it from selection and command availability checks. Entries still require valid commands and diagnostic parsers when disabled. Removing the override restores the built-in default.
+
+To enable rust-analyzer's compiler checks, build scripts, and procedural macros, put this complete entry in `<project>/.pi/pi-agent-ide/lsp-servers.json`:
+
+```json
+{
+  "version": 1,
+  "servers": {
+    "rust-analyzer": {
+      "command": ["rust-analyzer"],
+      "transport": "stdio",
+      "rootMarkers": ["Cargo.toml", "rust-project.json"],
+      "languages": { "rust": { "extensions": [".rs"] } },
+      "capabilities": ["diagnostics"],
+      "initializationOptions": {
+        "checkOnSave": true,
+        "cargo": { "buildScripts": { "enable": true } },
+        "procMacro": { "enable": true }
+      }
+    }
+  }
+}
+```
+
+These options can start Cargo compilation during workspace loading, not just after an edit. Enabling procedural macros also enables build scripts in rust-analyzer. Existing custom LSP entries retain their settings and replace the whole built-in entry; omitting these options in a custom entry uses the server's own defaults, which may compile.
+
+Use the global tool configuration directory for a machine-wide opt-in instead. Restart Pi or use `/reload` after changing either file. Remove the overrides to restore the safe defaults. See [rust-analyzer configuration](https://rust-analyzer.github.io/book/configuration.html) for its individual check options.
 ### Files without a language extension
 
 Formatter and linter `fileNames` entries match exact basenames, such as `Dockerfile` or `CMakeLists.txt`. A file can match either `extensions` or `fileNames`; existing `include` and `exclude` rules still apply. LSP entries put `fileNames` beside `extensions` inside each language. Basenames are case-insensitive on Windows.
