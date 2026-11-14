@@ -40,6 +40,23 @@ void test("passes the selected API to a dynamic case prompt", () => {
   assert.deepEqual(received, ["openai-responses", "anthropic-messages", undefined]);
 });
 
+void test("renders only steps required for the selected route", () => {
+  const task: CapabilityCase = {
+    ...fixture,
+    prompt: "",
+    steps: [
+      { tool: "fixture_direct_discovery", modes: ["direct"] },
+      { tool: "fixture_shared_operation" },
+      { tool: "fixture_script_operation", modes: ["codemode"] },
+    ],
+  };
+  for (const mode of task.modes) {
+    const prompt = capabilityPrompt(task, mode);
+    assert.ok(prompt.includes("fixture_shared_operation"));
+    assert.equal(prompt.includes("fixture_direct_discovery"), mode === "direct");
+    assert.equal(prompt.includes("fixture_script_operation"), mode === "codemode");
+  }
+});
 void test("preserves ordinary case prompts on both routes", () => {
   for (const mode of fixture.modes) {
     assert.ok(

@@ -8,6 +8,7 @@ interface Call {
   args: Record<string, unknown>;
   text?: string;
   value?: unknown;
+  details?: Record<string, unknown>;
   error?: boolean;
 }
 const uuid = "11111111-aaaa-4aaa-8aaa-111111111111";
@@ -16,19 +17,20 @@ function events(calls: readonly Call[], mode = "direct"): RunEvent[] {
   const entries: RunEvent[] = calls.flatMap((call, index) => [
     {
       type: "tool_execution_start",
-      toolCallId: String(index),
+      toolCallId: `${mode}-${String(index)}`,
       toolName: call.tool,
       args: call.args,
       ...(mode === "codemode" && { parentToolCallId: "script" }),
     },
     {
       type: "tool_execution_end",
-      toolCallId: String(index),
+      toolCallId: `${mode}-${String(index)}`,
       toolName: call.tool,
       isError: call.error ?? false,
       result: {
         content: [{ type: "text", text: call.text ?? "" }],
         ...(call.value !== undefined && { structuredContent: call.value }),
+        ...(call.details && { details: call.details }),
       },
     },
   ]);
@@ -49,6 +51,79 @@ function check(route: RouteStep[], calls: readonly Call[], mode = "direct"): boo
   return validateRoute({ steps: route }, events(calls, mode), mode).passed;
 }
 
+const deferredCalls = [
+  { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, text: "probe(1)" },
+  { tool: "lsp_search", args: { query: "probe" }, text: "task.ts#probe" },
+  { tool: "diff", args: { before: "task.ts", after: "task.ts" }, value: "" },
+  { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+  { tool: "undo", args: { file: "task.txt", change: "last" } },
+  { tool: "read", args: { path: "task.txt" }, text: "keep\nOLD\nlast\n" },
+] as const satisfies readonly Call[];
+const discoveryCall: Call = {
+  tool: "tool_search",
+  args: { query: "ast_search lsp_search diff undo" },
+  details: { loaded: ["ast_search", "lsp_search", "diff", "undo"] },
+};
+
+void test("deferred navigation in Codemode needs only the actual calls, without discovery", () => {
+  const route = steps("deferred-navigation-recovery");
+  assert.ok(check(route, deferredCalls, "codemode"));
+  // Optional top-level discovery may succeed, load nothing, or fail without affecting this route.
+  for (const discovery of [
+    discoveryCall,
+    { ...discoveryCall, details: { loaded: [] } },
+    { ...discoveryCall, error: true },
+  ]) {
+    assert.ok(
+      validateRoute(
+        { steps: route },
+        [...events([discovery]), ...events(deferredCalls, "codemode")],
+        "codemode",
+      ).passed,
+    );
+  }
+  assert.ok(!check(route, deferredCalls));
+  assert.ok(check(route, [discoveryCall, ...deferredCalls]));
+});
+
+for (const mode of ["direct", "codemode"]) {
+  void test(`deferred navigation still requires every successful operation in ${mode}`, () => {
+    const route = steps("deferred-navigation-recovery");
+    const prefix = mode === "direct" ? [discoveryCall] : [];
+    const checkCalls = (calls: readonly Call[]) => check(route, [...prefix, ...calls], mode);
+    assert.ok(checkCalls(deferredCalls));
+    for (let index = 0; index < deferredCalls.length; index++) {
+      const call = deferredCalls[index];
+      assert.ok(call);
+      assert.ok(!checkCalls(deferredCalls.filter((_, position) => position !== index)), call.tool);
+      assert.ok(
+        !checkCalls(
+          deferredCalls.map((entry, position) =>
+            position === index ? { ...entry, error: true } : entry,
+          ),
+        ),
+        call.tool,
+      );
+    }
+    assert.ok(
+      !checkCalls([
+        ...deferredCalls.slice(0, 5),
+        { ...deferredCalls[5], text: "keep\nNEW\nlast\n" },
+      ]),
+    );
+    if (mode === "codemode") {
+      for (const value of [null, "changed", {}]) {
+        assert.ok(
+          !checkCalls([
+            ...deferredCalls.slice(0, 2),
+            { ...deferredCalls[2], value },
+            ...deferredCalls.slice(3),
+          ]),
+        );
+      }
+    }
+  });
+}
 for (const [id, tool, index] of [
   ["standalone-resource-host", "demo_read", 1],
   ["streamed-replace", "read", 1],
@@ -116,6 +191,107 @@ for (const mode of ["direct", "codemode"]) {
     );
   });
 }
+
+for (const mode of ["direct", "codemode"]) {
+  void test(`read-window-insert accepts one terminal newline and requires its Read result in ${mode}`, () => {
+    const route = steps("read-window-insert");
+    const read: Call = {
+      tool: "read",
+      args: { path: "task.txt", offset: 2, limit: 1 },
+      text: `<uuid>${uuid}</uuid>\nOLD\n`,
+      value: { id: result, text: "OLD\n" },
+    };
+    const source = mode === "codemode" ? read.value : result;
+    for (const text of ["BEFORE", "BEFORE\n"]) {
+      const insert: Call = { tool: "insert", args: { path: source, before: true, text } };
+      for (const path of ["task.txt", ["task.txt"], ["other.txt", "task.txt"]]) {
+        assert.ok(check(route, [{ ...read, args: { ...read.args, path } }, insert], mode));
+      }
+      assert.ok(!check(route, [insert], mode));
+      for (const args of [
+        { ...read.args, path: ["other.txt"] },
+        { ...read.args, path: ["other.txt", "task.txt"], offset: 1 },
+        { ...read.args, path: ["other.txt", "task.txt"], limit: 2 },
+      ]) {
+        assert.ok(!check(route, [{ ...read, args }, insert], mode));
+      }
+      assert.ok(!check(route, [{ ...read, error: true }, insert], mode));
+      for (const path of ["task.txt", "RESULT#22222222-aaaa-4aaa-8aaa-222222222222"]) {
+        assert.ok(!check(route, [read, { ...insert, args: { ...insert.args, path } }], mode));
+      }
+    }
+    for (const text of ["BEFORE\n\n", "BEFORE ", "OTHER"]) {
+      assert.ok(
+        !check(route, [read, { tool: "insert", args: { path: source, before: true, text } }], mode),
+      );
+    }
+    assert.ok(
+      !check(
+        route,
+        [read, { tool: "insert", args: { path: source, before: false, text: "BEFORE\n" } }],
+        mode,
+      ),
+    );
+  });
+}
+
+void test("debug source Read accepts a path list only with the source and anchors", () => {
+  const route = steps("debug-backend-fallback");
+  const calls = [
+    {
+      tool: "debug",
+      args: { backend: "vscode", program: "task.py" },
+      error: true,
+      text: "VS Code",
+    },
+    {
+      tool: "debug",
+      args: { backend: "native", adapter: "debugpy", program: "task.py" },
+      text: "debug:abcd",
+    },
+    {
+      tool: "read",
+      args: { path: ["debug:abcd", "debug:abcd/source"], views: ["anchors"] },
+      text: "ABCDEFG|print(value)",
+    },
+    { tool: "insert", args: { path: "debug:abcd/source", anchor: "ABCDEFG", text: "breakpoint" } },
+    { tool: "insert", args: { path: "debug:abcd", text: "start" } },
+    { tool: "insert", args: { path: "debug:abcd", text: "evaluate value" }, text: "42" },
+    { tool: "delete", args: { path: "debug:abcd" } },
+  ] as const satisfies readonly Call[];
+  const read = calls[2];
+  for (const path of [
+    "debug:abcd/source",
+    ["debug:abcd/source"],
+    ["debug:abcd", "debug:abcd/source"],
+    ["debug:abcd/source", "debug:abcd"],
+  ]) {
+    assert.ok(
+      check(route, [
+        ...calls.slice(0, 2),
+        { ...read, args: { path, views: ["anchors"] } },
+        ...calls.slice(3),
+      ]),
+    );
+  }
+  for (const args of [
+    { path: ["debug:abcd"], views: ["anchors"] },
+    { path: ["debug:abcd", "task.py"], views: ["anchors"] },
+    { path: [], views: ["anchors"] },
+    { path: ["debug:abcd", "debug:abcd/source"] },
+    { path: ["debug:abcd", "debug:abcd/source"], views: ["ast"] },
+  ]) {
+    assert.ok(!check(route, [...calls.slice(0, 2), { ...read, args }, ...calls.slice(3)]));
+  }
+  assert.ok(!check(route, [...calls.slice(0, 2), ...calls.slice(3)]));
+  assert.ok(!check(route, [...calls.slice(0, 2), { ...read, error: true }, ...calls.slice(3)]));
+  for (const args of [
+    { ...calls[3].args, anchor: "7654321" },
+    { ...calls[3].args, path: ["debug:abcd/source", "task.py"] },
+  ]) {
+    assert.ok(!check(route, [...calls.slice(0, 3), { ...calls[3], args }, ...calls.slice(4)]));
+  }
+});
 
 void test("debug source accepts the earlier Read value, not an unrelated or failed result", () => {
   const breakpoint = steps("debug-backend-fallback")[3];
