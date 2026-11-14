@@ -3,6 +3,7 @@ import type { Capability } from "./validation.ts";
 // This declared inventory is reviewed separately from executable cases.
 // SDK capability-loader rendering retains model results and adds no paid operation.
 // Native cards and receipt visibility have deterministic real-Pi coverage.
+// Active-loadout prompt selection is lifecycle behavior; discovery.* keeps fresh-session routes.
 const groups: [string[], string[]][] = [
   [
     ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
@@ -79,7 +80,7 @@ const groups: [string[], string[]][] = [
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [["edit.repeated-line-anchor-shift"], ["repeated-line-anchor-after-shift"]],
-  [["edit.repeated-line-anchor-block-change"], ["repeated-line-anchor-after-block-delete"]],
+  [["edit.repeated-line-anchor-block-recovery"], ["repeated-line-anchor-after-block-delete"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],
@@ -260,8 +261,9 @@ const groups: [string[], string[]][] = [
   // Direct calls take the same object; the focused source-value cases cover them without a model.
   [["compose.value-id-source"], ["value-id-source"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
-  // A result passed with selectors is their scope; an anchor outside it fails and names it.
-  [["compose.result-selector-scope"], ["result-selector-scope"]],
+  // Out-of-scope selectors fail; a scope-only exact miss leaves later exact edits enabled.
+  // Anchor-rejection card causes are presentation only; renderer tests decode all four codes.
+  [["compose.result-selector-scope"], ["result-selector-scope", "result-selector-exact-retry"]],
   [
     [
       // Fresh-session follow-up operations exercise metadata activated by the first Bash call.

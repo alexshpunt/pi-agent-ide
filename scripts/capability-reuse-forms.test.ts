@@ -68,6 +68,63 @@ function capabilityCase(id: string): CapabilityCase {
 
 const uuid = (digit: string) => `${digit.repeat(8)}-aaaa-4aaa-8aaa-${digit.repeat(12)}`;
 
+describe("repeated-line-anchor-after-block-delete", () => {
+  const task = capabilityCase("repeated-line-anchor-after-block-delete");
+  const initial = call({
+    id: "initial",
+    tool: "read",
+    args: { path: "task.txt", views: ["anchors"] },
+    text: "ABCDEFG|template <typename T>\nHJKMNPQ|}\nRSTVWXY|template <typename T>",
+  });
+  const block = call({
+    id: "block",
+    tool: "delete",
+    args: { path: "task.txt", start: "ABCDEFG", end: "HJKMNPQ" },
+  });
+  const stale = (error: boolean) =>
+    call({
+      id: "stale",
+      tool: "delete",
+      args: { path: "task.txt", start: "RSTVWXY" },
+      error,
+    });
+  const fresh = call({
+    id: "fresh",
+    tool: "read",
+    args: { path: "task.txt", views: ["anchors"] },
+    text: "1234567|template <typename T>",
+  });
+  const recovery = (start = "1234567") =>
+    call({
+      id: "recovery",
+      tool: "delete",
+      args: { path: "task.txt", start },
+    });
+  const check = (events: RunEvent[]) => validateRoute(task, events, "direct").passed;
+
+  test("accepts stale-anchor refusal followed by fresh-Read recovery", () => {
+    expect(check([...initial, ...block, ...stale(true), ...fresh, ...recovery()])).toBe(true);
+  });
+
+  test("requires refusal of the old anchor", () => {
+    expect(check([...initial, ...block, ...stale(false), ...fresh, ...recovery()])).toBe(false);
+    expect(check([...initial, ...block, ...fresh, ...recovery()])).toBe(false);
+  });
+
+  test("requires a fresh Read before recovery", () => {
+    expect(check([...initial, ...block, ...stale(true), ...recovery()])).toBe(false);
+  });
+
+  test.each(["RSTVWXY", "7654321", "template <typename T>"])(
+    "rejects recovery with the unissued fresh selector %j",
+    (start) => {
+      expect(check([...initial, ...block, ...stale(true), ...fresh, ...recovery(start)])).toBe(
+        false,
+      );
+    },
+  );
+});
+
 describe("a reused result counts in every supported form", () => {
   const route = {
     steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }],

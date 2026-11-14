@@ -43,6 +43,70 @@ afterEach(() => {
 });
 
 describe("mutation renderer lifecycle", () => {
+  describe.each(["replace", "delete", "insert", "copy", "move"])("%s anchor failures", (name) => {
+    test.each([false, true])("decodes structured causes with expanded=%s", (expanded) => {
+      let renderer: TextEditorToolRendererRegistration | undefined;
+      const api = Object.assign(Object.create(null) as TextEditorPluginApi, {
+        onMutationTool(listener: (registration: unknown) => void) {
+          listener({ name, source: { field: "path" } });
+        },
+        addToolRenderer(value: TextEditorToolRendererRegistration) {
+          renderer = value;
+        },
+      });
+      registerMutationRenderers(api);
+      if (!renderer?.renderResult) throw new Error("Missing renderer");
+      const renderResult = renderer.renderResult;
+      const privateReason = "PRIVATE anchor payload and recovery instructions";
+      const args = { path: "fixture.txt", start: "selection", text: "changed" };
+      const render = (code: string | undefined) =>
+        renderResult(
+          {
+            content: [{ type: "text", text: privateReason }],
+            details: {
+              effect: "not-applied",
+              results: [
+                new FileMutationResult({
+                  ok: false,
+                  path: args.path,
+                  errors: [{ path: args.path, code, reason: privateReason }],
+                }),
+              ],
+            },
+          },
+          { expanded, isPartial: false },
+          theme,
+          {
+            args,
+            toolCallId: "anchor-failure",
+            state: {},
+            lastComponent: undefined,
+            cwd: process.cwd(),
+            durationMs: undefined,
+            outputPad: 0,
+            keyText,
+            keyHint,
+            executionStarted: true,
+            argsComplete: true,
+            isPartial: false,
+            expanded,
+            showImages: true,
+            isError: true,
+            invalidate: vi.fn(),
+          },
+        )
+          .render(100)
+          .join("\n");
+      const fallback = render("UNRECOGNIZED_FAILURE");
+      expect(render(undefined)).toBe(fallback);
+      const specific = ["missing", "ambiguous", "invalid", "stale"].map(render);
+      for (const output of [...specific, fallback]) {
+        expect(output).not.toContain(privateReason);
+      }
+      for (const output of specific) expect(output).not.toBe(fallback);
+      expect(new Set(specific).size).toBe(specific.length);
+    });
+  });
   test("whole-file Copy shows final saved feedback without a text diff", () => {
     let renderer: TextEditorToolRendererRegistration | undefined;
     const api = Object.assign(Object.create(null) as TextEditorPluginApi, {

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { IssuedArgumentStream } from "../../support/issued-argument-stream.ts";
 import {
   createAssistantMessageEventStream,
   type AssistantMessage,
@@ -39,7 +40,8 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
           const result = transcript.messages.findLast(
             (message) => message.role === "toolResult" && message.toolCallId === id,
           );
-          if (!result || result.role !== "toolResult") throw new Error(`Missing prior result ${id}`);
+          if (!result || result.role !== "toolResult")
+            throw new Error(`Missing prior result ${id}`);
           const shown = result.content
             .flatMap((block) => (block.type === "text" ? [block.text] : []))
             .join("\n");
@@ -68,22 +70,70 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
           if (!value) throw new Error(`Missing ${kind} reference in ${id}`);
           return value;
         };
-        const pattern = /\$issued-(uuid|result|item|search(?:match|allline|allmatch|id)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu;
+        const pattern =
+          /\$issued-(uuid|result|item|search(?:match|allline|allmatch|id)?|anchor):([a-z][a-z\d-]*)(?::(\d+))?/gu;
+        const argumentsByIndex = new Map<number, IssuedArgumentStream>();
+        const forward = (event: AssistantMessageEvent, delta?: string): void => {
+          // Snapshots may contain an unfinished ID. Rebuild their arguments from the safe stream.
+          const forwarded = JSON.parse(
+            JSON.stringify(event, (key, value) =>
+              key === "arguments"
+                ? {}
+                : key === "delta" && event.type === "toolcall_delta"
+                  ? ""
+                  : value,
+            ).replace(pattern, reference),
+          ) as AssistantMessageEvent;
+          const message =
+            forwarded.type === "done"
+              ? forwarded.message
+              : forwarded.type === "error"
+                ? forwarded.error
+                : forwarded.partial;
+          for (const [index, block] of message.content.entries()) {
+            if (block.type === "toolCall")
+              block.arguments = argumentsByIndex.get(index)?.arguments ?? {};
+          }
+          if (forwarded.type === "toolcall_delta") forwarded.delta = delta ?? "";
+          if (forwarded.type === "toolcall_end")
+            forwarded.toolCall.arguments =
+              argumentsByIndex.get(forwarded.contentIndex)?.arguments ?? {};
+          partial = message;
+          output.push(forwarded);
+        };
         void (async () => {
           try {
             for await (const event of delegate(currentModel, transcript, options)) {
-              const forwarded = JSON.parse(
-                JSON.stringify(event).replace(pattern, reference),
-              ) as AssistantMessageEvent;
-              if (event.type === "toolcall_delta" && forwarded.type === "toolcall_delta")
-                forwarded.delta = event.delta.replace(pattern, reference);
-              partial =
-                forwarded.type === "done"
-                  ? forwarded.message
-                  : forwarded.type === "error"
-                    ? forwarded.error
-                    : forwarded.partial;
-              output.push(forwarded);
+              if (event.type === "toolcall_start")
+                argumentsByIndex.set(
+                  event.contentIndex,
+                  new IssuedArgumentStream((value) => value.replace(pattern, reference)),
+                );
+              if (event.type === "toolcall_delta") {
+                const stream = argumentsByIndex.get(event.contentIndex);
+                if (!stream) throw new Error(`Missing argument stream ${event.contentIndex}`);
+                const delta = stream.push(event.delta);
+                if (delta) forward(event, delta);
+                continue;
+              }
+              if (event.type === "toolcall_end" || event.type === "done") {
+                for (const [contentIndex, stream] of argumentsByIndex) {
+                  if (event.type === "toolcall_end" && contentIndex !== event.contentIndex)
+                    continue;
+                  const delta = stream.push("", true);
+                  if (delta)
+                    forward(
+                      {
+                        type: "toolcall_delta",
+                        contentIndex,
+                        delta,
+                        partial: event.type === "done" ? event.message : event.partial,
+                      },
+                      delta,
+                    );
+                }
+              }
+              forward(event);
             }
           } catch (error) {
             output.push({

@@ -982,6 +982,18 @@ const GENERIC_FAILURE_CAUSE = "file operation failed";
 
 function wholeFileFailureCause(code: string): string {
   switch (code) {
+    case "missing": {
+      return "anchor not found";
+    }
+    case "ambiguous": {
+      return "anchor matches more than once";
+    }
+    case "invalid": {
+      return "anchor is invalid";
+    }
+    case "stale": {
+      return "anchor is stale";
+    }
     case "INVALID_REQUEST": {
       return "the request was invalid";
     }

@@ -18,6 +18,7 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  // Fresh-session discovery only; already-active guidance is covered by deterministic tests.
   "deferred-navigation-recovery",
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
   "Discover ast_search, lsp_search, diff and undo through tool_search before using them. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then undo that last edit. Read task.txt and report its restored marker. Preserve both files.",
@@ -2850,8 +2851,8 @@ add(
 
 add(
   "repeated-line-anchor-after-block-delete",
-  ["edit.repeated-line-anchor-block-change"],
-  "Read task.txt with anchors. Delete the first definition, from its first template line through its first } line, using anchors from that Read. Then delete the remaining template line using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
+  ["edit.repeated-line-anchor-block-recovery"],
+  "Read task.txt with anchors. Delete the first definition, from its first template line through its first } line, using anchors from that Read. Attempt to delete the remaining template line using its anchor from the first Read; this stale anchor must be rejected. Then read task.txt with anchors again and delete the remaining template line using its fresh anchor. Do not use exact text. Preserve every other byte.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -2867,6 +2868,13 @@ add(
       tool: "delete",
       args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: reuse(0, "start", "anchor"),
+      error: true,
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "delete",
+      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(3, "start", "anchor"),
     },
   ],
   {
@@ -2880,6 +2888,7 @@ add(
 );
 
 add(
+  // Agent-facing scope refusals are unchanged; native anchor-rejection cards have scripted Pi coverage.
   "result-selector-scope",
   ["compose.result-selector-scope"],
   "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as start and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Then pass the same line-2 result as path with the anchor the first Read shows before line 2 as start and text NEW followed by a newline. Preserve all other bytes.",
@@ -2902,6 +2911,23 @@ add(
     },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
+  "result-selector-exact-retry",
+  ["compose.result-selector-scope"],
+  "Read only line 2 of task.txt. Pass that Read result unchanged as Replace's path with start last and text BAD. The text exists outside the selection, so the call must fail without editing. Then pass the explicit task.txt path to Replace with start last and text fixed. This exact-text edit must succeed without an intervening anchor edit. Preserve all other bytes.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    {
+      tool: "replace",
+      args: { start: "last", text: "BAD" },
+      reuse: reuse(0),
+      error: true,
+    },
+    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" } },
+  ],
+  { expected: { "task.txt": "keep\nOLD\nfixed\n" } },
 );
 
 add(

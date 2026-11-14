@@ -1,3 +1,4 @@
+import type { TextAnchorRejection } from "./text-anchor.ts";
 /** A position with a one-based line and zero-based column. */
 export interface TextSelectionPosition {
   readonly lineNumber: number;
@@ -41,11 +42,7 @@ export type TextTargetResolutionAttempt =
   | { readonly kind: "resolved"; readonly targets: readonly TextTarget[] }
   | {
       readonly kind: "rejected";
-      readonly rejection: {
-        readonly code: "invalid" | "stale" | "missing" | "ambiguous";
-        readonly reason: string;
-        readonly contextRange?: { readonly offset: number; readonly limit: number };
-      };
+      readonly rejection: TextAnchorRejection;
     }
   | { readonly kind: "failed"; readonly error: unknown };
 
@@ -71,7 +68,7 @@ export function isTextTargetResolutionAttempt(
     return (
       rejection !== null &&
       typeof rejection === "object" &&
-      ["invalid", "stale", "missing", "ambiguous"].includes(
+      ["invalid", "stale", "missing", "ambiguous", "outside-scope"].includes(
         (rejection as Record<string, unknown>).code as string,
       ) &&
       typeof (rejection as Record<string, unknown>).reason === "string"
