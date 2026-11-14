@@ -60,14 +60,11 @@ const unknownReference =
 
 /**
  * The `id` of a value passed as a source, such as a Read or Search value in a Codemode script, or
- * `undefined` for any other input. A tool's own result record, with a `status` or a `target`, is
- * not such a value; `resolve` reads those itself.
+ * `undefined` for any other input. An id takes precedence over all other fields.
  */
 export function resultValueId(input: unknown): string | undefined {
   if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
   if (!("id" in input) || typeof input.id !== "string") return undefined;
-  if ("status" in input || ("target" in input && typeof input.target === "string"))
-    return undefined;
   return input.id;
 }
 /**
@@ -91,7 +88,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 4;
+export const RESULT_TARGET_STORE_VERSION = 5;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;

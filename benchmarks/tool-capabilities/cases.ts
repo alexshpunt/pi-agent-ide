@@ -2460,8 +2460,8 @@ add(
 );
 add(
   "move-zero-width",
-  ["edit.move-zero-width", "compose.move-point-replace"],
-  'Search task.txt with a zero-width regex for the point at its start. Search dest.txt with a zero-width regex for the point directly after "left " (offset 5). Move the source point to the destination point using both unchanged Search results as path and target. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.',
+  ["edit.move-zero-width", "compose.move-point-replace", "compose.value-id-source"],
+  'Search task.txt with a zero-width regex for the point at its start. Search dest.txt with a zero-width regex for the point directly after "left " (offset 5). Move the source point to the destination point using both unchanged Search results as path and target. In Codemode, pass the entire returned Search values unchanged, without extracting ids or matches. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.',
   [
     { tool: "search", args: { path: "task.txt", query: /^regex:/ } },
     { tool: "search", args: { path: "dest.txt", query: /^regex:/ } },
