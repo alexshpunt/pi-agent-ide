@@ -187,6 +187,26 @@ describe("source result targets", () => {
     expect(store.source({ id: "SEARCH#ABCD:1:match" }, "/workspace")).toBe(selected);
   });
 
+  test("an id takes precedence over every other source and selector field", () => {
+    const store = new ResultTargetStore();
+    const id = store.register([target], "/workspace", false);
+    const other = store.register([{ ...target, source: "/workspace/other.txt" }], "/workspace");
+    const value = {
+      id,
+      status: "error",
+      target: other,
+      data: { target: other },
+      path: "/workspace/other.txt",
+      complete: true,
+      matches: [{ id: other }],
+    };
+    expect(store.resolve(value, "/workspace")).toEqual(store.resolve(id, "/workspace"));
+    expect(store.resolve([value], "/workspace")).toEqual(store.resolve([id], "/workspace"));
+    expect(resultValueReference(store, value, "/workspace")).toBe(id);
+    expect(() => store.source({ ...value, id: "RESULT#missing" }, "/workspace")).toThrow(
+      /expired or unknown/u,
+    );
+  });
   test("a script value with an id the store did not issue fails like an unknown reference", () => {
     const store = new ResultTargetStore();
     for (const id of [
