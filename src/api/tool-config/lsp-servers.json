@@ -149,6 +149,11 @@
       "capabilities": ["diagnostics"]
     },
     "rust-analyzer": {
+      "initializationOptions": {
+        "checkOnSave": false,
+        "cargo": { "buildScripts": { "enable": false } },
+        "procMacro": { "enable": false }
+      },
       "command": ["rust-analyzer"],
       "transport": "stdio",
       "rootMarkers": ["Cargo.toml", "rust-project.json"],

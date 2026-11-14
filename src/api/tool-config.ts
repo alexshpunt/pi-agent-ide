@@ -86,6 +86,8 @@ export interface DiagnosticParserConfig {
 A linter with separate read-only and optional fixing commands.
 */
 export interface LinterCommandConfig extends FileMatcherConfig {
+  /** False keeps this entry configured but excludes it from automatic lint selection. */
+  readonly enabled?: boolean;
   readonly check: ProcessConfig;
   readonly fix?: ProcessConfig;
   readonly diagnostics: DiagnosticParserConfig;
@@ -620,6 +622,9 @@ export function parseLintersConfig(value: unknown): LintersConfig {
 
   for (const [name, entry] of Object.entries(root.entries)) {
     const record = configRecord(entry, `linter ${name}`);
+    if (record.enabled !== undefined && typeof record.enabled !== "boolean") {
+      throw new TypeError(`linter ${name}.enabled must be a boolean`);
+    }
     assertMatcher(record, `linter ${name}`);
     assertProcessConfig(record.check, `linter ${name}.check`);
 

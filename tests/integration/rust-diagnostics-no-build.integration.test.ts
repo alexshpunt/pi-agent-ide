@@ -12,7 +12,10 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
-import { enableNativeCodemode, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import {
+  enableNativeCodemode,
+  withTempWorkspace,
+} from "#integration/support/pi-runtime/fixtures.ts";
 
 function hasRustTools(): boolean {
   if (process.platform === "win32") return false;
@@ -70,7 +73,9 @@ process.exit(result.status ?? 1);
         // CARGO covers explicit executable lookup; RUSTC_WRAPPER is a second guard
         // against a toolchain proxy bypassing the Cargo interceptor.
         const rustcGuard = path.join(guard, "rustc-guard");
-        await writeFile(rustcGuard, `#!/usr/bin/env node
+        await writeFile(
+          rustcGuard,
+          `#!/usr/bin/env node
 const { appendFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const [rustc, ...args] = process.argv.slice(2);
@@ -79,7 +84,8 @@ if (!args.includes("-vV") && !args.some(arg => arg.startsWith("--print"))) {
   process.exit(101);
 }
 process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
-`);
+`,
+        );
         await chmod(rustcGuard, 0o755);
         const result = await new PiIntegrationTest({
           testName: "rust-diagnostics-no-build",
@@ -97,7 +103,7 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
             RAYON_NUM_THREADS: "4",
           },
           extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-          tools: ["read", "codemode"],
+          tools: ["read", "codemode", "lsp_search"],
           conversation: [
             assistantMessage(
               [toolCall({ id: "plain", name: "read", arguments: { path: "src/main.rs" } })],
@@ -115,10 +121,20 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
               ],
               { stopReason: "toolUse" },
             ),
+            assistantMessage(
+              [
+                toolCall({
+                  id: "symbols",
+                  name: "lsp_search",
+                  arguments: { path: "src/main.rs", query: "main" },
+                }),
+              ],
+              { stopReason: "toolUse" },
+            ),
             assistantMessage([text("Done")]),
           ],
         }).run("Inspect Rust source and diagnostics without compiling the workspace.");
-        for (const id of ["plain", "diagnostics"])
+        for (const id of ["plain", "diagnostics", "symbols"])
           expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
         // Retain subprocess evidence even when the safety assertion fails.
         await writeFile(path.join(result.artifacts.directory, "cargo.jsonl"), await readFile(log));
@@ -127,10 +143,9 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
           .split("\n")
           .filter(Boolean)
           .map((line) => JSON.parse(line) as string[]);
-        expect(
-          calls.some((args) => args.includes("metadata")),
-          JSON.stringify(calls),
-        ).toBe(true);
+        // Toolchain proxies can bypass the Cargo wrapper for metadata. Prove that
+        // the real server loaded the project through its symbol result instead.
+        expect(getToolResultText(result, "symbols")).toContain("main");
         expect(
           calls.filter((args) =>
             args.some((arg) =>
