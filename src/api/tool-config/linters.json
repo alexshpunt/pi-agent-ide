@@ -98,6 +98,7 @@
       }
     },
     "clippy": {
+      "enabled": false,
       "extensions": [".rs"],
       "check": {
         "command": ["cargo", "clippy", "--message-format", "short"],

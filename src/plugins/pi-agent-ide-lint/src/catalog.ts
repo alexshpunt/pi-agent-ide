@@ -115,20 +115,26 @@ export const LINTER_RECIPES: readonly ToolRecipe[] = [
     "checkstyle",
     "https://golangci-lint.run/",
   ),
-  recipe(
-    "clippy",
-    ["rust"],
-    ["cargo"],
-    ["Cargo.toml", "clippy.toml"],
-    [".rs"],
-    ["cargo", "clippy", "--message-format", "short"],
-    "gcc",
-    "https://doc.rust-lang.org/clippy/",
-    undefined,
-    undefined,
-    // Cargo exits with 101 when rustc reports an error; the report is still complete.
-    [0, 1, 101],
-  ),
+  {
+    id: "clippy",
+    name: "clippy",
+    kind: "linter",
+    languages: ["rust"],
+    executables: ["cargo"],
+    configFiles: ["Cargo.toml", "clippy.toml"],
+    documentation: "https://doc.rust-lang.org/clippy/",
+    linter: {
+      // Clippy compiles the workspace, so installing Cargo must not opt in to it.
+      enabled: false,
+      extensions: [".rs"],
+      check: {
+        command: ["cargo", "clippy", "--message-format", "short"],
+        // Cargo exits with 101 when rustc reports an error; the report is still complete.
+        successExitCodes: [0, 1, 101],
+      },
+      diagnostics: { format: "gcc" },
+    },
+  },
   recipe(
     "dotnet-format",
     ["csharp"],
