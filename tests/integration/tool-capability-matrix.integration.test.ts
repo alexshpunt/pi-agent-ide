@@ -103,8 +103,13 @@ test("the capability validator checks Search values and unchanged result provena
               arguments: {
                 code: `const empty = await tools.search({path:"task.txt",query:"regex:^ABSENT$"});
 if (empty.matches.length !== 0 || empty.complete !== true) throw Error("Empty value missing");
+if (await tools.replace({path:empty,text:"BAD"}) === null) throw Error("Empty no-op failed");
 const limited = await tools.ast_search({path:"scope.ts",pattern:"probe($ARG)",limit:1});
 if (limited.matches.length !== 1 || limited.complete !== false) throw Error("Incomplete value missing");
+const zero = await tools.search({path:limited,query:"regex:^ABSENT$"});
+if (zero.matches.length !== 0 || zero.complete !== false) throw Error("Incomplete empty value missing");
+if (await tools.replace({path:zero,text:"BAD"}) !== null) throw Error("Incomplete result accepted");
+if (await tools.replace({path:"task.txt",start:empty.id,text:"BAD"}) !== null) throw Error("Empty endpoint accepted");
 const failed = (await tools.search({path:"task.txt",query:"regex:("})) === null;
 if (!failed) throw Error("Invalid Search did not fail");
 const found = await tools.search({path:"task.txt",query:"OLD",limit:1000});

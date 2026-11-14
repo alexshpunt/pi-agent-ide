@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { withTextEditOrigin } from "./text-edit-origin.ts";
+import { TextAnchorResourceResolutionError } from "./text-anchor-registry.ts";
 import { localSearchSource } from "./native-search-source.ts";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
@@ -340,91 +341,104 @@ class NativeTextEditBatchCoordinator {
       const implicitAnchors: Record<string, string> = {};
       const scopedSources: Record<string, string> = {};
       const inferred = new Map<string, string>();
-      if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
-        const resolverContext = {
-          cwd: context.cwd,
-          ...(context.signal !== undefined && { signal: context.signal }),
-        };
-        for (const descriptor of [registration.source, ...(registration.source.targets ?? [])]) {
-          const value = input[descriptor.field];
-          if (typeof value !== "string" || value.length === 0) continue;
-          if (
-            value.startsWith("RESULT#") &&
-            !this.searchResults.has(value) &&
-            !this.resultTargets.referenceName(value).startsWith("SEARCH#")
-          ) {
-            // Pending edit results and other resource-owned selections remain boundaries.
-            ownsSource = true;
-            continue;
-          }
-          const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
-          if (result.kind === "not-handled") continue;
-          const source =
-            result.kind === "resolved"
-              ? localSearchSource(
-                  this.resultTargets.referenceName(value),
-                  result.targets,
-                  this.searchResults,
-                )
-              : undefined;
-          const firstAnchor = registration.anchors?.find(
-            (anchor) => anchor.sourceField === descriptor.field,
-          );
-          if (source === undefined || firstAnchor === undefined) {
-            ownsSource = true;
-            continue;
-          }
-          candidate[descriptor.field] = source;
-          // RESULT sources constrain explicit endpoints; textual Search sources also
-          // contribute their implicit selection. Retain references for each replan.
-          if (
-            value.startsWith("RESULT#") &&
-            (registration.anchors ?? []).some(
-              (anchor) =>
-                anchor.sourceField === descriptor.field &&
-                isMutationAnchorValue(anchor, input[anchor.field]),
+      try {
+        if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
+          const resolverContext = {
+            cwd: context.cwd,
+            ...(context.signal !== undefined && { signal: context.signal }),
+          };
+          for (const descriptor of [registration.source, ...(registration.source.targets ?? [])]) {
+            const value = input[descriptor.field];
+            if (typeof value !== "string" || value.length === 0) continue;
+            if (
+              value.startsWith("RESULT#") &&
+              !this.searchResults.has(value) &&
+              !this.resultTargets.referenceName(value).startsWith("SEARCH#")
+            ) {
+              // Pending edit results and other resource-owned selections remain boundaries.
+              ownsSource = true;
+              continue;
+            }
+            const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
+            if (result.kind === "not-handled") continue;
+            const source =
+              result.kind === "resolved"
+                ? localSearchSource(
+                    this.resultTargets.referenceName(value),
+                    result.targets,
+                    this.searchResults,
+                  )
+                : undefined;
+            const firstAnchor = registration.anchors?.find(
+              (anchor) => anchor.sourceField === descriptor.field,
+            );
+            if (source === undefined || firstAnchor === undefined) {
+              ownsSource = true;
+              continue;
+            }
+            candidate[descriptor.field] = source;
+            // RESULT sources constrain explicit endpoints; textual Search sources also
+            // contribute their implicit selection. Retain references for each replan.
+            if (
+              value.startsWith("RESULT#") &&
+              (registration.anchors ?? []).some(
+                (anchor) =>
+                  anchor.sourceField === descriptor.field &&
+                  isMutationAnchorValue(anchor, input[anchor.field]),
+              )
             )
-          )
-            scopedSources[descriptor.field] = value;
-          else if (isMutationAnchorValue(firstAnchor, input[firstAnchor.field]))
-            implicitAnchors[firstAnchor.field] = value;
-          else candidate[firstAnchor.field] = value;
-        }
-        for (const anchor of registration.anchors ?? []) {
-          const value = input[anchor.field];
-          if (!isMutationAnchorValue(anchor, value)) continue;
+              scopedSources[descriptor.field] = value;
+            else if (isMutationAnchorValue(firstAnchor, input[firstAnchor.field]))
+              implicitAnchors[firstAnchor.field] = value;
+            else candidate[firstAnchor.field] = value;
+          }
+          for (const anchor of registration.anchors ?? []) {
+            const value = input[anchor.field];
+            if (!isMutationAnchorValue(anchor, value)) continue;
+            if (
+              value.startsWith("RESULT#") &&
+              !this.searchResults.has(value) &&
+              !this.resultTargets.referenceName(value).startsWith("SEARCH#")
+            ) {
+              ownsSource = true;
+              continue;
+            }
+            const targets = await this.core.resolveTextAnchorResources(
+              value,
+              anchor.kinds,
+              resolverContext,
+            );
+            if (targets === undefined) continue;
+            const source = localSearchSource(
+              this.resultTargets.referenceName(value),
+              targets,
+              this.searchResults,
+            );
+            if (source === undefined) {
+              ownsSource = true;
+              continue;
+            }
+            const previous = inferred.get(anchor.sourceField);
+            if (previous !== undefined && previous !== source) ownsSource = true;
+            inferred.set(anchor.sourceField, source);
+            if (!candidate[anchor.sourceField]) candidate[anchor.sourceField] = source;
+          }
           if (
-            value.startsWith("RESULT#") &&
-            !this.searchResults.has(value) &&
-            !this.resultTargets.referenceName(value).startsWith("SEARCH#")
+            registration.source.inherited &&
+            !candidate[registration.source.field] &&
+            !ownsSource
           ) {
-            ownsSource = true;
-            continue;
+            const source =
+              script.pending.entries.at(-1)?.path ?? getLastResolvedResource(pi)?.source;
+            if (source !== undefined) candidate[registration.source.field] = source;
           }
-          const targets = await this.core.resolveTextAnchorResources(
-            value,
-            anchor.kinds,
-            resolverContext,
-          );
-          if (targets === undefined) continue;
-          const source = localSearchSource(
-            this.resultTargets.referenceName(value),
-            targets,
-            this.searchResults,
-          );
-          if (source === undefined) {
-            ownsSource = true;
-            continue;
-          }
-          const previous = inferred.get(anchor.sourceField);
-          if (previous !== undefined && previous !== source) ownsSource = true;
-          inferred.set(anchor.sourceField, source);
-          if (!candidate[anchor.sourceField]) candidate[anchor.sourceField] = source;
         }
-        if (registration.source.inherited && !candidate[registration.source.field] && !ownsSource) {
-          const source = script.pending.entries.at(-1)?.path ?? getLastResolvedResource(pi)?.source;
-          if (source !== undefined) candidate[registration.source.field] = source;
-        }
+      } catch (error) {
+        context.signal?.throwIfAborted();
+        if (!(error instanceof TextAnchorResourceResolutionError)) throw error;
+        // Classification is only an optimization. Let the tool handle rejected references
+        // so a failed child call keeps its normal result and the script can continue.
+        ownsSource = true;
       }
       if (
         registration &&

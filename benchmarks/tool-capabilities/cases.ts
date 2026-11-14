@@ -626,14 +626,21 @@ function add(
 
 add(
   "search-script-facts",
-  ["search.script-facts", "compose.search-script-result", "ast.script-line-text"],
-  "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check each value's matches list and complete instead of parsing display prose: the empty search is complete with no matches, the bounded AST search is not complete, and the invalid regex call fails. The final search is complete. Pass that final Search value unchanged to Replace with NEW, replacing all its matches and preserving keep/last. Report the observed facts without printing all matches.",
+  [
+    "search.script-facts",
+    "compose.search-script-result",
+    "ast.script-line-text",
+    "codemode.failed-call-null",
+    "codemode.failed-call-summary",
+  ],
+  "Use native Codemode to Search task.txt for regex:^ABSENT$ and confirm complete coverage with no matches. Replace that empty Search value with BAD; it must succeed without changes. ast_search scope.ts for probe($ARG) with limit 1, then Search that bounded result for regex:^ABSENT$. Confirm that the resulting empty Search is incomplete. Replace that incomplete value with BAD; the call must fail and resolve to null while the script continues. Also Replace in task.txt with the complete empty Search id as start and text BAD; this invalid endpoint must fail and resolve to null. Search task.txt for invalid regex:(, then for OLD with limit 1000. Check matches and complete instead of parsing display prose. Pass the final complete Search value unchanged to Replace with NEW, replacing all its matches and preserving keep/last. Report the facts and keep the failed calls visible in the summary without printing all matches.",
   [
     {
       tool: "search",
       args: { path: "task.txt", query: "regex:^ABSENT$" },
       scriptResult: { complete: true, matches: { length: 0 } },
     },
+    { tool: "replace", args: { text: "BAD" }, reuse: reuse(0) },
     {
       tool: "ast_search",
       args: { path: "scope.ts", pattern: "probe($ARG)", limit: 1 },
@@ -641,6 +648,19 @@ add(
         complete: false,
         matches: { length: 1, 0: { text: "probe(first)", lineText: "probe(first);" } },
       },
+    },
+    {
+      tool: "search",
+      args: { query: "regex:^ABSENT$" },
+      reuse: reuse(2),
+      scriptResult: { complete: false, matches: { length: 0 } },
+    },
+    { tool: "replace", args: { text: "BAD" }, reuse: reuse(3), error: true },
+    {
+      tool: "replace",
+      args: { path: "task.txt", text: "BAD" },
+      reuse: reuse(0, "start"),
+      error: true,
     },
     {
       tool: "search",
@@ -652,7 +672,7 @@ add(
       args: { path: "task.txt", query: "OLD", limit: 1000 },
       scriptResult: { complete: true, matches: { length: 2 } },
     },
-    { tool: "replace", args: { text: "NEW" }, reuse: reuse(3) },
+    { tool: "replace", args: { text: "NEW" }, reuse: reuse(7) },
   ],
   {
     modes: ["codemode"],
