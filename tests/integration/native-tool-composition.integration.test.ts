@@ -543,9 +543,13 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));`,
     expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("NEW\n");
   });
 });
-test.each([false, true])(
-  "zero-width Move keeps destination points without writes (same file: %s)",
-  async (sameFile) => {
+test.each([
+  { sameFile: false, resultText: false },
+  { sameFile: true, resultText: false },
+  { sameFile: false, resultText: true },
+])(
+  "zero-width Move keeps destination points without writes (%j)",
+  async ({ sameFile, resultText }) => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "source.txt"), "left right\r\n");
       await writeFile(path.join(cwd, "destination.txt"), "left right\r\n");
@@ -554,8 +558,12 @@ test.each([false, true])(
         cwd,
         "move-zero-width-no-op",
         [
-          `const source=await tools.search({path:await tools.read({path:"source.txt"}),query:"regex:^"});
-const destination=await tools.search({path:await tools.read({path:${JSON.stringify(destination)}}),query:"regex:(?<=left )"});
+          `const select=async(path,query)=>{
+  const value=await tools.search({path,query});
+  return ${resultText} ? await tools.fixture_search_text({}) : value;
+};
+const source=await select("source.txt","regex:^");
+const destination=await select(${JSON.stringify(destination)},"regex:(?<=left )");
 const paths=["source.txt","destination.txt"];
 const before=await tools.fixture_move_stat({paths});
 const moved=await tools.move({path:source,target:destination});
@@ -569,7 +577,7 @@ await rejects(()=>tools.move({path:source,target:source}));
 check(before===await tools.fixture_move_stat({paths}),"Rejected Move wrote a fixture");
 text(await tools.replace({path:moved,text:"NEW "}));`,
         ],
-        [path.resolve("tests/integration/support/move-no-op-probe.ts")],
+        [path.resolve("tests/integration/support/move-no-op-probe.ts"), await searchTextProbe(cwd)],
       );
       expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
         false,

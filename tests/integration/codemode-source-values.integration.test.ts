@@ -19,6 +19,56 @@ type Call = Parameters<typeof toolCall>[0];
 
 const unknownId = "RESULT#00000000-0000-4000-8000-000000000000";
 
+test("whole Search values and ids give Move, Copy and Replace the same selection", async () => {
+  await withTempWorkspace(async (cwd) => {
+    for (const form of ["value", "object", "id"]) {
+      await writeFile(path.join(cwd, `${form}-source.txt`), "source\n");
+      await writeFile(path.join(cwd, `${form}-target.txt`), "left right\n");
+      await writeFile(path.join(cwd, `${form}-copy.txt`), "left OLD right\n");
+      await writeFile(path.join(cwd, `${form}-move.txt`), "left OLD right\n");
+    }
+    const result = await run(cwd, [
+      {
+        id: "transfers",
+        name: "codemode",
+        arguments: {
+          code: `
+for (const form of ["value", "object", "id"]) {
+  const source = form + "-source.txt";
+  const target = form + "-target.txt";
+  const ref = value => form === "value" ? value : form === "object" ? { id: value.id } : value.id;
+  const s = await tools.search({ path: source, query: "regex:^" });
+  const d = await tools.search({ path: target, query: "regex:(?<=left )" });
+  const moved = await tools.move({ path: ref(s), target: ref(d) });
+  if (moved === null) throw Error(form + ": zero-width Move failed");
+  await tools.replace({ path: moved, text: "NEW " });
+  const selected = await tools.search({ path: source, query: "source" });
+  const copyTarget = await tools.search({ path: form + "-copy.txt", query: "OLD" });
+  const copied = await tools.copy({ path: ref(selected), target: ref(copyTarget) });
+  if (copied === null) throw Error(form + ": Copy failed");
+  const moveTarget = await tools.search({ path: form + "-move.txt", query: "OLD" });
+  const cut = await tools.move({ path: ref(selected), target: ref(moveTarget) });
+  if (cut === null) throw Error(form + ": Move failed");
+}
+text("transfers-complete");`,
+        },
+      },
+    ]);
+    const output = getToolResultText(result, "transfers");
+    expect(getToolExecution(result, "transfers").isError, output).toBe(false);
+    expect(codemodeFailures(output)).toBe("");
+    expect(output).toContain("transfers-complete");
+    for (const form of ["value", "object", "id"]) {
+      const contents = (suffix: string) =>
+        readFile(path.join(cwd, `${form}-${suffix}.txt`), "utf8");
+      expect(await contents("source")).toBe("\n");
+      expect(await contents("target")).toBe("left NEW right\n");
+      expect(await contents("copy")).toBe("left source right\n");
+      expect(await contents("move")).toBe("left source right\n");
+    }
+  });
+}, 120_000);
+
 async function run(cwd: string, calls: readonly Call[]) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
   await writeFile(
@@ -33,7 +83,7 @@ async function run(cwd: string, calls: readonly Call[]) {
     rawMode: false,
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-    tools: ["read", "search", "replace", "diff", "codemode"],
+    tools: ["read", "search", "replace", "copy", "move", "diff", "codemode"],
     conversation: [
       ...calls.map((call) => assistantMessage([toolCall(call)], { stopReason: "toolUse" })),
       assistantMessage([text("Done")]),
@@ -50,7 +100,7 @@ test("a value with an id selects the same text as its id, directly and in Codemo
         arguments: {
           code: `
 const read = await tools.read({ path: "a.txt" });
-const readValue = { ...read, path: "c.txt" };
+const readValue = { ...read, path: "c.txt", status: "error", target: "RESULT#missing", matches: [] };
 const byValue = await tools.search({ path: readValue, query: "beta" });
 const byId = await tools.search({ path: read.id, query: "beta" });
 const other = await tools.read({ path: "c.txt" });
