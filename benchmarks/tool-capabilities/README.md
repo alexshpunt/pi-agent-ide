@@ -73,6 +73,7 @@ Some cases need extra tools. The sandbox sees only `/usr`, `/etc`, `/opt`, and `
 | `clangd`                     | `lsp-overload-rename`                                                                                                                                              |
 | `jq`                         | `read-jq`, `read-jq-bounded-input`                                                                                                                                 |
 | `cargo` and `rustfmt`        | `rust-style-preservation`                                                                                                                                          |
+| `rust-analyzer` and `cargo clippy` | `rust-diagnostics-no-build`                                                                                                                                   |
 | Python `debugpy`             | `debug-roundtrip`, `debug-controls`, `debug-backend-fallback`                                                                                                      |
 | ColGREP                      | `semantic-code-search`, `semantic-script-files`                                                                                                                    |
 | Vera                         | `semantic-code-search-vera`, `semantic-vera-refresh`                                                                                                               |
@@ -80,9 +81,20 @@ Some cases need extra tools. The sandbox sees only `/usr`, `/etc`, `/opt`, and `
 On Ubuntu 24.04, install the system packages:
 
 ```bash
-sudo apt-get install -y --no-install-recommends jq clangd cargo rustfmt python3-debugpy
+sudo apt-get install -y --no-install-recommends jq clangd cargo rustfmt rust-clippy python3-debugpy
 sudo npm install --global typescript typescript-language-server
 ```
+
+For Linux x86-64, install the [standalone rust-analyzer binary](https://rust-analyzer.github.io/book/rust_analyzer_binary.html) into `/usr/local/bin`. A rustup proxy or a symlink into `~/.rustup` cannot reach its toolchain inside the sandbox.
+
+```bash
+curl -fL https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz -o rust-analyzer.gz
+gunzip rust-analyzer.gz
+sudo install -m 0755 rust-analyzer /usr/local/bin/rust-analyzer
+rm rust-analyzer
+```
+
+The `rust-diagnostics-no-build` prerequisite runs `rust-analyzer --version && cargo clippy --version` inside the sandbox before inference. Both commands must succeed with the sandbox's empty home and mounted toolchain paths.
 
 Install the ColGREP and Vera versions pinned in `src/plugins/pi-agent-ide-semantic/src/backend.ts` and `vera-backend.ts`, with the SHA-256 listed there:
 
