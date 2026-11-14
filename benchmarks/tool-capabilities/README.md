@@ -15,6 +15,8 @@ The coverage gate is part of `pnpm check`. It loads the current IDE without a pr
 
 The free regression tests cover route provenance and sandbox timeout/reset/cleanup. One scripted real-Pi integration test proves that nested Codemode events are read correctly. These tests do not use paid models.
 
+The Codemode-only `codemode-search-anchor-batch` and `codemode-search-value-batch` cases check local Search selections mixed with Insert, Replace and Delete in one committed batch. The anchor case retains readable Search output under `.pi/issued-search.txt`; the value case reuses native match values. Both validators check child membership in the native batch metadata. Focused real-Pi cases cover scoped selectors, source and target inference, concurrent writers, vanished selections and multi-file boundaries; the paid cases do not verify those additional paths. The native-value paid route remains unverified until paid execution.
+
 Rust edition selection is formatter behavior after an edit, not a new model operation. The existing edit routes still cover tool use; focused Rust formatter and real-Pi tests cover Cargo edition discovery and formatting. The paid routes do not verify Rust editions.
 
 ## Paid runs
