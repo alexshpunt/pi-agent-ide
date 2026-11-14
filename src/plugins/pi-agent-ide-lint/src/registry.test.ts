@@ -74,6 +74,37 @@ test("a project linter beats a different matching global linter", async () => {
   expect(registry.resolve("source.custom", project)?.check.command[0]).toBe("project-lint");
 });
 
+test("Cargo projects do not opt in to Clippy just by having Cargo installed", async () => {
+  const project = await temporaryDirectory("rust-lint-default-");
+  process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("rust-lint-agent-");
+  await writeFile(
+    path.join(project, "Cargo.toml"),
+    '[package]\nname = "demo"\nversion = "0.1.0"\n',
+  );
+  const registry = await LintCommandRegistry.fromDirectory(project, {
+    executableAvailability: async (configs) => configs.map(() => true),
+  });
+  expect(registry.resolve("src/main.rs", project)).toBeUndefined();
+});
+
+test("an explicit project Clippy entry opts in and can be disabled again", async () => {
+  const project = await temporaryDirectory("rust-lint-opt-in-");
+  process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("rust-lint-agent-");
+  const clippy = {
+    extensions: [".rs"],
+    check: { command: ["cargo", "clippy", "--message-format", "short"] },
+    diagnostics: { format: "gcc" },
+  };
+  const file = path.join(project, ".pi", "pi-agent-ide", "linters.json");
+  await writeConfig(file, { version: 1, linters: { clippy } });
+  expect(
+    (await LintCommandRegistry.fromDirectory(project)).resolveEntry("src/main.rs", project)?.layer,
+  ).toBe("project");
+  await writeConfig(file, { version: 1, linters: { clippy: { ...clippy, enabled: false } } });
+  expect(
+    (await LintCommandRegistry.fromDirectory(project)).resolve("src/main.rs", project),
+  ).toBeUndefined();
+});
 function linter(executable: string): Record<string, unknown> {
   return {
     extensions: [".custom"],
