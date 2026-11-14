@@ -318,6 +318,8 @@ const groups: [string[], string[]][] = [
     ["debug-controls"],
   ],
   [["debug.backend-vscode-refusal", "debug.backend-native"], ["debug-backend-fallback"]],
+  // Rust has a separate no-build route; the TypeScript route does not prove Cargo safety.
+  [["read.rust-diagnostics-no-build"], ["rust-diagnostics-no-build"]],
   [
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],

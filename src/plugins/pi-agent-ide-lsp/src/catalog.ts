@@ -156,15 +156,27 @@ export const LSP_RECIPES: readonly ToolRecipe[] = [
     ["gopls"],
     "https://go.dev/gopls/",
   ),
-  recipe(
-    "rust-analyzer",
-    ["rust"],
-    ["rust-analyzer"],
-    ["Cargo.toml", "rust-project.json"],
-    { rust: [".rs"] },
-    ["rust-analyzer"],
-    "https://rust-analyzer.github.io/",
-  ),
+  {
+    id: "rust-analyzer",
+    name: "rust-analyzer",
+    kind: "lsp",
+    languages: ["rust"],
+    executables: ["rust-analyzer"],
+    configFiles: ["Cargo.toml", "rust-project.json"],
+    documentation: "https://rust-analyzer.github.io/",
+    lsp: {
+      command: ["rust-analyzer"],
+      rootMarkers: ["Cargo.toml", "rust-project.json"],
+      languageIds: { rust: [".rs"] },
+      // Initialization must be safe before workspace loading starts. Enabling proc macros
+      // implicitly enables build scripts, so both switches must remain off by default.
+      initializationOptions: {
+        checkOnSave: false,
+        cargo: { buildScripts: { enable: false } },
+        procMacro: { enable: false },
+      },
+    },
+  },
   recipe(
     "csharp-ls",
     ["csharp"],

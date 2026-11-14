@@ -56,6 +56,8 @@ export interface ToolRecipe {
     readonly output: "in-place" | "stdout";
   };
   readonly linter?: {
+    /** False requires an explicit enabled override before automatic lint selection. */
+    readonly enabled?: boolean;
     readonly extensions: readonly string[];
 
     /** Exact basenames accepted in addition to the file extensions. */

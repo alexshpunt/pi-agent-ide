@@ -41,7 +41,7 @@ export class LintCommandRegistry {
     const { available, evidence } = await toolRuntimeEvidence(
       directory,
       effective.entries
-        .filter((entry) => entry.layer === "built-in")
+        .filter((entry) => entry.layer === "built-in" && entry.config.enabled !== false)
         .map((entry) => ({ id: entry.id, config: entry.config.check })),
       LINTER_RECIPES,
       options,
@@ -84,7 +84,7 @@ export class LintCommandRegistry {
     projectRoot: string,
   ): EffectiveToolConfigEntry<LinterCommandConfig> | undefined {
     return selectConfiguredEntry(
-      this.linters,
+      this.linters.filter((entry) => entry.config.enabled !== false),
       this.availableBuiltIns,
       this.evidence,
       filePath,

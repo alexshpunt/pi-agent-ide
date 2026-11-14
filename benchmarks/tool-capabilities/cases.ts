@@ -3290,6 +3290,30 @@ add(
 );
 
 add(
+  "rust-diagnostics-no-build",
+  ["read.rust-diagnostics-no-build"],
+  "Read src/main.rs with the diagnostics view, then use lsp_search with declaration src/main.rs#main to confirm the Rust server is running. Read diagnostics:src/main.rs. Keep the source and tool configuration unchanged. Do not run Cargo or enable build-backed diagnostics. Report the main function name; an incomplete native diagnostic snapshot is acceptable.",
+  [
+    { tool: "read", args: { path: "src/main.rs", views: ["diagnostics"] } },
+    { tool: "lsp_search", args: { declaration: "src/main.rs#main" }, contains: "main" },
+    { tool: "read", args: { path: "diagnostics:src/main.rs" } },
+  ],
+  {
+    files: {
+      "Cargo.toml":
+        '[package]\nname = "rust-diagnostic-capability"\nversion = "0.1.0"\nedition = "2021"\n',
+      "src/main.rs": "fn main() {}\n",
+      // No dependencies: an accidental build stays small and records its side effect.
+      "build.rs":
+        'fn main() { std::fs::write("build-attempted", "unexpected").unwrap(); panic!("unexpected diagnostic build"); }\n',
+    },
+    expected: { "src/main.rs": "fn main() {}\n", "build-attempted": null },
+    forbiddenTools: ["bash", "write", "replace", "insert", "delete"],
+    prerequisite: "rust-analyzer --version && cargo clippy --version",
+  },
+);
+
+add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
   "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search for the declaration of count and for its calls. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
