@@ -163,6 +163,13 @@ void test("shifted repeated-line route accepts the issued alpha anchor and line 
   ] as const satisfies readonly Call[];
   const route = steps("repeated-line-anchor-after-shift");
   assert.ok(check(route, calls));
+  assert.ok(
+    !check(route, [
+      calls[0],
+      { ...calls[1], args: { ...calls[1].args, text: "top\n\n" } },
+      calls[2],
+    ]),
+  );
   for (const anchor of ["HJKMNPQ", "7654321"]) {
     assert.ok(
       !check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, anchor } }, calls[2]]),
@@ -184,6 +191,17 @@ for (const ending of ["lf", "crlf"]) {
       { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
     ] as const satisfies readonly Call[];
     assert.ok(check(steps(`exact-eof-${ending}`), calls, "codemode"));
+    assert.ok(
+      !check(
+        steps(`exact-eof-${ending}`),
+        [
+          calls[0],
+          { ...calls[1], args: { ...calls[1].args, start: `Last${eol}Block${eol}${eol}` } },
+          ...calls.slice(2),
+        ],
+        "codemode",
+      ),
+    );
     assert.ok(
       !check(
         steps(`exact-eof-${ending}`),
