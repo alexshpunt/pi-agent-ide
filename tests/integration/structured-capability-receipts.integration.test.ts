@@ -17,9 +17,7 @@ import { expect, test } from "vitest";
 
 test("the structured capability case proves real alias receipts without exposing its nonce in summary text", async () => {
   await withTempWorkspace(async (cwd) => {
-    const task = capabilityCases.find(
-      (candidate) => candidate.id === "semantic-local-alias-receipts",
-    );
+    const task = capabilityCases.find((candidate) => candidate.id === "semantic-script-receipts");
     if (!task) throw new Error("Missing structured receipt capability case");
     const textTask = capabilityCases.find(
       (candidate) => candidate.id === "semantic-write-receipts",

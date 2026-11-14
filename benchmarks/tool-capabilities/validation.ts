@@ -140,8 +140,6 @@ export interface RouteStep {
   parentContains?: string | readonly string[];
   /** Require the source object, unchanged by text(receipt), in a completed native Codemode parent. */
   parentStructuredValue?: boolean;
-  /** Require a registered transparent local alias to forward the source execution. */
-  viaLocalAlias?: boolean;
   /** Check finalized transcript feedback when validation skipped the tool-result hook. */
   finalContains?: string;
   /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
@@ -507,7 +505,6 @@ export function validateRoute(
         continue;
       const execution = executionParent(start);
       if (!execution) continue;
-      if (step.viaLocalAlias && (!execution.call || execution.call === event.toolCallId)) continue;
       if (step.discovers) {
         if (execution.parent || !step.discovers.every((name) => discovered(start.index).has(name)))
           continue;

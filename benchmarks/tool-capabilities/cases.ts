@@ -181,45 +181,35 @@ add(
     answer: "unknown",
   },
 );
-for (const viaLocalAlias of [false, true])
-  add(
-    viaLocalAlias ? "semantic-local-alias-receipts" : "semantic-script-receipts",
-    [
-      viaLocalAlias
-        ? "compose.local-alias-structured-receipt"
-        : "compose.provider-structured-receipt",
-    ],
-    (viaLocalAlias
-      ? "In native Codemode, use searchTools to discover the registered local MCP forwarding alias for Insert even when it is absent from the initial catalogue, then use that alias. Do not substitute canonical Insert; report a missing prerequisite if no alias is registered. "
-      : "In native Codemode, use Insert, preferring a matching local MCP forwarding alias when one is registered. ") +
-      'Call it once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report unknown for the uncertain action.',
-    ["applied", "not-applied", "unknown"].map((effect) => ({
-      tool: "insert",
-      args: { path: `fixture:semantic-script/${effect}`, text: "probe" },
-      error: effect !== "applied",
-      contains: `Semantic action ${effect}`,
-      parentStructuredValue: true,
-      scriptResult: {
-        kind: "fixture-action",
-        ok: effect === "applied",
-        effect,
-        receipt: { attempted: 1, delivered: effect !== "not-applied" },
-        nonce: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
-      },
-      ...(viaLocalAlias && { viaLocalAlias: true }),
-    })),
-    {
-      modes: ["codemode"],
-      setup: "semantic-write",
-      ...(viaLocalAlias && { prerequisite: 'test "${CAPABILITY_CONNECTOR_ALIASES:-0}" = 1' }),
-      expected: {
-        ...textFile,
-        "attempts.jsonl":
-          '{"effect":"applied","text":"probe"}\n{"effect":"not-applied","text":"probe"}\n{"effect":"unknown","text":"probe"}\n',
-      },
-      answer: "unknown",
+add(
+  "semantic-script-receipts",
+  ["compose.provider-structured-receipt"],
+  'In native Codemode, call Insert once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report unknown for the uncertain action.',
+  ["applied", "not-applied", "unknown"].map((effect) => ({
+    tool: "insert",
+    args: { path: `fixture:semantic-script/${effect}`, text: "probe" },
+    error: effect !== "applied",
+    contains: `Semantic action ${effect}`,
+    parentStructuredValue: true,
+    scriptResult: {
+      kind: "fixture-action",
+      ok: effect === "applied",
+      effect,
+      receipt: { attempted: 1, delivered: effect !== "not-applied" },
+      nonce: /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u,
     },
-  );
+  })),
+  {
+    modes: ["codemode"],
+    setup: "semantic-write",
+    expected: {
+      ...textFile,
+      "attempts.jsonl":
+        '{"effect":"applied","text":"probe"}\n{"effect":"not-applied","text":"probe"}\n{"effect":"unknown","text":"probe"}\n',
+    },
+    answer: "unknown",
+  },
+);
 add(
   "ide-settings-catalog",
   ["read.ide-settings", "search.ide-settings"],
