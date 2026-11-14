@@ -1416,11 +1416,23 @@ add(
 
 add(
   "search-multiline-between",
-  ["search.multiline", "compose.search-multiline-replace"],
-  "Search task.txt with one multiline regex that selects only the lines between the BEGIN and END marker lines, without the markers. Replace that Search selection with NEW and a line break. Keep the marker lines and all other bytes.",
+  ["search.multiline", "compose.search-multiline-replace", "compose.search-retained-result"],
+  "Search task.txt with one multiline regex that selects only the lines between the BEGIN and END marker lines, without the markers. In Codemode check that its only match has the complete lineText old one followed by a newline and old two. Retain this result, then Search task.txt for keep. Replace the FIRST Search selection with NEW and a line break, reusing its original reference or value, not the later search. Keep the marker lines and all other bytes.",
   [
-    { tool: "search", args: { path: "task.txt", query: /^regex:/, multiline: true } },
-    { tool: "replace", args: { text: /^NEW\r?\n$/ }, reuse: reuse(0) },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: /^regex:/, multiline: true },
+      modes: ["direct"],
+    },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: /^regex:/, multiline: true },
+      modes: ["codemode"],
+      scriptResult: { complete: true, matches: { length: 1, 0: { lineText: "old one\nold two" } } },
+    },
+    { tool: "search", args: { path: "task.txt", query: "keep" } },
+    { tool: "replace", modes: ["direct"], args: { text: /^NEW\r?\n$/ }, reuse: reuse(0) },
+    { tool: "replace", modes: ["codemode"], args: { text: /^NEW\r?\n$/ }, reuse: reuse(1) },
   ],
   {
     files: { "task.txt": "keep\nBEGIN\nold one\nold two\nEND\nkeep\n" },

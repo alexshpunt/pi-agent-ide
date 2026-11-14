@@ -116,7 +116,10 @@ const groups: [string[], string[]][] = [
   ],
   [["search.semantic-vera-refresh"], ["semantic-vera-refresh"]],
   [["search.semantic-script-files"], ["semantic-script-files"]],
-  [["search.multiline", "compose.search-multiline-replace"], ["search-multiline-between"]],
+  [
+    ["search.multiline", "compose.search-multiline-replace", "compose.search-retained-result"],
+    ["search-multiline-between"],
+  ],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
   [["edit.delete-exact-range"], ["exact-range-delete"]],
