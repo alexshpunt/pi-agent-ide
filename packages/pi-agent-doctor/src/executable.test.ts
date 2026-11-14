@@ -16,10 +16,11 @@ test("does not mistake a directory for an executable", async () => {
 });
 
 test("Windows ignores a POSIX-only project shim and accepts a Windows launcher", async () => {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+  if (originalPlatform === undefined) throw new Error("Missing process.platform descriptor");
   const root = path.resolve(".agents/tmp/executable-tests");
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "windows-shim-"));
-  const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
   try {
     const bin = path.join(cwd, "node_modules", ".bin");
     await mkdir(bin, { recursive: true });

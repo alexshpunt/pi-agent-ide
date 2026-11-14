@@ -80,10 +80,9 @@ test("token selections reject bulk edits but remain readable and individually ed
   const { createSearchRecipe } = await import("#src/search-recipe.ts");
   const recipe = { ...createSearchRecipe({ query }), originalQuery: query };
   const matches = [
-    searchMatch(source, "alpha"),
+    { ...searchMatch(source, "alpha"), lineText: "alpha beta" },
     { ...searchMatch(source, "beta"), startColumn: 6, endColumn: 10, lineText: "alpha beta" },
   ];
-  matches[0] = { ...matches[0]!, lineText: "alpha beta" };
   const session = await store.register(recipe.query, matches, true, cwd, undefined, recipe);
   expect(() => targets.resolve(session.target, cwd, { forEdit: true })).toThrow(
     /alpha AND beta.*2/u,
@@ -102,12 +101,15 @@ test("token selections reject bulk edits but remain readable and individually ed
   await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
     targets: [{ source }],
   });
-  await expect(
-    store.anchorResolver().tryResolve(all, { source, content, lines: content.split("\n"), cwd }),
-  ).resolves.toMatchObject({
-    kind: "rejected",
-    rejection: { reason: expect.stringContaining(query) },
+  const resolution = await store.anchorResolver().tryResolve(all, {
+    source,
+    content,
+    lines: content.split("\n"),
+    cwd,
   });
+  expect(resolution.kind).toBe("rejected");
+  if (resolution.kind !== "rejected") throw new Error("Expected a rejected anchor");
+  expect(resolution.rejection.reason).toContain(query);
 });
 test("an all anchor cannot broaden from a phrase to tokens during refresh", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-refresh-token-"));
@@ -130,12 +132,13 @@ test("an all anchor cannot broaden from a phrase to tokens during refresh", asyn
   );
   await writeFile(source, "alpha\n");
   const all = `SEARCH#${session.id}:all:match`;
-  await expect(
-    store.resourceResolver().tryResolve(all, { cwd, edit: { attempt: 0 } }),
-  ).resolves.toMatchObject({
-    kind: "rejected",
-    rejection: { reason: expect.stringContaining("alpha beta") },
+  const resolution = await store.resourceResolver().tryResolve(all, {
+    cwd,
+    edit: { attempt: 0 },
   });
+  expect(resolution.kind).toBe("rejected");
+  if (resolution.kind !== "rejected") throw new Error("Expected a rejected resource");
+  expect(resolution.rejection.reason).toContain("alpha beta");
   await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
     targets: [{ source }],
   });

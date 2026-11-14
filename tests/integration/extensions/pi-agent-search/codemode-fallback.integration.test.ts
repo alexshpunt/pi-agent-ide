@@ -65,12 +65,9 @@ text("fallback contract passed");
     ...createSearchRecipe({ query: "alpha beta", path: "input.txt" }),
     originalQuery: "alpha beta",
   };
-  const warning = tokenSelectionWarning(
-    recipe,
-    recipe.fallbacks!.find((step) => step.mode === "words")!.query,
-    2,
-    true,
-  );
+  const words = recipe.fallbacks?.find((step) => step.mode === "words");
+  if (words === undefined) throw new Error("Missing word fallback");
+  const warning = tokenSelectionWarning(recipe, words.query, 2, true);
   expect(warning).toBeDefined();
   expect(getToolResultText(result, "direct")).toContain(notice);
   expect(getToolResultText(result, "script")).toContain("fallback contract passed");

@@ -235,8 +235,16 @@ export function createIdeTextResults(
   pi.on("tool_execution_end", (event) => {
     const pending = pendingFailureText.get(event.toolCallId);
     pendingFailureText.delete(event.toolCallId);
-    if (pending && event.result && Array.isArray(event.result.content)) {
-      const finalText = event.result.content
+    const result: unknown = event.result;
+    if (
+      pending &&
+      result !== null &&
+      typeof result === "object" &&
+      "content" in result &&
+      Array.isArray(result.content)
+    ) {
+      const content: unknown[] = result.content;
+      const finalText = content
         .filter(
           (block: unknown): block is { type: "text"; text: string } =>
             block !== null &&
@@ -266,7 +274,6 @@ export function createIdeTextResults(
     // Pi drops a null structuredContent that a tool_result hook returns, because the agent loop
     // merges it with `??`. It hands this same result object to the calling script after the
     // event, so the null value is set here.
-    const result: unknown = event.result;
     if (result !== null && typeof result === "object")
       Object.assign(result, { structuredContent: null });
   });
