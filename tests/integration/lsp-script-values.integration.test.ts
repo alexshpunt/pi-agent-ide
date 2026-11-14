@@ -52,16 +52,19 @@ const references = await tools.lsp_search({ query: "validate", path: "task.ts", 
 check(references.complete === true, "References incomplete: " + JSON.stringify(references).slice(0, 300));
 check(references.matches.length === ${String(USES)} + 3, "Lost references: " + references.matches.length);
 check(references.matches.every((match) => match.text === "validate" && match.id.startsWith("RESULT#")), "A reference is not its name");
+check(references.matches.every(match => typeof match.lineText === "string" && match.lineText.includes("validate")), "Missing reference line context");
 // The whole declaration, past the 4 KB of text a direct call's record keeps.
 const declaration = await tools.lsp_search({ declaration: "task.ts#save" });
 check(declaration.matches.length === 1, "One declaration expected");
 check(declaration.matches[0].line === 5 && declaration.matches[0].text.endsWith("  return validate(total);\n}\n"), "Declaration text cut: " + declaration.matches[0].text.slice(-80));
 check(declaration.matches[0].text.length > 4096, "Declaration not long enough to prove anything");
+check(declaration.matches[0].lineText === declaration.matches[0].text.replace(/\n$/u, ""), "Declaration line context");
 const graph = await tools.lsp_search({ calls: "task.ts#save" });
 check(graph.complete === true, "Graph incomplete");
 check(graph.incoming.map((match) => match.line).join(",") === "${String(source.split("\n").indexOf("export function submit(): boolean {") + 1)},${String(source.split("\n").indexOf("export function retry(): boolean {") + 1)}", "Callers: " + JSON.stringify(graph.incoming));
 check(graph.outgoing.length === 1 && graph.outgoing[0].text === "export function validate(value: number): boolean {\n  return value > 0;\n}\n", "Callee: " + JSON.stringify(graph.outgoing));
 check(graph.matches.length === 3 && graph.matches.every((match) => match.text === "save"), "Graph references: " + JSON.stringify(graph.matches));
+check([...graph.incoming, ...graph.outgoing].every(match => match.lineText === match.text.replace(/\n$/u, "")), "Graph line context");
 // A caller's id selects its whole declaration.
 await tools.delete({ path: graph.incoming[1] });
 text("references=" + references.matches.length + " callers=" + graph.incoming.length);

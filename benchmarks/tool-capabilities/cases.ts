@@ -563,7 +563,7 @@ function add(
 
 add(
   "search-script-facts",
-  ["search.script-facts", "compose.search-script-result"],
+  ["search.script-facts", "compose.search-script-result", "ast.script-line-text"],
   "Use native Codemode to Search task.txt for regex:^ABSENT$, ast_search scope.ts for the pattern probe($ARG) with limit 1, Search task.txt for invalid regex:( and finally for OLD with limit 1000. Check each value's matches list and complete instead of parsing display prose: the empty search is complete with no matches, the bounded AST search is not complete, and the invalid regex call fails. The final search is complete. Pass that final Search value unchanged to Replace with NEW, replacing all its matches and preserving keep/last. Report the observed facts without printing all matches.",
   [
     {
@@ -574,7 +574,10 @@ add(
     {
       tool: "ast_search",
       args: { path: "scope.ts", pattern: "probe($ARG)", limit: 1 },
-      scriptResult: { complete: false, matches: { length: 1 } },
+      scriptResult: {
+        complete: false,
+        matches: { length: 1, 0: { text: "probe(first)", lineText: "probe(first);" } },
+      },
     },
     {
       tool: "search",
@@ -654,7 +657,10 @@ add(
       args: { path: "list.txt" },
       scriptResult: {
         complete: true,
-        matches: { length: 150, 149: { path: "list.txt", line: 150, text: "row 150" } },
+        matches: {
+          length: 150,
+          149: { path: "list.txt", line: 150, text: "row 150", lineText: "row 150" },
+        },
       },
     },
     { tool: "replace", args: { path: /^RESULT#[a-f\d-]{36}$/u, text: "LAST" }, reuse: reuse(0) },
@@ -1489,14 +1495,27 @@ add(
 
 add(
   "search-literal-operators",
-  ["search.literal-operators"],
-  "Search task.txt for the exact C++ text `flags | MASK`, including the spaced vertical bar, and report the full text of the only line that contains it. Do not change files.",
+  ["search.literal-operators", "search.script-line-text"],
+  "Search task.txt for the exact C++ text `flags | MASK`, including the spaced vertical bar, and report the full text of the only line that contains it. In Codemode use the returned match lineText, not text. Do not use Read or another tool to retrieve the line. Do not change files.",
   [
     {
       tool: "search",
       args: { path: "task.txt", query: /^"flags \| MASK"$/ },
+      modes: ["direct"],
       contains: "PASS-MARKER",
       excludes: "flags only",
+    },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: /^"flags \| MASK"$/ },
+      modes: ["codemode"],
+      scriptResult: {
+        complete: true,
+        matches: {
+          length: 1,
+          0: { text: "flags | MASK", lineText: "int x = flags | MASK; // PASS-MARKER" },
+        },
+      },
     },
   ],
   {
@@ -1505,6 +1524,7 @@ add(
         "int x = flags | MASK; // PASS-MARKER\nint y = flags; // flags only\nint z = MASK;\n",
     },
     answer: "int x = flags | MASK; // PASS-MARKER",
+    forbiddenTools: ["read"],
   },
 );
 
@@ -3289,7 +3309,7 @@ const callGraphSource = [
 ].join("\n");
 add(
   "lsp-calls-script-value",
-  ["lsp.script-call-graph", "compose.lsp-caller-id"],
+  ["lsp.script-call-graph", "compose.lsp-caller-id", "lsp.script-line-text"],
   "In one Codemode call, use lsp_search with calls task.ts#save. Its value lists callers in incoming and callees in outgoing, each as its whole declaration. Check that the callers are submit and retry and the callee is validate. Then delete the caller retry by passing its incoming entry or that entry's id to delete, not a symbol or file path. Report the number of callers.",
   [
     {
@@ -3298,7 +3318,14 @@ add(
       scriptResult: {
         complete: true,
         incoming: { length: 2 },
-        outgoing: { length: 1, 0: { path: "task.ts", line: 1 } },
+        outgoing: {
+          length: 1,
+          0: {
+            path: "task.ts",
+            line: 1,
+            lineText: "export function validate(value: number): boolean {\n  return value > 0;\n}",
+          },
+        },
       },
     },
     { tool: "delete", args: { path: /^RESULT#[a-f\d-]{36}$/u }, reuse: reuse(0) },

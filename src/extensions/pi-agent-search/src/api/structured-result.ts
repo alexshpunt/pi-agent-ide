@@ -19,6 +19,7 @@ const sourceMatchFields = {
   target: Type.Optional(Type.String()),
   range: position,
   matchedText: Type.Optional(Type.String()),
+  lineText: Type.Optional(Type.String()),
   textTruncated: Type.Optional(Type.Boolean()),
   references: Type.Optional(references),
 };
@@ -116,6 +117,8 @@ export function selectionData(
     startColumn: number;
     endColumn: number;
     matchedText: string;
+    lineText?: string;
+    linesText?: string;
   }[],
   complete: boolean,
   sessionId?: string,
@@ -125,27 +128,35 @@ export function selectionData(
     kind: "matches" as const,
     ...(targets?.target === undefined ? {} : { target: targets.target }),
     complete,
-    matches: matches.map((match, index) => ({
-      source: match.source,
-      ...(targets?.matchTargets?.[index] === undefined
-        ? {}
-        : { target: targets.matchTargets[index] }),
-      range: {
-        startLine: match.lineNumber,
-        startColumn: match.startColumn,
-        endLine: match.endLineNumber ?? match.lineNumber,
-        endColumn: match.endColumn,
-      },
-      matchedText: match.matchedText,
-      ...(sessionId === undefined
-        ? {}
-        : {
-            references: {
-              line: `SEARCH#${sessionId}:${index + 1}:line`,
-              match: `SEARCH#${sessionId}:${index + 1}:match`,
-            },
-          }),
-    })),
+    matches: matches.map((match, index) => {
+      const lineText =
+        match.linesText ??
+        ((match.endLineNumber ?? match.lineNumber) === match.lineNumber
+          ? match.lineText
+          : undefined);
+      return {
+        source: match.source,
+        ...(targets?.matchTargets?.[index] === undefined
+          ? {}
+          : { target: targets.matchTargets[index] }),
+        range: {
+          startLine: match.lineNumber,
+          startColumn: match.startColumn,
+          endLine: match.endLineNumber ?? match.lineNumber,
+          endColumn: match.endColumn,
+        },
+        matchedText: match.matchedText,
+        ...(lineText === undefined ? {} : { lineText }),
+        ...(sessionId === undefined
+          ? {}
+          : {
+              references: {
+                line: `SEARCH#${sessionId}:${index + 1}:line`,
+                match: `SEARCH#${sessionId}:${index + 1}:match`,
+              },
+            }),
+      };
+    }),
     ...(complete && sessionId !== undefined
       ? { all: { line: `SEARCH#${sessionId}:all:line`, match: `SEARCH#${sessionId}:all:match` } }
       : {}),
@@ -157,7 +168,7 @@ const preview = { matches: 100, textBytes: 4096 } as const;
 
 /**
  * The record of a call that does not hand its result to a script: the first 100 matches, each with
- * its text when that text is at most 4 KB. The record of every call must stay within the 1 MiB
+ * its match and line text when each is at most 4 KB. The record of every call must stay within the 1 MiB
  * limit of structured results, which only a script's call lifts. `truncated` marks a shortened
  * list and `textTruncated` an omitted text. A resolver's own value, such as an lsp_search call
  * graph, keeps each list of matches it holds as a preview. Data of other kinds stays as it is.
@@ -193,13 +204,14 @@ export function selectionPreview(data: unknown): unknown {
 }
 
 function previewText(match: Record<string, unknown>): Record<string, unknown> {
-  if (
-    typeof match.matchedText !== "string" ||
-    Buffer.byteLength(match.matchedText) <= preview.textBytes
-  )
-    return match;
-  const { matchedText: _omitted, ...rest } = match;
-  return { ...rest, textTruncated: true };
+  const result = { ...match };
+  for (const key of ["matchedText", "lineText"]) {
+    if (typeof result[key] === "string" && Buffer.byteLength(result[key]) > preview.textBytes) {
+      delete result[key];
+      result.textTruncated = true;
+    }
+  }
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

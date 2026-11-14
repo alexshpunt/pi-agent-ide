@@ -234,7 +234,7 @@ export class SearchSessionStore {
   ): Promise<TextSearchSession> {
     // Sessions live as long as their anchors. A copied match keeps only its own text, not the
     // whole file that its line or match text was cut from.
-    const matches = structuredClone(sourceMatches)
+    let matches = structuredClone(sourceMatches)
       .map((match) => ({ ...match, source: canonicalSource(match.source) }))
       .sort(compareMatches);
     const readSource = this.readSource;
@@ -250,6 +250,25 @@ export class SearchSessionStore {
         ? undefined
         : new Map([...searched].map(([source, text]) => [canonicalSource(source), text])),
     );
+    // Capture multiline context from the same snapshot as the selection, not a later file read.
+    const documents = new Map<string, ReturnType<typeof createTextDocument>>();
+    matches = matches.map((match) => {
+      const endLine = match.endLineNumber ?? match.lineNumber;
+      if (endLine === match.lineNumber) return match;
+      let document = documents.get(match.source);
+      if (document === undefined) {
+        document = createTextDocument(
+          match.source,
+          requiredValue(contentBySource.get(match.source)),
+        );
+        documents.set(match.source, document);
+      }
+      const lines = document.lines.slice(match.lineNumber - 1, lastContainingLine(match));
+      const linesText = lines
+        .map((line, index) => line.content + (index === lines.length - 1 ? "" : line.lineEnding))
+        .join("");
+      return { ...match, linesText: structuredClone(linesText) };
+    });
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
     const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));

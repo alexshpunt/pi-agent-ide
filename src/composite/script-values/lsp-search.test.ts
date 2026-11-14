@@ -55,6 +55,14 @@ describe("lspSearchValue", () => {
     });
   });
 
+  test("shares full line context across references and declarations", () => {
+    const lineText = "  const ready = start(); // tail";
+    const data = selectionData([{ ...hit(3, "start"), lineText }], true, "AB12", targets(1));
+    expect(lspSearchValue.project(input(data))).toMatchObject({
+      matches: [{ text: "start", lineText }],
+    });
+  });
+
   test("an incomplete search keeps complete: false, and no match is an empty list", () => {
     const data = selectionData([], false, "AB12", targets(0));
     expect(lspSearchValue.project(input(data))).toEqual({

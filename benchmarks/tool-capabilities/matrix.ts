@@ -43,7 +43,10 @@ const groups: [string[], string[]][] = [
   [["edit.rust-style-preservation"], ["rust-style-preservation"]],
   // Pair actual native/alias TUI frames; execution alone cannot establish renderer parity.
   [["compose.codemode-child-result"], ["codemode-child-presentation"]],
-  [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],
+  [
+    ["search.script-facts", "compose.search-script-result", "ast.script-line-text"],
+    ["search-script-facts"],
+  ],
   [["search.script-match-list", "compose.search-match-id"], ["search-script-match-ids"]],
   [["compose.token-search-edit-guard"], ["token-search-edit-guard"]],
   [["search.script-fallback"], ["search-script-fallback"]],
@@ -99,7 +102,7 @@ const groups: [string[], string[]][] = [
     ["file-search-script-paths"],
   ],
   [["lsp_search.path-list"], ["lsp-path-list"]],
-  [["search.literal-operators"], ["search-literal-operators"]],
+  [["search.literal-operators", "search.script-line-text"], ["search-literal-operators"]],
   [
     // Engine switching is a settings-menu lifecycle, checked in real Pi rather than a model route.
     ["search.semantic", "search.semantic-scope-filters", "compose.semantic-read"],
@@ -327,7 +330,10 @@ const groups: [string[], string[]][] = [
     ["lsp-rename"],
   ],
   [["lsp.overload-selectors", "compose.symbol-overload-rename"], ["lsp-overload-rename"]],
-  [["lsp.script-call-graph", "compose.lsp-caller-id"], ["lsp-calls-script-value"]],
+  [
+    ["lsp.script-call-graph", "compose.lsp-caller-id", "lsp.script-line-text"],
+    ["lsp-calls-script-value"],
+  ],
   // The PDF route covers ordinary and recoverable documents; terminal silence is a separate check.
   [["read.image", "read.pdf"], ["read-media"]],
   [["compose.codemode-image-value"], ["codemode-image-value"]],

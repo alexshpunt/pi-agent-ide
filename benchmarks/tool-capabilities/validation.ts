@@ -167,6 +167,8 @@ export interface CapabilityCase {
   capabilities: string[];
   modes: string[];
   steps: RouteStep[];
+  /** Reject these tool executions anywhere in the attempt, including registered aliases. */
+  forbiddenTools?: readonly string[];
   prompt?: string;
   files?: Record<string, string>;
   expected?: Record<string, string | Buffer | null>;
@@ -317,7 +319,7 @@ function reuses(
 
 /** Require successful real executions in order, including result provenance and nesting. */
 export function validateRoute(
-  task: Pick<CapabilityCase, "steps">,
+  task: Pick<CapabilityCase, "steps" | "forbiddenTools">,
   events: RunEvent[],
   mode: string,
   aliases: Readonly<Record<string, string>> = {},
@@ -333,6 +335,11 @@ export function validateRoute(
     ),
   );
   const reasons: string[] = [];
+  for (const { event } of starts) {
+    const name = aliases[event.toolName ?? ""] ?? event.toolName;
+    if (name !== undefined && task.forbiddenTools?.includes(name))
+      return { passed: false, reasons: [`Forbidden tool executed: ${name}`] };
+  }
   const codemodeParents = new Set(
     starts
       .filter(({ event }) => event.toolName === "codemode")

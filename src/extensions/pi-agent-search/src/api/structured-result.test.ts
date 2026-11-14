@@ -22,6 +22,51 @@ test("selection data keeps every match with its whole text", () => {
   expect(data).not.toHaveProperty("truncated");
 });
 
+test("selection data includes available line context without inventing it", () => {
+  const lineText = "prefix flags | MASK; // marker";
+  const data = selectionData(
+    [
+      { ...match(0, "flags | MASK"), lineText },
+      {
+        ...match(1, "first\nlast"),
+        endLineNumber: 2,
+        lineText: "prefix first",
+        linesText: "prefix first\nlast suffix",
+      },
+      match(2),
+      { ...match(3), endLineNumber: 5, lineText: "first line only" },
+    ],
+    true,
+  );
+  expect(data.matches[0]).toMatchObject({ matchedText: "flags | MASK", lineText });
+  expect(data.matches[1]).toMatchObject({ lineText: "prefix first\nlast suffix" });
+  expect(data.matches[2]).not.toHaveProperty("lineText");
+  expect(data.matches[3]).not.toHaveProperty("lineText");
+});
+
+test("previews bound line context in UTF-8 bytes independently of match text", () => {
+  const lineText = "界".repeat(2000);
+  const data = selectionData([{ ...match(0, "界"), lineText }], true);
+  expect(data.matches[0]).toMatchObject({ matchedText: "界", lineText });
+  const preview = selectionPreview(data) as typeof data;
+  expect(preview.matches[0]).toMatchObject({ matchedText: "界", textTruncated: true });
+  expect(preview.matches[0]).not.toHaveProperty("lineText");
+});
+
+test("line-context previews retain the 4 KB boundary and stay within the structured budget", () => {
+  const boundary = "界".repeat(1365) + "x";
+  const data = selectionData(
+    Array.from({ length: 101 }, (_, index) => ({
+      ...match(index, boundary),
+      lineText: boundary,
+    })),
+    true,
+  );
+  const preview = selectionPreview(data) as typeof data;
+  expect(preview.matches).toHaveLength(100);
+  expect(preview.matches[0]).toMatchObject({ matchedText: boundary, lineText: boundary });
+  expect(Buffer.byteLength(JSON.stringify(preview))).toBeLessThan(1024 * 1024);
+});
 test("a preview keeps the first 100 matches and only texts up to 4 KB", () => {
   const data = selectionData(
     [match(0, "y".repeat(5000)), ...Array.from({ length: 150 }, (_, index) => match(index + 1))],

@@ -177,7 +177,7 @@ export function createLspSearchResolver(
               );
             const [references, incoming, outgoing] = lists.map((list, index) => {
               const session = requiredValue(sessions[index]);
-              return selectionData(found[list], found.complete, session.id, session);
+              return selectionData(session.matches, found.complete, session.id, session);
             });
             return {
               text: found.text,
@@ -241,7 +241,7 @@ export function createLspSearchResolver(
               sessionId: session.id,
               selector: options.declaration,
               match,
-              data: selectionData([match], true, session.id, session),
+              data: selectionData(session.matches, true, session.id, session),
             } satisfies Payload,
           };
         }
@@ -350,7 +350,7 @@ export function createLspSearchResolver(
           });
           return { found, session };
         }, context.signal);
-        const data = selectionData(found.hits, found.complete, session.id, session);
+        const data = selectionData(session.matches, found.complete, session.id, session);
         return {
           kind: "resolved",
           payload: {
