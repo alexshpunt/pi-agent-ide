@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -52,7 +53,9 @@ test.runIf(hasRustTools()).each([false, true])(
       if (optIn) {
         const configDirectory = path.join(cwd, ".pi", "pi-agent-ide");
         await mkdir(configDirectory, { recursive: true });
-        const linters = parseLintersConfig(JSON.parse(await readFile("src/api/tool-config/linters.json", "utf8")));
+        const linters = parseLintersConfig(
+          JSON.parse(await readFile("src/api/tool-config/linters.json", "utf8")),
+        );
         await writeFile(
           path.join(configDirectory, "linters.json"),
           JSON.stringify({
@@ -60,7 +63,9 @@ test.runIf(hasRustTools()).each([false, true])(
             linters: { clippy: { ...linters.linters.clippy, enabled: true } },
           }),
         );
-        const servers = parseLspConfig(JSON.parse(await readFile("src/api/tool-config/lsp-servers.json", "utf8")));
+        const servers = parseLspConfig(
+          JSON.parse(await readFile("src/api/tool-config/lsp-servers.json", "utf8")),
+        );
         await writeFile(
           path.join(configDirectory, "lsp-servers.json"),
           JSON.stringify({
@@ -162,10 +167,20 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
               ],
               { stopReason: "toolUse" },
             ),
+            assistantMessage(
+              [
+                toolCall({
+                  id: "native-diagnostics",
+                  name: "read",
+                  arguments: { path: "diagnostics:src/main.rs" },
+                }),
+              ],
+              { stopReason: "toolUse" },
+            ),
             assistantMessage([text("Done")]),
           ],
         }).run("Inspect Rust source and diagnostics without compiling the workspace.");
-        for (const id of ["plain", "diagnostics", "symbols"])
+        for (const id of ["plain", "diagnostics", "symbols", "native-diagnostics"])
           expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
         // Retain subprocess evidence even when the safety assertion fails.
         await writeFile(path.join(result.artifacts.directory, "cargo.jsonl"), await readFile(log));
@@ -177,6 +192,8 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
         // Toolchain proxies can bypass the Cargo wrapper for metadata. Prove that
         // the real server loaded the project through its symbol result instead.
         expect(getToolResultText(result, "symbols")).toContain("main");
+        const details = getToolExecutionDetails(getToolExecution(result, "native-diagnostics")) as { diagnosticCheck?: { sources: readonly string[] } };
+        expect(details.diagnosticCheck?.sources).toContain("rust-analyzer");
         if (optIn) {
           expect(
             calls.some((args) => args.includes("clippy")),
