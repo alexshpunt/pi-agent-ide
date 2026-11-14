@@ -346,6 +346,8 @@ async function attempt(
       piArgs.push("-e", "/source/tests/integration/support/write-saved-mismatch-resource.ts");
     if (task.setup === "write-hook")
       piArgs.push("-e", "/source/tests/integration/support/user-hooks-extension.ts");
+    if (task.setup === "native-search-batch")
+      piArgs.push("-e", "/source/benchmarks/tool-capabilities/native-search-batch-fixture.ts");
     if (task.setup === "move-rollback")
       piArgs.push("-e", "/source/benchmarks/tool-capabilities/move-rollback-fixture.ts");
     if (task.setup === "move-effects")
