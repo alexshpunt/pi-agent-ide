@@ -334,7 +334,11 @@ class NativeTextEditBatchCoordinator {
           typeof source === "string" && !isResultInput(source) ? source : "",
         );
       }
-      let ownsSource = false;
+      // Result transfers own pairing, destination replacement and zero-width no-op semantics.
+      // Keep them on the same preparation path as direct calls.
+      let ownsSource =
+        (registration?.name === "copy" || registration?.name === "move") &&
+        (isResultInput(input.path) || isResultInput(input.target));
       // Only local, single-source Search references can share immutable batch snapshots.
       // Keep the caller's input intact for every boundary call.
       const candidate = { ...input };
@@ -342,7 +346,11 @@ class NativeTextEditBatchCoordinator {
       const scopedSources: Record<string, string> = {};
       const inferred = new Map<string, string>();
       try {
-        if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
+        if (
+          registration &&
+          !ownsSource &&
+          !isWholeFileInvocation(registration.wholeFileOperation, input)
+        ) {
           const resolverContext = {
             cwd: context.cwd,
             ...(context.signal !== undefined && { signal: context.signal }),

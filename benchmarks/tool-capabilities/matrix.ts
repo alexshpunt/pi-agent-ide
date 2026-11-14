@@ -264,7 +264,7 @@ const groups: [string[], string[]][] = [
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
   // Direct calls take the same object; the focused source-value cases cover them without a model.
-  [["compose.value-id-source"], ["value-id-source"]],
+  [["compose.value-id-source"], ["value-id-source", "move-zero-width"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
   // Out-of-scope selectors fail; a scope-only exact miss leaves later exact edits enabled.
   // Anchor-rejection card causes are presentation only; renderer tests decode all four codes.
