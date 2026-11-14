@@ -13,6 +13,7 @@ import { connectAgentDocumentation } from "#src/api/documentation.ts";
 import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.ts";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.ts";
 import { buildIdeDiscoveryGuidance } from "#src/composite/tool-discovery-guidance.ts";
+import { buildParallelToolGuidance } from "#src/composite/parallel-tool-guidance.ts";
 import { createIdeCapabilities } from "#src/composite/capabilities.ts";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.ts";
 import { createIdeTextResults } from "#src/composite/text-results.ts";
@@ -82,7 +83,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
           ).map((tool) => tool.name);
     availability.reconcile(true, restored);
   });
-  pi.on("before_agent_start", (event) => {
+  pi.on("before_agent_start", (event, context) => {
     availability.reconcile();
     const options = event.systemPromptOptions;
     if (options.toolSnippets.bash)
@@ -104,6 +105,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         options.sections.rules = corrected;
       }
     }
+    options.sections.parallel_tool_calls = buildParallelToolGuidance(context.model?.api);
     options.sections.ide_discovery = buildIdeDiscoveryGuidance(
       pi.getAllTools(),
       pi.getActiveTools(),
