@@ -12,11 +12,12 @@ Before writing the test, inspect a neighboring `tests/integration/` test and the
 ## Choose the observable surface
 
 - For a tool contract, use the default raw mode. Assert the returned tool result or error *and* the external effect (file bytes, state, ordering, or other observable data). A scripted tool call alone does not prove anything ran. Keep expected bytes explicit, especially for newline or encoding bugs.
+- For tool composition, start with actual native return values in supported source and selector fields. When a selected text source accepts explicit selectors, also check narrowing and rejection outside its ranges.
 - When the user-visible renderer, layout, animation, or terminal status changes, run with `rawMode: false` and assert the native terminal result as well as the structured tool result in the same run. Inspect recorded terminal frames when timing or intermediate presentation matters. Do not substitute model-facing results for terminal evidence.
 - Keep pure data transforms in unit tests as additional coverage. Do not assert wording of prompts, Markdown guides, descriptions, or explanatory prose.
 
 For external services or hardware unavailable in ordinary CI, name the dependency and document a narrow exception. Put a real live check in a separate runnable path; never call a mocked Pi test a full integration test. Keep the deterministic local real-Pi contract in CI where possible.
 
-Run the focused file with `pnpm test:integration -- <path>` (or the suite's current equivalent) against the implementation before its PR merges. Keep broad integration and release-candidate gates in CI/CD, as required by `AGENTS.md`. Read failures and saved artifacts before changing assertions. Keep verification evidence in Task-linked artifacts.
+Run one focused file with `npx pi-test run -- vitest run --config vitest.integration.config.mjs <file>` against the implementation before its PR merges. `pnpm test:integration -- <file>` does not filter the suite. Keep broad integration and release-candidate gates in CI/CD, as required by `AGENTS.md`. Read failures and saved artifacts before changing assertions. Keep verification evidence in Task-linked artifacts.
 
-Preserve the regression tests as separate test-only changes, not a one-off manual run. Deliver them after the implementation merges using the test-delivery rules in `AGENTS.md`. Do not include production fixes in that delivery.
+Preserve regression tests in the repository. Deliver behavior-dependent tests with the implementation, following the feature PR rules in `AGENTS.md`; keep unrelated test changes separate.
