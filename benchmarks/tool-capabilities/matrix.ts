@@ -134,10 +134,6 @@ const groups: [string[], string[]][] = [
   // Optional safe error metadata does not change provider receipt effects or their data fields.
   // Rate-limit metadata transport has deterministic ResourceError/Read/Write coverage, not a paid route.
   [["compose.provider-structured-receipt"], ["semantic-script-receipts"]],
-  // Local forwarding aliases may be deferred and absent from the initial catalogue. The alias
-  // receipt case asks for discovery and requires the real native child; prompt deduplication is
-  // checked separately by deterministic real-Pi loadout tests.
-  [["compose.local-alias-structured-receipt"], ["semantic-local-alias-receipts"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [
     ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],

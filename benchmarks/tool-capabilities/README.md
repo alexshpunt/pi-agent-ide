@@ -77,8 +77,6 @@ Some cases need extra tools. The sandbox sees only `/usr`, `/etc`, `/opt`, and `
 | ColGREP                      | `semantic-code-search`, `semantic-script-files`                                                                                                                    |
 | Vera                         | `semantic-code-search-vera`, `semantic-vera-refresh`                                                                                                               |
 
-`semantic-local-alias-receipts` needs a connector that registers a local MCP alias. It is `unavailable` in native runs and in runs with connectors without one; no host setup changes that.
-
 On Ubuntu 24.04, install the system packages:
 
 ```bash
@@ -134,7 +132,7 @@ The runner does not log in, move credentials between provider keys or enable ext
 
 Pi automatic retries are disabled. SDK/CLI internal retries are not independently bounded by this setting. Account, quota, billing or authentication errors stop the remaining batch. Requested and runtime identity, assistant metadata and any reported response model are retained separately. If a provider does not report its response model, backend identity remains unobserved. Use `servedModel` in a profile for a documented model alias, not to hide fallback.
 
-Alias validation keeps raw names and events. A local wrapper passes only when its provenance, arguments, real IDE child, result and required reference reuse match. Foreign MCP names are not stripped into native tool names. `semantic-script-receipts` checks object values through a script call; `semantic-local-alias-receipts` additionally requires an actual local alias and skips connectors without one.
+Alias validation keeps raw names and events. A local wrapper passes only when its provenance, arguments, real IDE child, result and required reference reuse match. Foreign MCP names are not stripped into native tool names. `semantic-script-receipts` checks object values through a script call.
 
 ## Live terminal comparison
 
