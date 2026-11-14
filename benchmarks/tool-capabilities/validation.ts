@@ -172,6 +172,8 @@ export interface CapabilityCase {
   /** Reject these tool executions anywhere in the attempt, including registered aliases. */
   forbiddenTools?: readonly string[];
   prompt?: string;
+  /** Override the neutral prompt after Pi selects the profile's actual model API. */
+  promptForApi?: (api?: string) => string;
   files?: Record<string, string>;
   expected?: Record<string, string | Buffer | null>;
   answer?: string;

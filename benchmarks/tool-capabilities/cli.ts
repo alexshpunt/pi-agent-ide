@@ -7,6 +7,7 @@ import os from "node:os";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 import { parseArguments } from "./options.ts";
 import { capabilityCases } from "./cases.ts";
+import { capabilityPrompt } from "./prompts.ts";
 import { capabilityMatrix } from "./matrix.ts";
 import {
   connectorCatalog,
@@ -120,10 +121,6 @@ async function coverage(command: string): Promise<Inventory> {
     `Coverage: ${live.tools.length} live IDE tools, ${capabilityMatrix.length} capabilities, ${capabilityCases.length} cases. No model calls.`,
   );
   return live;
-}
-
-function prompt(task: CapabilityCase, mode: string): string {
-  return `This is a small tool capability check in a disposable fixture.\n${task.prompt}\nRequired execution route (in order; extra inspection is allowed): ${task.steps.map((step) => step.tool).join(" → ")}.\n${mode === "codemode" ? "Perform every requested IDE operation inside native Codemode. Keep tool results unchanged when passing them between calls." : "Use direct tool calls for the requested IDE operations, not Codemode."}\nUse the requested route, not shell/file-editing substitutes. Extra inspection is allowed. Do not modify unrelated files. Finish with a short factual answer.\n`;
 }
 
 function finalText(events: RunEvent[]): string {
@@ -272,6 +269,8 @@ async function attempt(
       ...authentication.environment,
       CAPABILITY_AUTH_POLICY: "/state/auth-policy.json",
       CAPABILITY_TUI: terminal ? "1" : "0",
+      CAPABILITY_CASE: task.id,
+      CAPABILITY_MODE: mode,
     };
     if (task.prerequisite) {
       const prerequisite = await runProcess(
@@ -306,7 +305,7 @@ async function attempt(
       ],
       retry: { enabled: false, maxRetries: 0 },
     });
-    const taskPrompt = prompt(task, mode);
+    const taskPrompt = capabilityPrompt(task, mode);
     await writeFile(path.join(artifacts, "prompt.txt"), taskPrompt);
     const cli = await piRuntime(command);
     const piArgs = [
@@ -458,6 +457,9 @@ async function attempt(
     });
     try {
       const runtimeText = await readFile(path.join(prepared.state, "runtime.json"), "utf8");
+      const effectivePrompt = await readFile(path.join(prepared.state, "prompt.txt"), "utf8");
+      if (authentication.containsSecret(effectivePrompt)) suppressedSecret = true;
+      await writeFile(path.join(artifacts, "prompt.txt"), authentication.redact(effectivePrompt));
       if (authentication.containsSecret(runtimeText)) suppressedSecret = true;
       await writeFile(path.join(artifacts, "runtime.json"), authentication.redact(runtimeText));
     } catch {
@@ -532,9 +534,14 @@ async function attempt(
     }
     const runtime = JSON.parse(
       await readFile(path.join(prepared.state, "runtime.json"), "utf8"),
-    ) as { model: string; thinking: string; aliases?: Record<string, string> };
+    ) as { model: string; modelApi?: string; thinking: string; aliases?: Record<string, string> };
     if (runtime.model !== profile.model || runtime.thinking !== profile.thinking) {
       result.reasons.push("Selected runtime model/thinking differs from the requested profile");
+      return result;
+    }
+    const effectivePrompt = await readFile(path.join(prepared.state, "prompt.txt"), "utf8");
+    if (effectivePrompt !== capabilityPrompt(task, mode, runtime.modelApi)) {
+      result.reasons.push("Captured case prompt differs from the selected runtime API");
       return result;
     }
     if (identity.reasons.length) {
