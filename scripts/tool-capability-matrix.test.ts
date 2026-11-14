@@ -46,6 +46,31 @@ const events = [
 const task = { steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }] };
 
 describe("capability route evidence", () => {
+  test("line-context routes reject extra Read calls, including registered aliases", () => {
+    const task = { steps: [{ tool: "search" }], forbiddenTools: ["read"] };
+    const search = [
+      { type: "tool_execution_start", toolCallId: "s", toolName: "search" },
+      { type: "tool_execution_end", toolCallId: "s", toolName: "search", isError: false },
+    ];
+    expect(validateRoute(task, search, "direct").passed).toBe(true);
+    for (const name of ["read", "mcp__ide__read"]) {
+      expect(
+        validateRoute(
+          task,
+          [
+            ...search,
+            {
+              type: "tool_execution_start",
+              toolCallId: "extra",
+              toolName: name,
+            },
+          ],
+          "direct",
+          { mcp__ide__read: "read" },
+        ).passed,
+      ).toBe(false);
+    }
+  });
   test("whole-file routes reject filled-in selection arguments", () => {
     const fixture = capabilityCases.find((candidate) => candidate.id === "file-copy-move-delete");
     expect(fixture).toBeDefined();

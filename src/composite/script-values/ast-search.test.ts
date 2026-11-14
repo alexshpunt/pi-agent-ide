@@ -37,6 +37,7 @@ describe("astSearchValue", () => {
       success([
         {
           ...node("request(options, ...rest)", "RESULT#call"),
+          lineText: "  request(options, ...rest); // tail",
           captures: { OPTIONS: [node("options", "RESULT#options")], ARGS: args },
         },
       ]),
@@ -49,6 +50,7 @@ describe("astSearchValue", () => {
           path: "client.ts",
           line: 3,
           text: "request(options, ...rest)",
+          lineText: "  request(options, ...rest); // tail",
           id: "RESULT#call",
           captures: { OPTIONS: [{ text: "options", id: "RESULT#options" }] },
         },

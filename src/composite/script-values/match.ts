@@ -11,6 +11,8 @@ export interface ScriptMatch {
   readonly line: number;
   /** The whole matched text. */
   readonly text: string;
+  /** Complete containing lines without the final line ending; absent when unavailable. */
+  readonly lineText?: string;
   /**
    * `RESULT#<uuid>` reference that selects this match. Absent when the source has no selections,
    * such as terminal output or a guide.
@@ -25,6 +27,11 @@ export const scriptMatchSchema = {
     // Keep integer validation without a redundant multiline TypeScript property annotation.
     line: { allOf: [{ type: "integer" }] },
     text: { type: "string" },
+    lineText: {
+      type: "string",
+      description:
+        "Complete containing lines without the final line ending; absent when unavailable.",
+    },
     id: { type: "string" },
   },
   required: ["path", "line", "text"],

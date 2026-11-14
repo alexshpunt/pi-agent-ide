@@ -47,6 +47,19 @@ describe("searchValue", () => {
     expect(Value.Check(searchValue.schema, value)).toBe(true);
   });
 
+  test("keeps complete line context separate from the exact matched text", () => {
+    const lineText = "  int x = flags | MASK; // PASS-MARKER";
+    const value = searchValue.project(
+      success({
+        kind: "matches",
+        complete: true,
+        matches: [match(0, { matchedText: "flags | MASK", lineText })],
+      }),
+    );
+    expect(value).toMatchObject({ matches: [{ text: "flags | MASK", lineText }] });
+    expect(Value.Check(searchValue.schema, value)).toBe(true);
+  });
+
   test("separates fallback matches from matches of the original query", () => {
     const value = searchValue.project(
       success({
@@ -173,7 +186,7 @@ describe("searchValue", () => {
         target: undefined,
         complete: true,
         matches: [
-          match(0, { source: "shell:build", target: undefined }),
+          match(0, { source: "shell:build", target: undefined, lineText: "prefix text 0 suffix" }),
           match(1, { source: "docs:terminal", target: undefined }),
         ],
       }),
@@ -181,7 +194,7 @@ describe("searchValue", () => {
     expect(value).toEqual({
       complete: true,
       matches: [
-        { path: "shell:build", line: 1, text: "text 0" },
+        { path: "shell:build", line: 1, text: "text 0", lineText: "prefix text 0 suffix" },
         { path: "docs:terminal", line: 2, text: "text 1" },
       ],
     });

@@ -287,7 +287,7 @@ export function createAstSearchResolver(
             complete: selected.complete,
             refresh: collect,
           });
-          const data = selectionData(selected.matches, selected.complete, session.id, session);
+          const data = selectionData(session.matches, selected.complete, session.id, session);
           const captures: Record<string, ReturnType<typeof selectionData>["matches"]>[] = [];
           const captureGroups: Record<string, { target: string; nodes: number }>[] = [];
           for (const raw of selected.raw.slice(0, data.matches.length)) {
@@ -330,7 +330,7 @@ export function createAstSearchResolver(
                   throw new Error("Capture snapshots cannot refresh; repeat the AST search.");
                 },
               });
-              const captured = selectionData(matches, selected.complete, undefined, group);
+              const captured = selectionData(group.matches, selected.complete, undefined, group);
               groupsForMatch[name] = {
                 target: requiredValue(captured.target),
                 nodes: matches.length,

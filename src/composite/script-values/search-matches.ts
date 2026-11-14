@@ -99,6 +99,7 @@ export function scriptMatch(
     path: scriptMatchPath(source, cwd),
     line,
     text: matchedText,
+    ...(typeof data.lineText === "string" && { lineText: data.lineText }),
     // A match in a source without selections, such as terminal output, has no reference.
     ...(typeof target === "string" && { id: target }),
   };

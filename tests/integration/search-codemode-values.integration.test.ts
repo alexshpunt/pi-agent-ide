@@ -27,7 +27,16 @@ check(blocked,"Incomplete scope authorized an edit");
 const large = await tools.search({path:"large.txt",query:"regex:^entry\\\\d+ x+$"});
 check(large.complete === true && large.matches.length === 150,"Search value lost matches");
 check(large.matches.every((match, index) => match.path === "large.txt" && match.line === index + 1),"Match lines or paths changed");
+check(large.matches[149].lineText === large.matches[149].text,"Long line context was cut");
 check(large.matches[149].text.length > 4096 && large.matches[149].text.startsWith("entry149 "),"Long match text was cut");
+const literal = await tools.search({path:"cpp.txt",query:'"flags | MASK"'});
+check(literal.matches[0].text === "flags | MASK" && literal.matches[0].lineText === "  int x = flags | MASK; // PASS-MARKER","Literal context");
+const multiline = await tools.search({path:"multiline.txt",query:"regex:first\\\\r?\\\\nlast",multiline:true});
+check(multiline.matches[0].text === "first\\r\\nlast" && multiline.matches[0].lineText === "prefix first\\r\\nlast suffix","Multiline context");
+const ast = await tools.ast_search({path:"multi.ts",pattern:"probe($$$ARGS)"});
+check(ast.matches[0].lineText === "const result = probe(\\n  first,\\n  second\\n); // tail","AST multiline context");
+const docs = await tools.search({path:"docs:terminal",query:"regex:^#"});
+check(docs.matches.length > 0 && docs.matches.every(match => typeof match.lineText === "string" && !("id" in match)),"Readonly guide context");
 const files = await tools.file_search({path:".",pattern:"note.txt"});
 check(JSON.stringify(files) === '["note.txt"]',"File search lost its paths");
 const custom = await tools.search({query:"facts:custom"});
@@ -48,6 +57,15 @@ test("Search values list every match and keep incomplete coverage, custom result
     );
     await writeFile(path.join(cwd, "sample.ts"), "probe(first);\nprobe(second);\n");
     await writeFile(path.join(cwd, "note.txt"), "keep\n");
+    await writeFile(path.join(cwd, "cpp.txt"), "  int x = flags | MASK; // PASS-MARKER\r\n");
+    await writeFile(
+      path.join(cwd, "multiline.txt"),
+      "prefix first\r\nlast suffix\r\nuntouched\r\n",
+    );
+    await writeFile(
+      path.join(cwd, "multi.ts"),
+      "const result = probe(\n  first,\n  second\n); // tail\n",
+    );
     await writeFile(
       path.join(cwd, "large.txt"),
       Array.from({ length: 150 }, (_, i) => `entry${i} ${"x".repeat(i === 149 ? 6000 : 900)}`).join(
@@ -114,7 +132,7 @@ check(found.complete === true && found.matches.length === 2,"Search matches");
 check(found.matches.every((match) => match.path === "note.txt" && match.text === "beta" && match.id.startsWith("RESULT#")),"Match fields");
 check(found.matches.map((match) => match.line).join() === "2,4","Match lines");
 check(Object.keys(found).sort().join() === "complete,id,matches","Private fields leaked");
-check(Object.keys(found.matches[0]).sort().join() === "id,line,path,text","Private match fields leaked");
+check(Object.keys(found.matches[0]).sort().join() === "id,line,lineText,path,text","Private match fields leaked");
 check(await tools.replace({path:found.matches[1],text:"BETA2"}) !== null,"Replace one match by its value");
 store("found", found);
 const calls = await tools.ast_search({path:"calls.ts",pattern:"call($ARG)"});
@@ -128,7 +146,6 @@ text("Search values verified");`;
       testName: "search-codemode-values",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
-      transport: "rpc",
       rawMode: false,
       environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
@@ -170,6 +187,7 @@ text("Search values verified");`;
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     for (const id of ["values", "compose"])
       expect(codemodeFailures(getToolResultText(run, id))).toBe("");
+    expect(run.tuiRenderedOutput).toContain("Stored value verified");
     const direct = getToolResultText(run, "direct");
     expect(direct).toContain("SEARCH#");
     expect(direct).toContain("note.txt:2:");

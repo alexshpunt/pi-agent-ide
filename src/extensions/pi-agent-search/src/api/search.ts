@@ -158,7 +158,10 @@ export interface SearchSelectionMatch {
   readonly startColumn: number;
   readonly endColumn: number;
   readonly matchedText: string;
+  /** First containing line, used by single-line renderers. */
   readonly lineText: string;
+  /** Complete spanned lines from the registration snapshot, without the final line ending. */
+  readonly linesText?: string;
 }
 export interface SearchSelectionSnapshot {
   readonly matches: readonly SearchSelectionMatch[];

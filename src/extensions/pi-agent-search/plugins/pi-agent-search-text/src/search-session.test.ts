@@ -23,6 +23,46 @@ function searchMatch(source: string, matchedText: string): TextSearchMatch {
   };
 }
 
+test("registered matches capture complete spanned lines from the searched snapshot", async () => {
+  const source = "/workspace/note.txt";
+  const contents = "prefix first\r\nlast suffix\r\nuntouched\r\n";
+  const session = await new SearchSessionStore().register(
+    "first",
+    [
+      {
+        source,
+        lineNumber: 1,
+        endLineNumber: 2,
+        startColumn: 7,
+        endColumn: 4,
+        matchedText: "first\r\nlast",
+        lineText: "prefix first",
+      },
+      {
+        source,
+        lineNumber: 1,
+        endLineNumber: 3,
+        startColumn: 7,
+        endColumn: 0,
+        matchedText: "first\r\nlast suffix\r\n",
+        lineText: "prefix first",
+      },
+    ],
+    true,
+    "/workspace",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new Map([[source, contents]]),
+  );
+  expect(session.matches.map((match) => match.linesText)).toEqual([
+    "prefix first\r\nlast suffix",
+    "prefix first\r\nlast suffix",
+  ]);
+  expect(session.matches[0]?.lineText).toBe("prefix first");
+});
 test("numbered line aliases keep complete containing lines and expire after source changes", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-line-alias-"));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
