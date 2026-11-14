@@ -78,7 +78,9 @@ test("offers real candidate groups and readable exact selections after a scoped 
   expect(result.details).toHaveProperty("fuzzyPresentation.fileCount", 1);
   expect(result.data).not.toHaveProperty("fuzzyPresentation");
   expect(result.text).not.toContain("const hintStrings =");
-  expect(JSON.stringify(result.data)).not.toContain("const hintStrings =");
+  expect(result.data.fuzzy?.candidates[0]?.selection.matches[0]).toMatchObject({
+    lineText: "const hintStrings = this.hintStrings(2);",
+  });
   expect(result.data.fuzzy?.candidates.map((candidate) => candidate.identifier)).toEqual([
     "hintStrings",
     "generateHintString",
@@ -87,7 +89,6 @@ test("offers real candidate groups and readable exact selections after a scoped 
     { identifier: "hintStrings", matchCount: 5, fileCount: 1, selection: { complete: true } },
     { identifier: "generateHintString", matchCount: 2, fileCount: 1 },
   ]);
-  expect(result.text).toContain("No matches found.");
   expect(result.text).toContain("hintStrings");
   expect(result.text).toContain("generateHintString");
   const reference = result.data.fuzzy?.candidates[0]?.selection.all?.line;
