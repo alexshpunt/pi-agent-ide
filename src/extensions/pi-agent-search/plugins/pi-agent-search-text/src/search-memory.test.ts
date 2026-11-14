@@ -96,6 +96,39 @@ test("repeated searches of an unchanged file keep one copy of its content", asyn
   expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
 });
 
+test("repeated multiline searches do not retain parsed source documents", async () => {
+  const { cwd, source } = await largeSource();
+  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+  const search = (index: number) => {
+    const lineText = lines[index] ?? "";
+    const nextLine = lines[index + 1] ?? "";
+    const startColumn = lineText.indexOf("compute");
+    const endColumn = nextLine.indexOf("compute") + "compute".length;
+    return sessions.register(
+      `multiline ${index}`,
+      [
+        {
+          source,
+          lineNumber: index + 1,
+          endLineNumber: index + 2,
+          startColumn,
+          endColumn,
+          matchedText: `${lineText.slice(startColumn)}\n${nextLine.slice(0, endColumn)}`,
+          lineText,
+        },
+      ],
+      true,
+      cwd,
+    );
+  };
+
+  await search(0);
+  const afterOneSearch = liveHeap();
+  for (let index = 1; index <= 20; index += 1) await search(index);
+
+  expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
+});
+
 test("searches after each file change do not keep earlier file versions", async () => {
   const { cwd, source } = await largeSource();
   const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
