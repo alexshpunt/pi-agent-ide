@@ -18,6 +18,10 @@ export interface TextBatchParams {
 }
 
 export interface TextBatchEntry extends Record<string, unknown> {
+  /** Original typed source references that contribute to an explicit endpoint. */
+  readonly implicitAnchors?: Readonly<Record<string, string>>;
+  /** Result source references that constrain explicit anchors to their issued ranges. */
+  readonly scopedSources?: Readonly<Record<string, string>>;
   readonly callId: string;
   readonly op: string;
   readonly path: string;

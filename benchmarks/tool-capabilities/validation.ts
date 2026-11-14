@@ -134,6 +134,8 @@ export interface RouteStep {
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
   parentExcludes?: string;
+  /** Require this child in a committed native editor batch with exactly this many calls. */
+  editorBatchSize?: number;
   /** Require each fragment in the completed Codemode parent. */
   parentContains?: string | readonly string[];
   /** Require the source object, unchanged by text(receipt), in a completed native Codemode parent. */
@@ -557,6 +559,26 @@ export function validateRoute(
           continue;
       }
       if (step.excludes && output.includes(step.excludes)) continue;
+      if (step.editorBatchSize !== undefined) {
+        const parent = ends.get(execution.parent ?? "");
+        const details = parent?.event.result?.details as
+          | {
+              editorBatches?: { applied: boolean; calls: { id: string }[] }[];
+            }
+          | undefined;
+        if (
+          !parent ||
+          parent.index <= end.index ||
+          parent.event.isError !== false ||
+          !details?.editorBatches?.some(
+            (batch) =>
+              batch.applied &&
+              batch.calls.length === step.editorBatchSize &&
+              batch.calls.some((call) => call.id === event.toolCallId),
+          )
+        )
+          continue;
+      }
       if (step.parentExcludes || step.parentContains || step.parentStructuredValue) {
         const parent = ends.get(execution.parent ?? "");
         const parentStart = startsById.get(execution.parent);

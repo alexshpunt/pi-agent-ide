@@ -16,6 +16,334 @@ import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const initial = "alpha\nbeta\ngamma\nomega\n";
+
+test.each(["value", "match", "numbered"] as const)(
+  "native Search %s source scopes explicit anchors without broadening them",
+  async (selection) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta tail\nother tail\ngamma\nomega\n");
+      const selected =
+        selection === "value"
+          ? "found"
+          : selection === "match"
+            ? "found.matches[0]"
+            : '"SEARCH#"+session+":1:line"';
+      const run = await runScripts(cwd, "native-search-scoped-" + selection, [
+        `const found = await tools.search({path:"note.txt",query:"beta tail"});
+const session = (await tools.read({path:"search-selection.txt"})).text.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.replace({path:${selected},start:"tail",text:"TAIL"});
+await tools.delete({path:"note.txt",start:"gamma"});`,
+      ]);
+      expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+        false,
+      );
+      expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([3]);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "added\nalpha\nbeta TAIL\nother tail\nomega\n",
+      );
+    });
+  },
+);
+
+test.each(["outside", "separate-ranges"] as const)(
+  "native Search source rejects explicit anchors %s its scope",
+  async (scenario) => {
+    await withTempWorkspace(async (cwd) => {
+      const content = "alpha\nbeta\nunselected\ngamma\nomega\n";
+      await writeFile(path.join(cwd, "note.txt"), content);
+      const run = await runScripts(cwd, "native-search-scope-rejection-" + scenario, [
+        `const found = await tools.search({path:"note.txt",query:${JSON.stringify(scenario === "outside" ? "beta" : "regex:beta|gamma")}});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+const rejected = await tools.replace({path:found,start:${JSON.stringify(scenario === "outside" ? "gamma" : "beta")},${scenario === "separate-ranges" ? 'end:"gamma",' : ""}text:"WRONG"});
+if (rejected !== null) throw Error("Source scope was broadened");`,
+      ]);
+      expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+        false,
+      );
+      expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([1]);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("added\n" + content);
+    });
+  },
+);
+test.each(["value-source", "match-source", "match-anchor", "id-anchor"] as const)(
+  "native Search %s values share a local edit batch",
+  async (selection) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const argument =
+        selection === "value-source"
+          ? "path: found"
+          : selection === "match-source"
+            ? "path: found.matches[0]"
+            : selection === "match-anchor"
+              ? "start: found.matches[0]"
+              : "start: found.matches[0].id";
+      const run = await runScripts(cwd, "native-search-value-" + selection, [
+        `const found = await tools.search({path:"note.txt",query:"beta"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.replace({${argument},text:"BETA"});
+await tools.delete({path:"note.txt",start:"gamma"});`,
+      ]);
+      expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+        false,
+      );
+      expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([3]);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "added\nalpha\nBETA\nomega\n",
+      );
+      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+    });
+  },
+);
+
+test.each(["RACE_PREPEND", "RACE_REMOVE_GAMMA"] as const)(
+  "native Search values replan after %s without replaying peers",
+  async (race) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const run = await runScripts(cwd, "native-search-value-" + race, [
+        `const found = await tools.search({path:"note.txt",query:"regex:beta|gamma"});
+await tools.replace({path:found.matches[1],text:${JSON.stringify(race)}});
+await tools.replace({start:found.matches[0],text:"BETA"});
+await tools.replace({path:"note.txt",start:"omega",text:"OMEGA"});`,
+      ]);
+      const removed = race === "RACE_REMOVE_GAMMA";
+      expect(getToolExecution(run, "script-0").isError).toBe(removed);
+      expect(
+        batchDetails(run).editorBatches.map((batch) => batch.calls.map((call) => call.state)),
+      ).toEqual([[removed ? "failed-not-applied" : "completed", "completed", "completed"]]);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        removed ? "alpha\nBETA\nOMEGA\n" : "external\nalpha\nBETA\nRACE_PREPEND\nOMEGA\n",
+      );
+      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+    });
+  },
+);
+
+test("a pending edit result used as an anchor remains a commit boundary", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-pending-result-anchor", [
+      `const changed = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+await tools.replace({path:"note.txt",start:changed,text:"FINAL"+String.fromCharCode(10)});
+await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([1, 1]);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nFINAL\nGAMMA\nomega\n");
+  });
+});
+test("a Search all selection cannot silently expand outside its accepted batch source", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "a.txt"), "alpha\nbeta\n");
+    await writeFile(path.join(cwd, "b.txt"), "none\n");
+    const run = await runScripts(cwd, "native-search-expanded-source", [
+      searchRefs("session", ["a.txt", "b.txt"], "beta") +
+        `
+await tools.replace({start:"SEARCH#"+session+":all:line",text:"RACE_EXPAND"});
+await tools.replace({path:"a.txt",start:"alpha",text:"ALPHA"});`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError).toBe(true);
+    expect(
+      batchDetails(run).editorBatches.map((batch) => batch.calls.map((call) => call.state)),
+    ).toEqual([["failed-not-applied", "completed"]]);
+    expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("external\nALPHA\nbeta\n");
+    expect(await readFile(path.join(cwd, "b.txt"), "utf8")).toBe("beta\n");
+  });
+});
+test("the paid Search fixture works without a project config directory", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await new PiIntegrationTest({
+      testName: "native-search-paid-fixture",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        "builtin:codemode",
+        path.resolve("benchmarks/tool-capabilities/native-search-batch-fixture.ts"),
+      ],
+      tools,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "script-0",
+              name: "codemode",
+              arguments: {
+                code: `await tools.search({path:"note.txt",query:"beta"});
+const shown = (await tools.read({path:".pi/issued-search.txt"})).text;
+const session = shown.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.replace({start:"SEARCH#"+session+":1:line",text:"BETA"});
+await tools.delete({path:"note.txt",start:"gamma"});`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Edit using the issued Search selection");
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([3]);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("added\nalpha\nBETA\nomega\n");
+  });
+});
+
+test.each(["numbered", "numbered-path", "all", "all-path"] as const)(
+  "local Search %s selections share a native edit batch",
+  async (selection) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const run = await runScripts(cwd, `native-search-batch-${selection}`, [
+        `const found = await tools.search({path:"note.txt",query:"beta"});
+// Search's script projection returns RESULT ids. Read the probe's unchanged public
+// Search output to exercise the SEARCH selectors a caller can already hold.
+const shown = (await tools.read({path:"search-selection.txt"})).text;
+const session = shown.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
+const selected = "SEARCH#" + session + ${selection.startsWith("all") ? '":all:line"' : '":1:line"'};
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.replace(${selection.endsWith("-path") ? '{path:selected,text:"BETA"}' : '{start:selected,text:"BETA"}'});
+await tools.delete({path:"note.txt",start:"gamma"});`,
+      ]);
+      expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+        false,
+      );
+      expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([3]);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "added\nalpha\nBETA\nomega\n",
+      );
+      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+    });
+  },
+);
+
+/** Script projections intentionally hide SEARCH selectors; retain the actual public output. */
+const searchRefs = (name: string, source: string | readonly string[], query: string) => `
+await tools.search({path:${JSON.stringify(source)},query:${JSON.stringify(query)}});
+const ${name} = (await tools.read({path:"search-selection.txt"})).text.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
+`;
+
+test("local Search anchors infer every source field instead of the last Read", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    await writeFile(path.join(cwd, "dest.txt"), "head\ntail\n");
+    const run = await runScripts(cwd, "native-search-transfer", [
+      searchRefs("src", "note.txt", "regex:beta|gamma") +
+        searchRefs("dst", "dest.txt", "regex:head|tail") +
+        `
+await tools.copy({start:"SEARCH#"+src+":1:line",targetStart:"SEARCH#"+dst+":1:line"});
+await tools.move({start:"SEARCH#"+src+":2:line",targetStart:"SEARCH#"+dst+":2:line"});
+await tools.insert({anchor:"SEARCH#"+src+":1:match",before:true,text:"prefix "});
+`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([3]);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nprefix beta\nomega\n");
+    expect(await readFile(path.join(cwd, "dest.txt"), "utf8")).toBe("head\nbeta\ntail\ngamma\n");
+    expect((await events(cwd)).filter((event) => event.type === "guard")).toHaveLength(1);
+  });
+});
+
+test.each(["RACE_PREPEND", "RACE_REMOVE_GAMMA"] as const)(
+  "local Search batches replan after %s without replaying peers",
+  async (race) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const run = await runScripts(cwd, "native-search-" + race, [
+        searchRefs("session", "note.txt", "regex:beta|gamma") +
+          `
+await tools.replace({path:"note.txt",start:"SEARCH#"+session+":2:line",text:${JSON.stringify(race)}});
+await tools.replace({start:"SEARCH#"+session+":1:line",text:"BETA"});
+await tools.replace({path:"note.txt",start:"omega",text:"OMEGA"});
+`,
+      ]);
+      const removed = race === "RACE_REMOVE_GAMMA";
+      expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+        removed,
+      );
+      expect(
+        batchDetails(run).editorBatches.map((batch) => batch.calls.map((call) => call.state)),
+      ).toEqual([[removed ? "failed-not-applied" : "completed", "completed", "completed"]]);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        removed ? "alpha\nBETA\nOMEGA\n" : "external\nalpha\nBETA\nRACE_PREPEND\nOMEGA\n",
+      );
+      expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
+    });
+  },
+);
+
+test("local Search typed sources retain their implicit selection alongside explicit anchors", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    const run = await runScripts(cwd, "native-search-source-union", [
+      searchRefs("session", "note.txt", "beta") +
+        `
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.replace({path:"SEARCH#"+session+":all:line",start:"gamma",text:"changed"});
+`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([2]);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      "added\nalpha\nchanged\nchanged\nomega\n",
+    );
+  });
+});
+
+test("multi-file Search all selections remain a commit boundary", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "a.txt"), "alpha\nbeta\n");
+    await writeFile(path.join(cwd, "b.txt"), "beta\n");
+    const run = await runScripts(cwd, "native-search-multi-boundary", [
+      searchRefs("session", ["a.txt", "b.txt"], "beta") +
+        `
+await tools.replace({path:"a.txt",start:"alpha",text:"ALPHA"});
+await tools.replace({start:"SEARCH#"+session+":all:line",text:"BETA"});
+await tools.insert({path:"a.txt",anchor:"ALPHA",before:true,text:"added"});
+`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([1, 1]);
+    expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("added\nALPHA\nBETA\n");
+    expect(await readFile(path.join(cwd, "b.txt"), "utf8")).toBe("BETA\n");
+  });
+});
+
+test("a local Search anchor cannot redirect an explicit source", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), initial);
+    await writeFile(path.join(cwd, "other.txt"), "beta\n");
+    const run = await runScripts(cwd, "native-search-wrong-source", [
+      searchRefs("session", "note.txt", "beta") +
+        `
+await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
+const rejected = await tools.replace({path:"other.txt",start:"SEARCH#"+session+":1:line",text:"wrong"});
+if (rejected !== null) throw Error("mismatched source accepted");
+await tools.replace({path:"note.txt",start:"omega",text:"OMEGA"});
+`,
+    ]);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
+    expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([2]);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nbeta\ngamma\nOMEGA\n");
+    expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("beta\n");
+  });
+});
+
 const tools = [
   "read",
   "search",

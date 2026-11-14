@@ -65,6 +65,8 @@ const groups: [string[], string[]][] = [
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
   [["compose.search-issued-scope"], ["search-issued-scope"]],
   [["compose.batch-insert-search"], ["search-line-batch-insert"]],
+  [["compose.codemode-search-anchor-batch"], ["codemode-search-anchor-batch"]],
+  [["compose.codemode-search-value-batch"], ["codemode-search-value-batch"]],
   [["compose.batch-replace-search"], ["selection-batch-replace"]],
   [["edit.replace-search-anchor-list"], ["replace-search-anchor-list"]],
   [["edit.already-done-targets"], ["replace-already-done-anchor-list"]],

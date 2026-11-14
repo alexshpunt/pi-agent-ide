@@ -40,6 +40,14 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
     if (slowParents.delete(event.toolCallId))
       await new Promise((resolve) => setTimeout(resolve, 3500));
     if (!event.parentToolCallId && event.toolName !== "write") return;
+    if (event.toolName === "search")
+      await writeFile(
+        path.join(context.cwd, "search-selection.txt"),
+        event.content
+          .filter((block) => block.type === "text")
+          .map((block) => block.text)
+          .join("\n"),
+      );
     await record(context.cwd, {
       type: "result",
       id: event.toolCallId,
@@ -66,9 +74,18 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
     // Another writer changes the file after acceptance but keeps other calls' anchors.
     if (event.input.text === "RACE_APPEND" && typeof event.input.path === "string")
       await appendFile(path.resolve(context.cwd, event.input.path), "external\n");
+    if (event.input.text === "RACE_PREPEND" && typeof event.input.path === "string") {
+      const file = path.resolve(context.cwd, event.input.path);
+      await writeFile(file, "external\n" + (await readFile(file, "utf8")));
+    }
     if (event.input.text === "RACE_REMOVE_GAMMA" && typeof event.input.path === "string") {
       const file = path.resolve(context.cwd, event.input.path);
       await writeFile(file, (await readFile(file, "utf8")).replace("gamma\n", ""));
+    }
+    if (event.input.text === "RACE_EXPAND" && typeof event.input.path === "string") {
+      const file = path.resolve(context.cwd, event.input.path);
+      await writeFile(file, "external\n" + (await readFile(file, "utf8")));
+      await writeFile(path.join(context.cwd, "b.txt"), "beta\n");
     }
     if (event.input.path === "created.txt" && event.toolName === "write")
       await writeFile(path.resolve(context.cwd, event.input.path), "");

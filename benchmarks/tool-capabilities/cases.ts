@@ -18,6 +18,69 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "codemode-search-value-batch",
+  ["compose.codemode-search-value-batch"],
+  "In native Codemode, Search task.txt for beta and retain the returned value. Then in ONE script await three edits without any other tool between them: Insert added before alpha in task.txt; Replace beta by passing the first Search match value as path, with BETA; Delete gamma using exact text in task.txt. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "beta" } },
+    {
+      tool: "insert",
+      args: { path: "task.txt", anchor: "alpha", before: true },
+      argsAny: [{ text: "added" }, { text: "added\n" }],
+      editorBatchSize: 3,
+    },
+    {
+      tool: "replace",
+      args: { text: "BETA" },
+      reuse: reuse(0),
+      editorBatchSize: 3,
+    },
+    {
+      tool: "delete",
+      args: { path: "task.txt", start: "gamma" },
+      editorBatchSize: 3,
+    },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "alpha\nbeta\ngamma\nomega\n" },
+    expected: { "task.txt": "added\nalpha\nBETA\nomega\n" },
+  },
+);
+add(
+  "codemode-search-anchor-batch",
+  ["compose.codemode-search-anchor-batch"],
+  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in ONE script await these three edits without Read/Search or another tool between them: Insert added before alpha in task.txt; Replace beta using its issued SEARCH reference as start, omitting path, with BETA; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "regex:beta|gamma" } },
+    { tool: "read", args: { path: ".pi/issued-search.txt" } },
+    {
+      tool: "insert",
+      args: { path: "task.txt", anchor: "alpha", before: true },
+      argsAny: [{ text: "added" }, { text: "added\n" }],
+      editorBatchSize: 3,
+    },
+    {
+      tool: "replace",
+      args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" },
+      reuse: reuse(0, "start"),
+      editorBatchSize: 3,
+    },
+    {
+      tool: "delete",
+      args: { start: /^SEARCH#[A-F0-9]+:2:line$/u },
+      reuse: reuse(0, "start"),
+      editorBatchSize: 3,
+    },
+  ],
+  {
+    modes: ["codemode"],
+    setup: "native-search-batch",
+    files: { "task.txt": "alpha\nbeta\ngamma\nomega\n" },
+    expected: { "task.txt": "added\nalpha\nBETA\nomega\n" },
+  },
+);
+add(
   // Fresh-session discovery only; already-active guidance is covered by deterministic tests.
   "deferred-navigation-recovery",
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],

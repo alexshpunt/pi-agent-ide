@@ -16,18 +16,10 @@ import {
 import { alreadyDoneFileResult, alreadyDoneToolResult } from "./already-done.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { postWriteFailureEffect } from "./text-mutation.ts";
-import { renderTextAnchor } from "pi-agent-text";
-import {
-  TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH,
-  type ToolCallAnchorRenderState,
-} from "pi-agent-tool-call-interception";
+import type { TextTarget } from "pi-agent-text";
+import { TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH } from "pi-agent-tool-call-interception";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
-import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
-import {
-  applyTextChanges,
-  type TextChange,
-  TextChangeDocument,
-} from "#src/core/text-change-engine.ts";
+import { applyTextChanges, type TextChange } from "#src/core/text-change-engine.ts";
 import {
   executeWithBatchCoordinator,
   registerBlockedToolCall,
@@ -41,7 +33,6 @@ import {
   type TextBatchParams,
 } from "#src/core/text-edit-batch.ts";
 import {
-  contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
   TextMutationAnchorResolutionError,
 } from "#src/core/text-mutation-anchor-error.ts";
@@ -50,6 +41,7 @@ import {
   buildFailedTextMutationResult,
   buildSuccessfulTextMutationResult,
   mutationSources,
+  createMutationContext,
   preflightMutationAnchors,
   presentedFinalStateLines,
   textMutationOperationReceipts,
@@ -268,67 +260,71 @@ export async function planRegisteredTextBatch(
       const selection = parameters.selections?.get(entry.callId);
       if (selection !== undefined && texts.get(selection.source) !== selection.expectedContent)
         throw new Error("The selected source changed before the edit batch. Resolve it again.");
-      const { callId, op: _op, ...input } = entry;
+      const { callId, op: _op, implicitAnchors, scopedSources, ...input } = entry;
       const sources = mutationSources(registration, input);
-      const sourceFor = (field: string): string => requiredValue(sources.get(field));
-      const documentFor = (source: string) =>
-        new TextChangeDocument(requiredValue(texts.get(source)));
-      const majorAnchorSources = new Set<string>();
-      const publish = (field: string, state: ToolCallAnchorRenderState) =>
-        renderArguments(callId, {
-          [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
-        });
-      const resolveAnchors = async (field: string) => {
-        const descriptor = (registration.anchors ?? []).find((anchor) => anchor.field === field);
-        const value = input[field];
-        if (
-          selection !== undefined &&
-          descriptor?.sourceField === registration.source.field &&
-          value === undefined
-        ) {
-          return new Map([
-            [selection.source, new TextSelectionAnchor(field, selection.source, selection.ranges)],
-          ]);
-        }
-        const source = descriptor === undefined ? undefined : sources.get(descriptor.sourceField);
-        if (descriptor === undefined || typeof value !== "string" || source === undefined) {
-          publish(field, { kind: "failed" });
-          throw new Error(`Unable to resolve mutation anchor ${field}`);
-        }
-        try {
-          const anchor = await resolveAnchor(source, value, descriptor.kinds);
-          if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(source);
-          const rendered = renderTextAnchor(anchor, value, { source, anchor });
-          publish(field, {
-            kind: "resolved",
-            full: rendered.full,
-            compact: rendered.compact,
-            resolverId: rendered.resolverId,
-          });
-          return new Map([[source, anchor]]);
-        } catch (error) {
-          publish(field, { kind: "failed" });
-          throw contextualizeTextMutationAnchorError(
-            error,
-            registration.name,
-            field,
-            source,
-            value,
-          );
-        }
+      const implicitTargets = new Map<string, readonly TextTarget[]>();
+      const scopes = new Map<string, readonly TextTarget[]>();
+      const selectedTarget = async (
+        source: string,
+        reference: string,
+        kinds: readonly string[],
+      ) => {
+        const anchor = await resolveAnchor(source, reference, kinds);
+        if (!TextSelectionAnchor.is(anchor))
+          throw new Error("Typed batch source must select text.");
+        return { source, ranges: anchor.ranges };
       };
-      const mutationContext = {
-        cwd: context.cwd,
-        ...(signal !== undefined && { signal }),
-        sourceDocument: documentFor(sourceFor(registration.source.field)),
-        sourceFor,
-        documentFor,
-        targetDocument: (field: string) => documentFor(sourceFor(field)),
-        resolveAnchors,
-        async resolveAnchor(field: string) {
-          return requiredValue((await resolveAnchors(field)).values().next().value);
+      for (const [field, reference] of Object.entries(implicitAnchors ?? {})) {
+        const descriptor = requiredValue(
+          registration.anchors?.find((anchor) => anchor.field === field),
+        );
+        implicitTargets.set(field, [
+          await selectedTarget(
+            requiredValue(sources.get(descriptor.sourceField)),
+            reference,
+            descriptor.kinds,
+          ),
+        ]);
+      }
+      for (const [field, reference] of Object.entries(scopedSources ?? {})) {
+        const descriptor = requiredValue(
+          registration.anchors?.find((anchor) => anchor.sourceField === field),
+        );
+        scopes.set(field, [
+          await selectedTarget(requiredValue(sources.get(field)), reference, descriptor.kinds),
+        ]);
+      }
+      if (selection !== undefined) {
+        const descriptor = requiredValue(
+          registration.anchors?.find((anchor) => anchor.sourceField === registration.source.field),
+        );
+        implicitTargets.set(descriptor.field, [selection]);
+      }
+      const mutationContext = createMutationContext(
+        registration,
+        input,
+        { cwd: context.cwd, ...(signal !== undefined && { signal }) },
+        {
+          fields: sources,
+          anchors: new Map(
+            (registration.anchors ?? []).map((anchor) => [
+              anchor.field,
+              [requiredValue(sources.get(anchor.sourceField))],
+            ]),
+          ),
+          implicitTargets,
+          scopes,
+          targets: [],
+          resources: [...sources.values()],
+          aliases: new Map(),
         },
-      };
+        texts,
+        resolveAnchor,
+        (field, state) =>
+          renderArguments(callId, {
+            [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
+          }),
+      );
       await preflightMutationAnchors(registration, input, mutationContext);
       const mutation = await registration.mutate(mutationContext, input);
       return {
@@ -339,7 +335,7 @@ export async function planRegisteredTextBatch(
           resultPresentations: new Map(
             [...mutation.edits.keys()].map((source) => [
               source,
-              majorAnchorSources.has(source) ? "major-anchor" : "plain",
+              mutationContext.resultPresentationFor(source),
             ]),
           ),
         },

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { withTextEditOrigin } from "./text-edit-origin.ts";
+import { localSearchSource } from "./native-search-source.ts";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
@@ -273,9 +274,19 @@ function isBatchable(
 
 class NativeTextEditBatchCoordinator {
   private readonly scripts = new Map<string, ScriptBatch>();
-  private readonly invocations = new Map<string, ScriptBatch>();
+  private readonly invocations = new Map<
+    string,
+    {
+      readonly script: ScriptBatch;
+      readonly input: Readonly<Record<string, unknown>>;
+      readonly implicitAnchors: Readonly<Record<string, string>>;
+      readonly scopedSources: Readonly<Record<string, string>>;
+    }
+  >();
   private readonly scopedInvocations = new Map<string, ScriptBatch>();
   private readonly resultTargets: ResultTargetStore;
+  /** Only completed Search results may contribute local snapshot selections. */
+  private readonly searchResults = new Set<string>();
 
   constructor(
     private readonly core: TextEditorCore,
@@ -323,6 +334,12 @@ class NativeTextEditBatchCoordinator {
         );
       }
       let ownsSource = false;
+      // Only local, single-source Search references can share immutable batch snapshots.
+      // Keep the caller's input intact for every boundary call.
+      const candidate = { ...input };
+      const implicitAnchors: Record<string, string> = {};
+      const scopedSources: Record<string, string> = {};
+      const inferred = new Map<string, string>();
       if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
         const resolverContext = {
           cwd: context.cwd,
@@ -330,42 +347,98 @@ class NativeTextEditBatchCoordinator {
         };
         for (const descriptor of [registration.source, ...(registration.source.targets ?? [])]) {
           const value = input[descriptor.field];
-          if (typeof value === "string" && value.length > 0) {
-            if (
-              ["replace", "write", "copy", "move", "delete", "undo", "insert"].includes(
-                registration.name,
-              ) &&
-              value.startsWith("RESULT#")
-            ) {
-              // The executor validates result handles and returns a structured rejection.
-              ownsSource = true;
-              continue;
-            }
-            const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
-            if (result.kind !== "not-handled") ownsSource = true;
+          if (typeof value !== "string" || value.length === 0) continue;
+          if (
+            value.startsWith("RESULT#") &&
+            !this.searchResults.has(value) &&
+            !this.resultTargets.referenceName(value).startsWith("SEARCH#")
+          ) {
+            // Pending edit results and other resource-owned selections remain boundaries.
+            ownsSource = true;
+            continue;
           }
+          const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
+          if (result.kind === "not-handled") continue;
+          const source =
+            result.kind === "resolved"
+              ? localSearchSource(
+                  this.resultTargets.referenceName(value),
+                  result.targets,
+                  this.searchResults,
+                )
+              : undefined;
+          const firstAnchor = registration.anchors?.find(
+            (anchor) => anchor.sourceField === descriptor.field,
+          );
+          if (source === undefined || firstAnchor === undefined) {
+            ownsSource = true;
+            continue;
+          }
+          candidate[descriptor.field] = source;
+          // RESULT sources constrain explicit endpoints; textual Search sources also
+          // contribute their implicit selection. Retain references for each replan.
+          if (
+            value.startsWith("RESULT#") &&
+            (registration.anchors ?? []).some(
+              (anchor) =>
+                anchor.sourceField === descriptor.field &&
+                isMutationAnchorValue(anchor, input[anchor.field]),
+            )
+          )
+            scopedSources[descriptor.field] = value;
+          else if (isMutationAnchorValue(firstAnchor, input[firstAnchor.field]))
+            implicitAnchors[firstAnchor.field] = value;
+          else candidate[firstAnchor.field] = value;
         }
         for (const anchor of registration.anchors ?? []) {
           const value = input[anchor.field];
+          if (!isMutationAnchorValue(anchor, value)) continue;
           if (
-            isMutationAnchorValue(anchor, value) &&
-            (await this.core.resolveTextAnchorResources(value, anchor.kinds, resolverContext)) !==
-              undefined
-          )
+            value.startsWith("RESULT#") &&
+            !this.searchResults.has(value) &&
+            !this.resultTargets.referenceName(value).startsWith("SEARCH#")
+          ) {
             ownsSource = true;
+            continue;
+          }
+          const targets = await this.core.resolveTextAnchorResources(
+            value,
+            anchor.kinds,
+            resolverContext,
+          );
+          if (targets === undefined) continue;
+          const source = localSearchSource(
+            this.resultTargets.referenceName(value),
+            targets,
+            this.searchResults,
+          );
+          if (source === undefined) {
+            ownsSource = true;
+            continue;
+          }
+          const previous = inferred.get(anchor.sourceField);
+          if (previous !== undefined && previous !== source) ownsSource = true;
+          inferred.set(anchor.sourceField, source);
+          if (!candidate[anchor.sourceField]) candidate[anchor.sourceField] = source;
         }
-        if (registration.source.inherited && !input[registration.source.field] && !ownsSource) {
+        if (registration.source.inherited && !candidate[registration.source.field] && !ownsSource) {
           const source = script.pending.entries.at(-1)?.path ?? getLastResolvedResource(pi)?.source;
-          if (source !== undefined) input[registration.source.field] = source;
+          if (source !== undefined) candidate[registration.source.field] = source;
         }
       }
       if (
         registration &&
         !ownsSource &&
         !script.context.cwd.startsWith("ssh://") &&
-        isBatchable(this.core, registration, input)
+        isBatchable(this.core, registration, candidate)
       ) {
-        this.invocations.set(event.toolCallId, script);
+        Object.assign(input, candidate);
+        this.invocations.set(event.toolCallId, {
+          script,
+          input: candidate,
+          implicitAnchors,
+          scopedSources,
+        });
         return;
       }
       const work = script.scheduler.run(undefined, () => this.commit(script));
@@ -382,6 +455,20 @@ class NativeTextEditBatchCoordinator {
       return;
     });
     pi.on("tool_result", async (event) => {
+      // These handles come from the Search owner, never from caller-supplied coordinates.
+      if (event.toolName === "search" && !event.isError) {
+        const details = event.details;
+        const payload =
+          details !== null && typeof details === "object" && "payload" in details
+            ? details.payload
+            : undefined;
+        if (payload !== null && typeof payload === "object" && "target" in payload) {
+          if (typeof payload.target === "string") this.searchResults.add(payload.target);
+          if ("matchTargets" in payload && Array.isArray(payload.matchTargets))
+            for (const target of payload.matchTargets)
+              if (typeof target === "string") this.searchResults.add(target);
+        }
+      }
       this.scopedInvocations.get(event.toolCallId)?.unfinishedCalls.delete(event.toolCallId);
       this.invocations.delete(event.toolCallId);
       this.scopedInvocations.delete(event.toolCallId);
@@ -670,6 +757,8 @@ class NativeTextEditBatchCoordinator {
     };
     pi.on("agent_end", clear);
     pi.on("session_shutdown", clear);
+    pi.on("session_start", () => this.searchResults.clear());
+    pi.on("session_shutdown", () => this.searchResults.clear());
   }
 
   /** Share post-edit state while allowing Write to finish its own processing immediately. */
@@ -706,8 +795,10 @@ class NativeTextEditBatchCoordinator {
     signal: AbortSignal | undefined,
     context: ExtensionContext,
   ): Promise<AgentToolResult<FileMutationBatchResult>> | undefined {
-    const script = this.invocations.get(id);
-    if (!script) return undefined;
+    const invocation = this.invocations.get(id);
+    if (!invocation) return undefined;
+    const { script, implicitAnchors, scopedSources } = invocation;
+    input = invocation.input;
     script.callOrder.set(id, script.callOrder.size);
     const sources = [...mutationSources(registration, input).values()].map((source) =>
       source.startsWith("file://")
@@ -722,7 +813,17 @@ class NativeTextEditBatchCoordinator {
       Promise.all(sources.map((source) => resourceAccesses(source, context.cwd, "write"))).then(
         (sets) => sets.flat(),
       ),
-      () => this.accept(script, id, registration, input, effectiveSignal, context),
+      () =>
+        this.accept(
+          script,
+          id,
+          registration,
+          input,
+          effectiveSignal,
+          context,
+          implicitAnchors,
+          scopedSources,
+        ),
       effectiveSignal,
     );
     script.tail = Promise.allSettled([script.tail, work]).then(() => undefined);
@@ -736,6 +837,8 @@ class NativeTextEditBatchCoordinator {
     input: Readonly<Record<string, unknown>>,
     signal: AbortSignal | undefined,
     context: ExtensionContext,
+    implicitAnchors: Readonly<Record<string, string>>,
+    scopedSources: Readonly<Record<string, string>>,
   ): Promise<AgentToolResult<FileMutationBatchResult>> {
     signal?.throwIfAborted();
     assertOpen(script);
@@ -749,6 +852,8 @@ class NativeTextEditBatchCoordinator {
     }
     const entry: TextBatchEntry = {
       ...normalized,
+      implicitAnchors,
+      scopedSources,
       callId: id,
       op: registration.name,
       path: String(normalized[registration.source.field]),

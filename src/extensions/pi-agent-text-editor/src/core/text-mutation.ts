@@ -1012,7 +1012,7 @@ interface ExecutedTextMutation extends TextMutation {
   readonly snapshots?: ReadonlyMap<string, string>;
 }
 
-function createMutationContext(
+export function createMutationContext(
   definition: TextMutationToolRegistration,
   input: Readonly<Record<string, unknown>>,
   invocation: { readonly cwd: string; readonly signal?: AbortSignal },
