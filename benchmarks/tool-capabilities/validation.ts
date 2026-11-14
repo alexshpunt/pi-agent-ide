@@ -411,11 +411,8 @@ export function validateRoute(
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
       if (
-        !reuses(
-          value,
-          resultText(end.event),
-          "result",
-          valueIds(end.event.result?.structuredContent),
+        !["result", "anchor"].some((kind) =>
+          reuses(value, resultText(end.event), kind, valueIds(end.event.result?.structuredContent)),
         )
       )
         continue;
@@ -441,15 +438,44 @@ export function validateRoute(
     actual: Record<string, unknown> | undefined,
     before: number,
   ): boolean {
-    if (matches(expected, actual)) return true;
+    if (!actual) return false;
+    // Read's first line is the default, not a different selection.
+    const normalized = { ...actual };
+    if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
+      normalized.offset = 1;
+    if (matches(expected, normalized)) return true;
+    if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
     const { path: file, ...rest } = expected;
-    return (
-      ["replace", "delete", "insert", "copy", "move"].includes(tool) &&
-      typeof file === "string" &&
-      actual?.path !== undefined &&
-      matches(rest, actual) &&
-      reusedPaths(actual.path, before).some((source) => matches({ path: file }, { path: source }))
-    );
+    // A real issued line anchor can name the exact line required by the route.
+    for (const field of ["anchor", "start", "end"]) {
+      const selector = normalized[field];
+      const exact = rest[field];
+      if (typeof exact !== "string" || typeof selector !== "string") continue;
+      const hash = /^([0-9A-HJKMNP-TV-Z]{7})(?:\|[^\r\n]*)?$/u.exec(selector)?.[1];
+      if (!hash) continue;
+      const issuer = starts.some((prior) => {
+        const end = ends.get(prior.event.toolCallId ?? "");
+        if (
+          prior.index >= before ||
+          !end ||
+          end.index >= before ||
+          end.event.isError ||
+          !["read", "demo_read"].includes(prior.event.toolName ?? "")
+        )
+          return false;
+        if (file !== undefined && !matches({ path: file }, prior.event.args)) return false;
+        return resultText(end.event)
+          .split(/\r?\n/u)
+          .some((line) => line === `${hash}|${exact}` && (selector === hash || selector === line));
+      });
+      if (issuer) normalized[field] = rest[field];
+    }
+    if (matches(expected, normalized)) return true;
+    if (!(typeof file === "string" || file instanceof RegExp) || !matches(rest, normalized))
+      return false;
+    // A selector can carry its own source. Never rescue an explicitly wrong path with it.
+    const source = actual.path !== undefined ? actual.path : (actual.anchor ?? actual.start);
+    return reusedPaths(source, before).some((path) => matches({ path: file }, { path }));
   }
   let furthest = 0;
   function walk(

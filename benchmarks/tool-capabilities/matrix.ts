@@ -54,7 +54,7 @@ const groups: [string[], string[]][] = [
   [
     [
       "edit.issued-result-streaming",
-      "edit.reject-result-anchor-combination",
+      "edit.result-anchor-combination",
       "compose.native-provider-auth",
     ],
     ["issued-result-edit"],

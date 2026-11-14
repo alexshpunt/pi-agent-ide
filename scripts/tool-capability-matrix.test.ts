@@ -276,7 +276,7 @@ describe("capability route evidence", () => {
       ).passed;
     expect(check(fixture.selector)).toBe(true);
     expect(check(fixture.selector.replace("\n", "\r\n"))).toBe(true);
-    expect(check(`${fixture.selector}\n`)).toBe(false);
+    expect(check(`${fixture.selector}\n`)).toBe(fixture.id.startsWith("exact-eof-"));
     expect(check(fixture.selector.replace("\n", "\r\r\n"))).toBe(false);
   });
   test("direct batch evidence requires both call ids in one completed assistant message", () => {

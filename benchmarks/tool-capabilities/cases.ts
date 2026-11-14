@@ -697,7 +697,12 @@ add(
       contains: "alpha beta",
     },
     { tool: "search", args: { path: "split.txt", query: "alpha OR beta" } },
-    { tool: "replace", args: { path: matchReference(1), text: "GREEN" }, reuse: reuse(2) },
+    {
+      tool: "replace",
+      args: { text: "GREEN" },
+      argsAny: [{ path: matchReference(1) }, { start: matchReference(1) }],
+      reuse: reuse(2, ["path", "start"]),
+    },
     { tool: "search", args: { path: "literal.txt", query: /^"alpha beta"$/u } },
     { tool: "replace", args: { text: "LITERAL" }, reuse: reuse(4) },
   ],
@@ -968,24 +973,22 @@ add(
   "issued-result-edit",
   [
     "edit.issued-result-streaming",
-    "edit.reject-result-anchor-combination",
+    "edit.result-anchor-combination",
     "compose.native-provider-auth",
   ],
-  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Search the file again for NEW. Attempt Replace with that fresh Search UUID as path and start NEW; this combination must be refused with RESULT_INPUT_REJECTED, not treated as a filename. The streaming guard may stop this invalid call before its text BLOCKED arrives. Read the current file and report NEW. Keep every other byte unchanged.",
+  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Search the file again for NEW. Replace with that fresh Search result or UUID as path, start NEW, and text FINAL. This selector must resolve inside the issued selection, not treat its UUID as a filename. Read the current file and report FINAL. Keep every other byte unchanged.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     { tool: "replace", args: { text: "NEW" }, reuse: reuse(0) },
     { tool: "search", args: { path: "task.txt", query: "NEW" } },
     {
       tool: "replace",
-      args: { start: "NEW" },
+      args: { start: "NEW", text: "FINAL" },
       reuse: reuse(2),
-      error: true,
-      finalContains: "RESULT_INPUT_REJECTED",
     },
-    { tool: "read", args: { path: "task.txt" }, contains: "NEW" },
+    { tool: "read", args: { path: "task.txt" }, contains: "FINAL" },
   ],
-  { modes: ["direct"], expected: { "task.txt": "keep\nNEW\nlast\n" }, answer: "NEW" },
+  { modes: ["direct"], expected: { "task.txt": "keep\nFINAL\nlast\n" }, answer: "FINAL" },
 );
 
 add(
@@ -1451,8 +1454,18 @@ add(
       scriptResult: { complete: true, matches: { length: 1, 0: { lineText: "old one\nold two" } } },
     },
     { tool: "search", args: { path: "task.txt", query: "keep" } },
-    { tool: "replace", modes: ["direct"], args: { text: /^NEW\r?\n$/ }, reuse: reuse(0) },
-    { tool: "replace", modes: ["codemode"], args: { text: /^NEW\r?\n$/ }, reuse: reuse(1) },
+    {
+      tool: "replace",
+      modes: ["direct"],
+      args: { text: /^NEW\r?\n$/ },
+      reuse: reuse(0, ["path", "start"]),
+    },
+    {
+      tool: "replace",
+      modes: ["codemode"],
+      args: { text: /^NEW\r?\n$/ },
+      reuse: reuse(1, ["path", "start"]),
+    },
   ],
   {
     files: { "task.txt": "keep\nBEGIN\nold one\nold two\nEND\nkeep\n" },
@@ -2575,12 +2588,12 @@ for (const [name, eol, ending] of [
       {
         tool: "delete",
         args: { path: "block.txt" },
-        argsAny: [{ start: "Last\nBlock" }, { start: "Last\r\nBlock" }],
+        argsAny: [{ start: ending ? /^Last\r?\nBlock(?:\r?\n)?$/u : /^Last\r?\nBlock$/u }],
       },
       {
         tool: "replace",
         args: { path: "empty.txt", text: "" },
-        argsAny: [{ start: "Last\nBlock" }, { start: "Last\r\nBlock" }],
+        argsAny: [{ start: ending ? /^Last\r?\nBlock(?:\r?\n)?$/u : /^Last\r?\nBlock$/u }],
       },
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
@@ -2950,7 +2963,10 @@ add(
   "Read task.txt with anchors. Insert the line top before alpha, which shifts every line down. Then delete the final } line of the file using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "insert", args: { path: "task.txt", anchor: "alpha", before: true, text: "top\n" } },
+    {
+      tool: "insert",
+      args: { path: "task.txt", anchor: "alpha", before: true, text: /^top\n?$/u },
+    },
     {
       tool: "delete",
       args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
