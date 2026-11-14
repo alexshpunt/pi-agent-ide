@@ -3,7 +3,8 @@ import type { Capability } from "./validation.ts";
 // This declared inventory is reviewed separately from executable cases.
 // SDK capability-loader rendering retains model results and adds no paid operation.
 // Native cards and receipt visibility have deterministic real-Pi coverage.
-// Active-loadout prompt selection is lifecycle behavior; discovery.* keeps fresh-session routes.
+// Active-loadout selection is lifecycle behavior; discovery.* checks fresh-session direct discovery
+// and Codemode execution, where reaching session tools needs no discovery.
 const groups: [string[], string[]][] = [
   [
     ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],

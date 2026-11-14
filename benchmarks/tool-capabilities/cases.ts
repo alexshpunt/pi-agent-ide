@@ -82,12 +82,16 @@ add(
   },
 );
 add(
-  // Fresh-session discovery only; already-active guidance is covered by deterministic tests.
+  // Fresh deferred-tool session; already-active guidance is covered by deterministic tests.
   "deferred-navigation-recovery",
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
-  "Discover ast_search, lsp_search, diff and undo through tool_search before using them. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then undo that last edit. Read task.txt and report its restored marker. Preserve both files.",
+  "In direct mode, discover ast_search, lsp_search, diff and undo through tool_search before using them. In Codemode, call the session tools directly; discovery is optional. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then undo that last edit. Read task.txt and report its restored marker. Preserve both files.",
   [
-    { tool: "tool_search", discovers: ["ast_search", "lsp_search", "diff", "undo"] },
+    {
+      tool: "tool_search",
+      discovers: ["ast_search", "lsp_search", "diff", "undo"],
+      modes: ["direct"],
+    },
     { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, contains: "probe(1)" },
     { tool: "lsp_search", args: { query: "probe" }, contains: "task.ts#probe" },
     { tool: "diff", args: { before: "task.ts", after: "task.ts" }, scriptResult: "" },
@@ -1265,7 +1269,10 @@ for (const operation of ["delete", "insert"] as const) {
       { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
       {
         tool: operation,
-        ...(operation === "insert" && { args: { text: "BEFORE", before: true } }),
+        ...(operation === "insert" && {
+          args: { before: true },
+          argsAny: [{ text: "BEFORE" }, { text: "BEFORE\n" }],
+        }),
         reuse: reuse(0),
       },
     ],
