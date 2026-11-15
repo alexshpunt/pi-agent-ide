@@ -30,7 +30,6 @@ export function parseCodeViewReference(
   const filePath = decodePart(encodedPath, `${scheme}: path`);
   const encodedSelector = fragmentAt === -1 ? undefined : value.slice(fragmentAt + 1);
 
-
   if (encodedSelector === undefined) {
     return { scheme, path: filePath };
   }
