@@ -472,6 +472,23 @@ describe("selection-batch-insert", () => {
     expect(validateRoute(task, [...reads, batch, ...edits], "direct").passed).toBe(false);
   });
 
+  test.each([{ calls: [] }, { calls: [{ id: "insert-0", name: "insert" }] }, { calls: [null] }])(
+    "rejects matching receipts without both call memberships (%#)",
+    ({ calls }) => {
+      const edits = inserts("ADDED\n").map((event) =>
+        event.type === "tool_execution_end"
+          ? {
+              ...event,
+              result: {
+                ...event.result,
+                details: { agenticIdeBatch: { ...receipt.agenticIdeBatch, calls } },
+              },
+            }
+          : event,
+      );
+      expect(validateRoute(task, [...reads, batch, ...edits], "direct").passed).toBe(false);
+    },
+  );
   test.each([false, true])("rejects an unrelated write, completed=%s", (completed) => {
     const write = call({
       id: "write",
