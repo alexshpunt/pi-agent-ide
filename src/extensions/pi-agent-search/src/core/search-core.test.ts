@@ -265,13 +265,13 @@ test.each([false, true])("search readers overlap with a declared scope=%s", asyn
 });
 test("script search keeps resolver data and formatted reference data separately", async () => {
   const { core } = await setup({ kind: "resolved", payload: [{ path: "a.ts", line: 4 }] });
-  const result = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() }, "script");
+  const result = await core.execute({ query: "custom:entry" }, { cwd: process.cwd() }, "script");
   expect(result.script).toEqual({
     resolverId: "special",
     data: [{ path: "a.ts", line: 4 }],
     details: {},
   });
-  const ordinary = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() });
+  const ordinary = await core.execute({ query: "custom:entry" }, { cwd: process.cwd() });
   expect(ordinary.script).toBeUndefined();
 });
 test("scope owner refusal prevents every resolver and failed setup retains no owner", async () => {
@@ -421,26 +421,30 @@ describe("search fallback dispatch", () => {
     expect(fallback.mock.calls[0]?.[0]).toEqual(request);
     expect(JSON.stringify(result.content)).toContain("local hits");
   });
-  test.each(["symbols:", "ast:", "regex:", "files:", "custom:   "])(
-    "routes empty %s straight to local text",
+  test.each(["docs:debugger", "status:", "custom:   "])(
+    "passes colon text %s through normal resolver dispatch without adding a notice",
     async (query) => {
-      const { core, specialized, fallback } = await setup(new Error("service must stay idle"));
+      const { core, specialized, fallback } = await setup({ kind: "not-handled" });
       const request = { query, path: "src", limit: 3, exclude: "*.test.ts" };
       const result = await core.execute(request, { cwd: process.cwd() });
-      expect(specialized).not.toHaveBeenCalled();
+      expect(specialized).toHaveBeenCalledWith(request, { cwd: process.cwd() });
       expect(fallback).toHaveBeenCalledWith(request, { cwd: process.cwd() });
       expect(result.details.resolverId).toBe("text");
-      expect(result.content).toHaveLength(2);
-      expect(result.content[1]).toEqual({ type: "text", text: "local hits" });
-      const notice = result.content[0];
-      if (notice?.type !== "text") throw new Error("Missing fallback notice");
-      expect(notice.text).toContain("fallback");
+      expect(result.content).toEqual([{ type: "text", text: "local hits" }]);
     },
   );
+  test("lets a resolver own a colon query with an empty suffix", async () => {
+    const { core, specialized, fallback } = await setup({ kind: "resolved", payload: [] });
+    const request = { query: "custom:" };
+    const result = await core.execute(request, { cwd: process.cwd() });
+    expect(specialized).toHaveBeenCalledWith(request, { cwd: process.cwd() });
+    expect(result.details.resolverId).toBe("special");
+    expect(fallback).not.toHaveBeenCalled();
+  });
   test("tries specialized resolvers before fallback regardless of numeric priority", async () => {
     const { core, fallback } = await setup({ kind: "resolved", payload: [] });
     expect(
-      (await core.execute({ query: "symbols:missing" }, { cwd: process.cwd() })).details.resolverId,
+      (await core.execute({ query: "custom:missing" }, { cwd: process.cwd() })).details.resolverId,
     ).toBe("special");
     expect(fallback).not.toHaveBeenCalled();
   });
@@ -449,17 +453,13 @@ describe("search fallback dispatch", () => {
     const result = await core.execute({ query: "unknown:needle" }, { cwd: process.cwd() });
     expect(fallback.mock.calls[0]?.[0]).toEqual({ query: "unknown:needle" });
     expect(result.details.resolverId).toBe("text");
-    expect(result.content).toHaveLength(2);
-    expect(result.content[1]).toEqual({ type: "text", text: "local hits" });
-    const notice = result.content[0];
-    if (notice?.type !== "text") throw new Error("Missing fallback notice");
-    expect(notice.text).toContain("fallback");
+    expect(result.content).toEqual([{ type: "text", text: "local hits" }]);
   });
   test.each([new Error("service down"), { kind: "failed", error: new Error("timeout") } as const])(
     "keeps resolver failures visible",
     async (attempt) => {
       const { core, fallback } = await setup(attempt);
-      const result = await core.execute({ query: "symbols:needle" }, { cwd: process.cwd() });
+      const result = await core.execute({ query: "custom:needle" }, { cwd: process.cwd() });
       expect(result.details.failure?.code).toBe("RESOLVE_FAILED");
       expect(result.isError).toBe(true);
       expect(fallback).not.toHaveBeenCalled();
@@ -470,7 +470,7 @@ describe("search fallback dispatch", () => {
     const controller = new AbortController();
     controller.abort();
     const result = await core.execute(
-      { query: "symbols:" },
+      { query: "status:" },
       { cwd: process.cwd(), signal: controller.signal },
     );
     expect(result.details.failure?.code).toBe("RESOLVE_FAILED");

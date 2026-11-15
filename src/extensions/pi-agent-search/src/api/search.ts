@@ -114,7 +114,7 @@ export interface SearchResolver {
 export interface SearchResolverRegistration {
   readonly resolver: SearchResolver;
   readonly priority?: number;
-  /** Handle unclaimed text after specialized resolvers; also accept empty protocol queries. */
+  /** Handle unclaimed text after specialized resolvers. */
   readonly fallback?: boolean;
 }
 

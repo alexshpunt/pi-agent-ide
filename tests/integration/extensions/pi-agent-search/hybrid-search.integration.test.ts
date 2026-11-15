@@ -4,6 +4,7 @@ import {
   assistantMessage,
   getToolExecution,
   getToolExecutionDetails,
+  getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -33,11 +34,11 @@ function call(id: string, name: string, arguments_: Record<string, unknown>) {
   });
 }
 
-test("runs hybrid matching and empty protocol recovery through the default IDE", async () => {
+test("runs hybrid matching and plain colon queries through the default IDE", async () => {
   const cwd = await workspace();
   await writeFile(
     path.join(cwd, "exact.txt"),
-    "foo.bar\nfooXbar\ncall(\nsymbols:\nast:\nregex:\nfiles:\nlsp:\nunknown:needle\n",
+    "foo.bar\nfooXbar\ncall(\ndocs:debugger\nstatus:\ncustom:   \nunknown:needle\n",
   );
   await writeFile(
     path.join(cwd, "regex.txt"),
@@ -55,7 +56,8 @@ test("runs hybrid matching and empty protocol recovery through the default IDE",
       path: "regex.txt",
     },
     { id: "explicit", query: "regex:foo.bar", path: "exact.txt" },
-    ...["symbols:", "ast:", "regex:", "files:", "lsp:", "unknown:needle"].map((query, index) => ({
+    { id: "empty-regex", query: "regex:", path: "exact.txt" },
+    ...["docs:debugger", "status:", "custom:   ", "unknown:needle"].map((query, index) => ({
       id: `prefix-${index}`,
       query,
       path: "exact.txt",
@@ -63,6 +65,7 @@ test("runs hybrid matching and empty protocol recovery through the default IDE",
   ];
   const result = await new PiIntegrationTest({
     testName: "hybrid-search-default-ide",
+    rawMode: false,
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd,
     extensions: [ide],
@@ -72,32 +75,47 @@ test("runs hybrid matching and empty protocol recovery through the default IDE",
       ...queries.map(({ id, ...args }) => call(id, "search", args)),
       assistantMessage([text("Done")]),
     ],
-  }).run("Search literals, regex fallbacks, quoted terms, Boolean expressions, and protocol text");
+  }).run("Search literals, regex fallbacks, quoted terms, Boolean expressions, and colon text");
   for (const query of queries)
-    expect(getToolExecution(result, query.id).isError, query.id).toBe(false);
+    expect(getToolExecution(result, query.id).isError, query.id).toBe(query.id === "empty-regex");
+  expect(getToolExecutionDetails(getToolExecution(result, "empty-regex"))).toMatchObject({
+    failure: { code: "RESOLVE_FAILED", resolverId: "regex" },
+  });
   const output = (id: string) => getToolResultText(result, id);
   expect(output("literal")).toContain("⟦foo.bar⟧");
   expect(output("literal")).not.toContain("fooXbar");
   expect(output("regex")).toContain("⟦fooXbar⟧");
-  expect(output("regex")).toContain("Search fallback:");
-  expect(output("quoted")).toMatch(/<\/system-result>\nNo matches found\.$/u);
+  expect(getToolExecutionResult(result, "regex")).toMatchObject({
+    structuredContent: { fallback: { mode: "regex", matches: [{ text: "fooXbar" }] } },
+  });
+  expect(getToolExecutionDetails(getToolExecution(result, "quoted"))).toMatchObject({
+    payload: { matchCount: 0, complete: true },
+  });
   expect(output("invalid-present")).toContain("⟦call(⟧");
-  expect(output("invalid-absent")).toContain("invalid regex skipped");
+  expect(getToolExecutionResult(result, "invalid-absent")).toMatchObject({
+    structuredContent: { matches: [], complete: true, notices: [expect.any(String)] },
+  });
   expect(output("boolean")).toContain("⟦foo42⟧ keep.me");
   expect(output("boolean")).toContain("⟦bar7⟧ keep.me");
   expect(output("boolean")).not.toContain("keepXme");
   expect(output("boolean")).not.toContain("keep.me ignored");
   expect(output("explicit")).toContain("⟦fooXbar⟧");
   for (const [index, prefix] of [
-    "symbols:",
-    "ast:",
-    "regex:",
-    "files:",
-    "lsp:",
+    "docs:debugger",
+    "status:",
+    "custom:   ",
     "unknown:needle",
   ].entries()) {
     expect(output(`prefix-${index}`)).toContain(`⟦${prefix}⟧`);
-    expect(output(`prefix-${index}`)).toContain("Search fallback:");
+    expect(getToolExecutionResult(result, `prefix-${index}`)).toMatchObject({
+      content: [{ type: "text" }],
+      structuredContent: { complete: true, matches: [{ text: prefix }] },
+    });
+    expect(getToolExecutionResult(result, `prefix-${index}`)).not.toHaveProperty(
+      "structuredContent.notices",
+    );
+    const details = getToolExecutionDetails(getToolExecution(result, `prefix-${index}`));
+    expect(details).toMatchObject({ payload: { matchCount: 1, complete: true } });
     expect(getToolExecutionDetails(getToolExecution(result, `prefix-${index}`))).toMatchObject({
       resolverId: "text",
     });

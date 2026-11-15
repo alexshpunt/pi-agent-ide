@@ -529,12 +529,12 @@ test("all selections refresh through the original backend while single selection
   const store = new SearchSessionStore();
   let refreshes = 0;
   const session = await store.register(
-    "ast:node",
+    "custom:node",
     [searchMatch(source, "old")],
     true,
     cwd,
     undefined,
-    { query: "ast:node", regex: false },
+    { query: "custom:node", regex: false },
     async () => {
       refreshes++;
       return { matches: [searchMatch(source, "new")], complete: true };

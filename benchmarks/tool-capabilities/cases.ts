@@ -1540,8 +1540,8 @@ add(
 
 add(
   "search-query",
-  ["search.boolean", "search.regex", "file_search.glob", "search.flags"],
-  "Use file_search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Finally regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Report the matching line.",
+  ["search.text", "search.boolean", "search.regex", "file_search.glob", "search.flags"],
+  "Use file_search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Also search task.txt for the plain text docs:debugger and then status:, passing each query unchanged. Report the Boolean matching line.",
   [
     { tool: "file_search", args: { pattern: /task\*?\.txt|task\*/ } },
     {
@@ -1565,9 +1565,22 @@ add(
       },
       contains: "PASS-MARKER",
     },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "docs:debugger" },
+      contains: "DOCS-MARKER",
+    },
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "status:" },
+      contains: "STATUS-MARKER",
+    },
   ],
   {
-    files: { "task.txt": "alpha beta PASS-MARKER\nalpha beta skip\nAlpha BETAMAX\n" },
+    files: {
+      "task.txt":
+        "alpha beta PASS-MARKER\nalpha beta skip\nAlpha BETAMAX\ndocs:debugger DOCS-MARKER\nstatus: STATUS-MARKER\n",
+    },
     answer: "alpha beta PASS-MARKER",
   },
 );
