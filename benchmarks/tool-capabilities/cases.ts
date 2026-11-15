@@ -2750,6 +2750,8 @@ add(
     { tool: "read", args: { path: "src with spaces/session.ts" }, contains: "expireSession" },
   ],
   {
+    // Serialize cold downloads and ONNX sessions, including searches after initialization.
+    resource: "colgrep",
     prerequisite: "command -v colgrep && colgrep init --yes --color never",
     files: {
       "src with spaces/session.ts":
@@ -2843,6 +2845,7 @@ add(
   ],
   {
     modes: ["codemode"],
+    resource: "colgrep",
     prerequisite: "command -v colgrep && colgrep init --yes --color never",
     files: {
       "src with spaces/session.ts":

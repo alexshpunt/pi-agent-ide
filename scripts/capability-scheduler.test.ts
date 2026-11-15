@@ -224,6 +224,9 @@ test("ColGREP routes run one at a time at concurrency 20 without blocking other 
   const isColgrep = (index: number) => work[index]?.task.prerequisite?.includes("colgrep init");
   const colgrep = work.flatMap((_, index) => (isColgrep(index) ? [index] : []));
   expect(colgrep).toHaveLength(3);
+  const [first, second, third] = colgrep;
+  if (first === undefined || second === undefined || third === undefined)
+    throw new Error("Missing ColGREP route");
   const running = schedule(work, 20, new AbortController(), {
     resource: ({ task }) => task.resource,
     stopReason: () => undefined,
@@ -231,7 +234,9 @@ test("ColGREP routes run one at a time at concurrency 20 without blocking other 
     run: async (item) => {
       const index = work.indexOf(item);
       started.push(index);
-      return gates[index]!.promise;
+      const gate = gates[index];
+      if (!gate) throw new Error("Unknown scheduled route");
+      return gate.promise;
     },
   });
   try {
@@ -239,11 +244,11 @@ test("ColGREP routes run one at a time at concurrency 20 without blocking other 
     expect(started.filter(isColgrep)).toEqual([colgrep[0]]);
     expect(started.filter((index) => work[index]?.task.setup === "web")).toHaveLength(1);
     // An unavailable prerequisite releases the resource, but does not become a pass.
-    gates[colgrep[0]!]!.resolve("unavailable");
-    await viWait(() => started.includes(colgrep[1]!));
+    gates[first]?.resolve("unavailable");
+    await viWait(() => started.includes(second));
     expect(started.filter(isColgrep)).toEqual(colgrep.slice(0, 2));
-    gates[colgrep[1]!]!.resolve("pass");
-    await viWait(() => started.includes(colgrep[2]!));
+    gates[second]?.resolve("pass");
+    await viWait(() => started.includes(third));
     expect(started.filter(isColgrep)).toEqual(colgrep);
   } finally {
     for (const gate of gates) gate.resolve("pass");

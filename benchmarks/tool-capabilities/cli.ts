@@ -862,7 +862,7 @@ async function main(): Promise<void> {
       ),
     );
     await schedule(work, concurrency, abort, {
-      resource: ({ task }) => (task.setup === "web" ? "web-port-8765" : undefined),
+      resource: ({ task }) => task.resource,
       stopReason: accountStopReason,
       run: async ({ profile, task, route, n }, signal) => {
         runState.attemptsStarted = true;
