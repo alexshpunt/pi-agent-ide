@@ -4,6 +4,7 @@ import {
   exactSelection,
   issuedAnchor,
   issuedSelection,
+  issuedSearchFragment,
   searchSources,
   wholeSearchSelection,
   type SelectionIssuer,
@@ -480,7 +481,10 @@ export function validateRoute(
     return [];
   }
   /** Only successful, completed issuers of this same source may justify selector equivalence. */
-  function selectionIssuers(file: unknown, before: number): SelectionIssuer[] {
+  function selectionIssuers(
+    file: unknown,
+    before: number,
+  ): (SelectionIssuer & { start: number })[] {
     return starts.flatMap((prior) => {
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) return [];
@@ -492,6 +496,7 @@ export function validateRoute(
           tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
           args: prior.event.args ?? {},
           end: end.event,
+          start: prior.index,
         },
       ];
     });
@@ -503,24 +508,11 @@ export function validateRoute(
       reusedPaths(reference, before).some((path) => fixturePath(path) === fixturePath(file))
     );
   }
-  /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
-  function editContext(
-    tool: string,
-    actual: Record<string, unknown>,
-    before: number,
-  ): {
-    content?: string;
-    selection?: LineSelection;
-  } {
-    const source = actual.path ?? actual.anchor ?? actual.start;
-    const paths = [...values(source), ...reusedPaths(source, before)];
-    const file = Object.keys(task.files ?? {}).find((file) =>
-      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
-    );
-    if (file === undefined) return {};
+  /** An edit overlapping or following the witness makes its source snapshot unsafe. */
+  function sourceChanged(file: string, before: number, after = -1): boolean {
     for (const prior of starts) {
       const end = ends.get(prior.event.toolCallId ?? "");
-      if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      if (prior.index >= before || (end && (end.index <= after || end.event.isError))) continue;
       if (
         !["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(
           aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
@@ -539,8 +531,26 @@ export function validateRoute(
           ),
         )
       )
-        return {};
+        return true;
     }
+    return false;
+  }
+  /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
+  function editContext(
+    tool: string,
+    actual: Record<string, unknown>,
+    before: number,
+  ): {
+    content?: string;
+    selection?: LineSelection;
+  } {
+    const source = actual.path ?? actual.anchor ?? actual.start;
+    const paths = [...values(source), ...reusedPaths(source, before)];
+    const file = Object.keys(task.files ?? {}).find((file) =>
+      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
+    );
+    if (file === undefined) return {};
+    if (sourceChanged(file, before)) return {};
     const content = task.files?.[file];
     if (content === undefined) return {};
     const selector = actual.anchor ?? actual.start;
@@ -706,8 +716,20 @@ export function validateRoute(
       if (hash && exact instanceof RegExp && matches(exact, hash)) normalized[field] = hash;
       if (typeof source !== "string" || typeof exact !== "string") continue;
       const content = editContext(tool, { path: source }, before).content;
-      if (content === undefined) continue;
       const paired = target ? expected.targetEnd !== undefined : expected.end !== undefined;
+      if (content === undefined) {
+        if (
+          issuedSearchFragment(
+            exact,
+            selector,
+            paired,
+            issuers.filter((issuer) => !sourceChanged(source, before, issuer.start)),
+            (candidate) => matches({ path: source }, { path: candidate }),
+          )
+        )
+          normalized[field] = exact;
+        continue;
+      }
       const required = exactSelection(content, exact, paired);
       const selected = issuedSelection(content, selector, issuers, (candidate) =>
         matches({ path: source }, { path: candidate }),
