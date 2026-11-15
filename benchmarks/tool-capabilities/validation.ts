@@ -176,7 +176,7 @@ export interface CapabilityCase {
   expected?: Record<string, string | Buffer | null>;
   answer?: string;
   prerequisite?: string;
-  /** Exclusive host resource held for the whole attempt, including setup and cleanup. */
+  /** Exclusive resource within an invocation, held through setup, execution and cleanup. */
   resource?: string;
   setup?: string;
   git?: boolean;
