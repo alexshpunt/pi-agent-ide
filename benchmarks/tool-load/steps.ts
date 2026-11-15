@@ -165,23 +165,19 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
     ),
     step(
       "move-symbol-out",
-      "move",
+      "codemode",
       {
-        path: `symbol:${file}#${detachedName(agent, detached)}`,
-        target: scratch,
-        targetStart: "end",
+        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(file + "#" + detachedName(agent, detached))}}); const moved = await tools.move({path:declaration, target:${JSON.stringify(scratch)}, targetStart:"end"}); if (!moved) throw Error("Declaration move failed"); text("declaration moved");`,
       },
-      (result) => expectAll(result, ["Moved selected text", detachedName(agent, detached)]),
+      (result) => expectAll(result, ["declaration moved"]),
     ),
     step(
       "move-symbol-back",
-      "move",
+      "codemode",
       {
-        path: `symbol:${scratch}#${detachedName(agent, detached)}`,
-        target: file,
-        targetStart: detachedMarker(spec, agent, detached),
+        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(scratch + "#" + detachedName(agent, detached))}}); const moved = await tools.move({path:declaration, target:${JSON.stringify(file)}, targetStart:${JSON.stringify(detachedMarker(spec, agent, detached))}}); if (!moved) throw Error("Declaration move failed"); text("declaration moved");`,
       },
-      (result) => expectAll(result, ["Moved selected text", detachedName(agent, detached)]),
+      (result) => expectAll(result, ["declaration moved"]),
     ),
     step(
       "copy-text",
@@ -212,12 +208,11 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
     ),
     step(
       "replace-symbol",
-      "replace",
+      "codemode",
       {
-        path: `symbol:${file}#${unitName(agent, symbolUnit)}`,
-        text: functionText(spec, agent, symbolUnit, cycle),
+        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(file + "#" + unitName(agent, symbolUnit))}}); const edited = await tools.replace({path:declaration, text:${JSON.stringify(functionText(spec, agent, symbolUnit, cycle))}}); if (!edited) throw Error("Declaration edit failed"); text("declaration edited");`,
       },
-      (result) => expectAll(result, ["Replaced selected text", `total + ${cycle} + `]),
+      (result) => expectAll(result, ["declaration edited"]),
     ),
     step(
       "codemode-batch",

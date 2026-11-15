@@ -1,10 +1,11 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
@@ -28,18 +29,20 @@ async function run(
   );
   await writeFile(path.join(cwd, ".pi/pi-agent-ide/extensions.json"), JSON.stringify({ disabled }));
   await writeFile(path.join(cwd, "names.cpp"), SOURCE);
-  return new PiIntegrationTest({
-    testName: name,
-    artifactsDir: testArtifactsDir(import.meta.filename),
-    rawMode: false,
-    cwd,
-    extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-    tools: ["read", "search", "replace", "delete", "move", "codemode"],
-    conversation: [
-      ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
-      assistantMessage([text("Rename finished.")]),
-    ],
-  }).run("Rename call_a to FuncA where it is not renamed yet");
+  return new PiIntegrationTest(
+    withDeclarationSelections({
+      testName: name,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["read", "search", "replace", "delete", "move", "codemode"],
+      conversation: [
+        ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
+        assistantMessage([text("Rename finished.")]),
+      ],
+    }),
+  ).run("Rename call_a to FuncA where it is not renamed yet");
 }
 
 function codemode(id: string, code: string) {
@@ -139,7 +142,7 @@ test("a symbol rename to its current name succeeds without a write", async () =>
         toolCall({
           id: "rename",
           name: "replace",
-          arguments: { path: "symbol:lib.ts#alpha#name", text: "alpha" },
+          arguments: { path: "fixture:declaration:lib.ts#alpha#name", text: "alpha" },
         }),
       ],
       ["ide.lint"],

@@ -2159,29 +2159,9 @@ const deletedDeclaration = {
 };
 
 add(
-  "delete-symbol",
-  ["edit.delete-declaration"],
-  "Use lsp_search with declaration task.ts#doomed to confirm the declaration. Then delete the direct symbol path symbol:task.ts#doomed without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not use the lsp_search result as the Delete input for this route.",
-  [
-    { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
-    {
-      tool: "delete",
-      args: { path: "symbol:task.ts#doomed", start: undefined, end: undefined },
-      after: [0],
-      contains: "Text fallback: imports and references unchanged",
-    },
-  ],
-  {
-    files: declarationFiles,
-    expected: deletedDeclaration,
-    prerequisite: "command -v typescript-language-server",
-  },
-);
-
-add(
   "read-symbol-delete",
-  ["compose.symbol-read-delete"],
-  "Use lsp_search with declaration task.ts#doomed, then pass its unchanged result or UUID (in Codemode, its value or its one match) to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not retype the symbol path for Delete.",
+  ["edit.delete-declaration", "compose.symbol-read-delete"],
+  "Use lsp_search with declaration task.ts#doomed, then pass its unchanged result or UUID (in Codemode, its value or its one match) to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not reconstruct a path for Delete.",
   [
     { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
     { tool: "delete", args: { start: undefined, end: undefined }, reuse: reuse(0) },
@@ -2196,19 +2176,17 @@ add(
   },
 );
 
-const rejectedSymbols = ["symbol:task.ts", "symbol:task.ts#missing", "symbol:task.ts#ping"];
 const rejectionFiles = {
   "task.ts": "export class First { ping() {} }\nexport class Second { ping() {} }\n",
   "tsconfig.json": '{"compilerOptions":{"strict":true},"include":["*.ts"]}\n',
-  ...Object.fromEntries(rejectedSymbols.map((source) => [source, "must remain\n"])),
 };
 add(
-  "reject-symbol-delete",
-  ["edit.reject-symbol-delete"],
-  "Call delete without start/end on symbol:task.ts, symbol:task.ts#missing, and symbol:task.ts#ping. Each must reject its invalid, missing, or ambiguous declaration target. Do not try another deletion route. Keep every file unchanged, including the regular files whose literal names begin with symbol:.",
-  rejectedSymbols.map((source) => ({
-    tool: "delete",
-    args: { path: source, start: undefined, end: undefined },
+  "reject-lsp-declaration",
+  ["lsp.declaration-refusals"],
+  "Ask lsp_search for declaration task.ts, task.ts#missing and task.ts#ping. Each must refuse its invalid, missing or ambiguous declaration selector. Do not edit or delete anything; keep all files unchanged.",
+  ["task.ts", "task.ts#missing", "task.ts#ping"].map((declaration) => ({
+    tool: "lsp_search",
+    args: { declaration },
     error: true,
   })),
   {
@@ -3542,21 +3520,21 @@ add(
     "lsp.rename-refusal-recovery",
     "compose.symbol-read-rename",
   ],
-  "First get the declaration of count in task.ts with lsp_search and wait until it resolves. Then try replace with path symbol:task.ts#count#total and text total. That malformed rename must fail without changing files. Follow the refusal guidance to rename count to total through LSP. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
+  "Get the declaration of count in task.ts with lsp_search. Try replacing its name capture with empty text; this must fail without changes. Then replace the same issued name capture with total to rename through LSP: use its displayed capture reference in direct calls or matches[0].captures.name[0] (or its id) in Codemode. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
   [
     { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
     {
       tool: "replace",
-      args: { path: "symbol:task.ts#count#total", text: "total" },
+      args: { text: "" },
+      reuse: reuse(0, "path", "capture:name"),
       after: [0],
       error: true,
-      contains: "symbol:task.ts#count#name",
     },
     {
       tool: "replace",
-      args: { path: /symbol:task.ts#.*count#name/, text: "total" },
+      args: { text: "total" },
+      reuse: reuse(0, "path", "capture:name"),
       after: [1],
-      contains: "Renamed through LSP",
     },
   ],
   {
@@ -3580,7 +3558,7 @@ add(
 add(
   "lsp-overload-rename",
   ["lsp.overload-selectors", "compose.symbol-overload-rename"],
-  "In main.cpp, ask lsp_search for the declaration main.cpp#clamp. It has several overloads; take the selector of the overload whose first parameter is a const Vec& from the result, and rename that overload to clampVec with replace on its symbol name resource. Its prototype, definition and the call with a Vec must change; the int overload and its calls stay unchanged. Do not do an ordinary text replacement.",
+  "In main.cpp, ask lsp_search for the declaration main.cpp#clamp. It has several overloads; take the selector of the overload whose first parameter is a const Vec& from the result, and get that exact declaration, then rename it to clampVec by replacing its issued name capture (displayed capture reference or matches[0].captures.name[0] in Codemode). Its prototype, definition and the call with a Vec must change; the int overload and its calls stay unchanged. Do not do an ordinary text replacement.",
   [
     {
       tool: "lsp_search",
@@ -3589,13 +3567,17 @@ add(
       contains: "main.cpp#clamp(const Vec&, float, float)",
     },
     {
+      tool: "lsp_search",
+      args: { declaration: /^main\.cpp#clamp\(const Vec ?&, ?float, ?float\)$/ },
+      after: [0],
+    },
+    {
       tool: "replace",
       args: {
-        path: /^symbol:main\.cpp#clamp\(const Vec ?&, ?float, ?float\)#name$/,
         text: "clampVec",
       },
-      after: [0],
-      contains: "Renamed through LSP",
+      after: [1],
+      reuse: reuse(1, "path", "capture:name"),
     },
   ],
   {

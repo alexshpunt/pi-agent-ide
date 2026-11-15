@@ -1,3 +1,5 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, test } from "vitest";
@@ -5,7 +7,6 @@ import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
@@ -92,61 +93,65 @@ test.each(["cold graph", "rename"] as const)(
       ].join("\n");
       const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
       const command = `python3 -c ${quote(inspect)} ${quote(`${fixture.workspace}/server.pid`)}`;
-      const run = await new PiIntegrationTest({
-        testName: `ssh-lsp-native-${mode.replaceAll(" ", "-")}`,
-        artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
-        cwd,
-        rawMode: false,
-        isolateUserResources: true,
-        extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-        tools: ["read", "replace", "lsp_search", "bash", "delete", "codemode"],
-        timeoutMs: 90000,
-        conversation: [
-          assistantMessage([
-            toolCall({
-              id: "graph",
-              name: "lsp_search",
-              arguments: { calls: `${root}/note.ts#greet` },
-            }),
-          ]),
-          ...(mode === "rename"
-            ? [
-                assistantMessage([
-                  toolCall({
-                    id: "rename",
-                    name: "replace",
-                    arguments: { path: `symbol:${root}/note.ts#greet#name`, text: "welcome" },
-                  }),
-                ]),
-                assistantMessage([
-                  toolCall({
-                    id: "renamed-note",
-                    name: "read",
-                    arguments: { path: `${root}/note.ts` },
-                  }),
-                ]),
-                assistantMessage([
-                  toolCall({
-                    id: "renamed-reference",
-                    name: "read",
-                    arguments: { path: `${root}/reference.ts` },
-                  }),
-                ]),
-                assistantMessage([
-                  toolCall({
-                    id: "renamed-graph",
-                    name: "lsp_search",
-                    arguments: { calls: `${root}/note.ts#welcome` },
-                  }),
-                ]),
-              ]
-            : []),
-          assistantMessage([
-            toolCall({
-              id: "native",
-              name: "codemode",
-              arguments: {
-                code: `
+      const run = await new PiIntegrationTest(
+        withDeclarationSelections({
+          testName: `ssh-lsp-native-${mode.replaceAll(" ", "-")}`,
+          artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
+          cwd,
+          rawMode: false,
+          isolateUserResources: true,
+          extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+          tools: ["read", "replace", "lsp_search", "bash", "delete", "codemode"],
+          timeoutMs: 90000,
+          conversation: [
+            assistantMessage([
+              toolCall({
+                id: "graph",
+                name: "lsp_search",
+                arguments: { calls: `${root}/note.ts#greet` },
+              }),
+            ]),
+            ...(mode === "rename"
+              ? [
+                  assistantMessage([
+                    toolCall({
+                      id: "rename",
+                      name: "replace",
+                      arguments: {
+                        path: `fixture:declaration:${root}/note.ts#greet#name`,
+                        text: "welcome",
+                      },
+                    }),
+                  ]),
+                  assistantMessage([
+                    toolCall({
+                      id: "renamed-note",
+                      name: "read",
+                      arguments: { path: `${root}/note.ts` },
+                    }),
+                  ]),
+                  assistantMessage([
+                    toolCall({
+                      id: "renamed-reference",
+                      name: "read",
+                      arguments: { path: `${root}/reference.ts` },
+                    }),
+                  ]),
+                  assistantMessage([
+                    toolCall({
+                      id: "renamed-graph",
+                      name: "lsp_search",
+                      arguments: { calls: `${root}/note.ts#welcome` },
+                    }),
+                  ]),
+                ]
+              : []),
+            assistantMessage([
+              toolCall({
+                id: "native",
+                name: "codemode",
+                arguments: {
+                  code: `
 const name = ${JSON.stringify(mode === "rename" ? "welcome" : "greet")};
 const definition = await tools.lsp_search({ query: name, path: ${JSON.stringify(`${root}/note.ts`)} });
 // Inside its own file the name is only its definition.
@@ -158,12 +163,13 @@ const inspected = await tools.bash({ command: ${JSON.stringify(command)}, cwd: $
 text({ definition, references, inspected: inspected.output });
 if(!inspected.session) throw Error("No owned shell source"); await tools.delete({path:inspected.session});
 `,
-              },
-            }),
-          ]),
-          assistantMessage([text("Installed server rename and native calls verified.")]),
-        ],
-      }).run(
+                },
+              }),
+            ]),
+            assistantMessage([text("Installed server rename and native calls verified.")]),
+          ],
+        }),
+      ).run(
         "Rename only the configured SSH declaration through its native language server and preserve controller files.",
       );
       for (const id of [

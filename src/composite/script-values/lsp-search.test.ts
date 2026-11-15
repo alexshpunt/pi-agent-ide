@@ -55,6 +55,17 @@ describe("lspSearchValue", () => {
     });
   });
 
+  test("a declaration exposes the issued name capture without granting coordinates authority", () => {
+    const data = selectionData([hit(3, "function start() {}")], true, "AB12", targets(1));
+    const name = selectionData([hit(3, "start")], true, undefined, targets(1, "name"));
+    const captured = {
+      ...data,
+      matches: data.matches.map((match) => ({ ...match, captures: { name: name.matches } })),
+    };
+    expect(lspSearchValue.project(input(captured))).toMatchObject({
+      matches: [{ captures: { name: [{ text: "start", id: "RESULT#name-0" }] } }],
+    });
+  });
   test("shares full line context across references and declarations", () => {
     const lineText = "  const ready = start(); // tail";
     const data = selectionData([{ ...hit(3, "start"), lineText }], true, "AB12", targets(1));

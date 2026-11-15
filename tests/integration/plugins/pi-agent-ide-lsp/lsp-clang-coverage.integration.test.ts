@@ -1,10 +1,11 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
@@ -61,20 +62,22 @@ async function run(
   testName: string,
   calls: { name: string; arguments: Record<string, unknown> }[],
 ) {
-  return new PiIntegrationTest({
-    testName,
-    artifactsDir: testArtifactsDir(import.meta.filename),
-    cwd,
-    rawMode: false,
-    extensions: [path.resolve("src/pi-agent-ide.ts")],
-    tools: ["lsp_search", "replace"],
-    conversation: [
-      ...calls.map((call, index) =>
-        assistantMessage([toolCall({ id: `call-${index}`, ...call })], { stopReason: "toolUse" }),
-      ),
-      assistantMessage([text("Done.")]),
-    ],
-  }).run("Find and rename call_normalize_routine");
+  return new PiIntegrationTest(
+    withDeclarationSelections({
+      testName,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["lsp_search", "replace"],
+      conversation: [
+        ...calls.map((call, index) =>
+          assistantMessage([toolCall({ id: `call-${index}`, ...call })], { stopReason: "toolUse" }),
+        ),
+        assistantMessage([text("Done.")]),
+      ],
+    }),
+  ).run("Find and rename call_normalize_routine");
 }
 
 function output(result: Awaited<ReturnType<typeof run>>, index: number, error = false): string {
@@ -93,7 +96,10 @@ const SEARCH = {
 };
 const RENAME = {
   name: "replace",
-  arguments: { path: "symbol:lib.h#call_normalize_routine#name", text: "renamed_routine" },
+  arguments: {
+    path: "fixture:declaration:lib.h#call_normalize_routine#name",
+    text: "renamed_routine",
+  },
 };
 const ALL_MATCHES = /SEARCH#\w+:all:match/u;
 const MISSING = "b.cpp:2 'does_not_exist.h' file not found";

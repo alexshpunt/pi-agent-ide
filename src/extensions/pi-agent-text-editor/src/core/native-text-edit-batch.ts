@@ -251,7 +251,8 @@ function isBatchable(
     registration.direct?.matches(input) ||
     registration.intent === "restore" ||
     isWholeFileInvocation(registration.wholeFileOperation, input) ||
-    core.getSemanticMutationHandler(registration.name, input)
+    core.getSemanticMutationHandler(registration.name, input) ||
+    core.hasMatchingPreEditHandler(registration.name, input)
   )
     return false;
   const fields = [
@@ -337,8 +338,10 @@ class NativeTextEditBatchCoordinator {
       // Result transfers own pairing, destination replacement and zero-width no-op semantics.
       // Keep them on the same preparation path as direct calls.
       let ownsSource =
-        (registration?.name === "copy" || registration?.name === "move") &&
-        (isResultInput(input.path) || isResultInput(input.target));
+        (registration !== undefined &&
+          this.core.hasMatchingPreEditHandler(registration.name, input)) ||
+        ((registration?.name === "copy" || registration?.name === "move") &&
+          (isResultInput(input.path) || isResultInput(input.target)));
       // Only local, single-source Read/Search references can share immutable batch snapshots.
       // Keep the caller's input intact for every boundary call.
       const candidate = { ...input };

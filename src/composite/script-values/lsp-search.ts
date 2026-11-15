@@ -1,5 +1,6 @@
 import type { JsonValue } from "@earendil-works/pi-ai";
 
+import { astSearchValue, captureSchema } from "./ast-search.ts";
 import { scriptMatchSchema } from "./match.ts";
 import { matchEntries, matchListSchema, record } from "./search-matches.ts";
 import { searchValue } from "./search.ts";
@@ -28,13 +29,29 @@ export const lspSearchValue: ScriptValue = {
         required: ["id", "complete", "matches", "incoming", "outgoing"],
         additionalProperties: false,
       },
-      ...matchListSchema().anyOf,
+      ...matchListSchema({
+        ...scriptMatchSchema,
+        properties: {
+          ...scriptMatchSchema.properties,
+          captures: {
+            type: "object",
+            properties: { name: { type: "array", items: captureSchema } },
+            additionalProperties: false,
+          },
+        },
+      }).anyOf,
     ],
   },
   project(input) {
     const data =
       record(input.outcome) && input.outcome.status === "success" ? input.outcome.data : undefined;
     if (record(data) && data.kind === "custom") return callGraph(data.value, input) ?? input.shown;
+    if (
+      record(data) &&
+      Array.isArray(data.matches) &&
+      data.matches.some((match: unknown) => record(match) && record(match.captures))
+    )
+      return astSearchValue.project(input);
     return searchValue.project(input);
   },
 };

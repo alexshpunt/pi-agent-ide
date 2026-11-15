@@ -411,3 +411,64 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(!validateRoute(task, events([read, fresh, edit, old], mode), mode).passed);
   });
 }
+
+for (const mode of ["direct", "codemode"]) {
+  void test(`name-capture reuse rejects declaration and unrelated capture IDs in ${mode}`, () => {
+    const nameId = "RESULT#33333333-aaaa-4aaa-8aaa-333333333333";
+    const otherId = "RESULT#44444444-aaaa-4aaa-8aaa-444444444444";
+    const route: RouteStep[] = [
+      { tool: "lsp_search" },
+      {
+        tool: "replace",
+        args: { text: "total" },
+        reuse: { from: 0, field: "path", kind: "capture:name" },
+      },
+    ];
+    const declaration: Call = {
+      tool: "lsp_search",
+      args: { declaration: "task.ts#count" },
+      text: `SEARCH#ABCD:1:match task.ts:1-1 declaration task.ts#count\ncapture name: ${nameId}\ncapture other: ${otherId}`,
+      value: {
+        id,
+        complete: true,
+        matches: [
+          {
+            id: matchId,
+            path: "task.ts",
+            line: 1,
+            text: "export const count = 1;",
+            captures: {
+              name: [{ id: nameId, text: "count" }],
+              other: [{ id: otherId, text: "1" }],
+            },
+          },
+        ],
+      },
+    };
+    for (const reference of [nameId, { id: nameId }])
+      assert.ok(
+        passed(
+          {},
+          route,
+          [declaration, { tool: "replace", args: { path: reference, text: "total" } }],
+          mode,
+        ),
+      );
+    for (const reference of [
+      id,
+      matchId,
+      otherId,
+      "SEARCH#ABCD:1:match",
+      "RESULT#55555555-aaaa-4aaa-8aaa-555555555555",
+    ])
+      assert.ok(
+        !passed(
+          {},
+          route,
+          [declaration, { tool: "replace", args: { path: reference, text: "total" } }],
+          mode,
+        ),
+        reference,
+      );
+  });
+}

@@ -144,6 +144,7 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
         // Let the standalone boundary report rejected references without scheduling a write.
         return;
       }
+      if (core.hasMatchingPreEditHandler(registration.name, call.arguments)) return;
       // Whole-object transfers use the same filesystem pipeline as standalone calls.
       if (isWholeFileInvocation(registration.wholeFileOperation, call.arguments)) return;
       // Derived protocol targets need their owning execution pipeline, not snapshot batching.

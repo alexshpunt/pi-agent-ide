@@ -1,3 +1,5 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, test } from "vitest";
@@ -5,7 +7,6 @@ import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
@@ -92,88 +93,96 @@ test.each(["diagnostics", "rename", "race"] as const)(
           disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger", "ide.terminal"],
         }),
       );
-      const run = await new PiIntegrationTest({
-        testName: `ssh-lsp-${mode}`,
-        artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
-        cwd,
-        rawMode: false,
-        isolateUserResources: true,
-        extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: ["diagnostics", "read", "lsp_search", "replace", "write"],
-        // Every step reaches the fixture server through SSH; the race rename plans twice, the
-        // first time on a cold server, which takes up to about 70 s on a loaded machine.
-        timeoutMs: 150_000,
-        conversation: [
-          ...(mode === "diagnostics"
-            ? [
-                assistantMessage([
-                  toolCall({
-                    id: "start-diagnostics",
-                    name: "diagnostics",
-                    arguments: { path: `${note}` },
-                  }),
-                ]),
-                assistantMessage([
-                  toolCall({
-                    id: "wait-diagnostics",
-                    name: "diagnostics",
-                    arguments: { path: `${note}` },
-                  }),
-                ]),
-                assistantMessage([
-                  toolCall({
-                    id: "diagnostics",
-                    name: "diagnostics",
-                    arguments: { path: `${note}` },
-                  }),
-                ]),
-                assistantMessage([
-                  toolCall({
-                    id: "diagnostic-view",
-                    name: "read",
-                    arguments: { path: note, views: ["diagnostics"] },
-                  }),
-                ]),
-              ]
-            : mode === "rename"
+      const run = await new PiIntegrationTest(
+        withDeclarationSelections({
+          testName: `ssh-lsp-${mode}`,
+          artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
+          cwd,
+          rawMode: false,
+          isolateUserResources: true,
+          extensions: [path.resolve("src/pi-agent-ide.ts")],
+          tools: ["diagnostics", "read", "lsp_search", "replace", "write"],
+          // Every step reaches the fixture server through SSH; the race rename plans twice, the
+          // first time on a cold server, which takes up to about 70 s on a loaded machine.
+          timeoutMs: 150_000,
+          conversation: [
+            ...(mode === "diagnostics"
               ? [
                   assistantMessage([
                     toolCall({
-                      id: "symbol",
-                      name: "lsp_search",
-                      arguments: { declaration: `${note}#label` },
+                      id: "start-diagnostics",
+                      name: "diagnostics",
+                      arguments: { path: note },
                     }),
                   ]),
                   assistantMessage([
                     toolCall({
-                      id: "rename",
-                      name: "replace",
-                      arguments: { path: `symbol:${note}#label#name`, text: "renamed" },
+                      id: "wait-diagnostics",
+                      name: "diagnostics",
+                      arguments: { path: note },
                     }),
                   ]),
                   assistantMessage([
-                    toolCall({ id: "renamed", name: "read", arguments: { path: note } }),
+                    toolCall({
+                      id: "diagnostics",
+                      name: "diagnostics",
+                      arguments: { path: note },
+                    }),
                   ]),
                   assistantMessage([
                     toolCall({
-                      id: "reference-renamed",
+                      id: "diagnostic-view",
                       name: "read",
-                      arguments: { path: `${root}/reference.ts` },
+                      arguments: { path: note, views: ["diagnostics"] },
                     }),
                   ]),
                 ]
-              : [
-                  assistantMessage([
-                    toolCall({
-                      id: "race",
-                      name: "replace",
-                      arguments: { path: `symbol:${note}#label#name`, text: "raced" },
-                    }),
+              : mode === "rename"
+                ? [
+                    assistantMessage([
+                      toolCall({
+                        id: "symbol",
+                        name: "lsp_search",
+                        arguments: { declaration: `${note}#label` },
+                      }),
+                    ]),
+                    assistantMessage([
+                      toolCall({
+                        id: "rename",
+                        name: "replace",
+                        arguments: {
+                          path: `fixture:declaration:${note}#label#name`,
+                          text: "renamed",
+                        },
+                      }),
+                    ]),
+                    assistantMessage([
+                      toolCall({ id: "renamed", name: "read", arguments: { path: note } }),
+                    ]),
+                    assistantMessage([
+                      toolCall({
+                        id: "reference-renamed",
+                        name: "read",
+                        arguments: { path: `${root}/reference.ts` },
+                      }),
+                    ]),
+                  ]
+                : [
+                    assistantMessage([
+                      toolCall({
+                        id: "race",
+                        name: "replace",
+                        arguments: {
+                          path: `fixture:declaration:${note}#label#name`,
+                          text: "raced",
+                        },
+                      }),
+                    ]),
                   ]),
-                ]),
-          assistantMessage([text("Verified the owner contract.")]),
-        ],
-      }).run("Read the configured remote language server diagnostic snapshot.");
+            assistantMessage([text("Verified the owner contract.")]),
+          ],
+        }),
+      ).run("Read the configured remote language server diagnostic snapshot.");
       expect(run.tuiRenderedOutput).toContain(note);
       if (mode === "diagnostics") {
         expect(
