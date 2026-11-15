@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 import { runProcess } from "#capabilities/sandbox.ts";
+import { capabilityCases } from "#capabilities/cases.ts";
 
 const repository = findRepositoryRoot(import.meta.url);
 const cli = path.join(repository, "benchmarks/tool-capabilities/cli.ts");
@@ -73,14 +74,14 @@ async function fixture(
       const sandbox = pathToFileURL(
         path.join(repository, "benchmarks/tool-capabilities/sandbox.ts"),
       ).href;
-      const child = `process.stdout.write("SETUP_OUTPUT\\n"); process.stderr.write("SETUP_FAILURE FIXTURE_ACCESS_TOKEN\\n"); ${prerequisite === "timeout" ? 'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000);' : "process.exit(7);"} `;
+      const child = `process.stdout.write(JSON.stringify({ ort: process.env.ORT_DYLIB_PATH, cpu: process.env.COLGREP_FORCE_CPU }) + "\\nSETUP_OUTPUT\\n"); process.stderr.write("SETUP_FAILURE FIXTURE_ACCESS_TOKEN\\n"); ${prerequisite === "timeout" ? 'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000);' : "process.exit(7);"} `;
       Object.assign(bindings, {
         "./sandbox.ts": dataModule(`export * from ${JSON.stringify(sandbox)};
           import { runProcess as actual } from ${JSON.stringify(sandbox)};
           export const runProcess = (command, args, options) => {
-            if (command !== "bwrap" || args.at(-1) !== "command -v colgrep && colgrep init --yes --color never")
+            if (command !== "bwrap" || args.at(-1) !== ${JSON.stringify(capabilityCases.find((task) => task.id === "semantic-code-search")?.prerequisite)})
               throw Error("Unexpected inference launch");
-            return actual(process.execPath, ["-e", ${JSON.stringify(child)}], { ...options, env: process.env, timeoutMs: 1000 });
+            return actual(process.execPath, ["-e", ${JSON.stringify(child)}], { ...options, env: { ...process.env, ...options.env }, timeoutMs: 1000 });
           };`),
       });
     }
@@ -144,7 +145,9 @@ test.each(["timeout", "failure"] as const)(
       const attempt = attempts[0];
       if (!attempt) throw new Error("Missing attempt");
       expect(attempt.status).toBe("unavailable");
-      expect(attempt.reasons.join("\n")).toContain("colgrep init");
+      expect(attempt.reasons.join("\n")).toContain(
+        capabilityCases.find((task) => task.id === "semantic-code-search")?.prerequisite,
+      );
       expect(attempt.reasons.join("\n")).toContain("SETUP_FAILURE");
       expect(attempt.reasons.join("\n")).not.toContain("FIXTURE_ACCESS_TOKEN");
       const setup = JSON.parse(
@@ -172,6 +175,24 @@ test.each(["timeout", "failure"] as const)(
   },
   45000,
 );
+test("ColGREP initialization uses the private CPU runtime that searches will inherit", async () => {
+  await fixture(async ({ results, invoke }) => {
+    expect((await invoke()).code).toBe(1);
+    const [attempt] = JSON.parse(await readFile(path.join(results, "attempts.json"), "utf8")) as {
+      evidence: string;
+      status: string;
+    }[];
+    if (!attempt) throw new Error("Missing attempt");
+    expect(attempt.status).toBe("unavailable");
+    const setup = JSON.parse(
+      await readFile(path.join(results, attempt.evidence, "prerequisite.json"), "utf8"),
+    ) as { stdout: string };
+    expect(JSON.parse(setup.stdout.split("\n")[0] ?? "")).toEqual({
+      ort: "/state/colgrep-runtime/lib/libonnxruntime.so",
+      cpu: "1",
+    });
+  }, "failure");
+}, 45000);
 async function retainedAttempt(results: string) {
   const attempts: unknown = JSON.parse(await readFile(path.join(results, "attempts.json"), "utf8"));
   expect(attempts).toEqual([

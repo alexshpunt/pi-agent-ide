@@ -221,7 +221,7 @@ test("ColGREP routes run one at a time at concurrency 20 without blocking other 
   const work = cases.flatMap((task) => task.modes.map((mode) => ({ task, mode })));
   const gates = work.map(() => deferred<string>());
   const started: number[] = [];
-  const isColgrep = (index: number) => work[index]?.task.prerequisite?.includes("colgrep init");
+  const isColgrep = (index: number) => work[index]?.task.resource === "colgrep";
   const colgrep = work.flatMap((_, index) => (isColgrep(index) ? [index] : []));
   expect(colgrep).toHaveLength(3);
   const [first, second, third] = colgrep;
