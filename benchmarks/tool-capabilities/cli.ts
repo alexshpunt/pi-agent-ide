@@ -273,12 +273,24 @@ async function attempt(
       CAPABILITY_MODE: mode,
     };
     if (task.prerequisite) {
+      const started = new Date().toISOString();
       const prerequisite = await runProcess(
         "bwrap",
         [...bwrap, "/bin/bash", "-lc", task.prerequisite],
         { env, timeoutMs: PREREQUISITE_TIMEOUT_MS, signal },
       );
-      if (prerequisite.code !== 0) {
+      await authentication.refreshSecrets?.();
+      await json(path.join(artifacts, "prerequisite.json"), {
+        command: task.prerequisite,
+        timeoutMs: PREREQUISITE_TIMEOUT_MS,
+        started,
+        finished: new Date().toISOString(),
+        ...prerequisite,
+        stdout: authentication.redact(prerequisite.stdout),
+        stderr: authentication.redact(prerequisite.stderr),
+      });
+      // A timed-out child can handle SIGTERM and exit zero; it still did not finish in time.
+      if (prerequisite.timedOut || prerequisite.code !== 0) {
         result.status = "unavailable";
         result.reasons.push(
           prerequisite.timedOut
