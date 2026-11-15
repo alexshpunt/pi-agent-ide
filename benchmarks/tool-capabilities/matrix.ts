@@ -267,6 +267,7 @@ const groups: [string[], string[]][] = [
   // Result-input paths accept the same file as a scalar or an array; both keep real reuse checks.
   [["outline.file"], ["ast-capture-rename", "outline-search-edit"]],
   [["search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
+  [["compose.capture-uuid-source"], ["ast-capture-rename", "lsp-rename"]],
   [["compose.outline-search-edit"], ["outline-search-edit"]],
   [["ast_search.rule", "compose.ast-search-enclosing"], ["ast-search-enclosing"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],

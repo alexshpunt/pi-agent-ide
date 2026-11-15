@@ -29,6 +29,7 @@ async function runReferencePlan(
     arguments: Record<string, JsonValue>;
   }[],
   nativeCode = false,
+  nativeTui = false,
 ) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
   await mkdir(path.join(cwd, ".pi-agent"), { recursive: true });
@@ -40,7 +41,7 @@ async function runReferencePlan(
     testName: name,
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd,
-    transport: "rpc",
+    transport: nativeTui ? "tui" : "rpc",
     rawMode: false,
     environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
     extensions: [
@@ -48,7 +49,7 @@ async function runReferencePlan(
       path.resolve("src/pi-agent-ide.ts"),
       ...(nativeCode ? ["builtin:codemode"] : []),
     ],
-    tools: ["read", "replace", ...(nativeCode ? ["codemode"] : [])],
+    tools: ["read", "search", "ast_search", "replace", ...(nativeCode ? ["codemode"] : [])],
     conversation: [
       ...steps.map((step) =>
         assistantMessage([toolCall({ ...step, delayMs: 0 })], { stopReason: "toolUse" }),
@@ -107,6 +108,58 @@ for (const [form, token] of tokens) {
   });
 }
 
+test("issued UUID forms preserve whole results, matches and captures through real tools", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const original = "const before = 1;\nfunction count() { return 7; }\nconst after = 2;\n";
+    for (let index = 0; index < 12; index += 1)
+      await writeFile(path.join(cwd, `forms-${index}.ts`), original);
+    const run = await runReferencePlan(
+      cwd,
+      "issued-uuid-forms",
+      [
+        {
+          id: "forms",
+          name: "codemode",
+          arguments: {
+            code: String.raw`
+let index = 0;
+for (const kind of ["whole", "match", "capture"]) {
+  for (const form of ["prefix", "uuid", "value", "uuidValue"]) {
+    const file = "forms-" + index + ".ts";
+    const result = await tools.ast_search({ path: file, pattern: "function $NAME() { return 7; }" });
+    if (!result || result.matches.length !== 1) throw Error("Missing structural match");
+    const selected = kind === "whole" ? result : kind === "match" ? result.matches[0] : result.matches[0].captures.NAME[0];
+    const canonical = selected.id;
+    if (!/^RESULT#[a-f\d-]{36}$/u.test(canonical)) throw Error("Missing issued id");
+    const uuid = canonical.slice("RESULT#".length);
+    const source = form === "prefix" ? canonical : form === "uuid" ? uuid : { id: form === "value" ? canonical : uuid, path: "wrong.ts" };
+    const expected = await tools.read({ path: canonical });
+    const actual = await tools.read({ path: source });
+    if (!actual || actual.text !== expected.text) throw Error("Reference form changed selected text");
+    const searched = await tools.search({ path: source, query: "count" });
+    if (!searched || searched.matches.length !== 1) throw Error("Reference form lost its search scope");
+    const changed = await tools.replace({ path: source, ...(kind === "capture" ? {} : { start: "count" }), text: "renamed" + index });
+    if (changed === null) throw Error("Reference form lost edit authority");
+    index += 1;
+  }
+}
+text(index);
+`,
+          },
+        },
+      ],
+      true,
+      true,
+    );
+    const output = getToolResultText(run, "forms");
+    expect(getToolExecution(run, "forms").isError, output).toBe(false);
+    expect(codemodeFailures(output)).toBe("");
+    for (let index = 0; index < 12; index += 1)
+      expect(await readFile(path.join(cwd, `forms-${index}.ts`), "utf8")).toBe(
+        original.replace("count", `renamed${index}`),
+      );
+  });
+});
 test("native Codemode keeps the same issued-reference argument and selection boundaries", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");

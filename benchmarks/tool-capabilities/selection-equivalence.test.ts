@@ -445,30 +445,43 @@ for (const mode of ["direct", "codemode"]) {
         ],
       },
     };
-    for (const reference of [nameId, { id: nameId }])
-      assert.ok(
-        passed(
-          {},
-          route,
-          [declaration, { tool: "replace", args: { path: reference, text: "total" } }],
-          mode,
-        ),
-      );
-    for (const reference of [
+    const forms = (id: string) => [
       id,
-      matchId,
-      otherId,
-      "SEARCH#ABCD:1:match",
-      "RESULT#55555555-aaaa-4aaa-8aaa-555555555555",
-    ])
-      assert.ok(
-        !passed(
-          {},
-          route,
-          [declaration, { tool: "replace", args: { path: reference, text: "total" } }],
-          mode,
-        ),
-        reference,
-      );
+      id.slice("RESULT#".length),
+      { id },
+      { id: id.slice("RESULT#".length) },
+    ];
+    for (const issuer of [
+      declaration,
+      { ...declaration, value: undefined },
+      {
+        ...declaration,
+        value: undefined,
+        text: declaration.text
+          ?.split("\n")
+          .map((line) => (line.startsWith("capture ") ? `   ${line}` : line))
+          .join("\n"),
+      },
+      { ...declaration, text: "" },
+    ]) {
+      for (const reference of forms(nameId)) {
+        const edit = { tool: "replace", args: { path: reference, text: "total" } };
+        assert.ok(passed({}, route, [issuer, edit], mode));
+        assert.ok(!passed({}, route, [{ ...issuer, error: true }, edit], mode));
+        assert.ok(!passed({}, route, [edit, issuer], mode));
+      }
+      for (const reference of [
+        ...[id, matchId, otherId, "RESULT#55555555-aaaa-4aaa-8aaa-555555555555"].flatMap(forms),
+        "SEARCH#ABCD:1:match",
+      ])
+        assert.ok(
+          !passed(
+            {},
+            route,
+            [issuer, { tool: "replace", args: { path: reference, text: "total" } }],
+            mode,
+          ),
+        );
+    }
   });
 }
