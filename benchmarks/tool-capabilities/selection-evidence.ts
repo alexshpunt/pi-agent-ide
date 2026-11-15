@@ -47,6 +47,8 @@ export function searchSources(value: unknown, end: RunEvent): string[] | undefin
       (direct && Number(direct[1]) === index + 1 && resultText(end).includes(reference))
     );
   });
+  if (!selected.length && wholeSearchSelection(value, end))
+    selected.push(...(data.matches as unknown[]));
   if (!selected.length) return undefined;
   const sources = selected.flatMap((entry) => {
     const match = record(entry);
@@ -164,7 +166,9 @@ export function issuedSelection(
       const direct = reference && /^SEARCH#[A-F0-9]+:(\d+):(line|match)$/u.exec(reference);
       const issued = direct && Number(direct[1]) === index + 1 && output.includes(reference);
       const whole =
-        names(value, data.id ?? data.target) && data.complete === true && data.matches.length === 1;
+        wholeSearchSelection(value, issuer.end) &&
+        data.complete === true &&
+        data.matches.length === 1;
       if (
         !(
           issued ||
@@ -186,20 +190,31 @@ export function issuedSelection(
         continue;
       const from = lines[number - 1];
       if (from === undefined) continue;
-      const to = lines[number] ?? content.length;
+      const endLine = range.endLine ?? number + (match.lineText.match(/\n/gu)?.length ?? 0);
+      if (typeof endLine !== "number" || !Number.isInteger(endLine) || endLine < number) continue;
+      const lastContainingLine = endLine > number && range.endColumn === 0 ? endLine - 1 : endLine;
+      const to = lines[lastContainingLine] ?? content.length;
       const line = content.slice(from, to).replace(/\r?\n$/u, "");
       if (line !== match.lineText) continue;
       const lineReference = (issued && direct[2] === "line") || reference === references.line;
       if (lineReference) return { content, from, to };
       const column = range.startColumn;
-      const local = typeof column === "number" ? column : line.indexOf(text);
+      const containing = content.slice(from, to);
+      const local = typeof column === "number" ? column : containing.indexOf(text);
+      const endFrom = lines[endLine - 1];
+      const endColumn = range.endColumn;
+      const selectedTo = from + local + text.length;
       if (
         local < 0 ||
-        line.slice(local, local + text.length) !== text ||
-        (column === undefined && line.indexOf(text, local + 1) >= 0)
+        !Number.isInteger(local) ||
+        local > (lines[number] ?? content.length) - from ||
+        content.slice(from + local, selectedTo) !== text ||
+        (typeof endColumn === "number" &&
+          (endFrom === undefined || endFrom + endColumn !== selectedTo)) ||
+        (column === undefined && containing.indexOf(text, local + 1) >= 0)
       )
         continue;
-      return { content, from: from + local, to: from + local + text.length };
+      return { content, from: from + local, to: selectedTo };
     }
   }
   return undefined;
