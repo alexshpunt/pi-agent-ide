@@ -7,6 +7,7 @@ import { retryWhenSourceChanged } from "#src/core/source-change-retry.ts";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import { withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.ts";
 import { isResultInput } from "./result-transfer.ts";
+import { isWholeFileInvocation } from "./file-operation-tools.ts";
 import {
   committedMutationTargets,
   describeUnavailableCopyTarget,
@@ -127,6 +128,8 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
         arguments: withoutEmptyOptionalAnchors(registration.anchors, rawCall.arguments),
       };
 
+      // Whole-object transfers use the same filesystem pipeline as standalone calls.
+      if (isWholeFileInvocation(registration.wholeFileOperation, call.arguments)) return;
       // Derived protocol targets need their owning execution pipeline, not snapshot batching.
       const selectorFields = [
         registration.source.field,
