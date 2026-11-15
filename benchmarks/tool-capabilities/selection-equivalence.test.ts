@@ -271,6 +271,45 @@ for (const mode of ["direct", "codemode"]) {
       ),
     );
   });
+  void test(`selection evidence cannot outlive a mutation or replace a required issuer in ${mode}`, () => {
+    const files = { "task.txt": "OLD\nLast\n" };
+    const route: RouteStep[] = [
+      { tool: "read" },
+      {
+        tool: "copy",
+        args: { path: "task.txt", start: "Last", target: "target.txt" },
+        reuse: { from: 0, field: "start", kind: "anchor" },
+      },
+    ];
+    const read: Call = {
+      tool: "read",
+      args: { path: "task.txt", views: ["anchors"] },
+      text: "123ABCD|Last\n",
+      value: { id },
+    };
+    const copy: Call = {
+      tool: "copy",
+      args: { path: "task.txt", start: "123ABCD|Last\n", target: "target.txt" },
+    };
+    assert.ok(passed(files, route, [read, copy], mode));
+    assert.ok(!passed(files, route, [copy], mode));
+    const edit: Call = {
+      tool: "replace",
+      args: { path: "task.txt", start: "Last", text: "Changed" },
+    };
+    assert.ok(!passed(files, route, [read, edit, copy], mode));
+    assert.ok(
+      !passed(
+        files,
+        route,
+        [{ ...read, args: { path: "wrong.txt", views: ["anchors"] } }, copy],
+        mode,
+      ),
+    );
+    // Copy is read-only on its source: a second destination does not stale that evidence.
+    const first: Call = { tool: "copy", args: { ...copy.args, target: "first.txt" } };
+    assert.ok(passed(files, route, [read, first, copy], mode));
+  });
   void test(`whole-result reuse accepts a complete single match but not part of a larger Search in ${mode}`, () => {
     const route: RouteStep[] = [
       { tool: "search" },

@@ -677,7 +677,13 @@ export function validateRoute(
     const source = actual.path !== undefined ? actual.path : (actual.anchor ?? actual.start);
     return reusedPaths(source, before).some((path) => matches({ path: file }, { path }));
   }
-  function argumentReuses(field: string, args: Record<string, unknown> | undefined, reference: ResultReuse, prior: RunEvent, before: number): boolean {
+  function argumentReuses(
+    field: string,
+    args: Record<string, unknown> | undefined,
+    reference: ResultReuse,
+    prior: RunEvent,
+    before: number,
+  ): boolean {
     const value = fieldValue(args, field);
     const alternatives = [value];
     if (field === "path" && args) {
@@ -686,10 +692,20 @@ export function validateRoute(
     }
     return alternatives.some((candidate) => {
       if (reference.kind === "whole-result") {
-        if (args?.path !== undefined && candidate !== args.path && !sameSource(args.path, candidate, before)) return false;
+        if (
+          args?.path !== undefined &&
+          candidate !== args.path &&
+          !sameSource(args.path, candidate, before)
+        )
+          return false;
         return wholeSearchSelection(candidate, prior);
       }
-      return reuses(candidate, resultText(prior), reference.kind, valueIds(prior.result?.structuredContent));
+      return reuses(
+        candidate,
+        resultText(prior),
+        reference.kind,
+        valueIds(prior.result?.structuredContent),
+      );
     });
   }
   let furthest = 0;
