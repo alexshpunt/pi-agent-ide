@@ -56,22 +56,19 @@ function resolveAstOutlineSource(
         if (readSource !== undefined) {
           const snapshot = await readSource(filePath, { ...context, signal });
           if (Buffer.byteLength(snapshot.lines.join("\n")) > MAX_SOURCE_BYTES)
-            throw new Error("File exceeds the 262144-byte AST outline limit.");
-          if (snapshot.lines.some((line) => line.includes("\0")))
-            throw new Error("Binary resources cannot be read as AST outlines.");
+            throw new Error("Source is too large.");
+          if (snapshot.lines.some((line) => line.includes("\0"))) throw new Error("Need text.");
           outline = await outlineManager.readDocumentOutline(
             snapshot.source,
             context.cwd,
             snapshot.lines.length === 0 ? [""] : snapshot.lines,
           );
         } else {
-          if (filePath.startsWith("ssh://"))
-            throw new Error("No outline snapshot owner for this resource.");
+          if (filePath.startsWith("ssh://")) throw new Error("Source owner unavailable.");
           outline = await outlineManager.readFileOutline(filePath, context.cwd);
         }
         signal?.throwIfAborted();
-        if (outline.status === "failed")
-          throw new Error(outline.error ?? "Could not produce an outline.");
+        if (outline.status === "failed") throw new Error(outline.error ?? "Structure unavailable.");
         return [AstOutline.formatAstOutline(outline)];
       },
     },
