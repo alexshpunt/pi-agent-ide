@@ -2616,7 +2616,7 @@ for (const [name, eol, ending] of [
   add(
     `exact-eof-${name}`,
     ["edit.exact-eof", "edit.delete-empty-replace"],
-    "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. Do not use an end anchor for these blocks. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.",
+    "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For each block, pass both lines together as one start string and omit the end parameter entirely. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.",
     [
       { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
       {
