@@ -209,7 +209,7 @@ When `PI_CODING_AGENT_DIR` is set, the global directory follows it as `<PI_CODIN
 
 The built-in Rust diagnostics do not compile the workspace. Clippy is disabled by default. The built-in rust-analyzer starts with `checkOnSave: false`, `cargo.buildScripts.enable: false`, and `procMacro.enable: false`, before workspace loading begins. This applies to diagnostic Read views, `diagnostics:<file>`, and automatic post-edit diagnostics.
 
-rust-analyzer still loads Cargo metadata and indexes source for native diagnostics and navigation. Large workspaces can still take time and memory to index; these defaults prevent build-backed checks, not all background work. Native diagnostics are less complete than compiler or Clippy results. Generated build-script output and procedural macro expansion are unavailable. Pending or incomplete results are not a clean compiler check.
+rust-analyzer still loads Cargo metadata and indexes source for native diagnostics and navigation. Loading metadata can create a missing `Cargo.lock`, just as it can in an editor. Large workspaces can still take time and memory to index; these defaults prevent build-backed checks, not all background work. Native diagnostics are less complete than compiler or Clippy results. Generated build-script output and procedural macro expansion are unavailable. Pending or incomplete results are not a clean compiler check.
 
 Build-backed checks are independent opt-ins. To enable Clippy, put this complete entry in `<project>/.pi/pi-agent-ide/linters.json`:
 
