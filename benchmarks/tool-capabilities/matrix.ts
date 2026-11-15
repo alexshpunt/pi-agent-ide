@@ -178,6 +178,7 @@ const groups: [string[], string[]][] = [
     ["edit.transfer-refusal", "edit.move-policy-refusal", "edit.approval-headless-move"],
     ["directory-transfer-gates"],
   ],
+  [["compose.parallel-object-transfer-refusals"], ["parallel-directory-transfer-gates"]],
   [["compose.approval-refusal-read"], ["delete-policy-gates", "directory-transfer-gates"]],
   [
     ["edit.approval-yolo-delete", "edit.approval-yolo-move", "compose.yolo-protected-target"],
