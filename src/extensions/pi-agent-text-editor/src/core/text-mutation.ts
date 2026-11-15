@@ -277,11 +277,11 @@ export function createTextTool<TParameters extends TSchema>(
                       };
                     input = {
                       ...input,
-                      [definition.source.field]: resultTargets.register(
-                        selected.targets,
-                        context.cwd,
-                        selected.complete,
-                      ),
+                      [definition.source.field]:
+                        Array.isArray(expanded) &&
+                        !core.hasMatchingPreEditHandler(definition.name, input)
+                          ? resultTargets.register(selected.targets, context.cwd, selected.complete)
+                          : resultTargets.source(expanded, context.cwd),
                     };
                   } catch (error) {
                     signal?.throwIfAborted();

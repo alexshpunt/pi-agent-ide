@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
+import type { ResultTargetStore } from "pi-agent-resource";
+import { type NameCaptures, currentNameCapture } from "./name-captures.ts";
 import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/edit-pipeline";
 import type { LspManagerProvider } from "./manager-provider.ts";
 import { resolveLspRenameTarget } from "./lsp/code-views.ts";
@@ -70,34 +71,34 @@ function offset(content: string, position: LspPosition): number {
 export function prepareSymbolRename(
   state: TextPreEditState,
   managerFor: LspManagerProvider,
+  captures: NameCaptures,
+  resultTargets: ResultTargetStore,
 ): TextPreEditState | undefined {
   const input = state.input as Record<string, unknown>;
+  if (!captures.matches(input)) return undefined;
+  const capture = captures.get(input.path);
   if (
-    typeof input.path !== "string" ||
-    !input.path.startsWith("symbol:") ||
-    !input.path.endsWith("#name")
-  )
-    return undefined;
-  if (
+    capture === undefined ||
     typeof input.text !== "string" ||
     input.text.trim() === "" ||
     input.start !== undefined ||
     input.end !== undefined
   )
     throw new Error(
-      "Rename needs a symbol #name path and a non-empty new name in text, without start/end.",
+      "Rename needs one declaration name capture in path and a non-empty new name in text, without start/end.",
     );
-  const reference = parseCodeViewReference(input.path.slice(0, -5), "symbol");
-  if (reference?.selector === undefined)
-    throw new Error("Rename needs an exact symbol selector before #name.");
   const request: RenameRequest = {
-    source: resolveCodeViewPath(reference.path, state.cwd),
-    selector: reference.selector,
+    ...capture,
     newName: input.text,
   };
   return {
     ...state,
-    planEdit: () => withLspDocuments(() => planRename(state, request, managerFor)),
+    planEdit: () =>
+      withLspDocuments(() =>
+        planRename(state, request, managerFor, () =>
+          currentNameCapture(resultTargets, input.path, state.cwd, state.signal),
+        ),
+      ),
     metadata: {
       ...state.metadata,
       semanticEdit: { mode: "lsp-rename", referencesUpdated: true },
@@ -116,9 +117,18 @@ async function planRename(
   state: TextPreEditState,
   { source, selector, newName }: RenameRequest,
   managerFor: LspManagerProvider,
+  capture: () => ReturnType<typeof currentNameCapture>,
 ): Promise<TextEditPlan> {
   const manager = await managerFor(state.cwd, source, state.signal);
   const target = await resolveLspRenameTarget(manager, source, selector, state.cwd, state.signal);
+  const selected = await capture();
+  if (
+    selected.target.source !== source ||
+    selected.target.expectedContent !== target.content ||
+    selected.range.start.lineNumber !== target.position.line + 1 ||
+    selected.range.start.column !== target.position.character
+  )
+    throw new Error("The name capture no longer identifies this declaration. Repeat lsp_search.");
   await loadQueryProject(target.client, target.uri, state.signal);
   const fileOf = (uri: string) => (uri.startsWith("ssh://") ? uri : fileURLToPath(uri));
   const errorsOf = diagnosticErrors(

@@ -147,12 +147,6 @@ test("unclaimed URI operations fail without touching a similarly named local pat
   expect(await readFile(misleading, "utf8")).toBe("keep local");
 });
 
-test("direct symbol deletion never enters whole-file mode", () => {
-  for (const source of ["symbol:source.ts#greet", "symbol:source.ts", "symbol:source.ts#missing"]) {
-    expect(isWholeFileInvocation("delete", { path: source })).toBe(false);
-  }
-});
-
 test("copies bytes, moves the copy, and removes only the moved file", async () => {
   const cwd = await fixture();
   expect((await executeFileOperation("copy", { path: "source", target: "copy" }, cwd)).ok).toBe(

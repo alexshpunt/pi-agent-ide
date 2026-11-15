@@ -160,9 +160,9 @@ const groups: [string[], string[]][] = [
     ["insert-before"],
   ],
   [["edit.delete-selection", "compose.search-delete"], ["delete-selection"]],
-  [["edit.delete-declaration"], ["delete-symbol"]],
+  [["edit.delete-declaration"], ["read-symbol-delete"]],
   [["compose.symbol-read-delete"], ["read-symbol-delete"]],
-  [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
+  [["lsp.declaration-refusals"], ["reject-lsp-declaration"]],
   [
     ["edit.copy-file", "edit.move-file", "edit.delete-file", "edit.whole-file-omission"],
     ["file-copy-move-delete"],

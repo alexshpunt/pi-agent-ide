@@ -452,6 +452,8 @@ export interface TextEditorCore {
       resolveAnchor: ResolveResourceTextAnchor,
     ) => TextResourcesMutationResult<unknown> | Promise<TextResourcesMutationResult<unknown>>,
   ): Promise<TextMutationPreviewOutcome>;
+  /** Selected pre-edit planners require the standalone pipeline. */
+  hasMatchingPreEditHandler(tool: TextEditorToolId, input: unknown): boolean;
   getSemanticMutationHandler(
     tool: TextEditorToolId,
     input: unknown,
@@ -838,6 +840,14 @@ export function createTextEditorCore(
     onDidEdit(listener): () => void {
       editCompletionListeners.add(listener);
       return () => editCompletionListeners.delete(listener);
+    },
+    hasMatchingPreEditHandler(tool, input): boolean {
+      return handlers.some(
+        (registered) =>
+          registered.tool === tool &&
+          registered.registration.stage === "text-pre-edit" &&
+          registered.registration.when?.(input) === true,
+      );
     },
     getSemanticMutationHandler(tool, input): TextSemanticMutationHandler | undefined {
       const matches = semanticHandlers.filter(
@@ -2363,6 +2373,7 @@ async function runPreEditHandlers<Input>(
     }
 
     try {
+      if (registered.registration.when && !registered.registration.when(state.input)) continue;
       state = (await registered.registration.handler(state)) as TextPreEditState<Input>;
     } catch (error) {
       return {

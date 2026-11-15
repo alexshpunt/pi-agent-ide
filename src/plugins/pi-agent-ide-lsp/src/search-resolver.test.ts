@@ -63,6 +63,7 @@ test("returns a declaration as an exact selection that refreshes from the server
     source,
     content,
     range: { start: { line: 1, character: 0 }, end: { line: 3, character: 1 } },
+    selectionRange: { start: { line: 1, character: 6 }, end: { line: 1, character: 9 } },
   });
 
   const result = await resolver.tryResolve(request({ declaration: "app.ts#App" }), { cwd });
@@ -101,6 +102,7 @@ test("ends a declaration on the last line of a file without a final line break",
     source,
     content: "const a = 1;\nexport function tail() {}",
     range: { start: { line: 1, character: 7 }, end: { line: 1, character: 25 } },
+    selectionRange: { start: { line: 1, character: 16 }, end: { line: 1, character: 20 } },
   });
 
   await resolver.tryResolve(request({ declaration: "tail.ts#tail" }), { cwd });
@@ -315,18 +317,23 @@ test("resolves a declaration again when the file changes before its anchor is re
       source,
       content: "class App {}\n",
       range: { start: { line: 0, character: 0 }, end: { line: 0, character: 12 } },
+      selectionRange: { start: { line: 0, character: 6 }, end: { line: 0, character: 9 } },
     })
     .mockResolvedValueOnce({
       source,
       content: "// peer\nclass App {}\n",
       range: { start: { line: 1, character: 0 }, end: { line: 1, character: 12 } },
+      selectionRange: { start: { line: 1, character: 6 }, end: { line: 1, character: 9 } },
     });
   const { changing, sessions } = resolverWithOneChangedRegistration();
 
   const result = await changing.tryResolve(request({ declaration: "app.ts#App" }), { cwd });
 
   expect(result.kind).toBe("resolved");
-  expect(sessions[0]?.matches).toMatchObject([{ lineNumber: 2, matchedText: "class App {}\n" }]);
+  expect(sessions.map((session) => session.matches)).toMatchObject([
+    [{ lineNumber: 2, matchedText: "App" }],
+    [{ lineNumber: 2, matchedText: "class App {}\n" }],
+  ]);
 });
 
 test("a declaration anchor registers from the text the declaration was found in while another session writes the file", async () => {
@@ -344,6 +351,7 @@ test("a declaration anchor registers from the text the declaration was found in 
       source,
       content: found,
       range: { start: { line, character: 0 }, end: { line, character: 12 } },
+      selectionRange: { start: { line, character: 6 }, end: { line, character: 9 } },
     };
   });
   const targets = new ResultTargetStore();
@@ -379,9 +387,9 @@ test("a declaration anchor registers from the text the declaration was found in 
   });
 
   if (result.kind !== "resolved") throw Error("declaration failed");
-  // One server lookup and one registration: no second read of the file disagreed with it.
+  // One server lookup and two registrations: no second read of the file disagreed with it.
   expect(backend.resolveLspDeclaration).toHaveBeenCalledTimes(1);
-  expect(writes).toBe(1);
+  expect(writes).toBe(2);
   const data = resolving.toScriptData?.(result.payload, {}) as {
     matches: { target?: string; matchedText?: string }[];
   };
@@ -390,13 +398,13 @@ test("a declaration anchor registers from the text the declaration was found in 
   const anchored = targets.resolve(data.matches[0]?.target, workspace);
   expect(anchored.targets[0]?.expectedContent).toBe(await readFile(source, "utf8"));
   expect(anchored.targets[0]?.ranges).toEqual([
-    { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 4, column: 0 } },
+    { start: { lineNumber: 4, column: 0 }, end: { lineNumber: 5, column: 0 } },
   ]);
   await targets.verify(anchored);
   // A refresh also returns the text it found the declaration in.
   const refreshed = await selected?.refresh();
   expect(refreshed?.contents?.get(source)).toBe(await readFile(source, "utf8"));
-  expect(refreshed?.matches.map((match) => match.lineNumber)).toEqual([3]);
+  expect(refreshed?.matches.map((match) => match.lineNumber)).toEqual([4]);
 });
 
 test("symbol anchors register from the text the hits were mapped onto while another session writes the file", async () => {

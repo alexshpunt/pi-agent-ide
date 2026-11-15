@@ -1,10 +1,11 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
@@ -38,20 +39,22 @@ async function run(
 ) {
   await mkdir(path.join(cwd, ".pi"), { recursive: true });
   await writeFile(path.join(cwd, "main.cpp"), SOURCE);
-  return new PiIntegrationTest({
-    testName,
-    artifactsDir: testArtifactsDir(import.meta.filename),
-    cwd,
-    rawMode: false,
-    extensions: [path.resolve("src/pi-agent-ide.ts")],
-    tools: ["read", "replace", "lsp_search"],
-    conversation: [
-      ...calls.map((call, index) =>
-        assistantMessage([toolCall({ id: `call-${index}`, ...call })], { stopReason: "toolUse" }),
-      ),
-      assistantMessage([text("Done.")]),
-    ],
-  }).run("Find and rename one overload of clamp");
+  return new PiIntegrationTest(
+    withDeclarationSelections({
+      testName,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["read", "replace", "lsp_search"],
+      conversation: [
+        ...calls.map((call, index) =>
+          assistantMessage([toolCall({ id: `call-${index}`, ...call })], { stopReason: "toolUse" }),
+        ),
+        assistantMessage([text("Done.")]),
+      ],
+    }),
+  ).run("Find and rename one overload of clamp");
 }
 
 function output(result: Awaited<ReturnType<typeof run>>, index: number, failed = false): string {
@@ -73,7 +76,7 @@ test("selectors with parameter types find, list and rename one overload", async 
       {
         name: "replace",
         arguments: {
-          path: "symbol:main.cpp#clamp(const Vec&, float, float)#name",
+          path: "fixture:declaration:main.cpp#clamp(const Vec&, float, float)#name",
           text: "clampVec",
         },
       },

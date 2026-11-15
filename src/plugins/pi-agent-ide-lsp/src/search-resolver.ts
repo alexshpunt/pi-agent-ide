@@ -1,3 +1,4 @@
+import type { NameCaptures } from "./name-captures.ts";
 import { ResultPanel } from "pi-agent-tool-ui";
 import {
   formatSymbolSelector,
@@ -57,6 +58,7 @@ type Payload =
     }
   | {
       readonly mode: "declaration";
+      readonly nameTarget?: string;
       readonly sessionId: string;
       readonly selector: string;
       readonly match: SearchSelectionMatch;
@@ -94,6 +96,7 @@ export function createLspSearchResolver(
   managerFor: ManagerFor,
   registerSelection: SearchPluginApi["registerSelection"],
   backend: LspSearchBackend = defaultBackend,
+  nameCaptures?: NameCaptures,
 ): SearchResolver {
   return {
     id: "lsp",
@@ -195,7 +198,7 @@ export function createLspSearchResolver(
 
         if (options.declaration !== undefined) {
           const reference = options.declaration.includes("#")
-            ? parseCodeViewReference(`symbol:${options.declaration}`, "symbol")
+            ? parseCodeViewReference(`graph:${options.declaration}`, "graph")
             : undefined;
           if (reference?.selector === undefined)
             throw new Error("declaration requires file#selector, such as src/app.ts#App/start.");
@@ -214,11 +217,30 @@ export function createLspSearchResolver(
             // is used once to register or refresh the anchor and is not retained.
             return {
               match: structuredClone(declarationMatch(found.source, found.content, found.range)),
+              name: lspRangeMatch(
+                found.source,
+                createTextDocument(found.source, found.content),
+                found.selectionRange,
+              ),
               contents: new Map([[found.source, found.content]]),
             };
           };
-          const { match, session } = await retryWhileSourceChanges(async () => {
-            const { match, contents } = await resolve(context.signal);
+          const { match, session, captured } = await retryWhileSourceChanges(async () => {
+            const { match, name, contents } = await resolve(context.signal);
+            const names = await register({
+              request,
+              matches: [name],
+              complete: true,
+              contents,
+              refresh: async () => {
+                throw new Error("Name captures cannot refresh; repeat lsp_search.");
+              },
+            });
+            nameCaptures?.register([names.target, ...(names.matchTargets ?? [])], {
+              source: filePath,
+              selector,
+            });
+            const captured = selectionData(names.matches, true, undefined, names);
             const session = await register({
               request,
               matches: [match],
@@ -232,7 +254,7 @@ export function createLspSearchResolver(
                   return { matches: [next.match], complete: true, contents: next.contents };
                 }),
             });
-            return { match, session };
+            return { match, session, captured };
           }, context.signal);
           return {
             kind: "resolved",
@@ -241,7 +263,16 @@ export function createLspSearchResolver(
               sessionId: session.id,
               selector: options.declaration,
               match,
-              data: selectionData(session.matches, true, session.id, session),
+              nameTarget: captured.target,
+              data: {
+                ...selectionData(session.matches, true, session.id, session),
+                matches: selectionData(session.matches, true, session.id, session).matches.map(
+                  (match) => ({
+                    ...match,
+                    captures: { name: captured.matches },
+                  }),
+                ),
+              },
             } satisfies Payload,
           };
         }
@@ -430,6 +461,11 @@ export function createLspSearchResolver(
               text: [
                 `SEARCH#${result.sessionId}:1:match ${display(match.source)}:${match.lineNumber}-${lastLine} declaration ${result.selector}`,
                 match.matchedText.replace(/\r?\n$/u, ""),
+                ...(result.nameTarget
+                  ? [
+                      `capture name: ${result.nameTarget} · replace this capture to rename through LSP; replacing the declaration edits only its text.`,
+                    ]
+                  : []),
               ].join("\n"),
             },
           ],

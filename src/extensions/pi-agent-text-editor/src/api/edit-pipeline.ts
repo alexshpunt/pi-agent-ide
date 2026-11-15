@@ -48,7 +48,12 @@ export type TextPreEditHandler = (
 export type TextEditHandler = (state: TextEditState) => TextEditState | Promise<TextEditState>;
 
 export type TextEditHandlerRegistration =
-  | { readonly stage: "text-pre-edit"; readonly handler: TextPreEditHandler }
+  | {
+      readonly stage: "text-pre-edit";
+      /** Filter original inputs; matching calls run outside snapshot-only edit batches. */
+      readonly when?: (input: unknown) => boolean;
+      readonly handler: TextPreEditHandler;
+    }
   | { readonly stage: "text-edit"; readonly handler: TextEditHandler }
   | { readonly stage: "text-post-edit"; readonly handler: TextEditHandler };
 
@@ -76,7 +81,11 @@ export type TextEditExecutionOutcome<Input = unknown, Result = unknown> =
 
 const handlerSchema = Type.Function([], Type.Unknown());
 const textEditHandlerRegistrationSchema = Type.Union([
-  Type.Object({ stage: Type.Literal("text-pre-edit"), handler: handlerSchema }),
+  Type.Object({
+    stage: Type.Literal("text-pre-edit"),
+    when: Type.Optional(handlerSchema),
+    handler: handlerSchema,
+  }),
   Type.Object({ stage: Type.Literal("text-edit"), handler: handlerSchema }),
   Type.Object({ stage: Type.Literal("text-post-edit"), handler: handlerSchema }),
 ]);

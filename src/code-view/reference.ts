@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type CodeViewScheme = "ast" | "symbol" | "graph";
+export type CodeViewScheme = "ast" | "graph";
 
 export interface CodeViewReference {
   readonly scheme: CodeViewScheme;
@@ -36,10 +36,6 @@ export function parseCodeViewReference(
     }
 
     return { scheme, path: filePath };
-  }
-
-  if (scheme === "symbol" && encodedSelector === undefined) {
-    throw new TypeError("symbol: requires #<symbol-selector> after the file path.");
   }
 
   if (encodedSelector === undefined) {

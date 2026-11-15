@@ -1,3 +1,5 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterAll, expect, test } from "vitest";
@@ -5,7 +7,6 @@ import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
@@ -83,49 +84,51 @@ test("C/C++ references on an SSH target open the files that name the symbol and 
         disabled: ["ide.ast", "ide.formatter", "ide.lint", "ide.debugger", "ide.diagnostics"],
       }),
     );
-    const run = await new PiIntegrationTest({
-      testName: "ssh-lsp-clang-coverage",
-      artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
-      cwd,
-      rawMode: false,
-      isolateUserResources: true,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["lsp_search", "replace"],
-      timeoutMs: 90000,
-      conversation: [
-        // The calls view goes first: clangd answers symbol searches from an index it fills after
-        // parsing the opened file.
-        assistantMessage([
-          toolCall({
-            id: "graph",
-            name: "lsp_search",
-            arguments: { calls: `${root}/lib.h#call_normalize_routine` },
-          }),
-        ]),
-        assistantMessage([
-          toolCall({
-            id: "search",
-            name: "lsp_search",
-            arguments: {
-              query: "call_normalize_routine",
-              path: `${root}/lib.h`,
-              references: true,
-            },
-          }),
-        ]),
-        assistantMessage([
-          toolCall({
-            id: "rename",
-            name: "replace",
-            arguments: {
-              path: `symbol:${root}/lib.h#call_normalize_routine#name`,
-              text: "renamed_routine",
-            },
-          }),
-        ]),
-        assistantMessage([text("Done.")]),
-      ],
-    }).run("Find and rename call_normalize_routine on the SSH target.");
+    const run = await new PiIntegrationTest(
+      withDeclarationSelections({
+        testName: "ssh-lsp-clang-coverage",
+        artifactsDir: testArtifactsDir(import.meta.filename, path.resolve(".tmp/test-runs")),
+        cwd,
+        rawMode: false,
+        isolateUserResources: true,
+        extensions: [path.resolve("src/pi-agent-ide.ts")],
+        tools: ["lsp_search", "replace"],
+        timeoutMs: 90000,
+        conversation: [
+          // The calls view goes first: clangd answers symbol searches from an index it fills after
+          // parsing the opened file.
+          assistantMessage([
+            toolCall({
+              id: "graph",
+              name: "lsp_search",
+              arguments: { calls: `${root}/lib.h#call_normalize_routine` },
+            }),
+          ]),
+          assistantMessage([
+            toolCall({
+              id: "search",
+              name: "lsp_search",
+              arguments: {
+                query: "call_normalize_routine",
+                path: `${root}/lib.h`,
+                references: true,
+              },
+            }),
+          ]),
+          assistantMessage([
+            toolCall({
+              id: "rename",
+              name: "replace",
+              arguments: {
+                path: `fixture:declaration:${root}/lib.h#call_normalize_routine#name`,
+                text: "renamed_routine",
+              },
+            }),
+          ]),
+          assistantMessage([text("Done.")]),
+        ],
+      }),
+    ).run("Find and rename call_normalize_routine on the SSH target.");
 
     const missing = "b.cpp:2 'does_not_exist.h' file not found";
     const graph = getToolResultText(run, "graph");

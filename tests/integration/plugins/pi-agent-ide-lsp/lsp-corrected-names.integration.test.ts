@@ -1,10 +1,11 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
@@ -36,20 +37,22 @@ async function run(
 ) {
   await mkdir(path.join(cwd, ".pi"), { recursive: true });
   await writeFile(path.join(cwd, "main.cpp"), SOURCE);
-  return new PiIntegrationTest({
-    testName,
-    artifactsDir: testArtifactsDir(import.meta.filename),
-    cwd,
-    rawMode: false,
-    extensions: [path.resolve("src/pi-agent-ide.ts")],
-    tools: ["read", "replace", "lsp_search"],
-    conversation: [
-      ...calls.map((call, index) =>
-        assistantMessage([toolCall({ id: `call-${index}`, ...call })], { stopReason: "toolUse" }),
-      ),
-      assistantMessage([text("Done.")]),
-    ],
-  }).run("Inspect and rename call_normalize_routine");
+  return new PiIntegrationTest(
+    withDeclarationSelections({
+      testName,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["read", "replace", "lsp_search"],
+      conversation: [
+        ...calls.map((call, index) =>
+          assistantMessage([toolCall({ id: `call-${index}`, ...call })], { stopReason: "toolUse" }),
+        ),
+        assistantMessage([text("Done.")]),
+      ],
+    }),
+  ).run("Inspect and rename call_normalize_routine");
 }
 
 function output(result: Awaited<ReturnType<typeof run>>, index: number): string {
@@ -90,7 +93,10 @@ test("a symbol rename leaves names the compiler corrected from a misspelling as 
     const result = await run(cwd, "corrected-names-rename", [
       {
         name: "replace",
-        arguments: { path: "symbol:main.cpp#call_normalize_routine#name", text: "renamed_routine" },
+        arguments: {
+          path: "fixture:declaration:main.cpp#call_normalize_routine#name",
+          text: "renamed_routine",
+        },
       },
     ]);
     output(result, 0);

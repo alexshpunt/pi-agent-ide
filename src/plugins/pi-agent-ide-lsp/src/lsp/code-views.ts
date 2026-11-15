@@ -65,7 +65,12 @@ export async function resolveLspDeclaration(
   selector: readonly string[],
   cwd: string,
   signal?: AbortSignal,
-): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
+): Promise<{
+  readonly source: string;
+  readonly range: LspRange;
+  readonly selectionRange: LspRange;
+  readonly content: string;
+}> {
   // Another Pi process may write the file while the server reports its symbols.
   return retryWhileSourceChanges(
     () => resolveLspDeclarationOnce(manager, filePath, selector, cwd, signal),
@@ -79,7 +84,12 @@ async function resolveLspDeclarationOnce(
   selector: readonly string[],
   cwd: string,
   signal?: AbortSignal,
-): Promise<{ readonly source: string; readonly range: LspRange; readonly content: string }> {
+): Promise<{
+  readonly source: string;
+  readonly range: LspRange;
+  readonly selectionRange: LspRange;
+  readonly content: string;
+}> {
   throwIfAborted(signal);
   const document = await openCodeDocument(manager, filePath, cwd, signal);
   const entries = resolveSymbolDeclaration(document.symbols, selector, document.displayPath);
@@ -98,11 +108,17 @@ async function resolveLspDeclarationOnce(
       : served !== undefined && answeredFor(served, symbol)
         ? LinePositionMap.between(served, current).mapRange(symbol.range)
         : undefined;
-  if (range === undefined)
+  const selectionRange =
+    served === current || answeredFor(current, symbol)
+      ? symbol.selectionRange
+      : served !== undefined && answeredFor(served, symbol)
+        ? LinePositionMap.between(served, current).mapRange(symbol.selectionRange)
+        : undefined;
+  if (range === undefined || selectionRange === undefined)
     throw sourceChanged(
       "The symbol source changed during resolution. Read it again before editing.",
     );
-  return { source: document.filePath, range, content: current };
+  return { source: document.filePath, range, selectionRange, content: current };
 }
 /** Resolve the native identifier position and client without guessing from declaration text. */
 export async function resolveLspRenameTarget(
@@ -115,7 +131,11 @@ export async function resolveLspRenameTarget(
   throwIfAborted(signal);
   const content = await manager.readSourceText(filePath, signal);
   const document = await openCodeDocument(manager, filePath, cwd, signal);
-  const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
+  const symbol = declarationBody(
+    resolveSymbolDeclaration(document.symbols, selector, document.displayPath),
+    document.servedText ?? content,
+    document.displayPath,
+  );
   if (content !== (await manager.readSourceText(filePath, signal)))
     throw sourceChanged("The rename source changed during resolution.");
   throwIfAborted(signal);

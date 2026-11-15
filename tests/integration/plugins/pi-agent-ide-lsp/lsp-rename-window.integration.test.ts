@@ -1,16 +1,22 @@
+import { PiIntegrationTest } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { withDeclarationSelections } from "#integration/support/declaration-selections.ts";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
   getToolResultText,
-  PiIntegrationTest,
   testArtifactsDir,
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { expect, test } from "vitest";
+import { afterAll, expect, test } from "vitest";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+
+// Each writer scenario needs a fresh server; reused open buffers outlive fixture resets.
+const restore = forceStandaloneIntegrationFile();
+afterAll(restore);
 
 const SOURCE = 'export function greet() { return "greet"; }\n';
 const USAGE = 'import { greet } from "./source";\nexport const answer = greet();\n';
@@ -32,31 +38,33 @@ async function renameInWindow(
   await writeFile(path.join(cwd, "source.ts"), SOURCE);
   await writeFile(path.join(cwd, "usage.ts"), USAGE);
   await writeFile(path.join(cwd, ".tmp/edit-window/write.json"), JSON.stringify(write));
-  const run = await new PiIntegrationTest({
-    testName,
-    artifactsDir: testArtifactsDir(import.meta.filename),
-    cwd,
-    rawMode: false,
-    extensions: [
-      path.resolve("src/pi-agent-ide.ts"),
-      path.resolve("tests/integration/fixtures/write-in-edit-window.ts"),
-    ],
-    tools: ["replace"],
-    timeoutMs: 120_000,
-    conversation: [
-      assistantMessage(
-        [
-          toolCall({
-            id: "rename",
-            name: "replace",
-            arguments: { path: "symbol:source.ts#greet#name", text: "welcome" },
-          }),
-        ],
-        { stopReason: "toolUse" },
-      ),
-      assistantMessage([text("Done.")]),
-    ],
-  }).run("Rename greet while another session writes a participant");
+  const run = await new PiIntegrationTest(
+    withDeclarationSelections({
+      testName,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        path.resolve("tests/integration/fixtures/write-in-edit-window.ts"),
+      ],
+      tools: ["replace"],
+      timeoutMs: 120_000,
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "rename",
+              name: "replace",
+              arguments: { path: "fixture:declaration:source.ts#greet#name", text: "welcome" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done.")]),
+      ],
+    }),
+  ).run("Rename greet while another session writes a participant");
   const afterPlan = await access(path.join(cwd, ".tmp/edit-window/after-plan")).then(
     () => true,
     () => false,

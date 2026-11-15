@@ -22,13 +22,13 @@ import { lspDoctorPlugin } from "./src/doctor-plugin.ts";
 import { createLspCompiler, LspManager, LspServerRegistry } from "./src/lsp/index.ts";
 import { createLspSearchResolver } from "./src/search-resolver.ts";
 import { registerLspSearchTool, type LspSearchRuntime } from "./src/tool-lsp-search.ts";
-import { createDeclarationTargets } from "./src/declaration-targets.ts";
+import { connectResultTargets } from "pi-agent-resource";
+import { NameCaptures } from "./src/name-captures.ts";
 import { prepareSymbolRename } from "./src/rename-plan.ts";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import {
   TEXT_EDITOR_PROTOCOL,
   TEXT_EDITOR_API_VERSION,
-  TEXT_SEARCH_ANCHOR_KIND,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -68,6 +68,8 @@ export async function registerLspWithOwner(
   pi: ExtensionAPI,
   owner?: LspRegistrationOwner,
 ): Promise<void> {
+  const nameCaptures = new NameCaptures();
+  const resultTargets = connectResultTargets(pi);
   let resolveSearchRuntime!: (value: LspSearchRuntime) => void;
   const searchRuntime = new Promise<LspSearchRuntime>(
     (resolve) => (resolveSearchRuntime = resolve),
@@ -200,96 +202,11 @@ export async function registerLspWithOwner(
               ),
           );
         });
-        api.addAnchorResolver({
-          kind: TEXT_SEARCH_ANCHOR_KIND,
-          type: "auxiliary",
-          resolver: {
-            id: "lsp-declaration",
-            description:
-              "symbol:<file>#<selector> selects an exact declaration for text fallback editing; imports and references are not rewritten.",
-            renderFull: (value) => value,
-            renderCompact: (value) => value,
-            tryResolve: () => Promise.resolve({ kind: "not-handled" }),
-          },
-          resources: createDeclarationTargets(managerForFile),
-          describeInPrompt: false,
-        });
-        const declarationEdits = ["copy", "move", "delete", "replace"];
-        pi.on("before_agent_start", (event) => {
-          const enabled = pi
-            .getAllTools()
-            .some((tool) => declarationEdits.includes(tool.name) && tool.exposure !== "hidden");
-          event.systemPromptOptions.sections.ide_symbol_edits = enabled
-            ? "For copy, move, delete and replace, symbol:<file>#<selector> selects one declaration without start; imports and references are not updated. Use a name or parent/child path as selector; select an overload by its parameter types, such as clamp(int, float)."
-            : "";
-        });
-        for (const operation of declarationEdits) {
-          api
-            .tool(operation)
-            .describeField(
-              "path",
-              operation === "replace"
-                ? "For a project-wide rename, use symbol:<file>#<selector>#name with literal #name; put the new identifier in text and omit start/end."
-                : "Also accepts symbol: declaration selectors.",
-            );
-          if (operation === "replace")
-            api.tool(operation).describe("Use replace to rename a symbol across the project.");
-          api.tool(operation).addHandler({
-            stage: "text-pre-edit",
-            async handler(state) {
-              if (operation === "replace") {
-                const renamed = prepareSymbolRename(state, managerForFile);
-                if (renamed !== undefined) return renamed;
-              }
-              const input = state.input as Record<string, unknown>;
-              const selected = [
-                input.path,
-                input.start,
-                input.end,
-                input.target,
-                input.targetStart,
-                input.targetEnd,
-              ].some((value) => typeof value === "string" && value.startsWith("symbol:"));
-              if (!selected) return state;
-              if (
-                (operation === "copy" || operation === "move") &&
-                typeof input.target !== "string"
-              )
-                throw new Error(
-                  "Copying or moving a symbol requires an explicit target file and destination anchor.",
-                );
-              return {
-                ...state,
-                metadata: {
-                  ...state.metadata,
-                  semanticEdit: {
-                    mode: "declaration-text",
-                    referencesUpdated: false,
-                    importsUpdated: false,
-                  },
-                  diffStatuses: [
-                    { text: "Text fallback: imports and references unchanged", tone: "warning" },
-                  ],
-                },
-              };
-            },
-          });
-        }
-        api.tool("insert").describeField("anchor", "Symbol targets are not supported.");
-        api.tool("insert").addHandler({
+        api.tool("replace").addHandler({
           stage: "text-pre-edit",
-          handler(state) {
-            const input = state.input as Record<string, unknown>;
-            if (
-              [input.path, input.anchor].some(
-                (value) => typeof value === "string" && value.startsWith("symbol:"),
-              )
-            )
-              throw new Error(
-                "Semantic insert is not supported. Get the declaration with lsp_search and use an explicit text line anchor instead.",
-              );
-            return state;
-          },
+          when: (input) => nameCaptures.matches(input),
+          handler: (state) =>
+            prepareSymbolRename(state, managerForFile, nameCaptures, resultTargets) ?? state,
         });
       },
     }),
@@ -303,7 +220,12 @@ export async function registerLspWithOwner(
         // Not registered with search: lsp_search runs it through the shared execution core.
         resolveSearchRuntime({
           api,
-          resolver: createLspSearchResolver(managerForFile, api.registerSelection),
+          resolver: createLspSearchResolver(
+            managerForFile,
+            api.registerSelection,
+            undefined,
+            nameCaptures,
+          ),
         });
       },
     }),

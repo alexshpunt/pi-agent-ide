@@ -3,7 +3,7 @@ import { scriptMatchSchema } from "./match.ts";
 import { matchList, matchListSchema, record, scriptMatch } from "./search-matches.ts";
 import type { ScriptValue } from "./types.ts";
 
-const captureSchema = {
+export const captureSchema = {
   type: "object",
   properties: { text: { type: "string" }, id: { type: "string" } },
   required: ["text"],

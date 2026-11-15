@@ -767,6 +767,26 @@ export function validateRoute(
     if (["start", "anchor"].includes(field) && args && value === undefined)
       alternatives.push(args.path);
     return alternatives.some((candidate) => {
+      if (reference.kind?.startsWith("capture:")) {
+        const name = reference.kind.slice("capture:".length);
+        const captures: unknown[] = [];
+        const visit = (value: unknown): void => {
+          if (Array.isArray(value)) {
+            for (const item of value) visit(item);
+            return;
+          }
+          if (value === null || typeof value !== "object") return;
+          const record = value as Record<string, unknown>;
+          if (record.captures && typeof record.captures === "object")
+            captures.push((record.captures as Record<string, unknown>)[name]);
+          for (const child of Object.values(record)) visit(child);
+        };
+        visit(prior.result?.structuredContent);
+        const lines = resultText(prior)
+          .split("\n")
+          .filter((line) => line.startsWith("capture " + name + ": "));
+        return reuses(candidate, lines.join("\n"), "result", captures.flatMap(valueIds));
+      }
       if (reference.kind === "whole-result") {
         if (
           args?.path !== undefined &&
