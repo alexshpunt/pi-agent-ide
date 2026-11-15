@@ -710,7 +710,7 @@ function displaySources<Args extends Record<string, unknown>>(name: string, args
   };
   const shown = { ...args };
   for (const field of sourceFields[name] ?? [])
-    Object.assign(shown, { [field]: label(args[field]) });
+    if (args[field] !== undefined) Object.assign(shown, { [field]: label(args[field]) });
   return shown;
 }
 

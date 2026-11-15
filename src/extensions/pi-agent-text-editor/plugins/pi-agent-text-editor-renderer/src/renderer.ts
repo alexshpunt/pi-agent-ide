@@ -95,6 +95,13 @@ interface RenderState {
   releaseAnimationPressure?: () => void;
 }
 
+function mutationRenderState(
+  state: Partial<RenderState>,
+  registration: RenderRegistration,
+): RenderState {
+  return Object.assign(state, { registration: state.registration ?? registration });
+}
+
 /** Register mutation renderers with optional model-stream animation pressure. */
 export function registerMutationRenderers(
   api: TextEditorPluginApi,
@@ -113,6 +120,7 @@ export function registerMutationRenderers(
         animationPressure,
         animationsEnabled,
         presentation,
+        displayName,
       ),
     );
   });
@@ -124,6 +132,7 @@ function createRenderer(
   animationPressure: MutationAnimationPressure | undefined,
   animationsEnabled: () => boolean,
   presentationSource: ToolPresentation | (() => ToolPresentation),
+  displayName: ((name: string) => string) | undefined,
 ): TextEditorToolRendererRegistration {
   const getPresentation = () =>
     typeof presentationSource === "function" ? presentationSource() : presentationSource;
@@ -135,8 +144,7 @@ function createRenderer(
     renderCall(arguments_, theme, context) {
       const component = panel(context.lastComponent, theme, false);
       const input = asInput(arguments_);
-      const state = context.state as RenderState;
-      state.registration = registration;
+      const state = mutationRenderState(context.state as Partial<RenderState>, registration);
       const now = performance.now();
       state.panel = component;
       state.input = input;
@@ -158,7 +166,7 @@ function createRenderer(
 
       const generated = generatedText(tool, input);
       const renderedHeader = renderHeader(
-        registration,
+        state.registration,
         input,
         state.preview,
         theme,
@@ -229,8 +237,22 @@ function createRenderer(
       return component;
     },
     renderResult(result, options, theme, context) {
-      const state = context.state as RenderState;
-      state.registration = registration;
+      const state = mutationRenderState(context.state as Partial<RenderState>, registration);
+      const operations = [
+        ...new Set(
+          result.details.results?.flatMap(
+            ({ data }) => data.operations?.map(({ operation }) => operation) ?? [],
+          ),
+        ),
+      ];
+      const name =
+        operations.length > 1
+          ? operations.map((operation) => displayName?.(operation) ?? operation).join(" + ")
+          : registration.displayName;
+      // A completed grouped result represents every operation, not just its final call.
+      if (state.registration.displayName !== name) delete state.stableHeader;
+      state.registration =
+        name === registration.displayName ? registration : { ...registration, displayName: name };
       const viewports = state.viewports;
       state.theme = theme;
       state.cwd = context.cwd;
@@ -290,7 +312,7 @@ function createRenderer(
       delete state.viewports;
       state.panel?.setHeader(
         renderHeader(
-          registration,
+          state.registration,
           state.input ?? {},
           undefined,
           theme,
