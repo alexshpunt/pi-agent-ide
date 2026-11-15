@@ -3558,6 +3558,7 @@ add(
     files: {},
     answer: "WEB-MARKER",
     setup: "web",
+    resource: "web-port-8765",
   },
 );
 
