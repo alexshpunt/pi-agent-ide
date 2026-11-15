@@ -49,7 +49,7 @@ check(typeof outline.id === "string" && outline.id.startsWith("RESULT#"));
 check(outline.text.includes("first()") && outline.text.includes("second()") && !outline.text.includes("const hidden"));
 const names = await tools.search({path:outline,query:"first"});
 check(names.matches.length === 1 && names.matches[0].line === 1);
-const declarations = await tools.ast_search({path:outline,pattern:"function $NAME() { $$$BODY }",relation:"enclosing"});
+const declarations = await tools.ast_search({path:outline,pattern:"export function $NAME() { $$$BODY }",relation:"enclosing"});
 check(declarations.matches.length === 2);
 text(await tools.replace({path:names.matches[0],start:"first",text:"renamed"}));
 const scopes = await tools.read({path:"task.ts",views:["ast"]});
