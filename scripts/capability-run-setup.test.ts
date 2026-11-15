@@ -21,6 +21,7 @@ async function fixture(
     invoke: () => ReturnType<typeof runProcess>;
     git: (...args: string[]) => void;
   }) => Promise<void>,
+  prerequisite?: "timeout" | "failure",
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "capability-setup-"));
   try {
@@ -55,6 +56,34 @@ async function fixture(
         export { piRuntime } from ${JSON.stringify(inventory)};
         export const toolInventory = (_, command) => actual(${JSON.stringify(repository)}, command);`),
     };
+    const auth = path.join(root, "auth");
+    if (prerequisite) {
+      await mkdir(auth);
+      await writeFile(
+        path.join(auth, "auth.json"),
+        JSON.stringify({
+          "openai-codex": {
+            type: "oauth",
+            access: "FIXTURE_ACCESS_TOKEN",
+            refresh: "",
+            expires: Date.now() + 3600000,
+          },
+        }),
+      );
+      const sandbox = pathToFileURL(
+        path.join(repository, "benchmarks/tool-capabilities/sandbox.ts"),
+      ).href;
+      const child = `process.stdout.write("SETUP_OUTPUT\\n"); process.stderr.write("SETUP_FAILURE FIXTURE_ACCESS_TOKEN\\n"); ${prerequisite === "timeout" ? 'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000);' : "process.exit(7);"} `;
+      Object.assign(bindings, {
+        "./sandbox.ts": dataModule(`export * from ${JSON.stringify(sandbox)};
+          import { runProcess as actual } from ${JSON.stringify(sandbox)};
+          export const runProcess = (command, args, options) => {
+            if (command !== "bwrap" || args.at(-1) !== "command -v colgrep && colgrep init --yes --color never")
+              throw Error("Unexpected inference launch");
+            return actual(process.execPath, ["-e", ${JSON.stringify(child)}], { ...options, env: process.env, timeoutMs: 1000 });
+          };`),
+      });
+    }
     const hook = path.join(root, "bindings.mjs");
     await writeFile(
       hook,
@@ -82,11 +111,12 @@ async function fixture(
             "--model",
             "luna-6-low",
             "--case",
-            "read-jq",
+            prerequisite ? "semantic-code-search" : "read-jq",
             "--mode",
             "direct",
             "--attempts",
             "1",
+            ...(prerequisite ? ["--auth-dir", auth] : []),
             "--results",
             results,
           ],
@@ -98,6 +128,50 @@ async function fixture(
   }
 }
 
+test.each(["timeout", "failure"] as const)(
+  "a prerequisite %s remains unavailable with retained evidence",
+  async (kind) => {
+    await fixture(async ({ source, results, invoke }) => {
+      const execution = await invoke();
+      expect(execution.timedOut).toBe(false);
+      expect(execution.code).toBe(1);
+      const attempts = JSON.parse(await readFile(path.join(results, "attempts.json"), "utf8")) as {
+        status: string;
+        evidence: string;
+        reasons: string[];
+      }[];
+      expect(attempts).toHaveLength(1);
+      const attempt = attempts[0];
+      if (!attempt) throw new Error("Missing attempt");
+      expect(attempt.status).toBe("unavailable");
+      expect(attempt.reasons.join("\n")).toContain("colgrep init");
+      expect(attempt.reasons.join("\n")).toContain("SETUP_FAILURE");
+      expect(attempt.reasons.join("\n")).not.toContain("FIXTURE_ACCESS_TOKEN");
+      const setup = JSON.parse(
+        await readFile(path.join(results, attempt.evidence, "prerequisite.json"), "utf8"),
+      ) as {
+        code: number;
+        timedOut: boolean;
+        stdout: string;
+        stderr: string;
+        started: string;
+        finished: string;
+        timeoutMs: number;
+      };
+      expect(setup).toMatchObject({
+        code: kind === "timeout" ? 0 : 7,
+        timedOut: kind === "timeout",
+        timeoutMs: 120000,
+      });
+      expect(setup.stdout).toContain("SETUP_OUTPUT");
+      expect(setup.stderr).toContain("SETUP_FAILURE");
+      expect(setup.stderr).not.toContain("FIXTURE_ACCESS_TOKEN");
+      expect(Date.parse(setup.finished)).toBeGreaterThanOrEqual(Date.parse(setup.started));
+      await noTrials(source);
+    }, kind);
+  },
+  45000,
+);
 async function retainedAttempt(results: string) {
   const attempts: unknown = JSON.parse(await readFile(path.join(results, "attempts.json"), "utf8"));
   expect(attempts).toEqual([

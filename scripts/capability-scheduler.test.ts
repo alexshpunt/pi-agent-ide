@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { schedule } from "#capabilities/scheduler.ts";
+import { capabilityCases } from "#capabilities/cases.ts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -211,6 +212,49 @@ test("publication failure aborts and drains active attempts", async () => {
   expect(drained).toBe(true);
 });
 
+test("ColGREP routes run one at a time at concurrency 20 without blocking other cases", async () => {
+  const cases = capabilityCases.filter((task) =>
+    ["semantic-code-search", "semantic-script-files", "web-read-search", "read-jq"].includes(
+      task.id,
+    ),
+  );
+  const work = cases.flatMap((task) => task.modes.map((mode) => ({ task, mode })));
+  const gates = work.map(() => deferred<string>());
+  const started: number[] = [];
+  const isColgrep = (index: number) => work[index]?.task.prerequisite?.includes("colgrep init");
+  const colgrep = work.flatMap((_, index) => (isColgrep(index) ? [index] : []));
+  expect(colgrep).toHaveLength(3);
+  const [first, second, third] = colgrep;
+  if (first === undefined || second === undefined || third === undefined)
+    throw new Error("Missing ColGREP route");
+  const running = schedule(work, 20, new AbortController(), {
+    resource: ({ task }) => task.resource,
+    stopReason: () => undefined,
+    publish: async () => {},
+    run: async (item) => {
+      const index = work.indexOf(item);
+      started.push(index);
+      const gate = gates[index];
+      if (!gate) throw new Error("Unknown scheduled route");
+      return gate.promise;
+    },
+  });
+  try {
+    await viWait(() => started.some((index) => work[index]?.task.id === "read-jq"));
+    expect(started.filter(isColgrep)).toEqual([colgrep[0]]);
+    expect(started.filter((index) => work[index]?.task.setup === "web")).toHaveLength(1);
+    // An unavailable prerequisite releases the resource, but does not become a pass.
+    gates[first]?.resolve("unavailable");
+    await viWait(() => started.includes(second));
+    expect(started.filter(isColgrep)).toEqual(colgrep.slice(0, 2));
+    gates[second]?.resolve("pass");
+    await viWait(() => started.includes(third));
+    expect(started.filter(isColgrep)).toEqual(colgrep);
+  } finally {
+    for (const gate of gates) gate.resolve("pass");
+    await running;
+  }
+});
 async function viWait(predicate: () => boolean) {
   for (let i = 0; i < 100 && !predicate(); i++)
     await new Promise((resolve) => setTimeout(resolve, 0));

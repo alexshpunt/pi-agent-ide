@@ -176,6 +176,8 @@ export interface CapabilityCase {
   expected?: Record<string, string | Buffer | null>;
   answer?: string;
   prerequisite?: string;
+  /** Exclusive resource within an invocation, held through setup, execution and cleanup. */
+  resource?: string;
   setup?: string;
   git?: boolean;
   /** Keep IDE post-processing, such as formatting, which the runner otherwise disables. */
