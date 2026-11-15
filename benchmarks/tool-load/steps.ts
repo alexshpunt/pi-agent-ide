@@ -99,7 +99,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
         (/^[0-9A-HJKMNP-TV-Z]{7}\|/mu.test(result) ? undefined : "no line anchors"),
     ),
     {
-      ...step("read-outline", "read", { path: `ast:${file}`, limit: 40 }, (result) =>
+      ...step("read-outline", "outline", { path: file }, (result) =>
         files.sizeBytes > AST_OUTLINE_LIMIT_BYTES
           ? expectAll(result, ["AST outline limit"])
           : expectAll(result, [unitName(agent, 0), "scope-begin-"]),

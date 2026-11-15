@@ -72,7 +72,7 @@ test.each([
   path.join(piRoot, "src/example.ts"),
   "https://example.org/SKILL.md",
   "temp:SKILL.md",
-  "ast:AGENTS.md",
+  "diagnostics:AGENTS.md",
   "skills/example/SKILL.md#heading",
 ])("leaves other sources with the IDE renderer: %s", (file) => {
   expect(nativeReadArguments({ path: file }, cwd)).toBeUndefined();

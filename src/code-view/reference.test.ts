@@ -18,7 +18,9 @@ test("code-view paths retain explicit and cwd-relative SSH identity", () => {
   expect(() => resolveCodeViewPath("unknown://target/note.ts", "ssh://target/work")).toThrow(
     "Unsupported code-view resource owner",
   );
-  expect(parseCodeViewReference(formatCodeViewReference("ast", source), "ast")?.path).toBe(source);
+  expect(parseCodeViewReference(formatCodeViewReference("graph", source), "graph")?.path).toBe(
+    source,
+  );
   expect(() => resolveCodeViewPath("unknown://target/note.ts", "/local")).toThrow(
     "Unsupported code-view resource owner",
   );

@@ -89,7 +89,7 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
               { id: "ordinary", name: "read", arguments: { path: secret } },
               { id: "raw", name: "read", arguments: { path: `raw:${secret}`, limit: 32 } },
               { id: "derived", name: "read", arguments: { path: secret, views: ["jq:.message"] } },
-              { id: "typed", name: "read", arguments: { path: `ast:${typed}` } },
+              { id: "typed", name: "outline", arguments: { path: typed } },
               {
                 id: "script",
                 name: "codemode",
@@ -144,7 +144,7 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
           path.resolve("tests/integration/support/ssh-user-hooks-extension.ts"),
           "builtin:codemode",
         ],
-        tools: ["read", "move", "copy", "write", "codemode"],
+        tools: ["read", "outline", "move", "copy", "write", "codemode"],
         timeoutMs: 60_000,
         conversation: [
           ...calls.map((call) => assistantMessage([toolCall(call)])),

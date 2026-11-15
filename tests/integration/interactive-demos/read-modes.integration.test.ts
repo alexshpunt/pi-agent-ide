@@ -63,7 +63,7 @@ test("shows every read rendering mode", async () => {
       testName: "interactive-demo-read-modes",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read"],
+      tools: ["read", "outline"],
       rawMode: false,
       timeoutMs: 180_000,
       conversation: [
@@ -82,8 +82,8 @@ test("shows every read rendering mode", async () => {
           [
             toolCall({
               id: "demo-read-ast",
-              name: "read",
-              arguments: { path: `ast:${fileName}` },
+              name: "outline",
+              arguments: { path: fileName },
               ...interactivePacing,
             }),
           ],

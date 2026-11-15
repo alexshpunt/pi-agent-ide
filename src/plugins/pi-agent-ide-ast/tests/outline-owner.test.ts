@@ -16,7 +16,7 @@ test("explicit SSH outlines parse the owner snapshot and keep source mappings re
     expect(context.cwd).toBe("/unused-local-workspace");
     return { source, lines };
   });
-  const result = await resolver.tryResolve(`ast:${source}`, { cwd: "/unused-local-workspace" });
+  const result = await resolver.tryResolve(source, { cwd: "/unused-local-workspace" });
   expect(result.kind).toBe("resolved");
   if (result.kind !== "resolved") throw new Error("Expected an outline resource");
   if (result.resource.read === undefined) throw new Error("Expected a readable outline");

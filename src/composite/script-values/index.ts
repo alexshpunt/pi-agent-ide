@@ -21,6 +21,7 @@ export type { ScriptValue, ScriptValueInput } from "./types.ts";
 /** IDE tools with their own Codemode value. Every other IDE tool resolves to its result string. */
 const values: Readonly<Record<string, ScriptValue>> = {
   read: readValue,
+  outline: textReadValue,
   diagnostics: textReadValue,
   search: searchValue,
   ast_search: astSearchValue,
