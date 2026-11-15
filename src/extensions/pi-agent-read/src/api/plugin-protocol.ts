@@ -5,7 +5,7 @@ import type { ReadToolPluginApi } from "#src/api/tools/read.ts";
 
 export const READ_PROTOCOL = "pi-agent-read";
 
-export const READ_API_VERSION = 14;
+export const READ_API_VERSION = 15;
 
 export const READ_CORE_READY_EVENT = `${READ_PROTOCOL}/core/ready`;
 

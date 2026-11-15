@@ -44,7 +44,7 @@ test("shows the AST outline and lsp_search declaration and call views on a produ
       testName: "interactive-demo-read-code-views",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read", "lsp_search"],
+      tools: ["read", "outline", "lsp_search"],
       rawMode: false,
       timeoutMs: 180_000,
       conversation: [
@@ -52,8 +52,8 @@ test("shows the AST outline and lsp_search declaration and call views on a produ
           [
             toolCall({
               id: "demo-read-ast",
-              name: "read",
-              arguments: { path: `ast:${fileName}`, views: ["anchors"] },
+              name: "outline",
+              arguments: { path: fileName },
               ...interactivePacing,
             }),
           ],

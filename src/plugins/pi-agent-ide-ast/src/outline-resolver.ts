@@ -1,8 +1,4 @@
-import {
-  formatCodeViewReference,
-  parseCodeViewReference,
-  resolveCodeViewPath,
-} from "pi-agent-ide/api/code-view";
+import { resolveCodeViewPath } from "pi-agent-ide/api/code-view";
 
 // A static import keeps the outline code from the version this Pi loaded.
 import * as AstOutline from "./ast/outline.ts";
@@ -26,7 +22,7 @@ export function createAstOutlineResolver(
   readSource?: AstOutlineSourceReader,
 ): ResourceResolver {
   return {
-    id: "ast",
+    id: "outline",
     tryResolve(source, context) {
       return Promise.resolve(resolveAstOutlineSource(source, context, manager, readSource));
     },
@@ -39,39 +35,25 @@ function resolveAstOutlineSource(
   manager: AstOutline.AstOutlineManager | undefined,
   readSource: AstOutlineSourceReader | undefined,
 ): ResourceResolutionAttempt {
-  let reference;
-
-  try {
-    reference = parseCodeViewReference(source, "ast");
-  } catch (error) {
-    return { kind: "failed", error };
-  }
-
-  if (reference === undefined) {
-    return { kind: "not-handled" };
-  }
-
   let filePath: string;
 
   try {
-    filePath = resolveCodeViewPath(reference.path, context.cwd);
+    filePath = resolveCodeViewPath(source, context.cwd);
   } catch (error) {
     return { kind: "failed", error };
   }
 
-  const canonicalSource = formatCodeViewReference("ast", filePath);
   return {
     kind: "resolved",
     resource: {
       // Reserve the physical owner; the AST presentation remains read-only.
       source: filePath,
-      link: canonicalSource,
+      link: filePath,
       async read({ signal }) {
         signal?.throwIfAborted();
         const outlineManager = manager ?? (defaultManager ??= new AstOutline.AstOutlineManager());
         let outline;
-        if (filePath.startsWith("ssh://")) {
-          if (readSource === undefined) throw new Error("No AST snapshot owner for this resource.");
+        if (readSource !== undefined) {
           const snapshot = await readSource(filePath, { ...context, signal });
           if (Buffer.byteLength(snapshot.lines.join("\n")) > MAX_SOURCE_BYTES)
             throw new Error("File exceeds the 262144-byte AST outline limit.");
@@ -83,9 +65,13 @@ function resolveAstOutlineSource(
             snapshot.lines,
           );
         } else {
+          if (filePath.startsWith("ssh://"))
+            throw new Error("No outline snapshot owner for this resource.");
           outline = await outlineManager.readFileOutline(filePath, context.cwd);
         }
         signal?.throwIfAborted();
+        if (outline.status === "failed")
+          throw new Error(outline.error ?? "Could not produce an outline.");
         return [AstOutline.formatAstOutline(outline)];
       },
     },

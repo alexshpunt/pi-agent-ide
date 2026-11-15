@@ -161,7 +161,7 @@ test("code views highlight source before adding line and scope annotations", () 
       },
     ],
     details: {
-      source: "ast:/workspace/example.ts",
+      source: "/workspace/example.ts",
       resolvedBy: "ast",
       startLine: 1,
       endLine: 1,

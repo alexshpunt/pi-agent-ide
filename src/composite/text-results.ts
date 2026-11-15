@@ -31,6 +31,7 @@ const maxLabelLength = 200;
 
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
+  outline: ["path"],
   search: ["path"],
   ast_search: ["path"],
   lsp_search: ["path"],
@@ -351,7 +352,7 @@ export function createIdeTextResults(
         return { content: [{ type: "text", text: refusal }], details: {} as never, isError: true };
       }
       // A Read issued by another tool, such as a Codemode script, returns its whole text there.
-      const limitText = !(definition.name === "read" && parents.has(args[0]));
+      const limitText = !(["read", "outline"].includes(definition.name) && parents.has(args[0]));
       const result = await definition.execute(...args).catch(async (error: unknown) => {
         const limited = await limitIdeOutput(
           [{ type: "text", text: error instanceof Error ? error.message : String(error) }],

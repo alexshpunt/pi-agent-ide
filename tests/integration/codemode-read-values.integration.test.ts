@@ -39,7 +39,7 @@ async function run(cwd: string, code: string) {
     rawMode: false,
     cwd,
     extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-    tools: ["read", "search", "write", "codemode"],
+    tools: ["read", "outline", "search", "write", "codemode"],
     conversation: [
       assistantMessage([toolCall({ id: "script", name: "codemode", arguments: { code } })], {
         stopReason: "toolUse",
@@ -88,7 +88,7 @@ const jq = await tools.read({ path: "data.json", views: ["jq:.items"] });
 check(JSON.stringify(JSON.parse(jq.text)) === "[1,2,3]", "jq: " + JSON.stringify(jq.text));
 const scopes = await tools.read({ path: "code.ts", views: ["ast"] });
 check(/^export function one\(\) \{  <!-- scope-begin-(\w+) -->\n[\s\S]*\n\}  <!-- scope-end-\1 -->\n$/u.test(scopes.text), "ast: " + JSON.stringify(scopes.text));
-const outline = await tools.read({ path: "ast:code.ts" });
+const outline = await tools.outline({ path: "code.ts" });
 check(outline.text.startsWith("## file: code.ts\n") && outline.text.includes("export function one()"), "outline: " + JSON.stringify(outline.text));
 const raw = await tools.read({ path: "raw:bytes.bin" });
 check(Object.keys(raw).join() === "bytes", "raw keys");

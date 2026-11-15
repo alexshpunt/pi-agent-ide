@@ -2941,11 +2941,25 @@ add(
 );
 const syntax = { "task.ts": "function first() { return 7; }\nfunction second() { return 9; }\n" };
 add(
-  "ast-capture-rename",
-  ["read.ast", "search.ast", "compose.ast-capture-edit"],
-  "Read ast:task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the NAME capture with renamed: in a direct call its displayed capture reference, in Codemode the capture from the match's captures.NAME or its id. Use the actual capture reference, not a file path or anchor.",
+  "outline-search-edit",
+  ["outline.file", "compose.outline-search-edit"],
+  'Call outline for task.ts. Search its unchanged result for "first", passing the outline result itself (or its id) as path. Replace only the matched name with renamed, using the Search match or its displayed match reference. Do not read the whole file or replace a declaration.',
   [
-    { tool: "read", args: { path: "ast:task.ts" }, contains: "first" },
+    { tool: "outline", args: { path: "task.ts" }, contains: "first" },
+    { tool: "search", args: { query: "first" }, reuse: reuse(0), contains: "first" },
+    { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
+  ],
+  {
+    files: syntax,
+    expected: { "task.ts": "function renamed() { return 7; }\nfunction second() { return 9; }\n" },
+  },
+);
+add(
+  "ast-capture-rename",
+  ["outline.file", "search.ast", "compose.ast-capture-edit"],
+  "Call outline for task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the NAME capture with renamed: in a direct call its displayed capture reference, in Codemode the capture from the match's captures.NAME or its id. Use the actual capture reference, not a file path or anchor.",
+  [
+    { tool: "outline", args: { path: "task.ts" }, contains: "first" },
     // A pattern or a rule with a pattern can both capture NAME.
     {
       tool: "ast_search",

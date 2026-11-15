@@ -260,7 +260,8 @@ const groups: [string[], string[]][] = [
   ],
   [["compose.search-narrow-result"], ["read-search-narrow"]],
   // Result-input paths accept the same file as a scalar or an array; both keep real reuse checks.
-  [["read.ast", "search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
+  [["outline.file", "search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
+  [["outline.file", "compose.outline-search-edit"], ["outline-search-edit"]],
   [["ast_search.rule", "compose.ast-search-enclosing"], ["ast-search-enclosing"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],

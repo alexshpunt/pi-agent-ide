@@ -215,6 +215,10 @@ function createPluginContributionController(
       assertAvailable();
       return read.execute(request, context, audience);
     },
+    readWith(resolver, request, context, audience) {
+      assertAvailable();
+      return read.executeWith(resolver, request, context, audience);
+    },
     addResourceGuard(registration): void {
       assertAvailable();
       if (state === "setup") setupResourceGuards.push(registration);

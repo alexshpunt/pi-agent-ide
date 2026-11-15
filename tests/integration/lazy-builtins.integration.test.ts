@@ -102,9 +102,9 @@ test("the reduced text configuration keeps AST, anchors and edits working", asyn
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["read", "insert"],
+      tools: ["read", "outline", "insert"],
       conversation: [
-        call("ast", "read", { path: "ast:example.ts" }),
+        call("ast", "outline", { path: "example.ts" }),
         call("anchors", "read", { path: "example.ts", views: ["anchors"] }),
         call("insert", "insert", {
           path: "example.ts",

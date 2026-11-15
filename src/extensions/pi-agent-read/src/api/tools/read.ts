@@ -347,6 +347,13 @@ export interface ReadToolPluginApi {
   saveTemporary(text: string): Promise<string>;
   /** Sets the saver used before the shared text budget truncates a Read result. */
   setOutputSaver(saver: (text: string) => Promise<string>): void;
+  /** Run a focused operation through the Read pipeline without advertising a Read source. */
+  readWith(
+    resolver: ResourceResolver,
+    request: ReadRequest,
+    context: ResourceResolverContext,
+    audience?: "agent" | "script",
+  ): Promise<ReadToolResult>;
   /** Executes the shared pipeline; script results are not clipped to the agent output budget. */
   read(
     request: ReadRequest,

@@ -80,7 +80,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
         path.resolve("tests/integration/fixtures/ssh-search.ts"),
         "builtin:codemode",
       ],
-      tools: ["search", "ast_search", "replace", "read", "codemode"],
+      tools: ["search", "ast_search", "replace", "read", "outline", "codemode"],
       timeoutMs: 60000,
       conversation: [
         assistantMessage([
@@ -115,13 +115,13 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
           }),
         ]),
         assistantMessage([
-          toolCall({ id: "outline", name: "read", arguments: { path: `ast:${outlineFile}` } }),
+          toolCall({ id: "outline", name: "outline", arguments: { path: outlineFile } }),
         ]),
         assistantMessage([
           toolCall({
             id: "unknown-outline",
-            name: "read",
-            arguments: { path: "ast:ssh://unknown/tmp/outline.ts" },
+            name: "outline",
+            arguments: { path: "ssh://unknown/tmp/outline.ts" },
           }),
         ]),
         assistantMessage([text("Verified.")]),

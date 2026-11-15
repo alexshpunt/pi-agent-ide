@@ -75,7 +75,7 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
       { id: "read", name: "read", arguments: { path: "example.ts" } },
       { id: "docs-list", name: "read", arguments: { path: "docs:" } },
       { id: "docs-guide", name: "read", arguments: { path: "docs:terminal" } },
-      { id: "ast", name: "read", arguments: { path: "ast:example.ts" } },
+      { id: "ast", name: "outline", arguments: { path: "example.ts" } },
       { id: "search", name: "search", arguments: { query: "startupMarker", path: "example.ts" } },
       {
         id: "edit",
@@ -101,7 +101,7 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
       cwd: directory,
       extensions: [entry, probe],
       isolateUserResources: true,
-      tools: ["read", "search", "replace", "package_config_probe"],
+      tools: ["read", "outline", "search", "replace", "package_config_probe"],
       conversation: [
         ...calls.map((call) => assistantMessage([toolCall(call)], { stopReason: "toolUse" })),
         assistantMessage([text("Done")]),
