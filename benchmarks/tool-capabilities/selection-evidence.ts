@@ -32,6 +32,28 @@ export function searchValue(end: RunEvent): Record<string, unknown> {
   const value = record(end.result?.structuredContent);
   return Array.isArray(value.matches) ? value : record(value.data);
 }
+/** Search match references identify their owning file even when the query has several sources. */
+export function searchSources(value: unknown, end: RunEvent): string[] | undefined {
+  const data = searchValue(end);
+  if (!Array.isArray(data.matches)) return undefined;
+  const reference = ids(value)[0];
+  const direct = reference && /^SEARCH#[A-F0-9]+:(\d+):(line|match)$/u.exec(reference);
+  const selected = data.matches.filter((entry, index) => {
+    const match = record(entry);
+    const refs = record(match.references);
+    return (
+      names(value, match.id ?? match.target) ||
+      (reference !== undefined && (reference === refs.line || reference === refs.match)) ||
+      (direct && Number(direct[1]) === index + 1 && resultText(end).includes(reference))
+    );
+  });
+  if (!selected.length) return undefined;
+  return selected.flatMap((entry) => {
+    const match = record(entry);
+    const path = match.path ?? match.source;
+    return typeof path === "string" ? [path] : [];
+  });
+}
 /** Keep whole-result authority distinct from an individual match in a larger selection. */
 export function wholeSearchSelection(value: unknown, end: RunEvent): boolean {
   const data = searchValue(end);

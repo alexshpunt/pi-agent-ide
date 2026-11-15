@@ -3,6 +3,7 @@ import {
   exactSelection,
   issuedAnchor,
   issuedSelection,
+  searchSources,
   wholeSearchSelection,
   type SelectionIssuer,
 } from "./selection-evidence.ts";
@@ -441,6 +442,10 @@ export function validateRoute(
         )
       )
         continue;
+      if ((aliases[prior.event.toolName ?? ""] ?? prior.event.toolName) === "search") {
+        const sources = searchSources(value, end.event);
+        if (sources !== undefined) return sources;
+      }
       // A Codemode parent can print a child's id; only a call with a path issued it.
       const source = prior.event.args?.path;
       if (source === undefined) continue;

@@ -284,6 +284,19 @@ for (const mode of ["direct", "codemode"]) {
       args: { path: "task.txt", start: "SEARCH#ABCD:1:line", target: "target.txt" },
     };
     assert.ok(!passed(files, route, [found, copy], mode));
+    const insertRoute: RouteStep[] = [
+      { tool: "search" },
+      {
+        tool: "insert",
+        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, text: "NEW" },
+        reuse: { from: 0, field: "path" },
+      },
+    ];
+    const insert: Call = {
+      tool: "insert",
+      args: { path: "task.txt", anchor: "SEARCH#ABCD:1:line", text: "NEW" },
+    };
+    assert.ok(!passed(files, insertRoute, [found, insert], mode));
     const read: Call = {
       tool: "read",
       args: { path: ["task.txt", "other.txt"], views: ["anchors"] },
