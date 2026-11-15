@@ -3413,13 +3413,38 @@ add(
 );
 
 add(
+  "diagnostics-report",
+  ["diagnostics.file", "compose.diagnostics-read-search", "diagnostics.readonly-report"],
+  "Call diagnostics for problem.ts. Reuse that exact report as path in Read, then reuse the original report as path in Search with query 2322. Attempt Replace with the original report as path, start broken and text changed; it must refuse, not edit the source. Report diagnostic code 2322. Do not change any files. In Codemode check the diagnostics value has text and id, and reuse that value unchanged.",
+  [
+    {
+      tool: "diagnostics",
+      args: { path: "problem.ts" },
+      contains: "typescript-language-server:2322",
+    },
+    { tool: "read", reuse: reuse(0), contains: "typescript-language-server:2322" },
+    { tool: "search", args: { query: "2322" }, reuse: reuse(0), contains: "2322" },
+    { tool: "replace", args: { start: "broken", text: "changed" }, reuse: reuse(0), error: true },
+  ],
+  {
+    files: {
+      "problem.ts": 'export function broken(): number {\n  return "diagnostic";\n}\n',
+      "tsconfig.json": '{"compilerOptions":{"strict":true,"noEmit":true},"include":["*.ts"]}\n',
+      ".pi/pi-agent-ide/extensions.json": '{"flags":{"pi-agent-ide-no-diagnostic-buffer":true}}\n',
+    },
+    expected: { "problem.ts": 'export function broken(): number {\n  return "diagnostic";\n}\n' },
+    answer: "2322",
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+add(
   "rust-diagnostics-no-build",
   ["read.rust-diagnostics-no-build"],
-  "Read src/main.rs with the diagnostics view, then use lsp_search with declaration src/main.rs#main to confirm the Rust server is running. Read diagnostics:src/main.rs. Keep the source and tool configuration unchanged. Do not run Cargo or enable build-backed diagnostics. Report the main function name; an incomplete native diagnostic snapshot is acceptable.",
+  "Read src/main.rs with the diagnostics view, then use lsp_search with declaration src/main.rs#main to confirm the Rust server is running. Call diagnostics with path src/main.rs. Keep the source and tool configuration unchanged. Do not run Cargo or enable build-backed diagnostics. Report the main function name; an incomplete native diagnostic snapshot is acceptable.",
   [
     { tool: "read", args: { path: "src/main.rs", views: ["diagnostics"] } },
     { tool: "lsp_search", args: { declaration: "src/main.rs#main" }, contains: "main" },
-    { tool: "read", args: { path: "diagnostics:src/main.rs" } },
+    { tool: "diagnostics", args: { path: "src/main.rs" } },
   ],
   {
     files: {
@@ -3442,7 +3467,7 @@ add(
 add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
-  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search for the declaration of count and for its calls. Read diagnostics:problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
+  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search for the declaration of count and for its calls. Call diagnostics with path problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
   [
     {
       tool: "lsp_search",
@@ -3459,8 +3484,8 @@ add(
     { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "3" },
     { tool: "lsp_search", args: { calls: /^task.ts(?:#.*)?$/ }, contains: "References" },
     {
-      tool: "read",
-      args: { path: "diagnostics:problem.ts" },
+      tool: "diagnostics",
+      args: { path: "problem.ts" },
       contains: "typescript-language-server:2322",
     },
     {

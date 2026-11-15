@@ -35,7 +35,7 @@ test("pending diagnostics stay explicit in ranged and empty-file views", async (
       testName: "pending-diagnostic-views",
       cwd,
       extensions: extensions.paths,
-      tools: ["read"],
+      tools: ["diagnostics", "read"],
       conversation: [
         assistantMessage(
           [
@@ -83,7 +83,7 @@ test("a formatter's syntax rejection keeps the successful edit saved", async () 
       testName: "syntax-rejection-keeps-edit",
       cwd,
       extensions: extensions.paths,
-      tools: ["replace", "read"],
+      tools: ["diagnostics", "replace", "read"],
       conversation: [
         assistantMessage(
           [
@@ -122,7 +122,7 @@ test("real Pi receives immediate findings during edits while empty and stale rep
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: extensions.paths,
-      tools: ["read", "replace", "diagnostic_control"],
+      tools: ["diagnostics", "read", "replace", "diagnostic_control"],
       rawMode: false,
       conversation: [
         edit("edit-a", "initial", "A"),
@@ -131,12 +131,12 @@ test("real Pi receives immediate findings during edits while empty and stale rep
         edit("edit-b", "A", "B"),
         call("partial", "diagnostic_control", { action: "partial" }),
         call("complete", "diagnostic_control", { action: "complete" }),
-        call("focused", "read", { path: "diagnostics:example.ts" }),
+        call("focused", "diagnostics", { path: "example.ts" }),
         call("annotated", "read", { path: "example.ts", views: ["diagnostics"] }),
         call("repeat", "diagnostic_control", { action: "repeat" }),
         edit("edit-c", "B", "C"),
         call("clear", "diagnostic_control", { action: "clear" }),
-        call("clean", "read", { path: "diagnostics:example.ts" }),
+        call("clean", "diagnostics", { path: "example.ts" }),
         assistantMessage([text("Finished the diagnostic scenario.")]),
       ],
     }).run("Edit and format the file, then inspect diagnostics when ready.");
