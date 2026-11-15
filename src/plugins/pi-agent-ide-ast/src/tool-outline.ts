@@ -35,20 +35,21 @@ export function registerOutlineTool(
         name: "outline",
         label: "outline",
         exposure: "direct",
-        namespace: { name: "ide_outline", description: "Inspect syntax." },
+        namespace: { name: "ide_outline", description: "Inspect code declarations." },
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
           idempotentHint: true,
           openWorldHint: false,
         },
-        description: "Read signatures from a source file.",
-        promptSnippet: "Inspect file structure",
+        description:
+          "Use outline to inspect a file's declarations without reading their implementations. Reuse its result in read, search, ast_search or edit tools to select the original source lines.",
+        promptSnippet: "Inspect a local or SSH file's declaration outline",
         parameters: Type.Object(
           {
             path: Type.String({
               minLength: 1,
-              description: "Source filename.",
+              description: "Local file path or ssh://<target>/absolute/path.",
             }),
           },
           { additionalProperties: false },
@@ -70,7 +71,8 @@ export function registerOutlineTool(
           const current = runtime();
           let result: ReadToolResult;
           try {
-            if (current === undefined) throw new Error("Reader unavailable.");
+            if (current === undefined)
+              throw new Error("outline needs the Read module (read.core), which is not loaded.");
             let snapshot: Extract<ReadScriptData, { kind: "text" }> | undefined;
             const resolver = createAstOutlineResolver(
               undefined,
@@ -81,7 +83,9 @@ export function registerOutlineTool(
                   owned.script?.kind !== "text" ||
                   owned.script.entries !== undefined
                 )
-                  throw new Error(owned.details.failure?.message ?? "Need text input.");
+                  throw new Error(
+                    owned.details.failure?.message ?? "Outline requires an owned text file.",
+                  );
                 snapshot = owned.script;
                 return {
                   source: snapshot.source,
@@ -165,7 +169,7 @@ function ownedReader(api: ReadToolPluginApi, source: string, cwd: string) {
       "script",
     );
     if (result.isError || result.script?.kind !== "text" || result.script.source !== source)
-      throw new Error("Source verification unavailable.");
+      throw new Error("Could not verify the outline's owning source; repeat outline.");
     return result.script.content;
   };
 }
