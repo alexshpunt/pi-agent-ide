@@ -6,7 +6,7 @@ import { fileSearchValue } from "./file-search.ts";
 import { insertValue } from "./insert.ts";
 import { lspSearchValue } from "./lsp-search.ts";
 import { moveValue } from "./move.ts";
-import { readValue } from "./read.ts";
+import { readValue, textReadValue } from "./read.ts";
 import { replaceValue } from "./replace.ts";
 import { searchValue } from "./search.ts";
 import { semanticSearchValue } from "./semantic-search.ts";
@@ -21,6 +21,7 @@ export type { ScriptValue, ScriptValueInput } from "./types.ts";
 /** IDE tools with their own Codemode value. Every other IDE tool resolves to its result string. */
 const values: Readonly<Record<string, ScriptValue>> = {
   read: readValue,
+  diagnostics: textReadValue,
   search: searchValue,
   ast_search: astSearchValue,
   lsp_search: lspSearchValue,

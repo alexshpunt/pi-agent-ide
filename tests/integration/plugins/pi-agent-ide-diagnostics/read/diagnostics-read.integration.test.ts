@@ -31,7 +31,7 @@ afterAll(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
-test("diagnostics source combines lint and LSP with context and normal ranges", async () => {
+test("diagnostics tool combines lint and LSP with source context", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "diagnostics.js";
     const source = [
@@ -61,24 +61,14 @@ test("diagnostics source combines lint and LSP with context and normal ranges", 
       testName: "read-combined-diagnostics",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read"],
+      tools: ["diagnostics", "read"],
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "read-diagnostics-source",
-              name: "read",
-              arguments: { path: `diagnostics:${fileName}`, views: ["anchors"] },
-            }),
-          ],
-          { stopReason: "toolUse" },
-        ),
-        assistantMessage(
-          [
-            toolCall({
-              id: "read-diagnostics-range",
-              name: "read",
-              arguments: { path: `diagnostics:${fileName}`, offset: 2, limit: 3 },
+              name: "diagnostics",
+              arguments: { path: fileName },
             }),
           ],
           { stopReason: "toolUse" },
@@ -125,19 +115,11 @@ test("diagnostics source combines lint and LSP with context and normal ranges", 
     expect(focused).toContain("eslint_d:no-console");
     expect(focused).toContain("<!-- tsc:");
     expect(focused).toContain("tsc:2352");
-    expect(focused).toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|.*<!-- eslint_d:/mu);
-    expect(focused).toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|.*<!-- tsc:/mu);
 
     const focusedMessage = getToolResultMessage(result, "read-diagnostics-source");
-    expect((focusedMessage.details as { readonly source?: string }).source).toMatch(
-      /^diagnostics:\/.*\/diagnostics\.js$/u,
-    );
-
-    const ranged = getToolResultText(result, "read-diagnostics-range");
-    expect(ranged).toContain("// context 3");
-    expect(ranged).toContain("// context 5");
-    expect(ranged).not.toContain("// context 2");
-    expect(ranged).not.toContain("// context 6");
+    expect(focusedMessage.details).toMatchObject({
+      diagnosticCheck: { complete: true, count: 2 },
+    });
 
     const annotated = getToolResultText(result, "read-diagnostics-view");
     expect(annotated).toContain("<!-- eslint_d:");
