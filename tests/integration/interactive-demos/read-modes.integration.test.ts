@@ -124,7 +124,7 @@ test("shows included views once in the real read panel", async () => {
       testName: "interactive-demo-read-views",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read", "outline"],
+      tools: ["read"],
       rawMode: false,
       conversation: [
         assistantMessage(
@@ -162,7 +162,7 @@ test("wraps a long source line in the real read panel", async () => {
       testName: "interactive-demo-read-word-wrap",
       cwd: directory,
       extensions: [toolBackgroundTheme, ...generatedExtensions.paths],
-      tools: ["read", "outline"],
+      tools: ["read"],
       rawMode: false,
       conversation: [
         assistantMessage(

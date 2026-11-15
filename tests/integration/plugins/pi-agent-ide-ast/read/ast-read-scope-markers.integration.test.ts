@@ -49,7 +49,7 @@ test("read shows AST scope markers without changing the source", async () => {
       testName: "read-ast-scope-markers",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read", "outline"],
+      tools: ["read"],
       conversation: [
         assistantMessage(
           [
@@ -153,7 +153,7 @@ test("range projection keeps only selected source lines and their visible marker
       testName: "read-ast-scope-markers-range",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read", "outline"],
+      tools: ["read"],
       conversation: [
         assistantMessage(
           [
