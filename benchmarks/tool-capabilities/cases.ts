@@ -130,7 +130,12 @@ add(
     { tool: "demo_read", args: { path: "local.txt" }, error: true },
     { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
     { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },
-    { tool: "demo_read", args: { path: "memory://demo/note" }, contains: "changed\nomega", after: [3, 4, 5, 6] },
+    {
+      tool: "demo_read",
+      args: { path: "memory://demo/note" },
+      contains: "changed\nomega",
+      after: [3, 4, 5, 6],
+    },
   ],
   {
     setup: "standalone-resource",
@@ -1285,7 +1290,11 @@ add(
   ["edit.grouped-file-count"],
   "In one native Codemode script, sequentially read lines 1, 2, then 3 of task.txt as one-line windows (offset and limit 1) and replace each issued Read result with NEW followed by a newline. Await each replacement before reading the next line so each gets a fresh snapshot. Inspect the final editor summary: it must report three replacements in one file, not three files.",
   [1, 2, 3].flatMap((line, index): RouteStep[] => [
-    { tool: "read", args: { path: "task.txt", offset: line, limit: 1 }, ...(index > 0 && { after: [index * 2 - 1] }) },
+    {
+      tool: "read",
+      args: { path: "task.txt", offset: line, limit: 1 },
+      ...(index > 0 && { after: [index * 2 - 1] }),
+    },
     {
       tool: "replace",
       args: { text: "NEW\n" },
@@ -2216,7 +2225,12 @@ add(
       args: { path: "fixture://saved-canonicalized/content", content: "changed\n" },
       contains: "CHANGED",
     },
-    { tool: "read", args: { path: "fixture://saved-canonicalized/content" }, contains: "CHANGED", after: [0] },
+    {
+      tool: "read",
+      args: { path: "fixture://saved-canonicalized/content" },
+      contains: "CHANGED",
+      after: [0],
+    },
     {
       tool: "write",
       args: { path: "fixture://saved-readback/content", content: "updated\n" },
@@ -2225,7 +2239,12 @@ add(
       contains: "READBACK",
       excludes: "Write outcome unknown.",
     },
-    { tool: "read", args: { path: "fixture://saved-readback/content" }, contains: "updated", after: [2] },
+    {
+      tool: "read",
+      args: { path: "fixture://saved-readback/content" },
+      contains: "updated",
+      after: [2],
+    },
   ],
   {
     setup: "write-effects",
@@ -3287,7 +3306,11 @@ add(
       error: true,
       contains: "VS Code",
     },
-    { tool: "debug", args: { backend: "native", adapter: "debugpy", program: "task.py" }, after: [0] },
+    {
+      tool: "debug",
+      args: { backend: "native", adapter: "debugpy", program: "task.py" },
+      after: [0],
+    },
     { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] }, after: [1] },
     {
       tool: "insert",

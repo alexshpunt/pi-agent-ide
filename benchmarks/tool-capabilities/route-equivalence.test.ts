@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import { capabilityCases } from "./cases.ts";
-import { validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
+import { checkCoverage, validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
 
 interface Call {
   tool: string;
@@ -215,26 +215,51 @@ for (const mode of ["direct", "codemode"]) {
   void test(`lsp-read accepts a recovered references call after independent operations in ${mode}`, () => {
     const route = steps("lsp-read");
     const query: Call = {
-      tool: "lsp_search", args: { path: "task.ts", query: "count" },
-      text: `<uuid>${uuid}</uuid>\ncount`, value: { id: result },
+      tool: "lsp_search",
+      args: { path: "task.ts", query: "count" },
+      text: `<uuid>${uuid}</uuid>\ncount`,
+      value: { id: result },
     };
     const references: Call = {
-      tool: "lsp_search", args: { path: result, query: "count", references: true }, text: "count",
+      tool: "lsp_search",
+      args: { path: result, query: "count", references: true },
+      text: "count",
     };
     const independent: Call[] = [
       { tool: "lsp_search", args: { declaration: "task.ts#count" }, text: "3" },
       { tool: "lsp_search", args: { calls: "task.ts#count" }, text: "References" },
-      { tool: "read", args: { path: "diagnostics:problem.ts" }, text: "typescript-language-server:2322" },
-      { tool: "read", args: { path: "problem.ts", views: ["diagnostics"] }, text: "typescript-language-server:2322" },
+      {
+        tool: "read",
+        args: { path: "diagnostics:problem.ts" },
+        text: "typescript-language-server:2322",
+      },
+      {
+        tool: "read",
+        args: { path: "problem.ts", views: ["diagnostics"] },
+        text: "typescript-language-server:2322",
+      },
     ];
     const recovered = [query, { ...references, error: true }, ...independent, references];
     assert.ok(check(route, recovered, mode));
     assert.ok(check(route, [...independent.toReversed(), query, references], mode));
     for (const call of [query, references, ...independent]) {
-      assert.ok(!check(route, recovered.filter((entry) => entry !== call), mode), call.tool);
+      assert.ok(
+        !check(
+          route,
+          recovered.filter((entry) => entry !== call),
+          mode,
+        ),
+        call.tool,
+      );
     }
     assert.ok(!check(route, [references, ...independent, query], mode));
-    assert.ok(!check(route, [query, ...independent, { ...references, args: { ...references.args, path: "task.ts" } }], mode));
+    assert.ok(
+      !check(
+        route,
+        [query, ...independent, { ...references, args: { ...references.args, path: "task.ts" } }],
+        mode,
+      ),
+    );
   });
 
   void test(`independent requirements need distinct successful executions in ${mode}`, () => {
@@ -247,26 +272,44 @@ for (const mode of ["direct", "codemode"]) {
     const write: Call = { tool: "write", args: { path: "task.txt", content: "new" } };
     assert.ok(check(ordered, [write, read], mode));
     assert.ok(!check(ordered, [read, write], mode));
-    const skipped: RouteStep[] = [{ tool: "write", modes: ["other"] }, ordered[1] ?? { tool: "read" }];
+    const skipped: RouteStep[] = [
+      { tool: "write", modes: ["other"] },
+      ordered[1] ?? { tool: "read" },
+    ];
     assert.ok(!check(skipped, [write, read], mode));
   });
 }
 
 void test("parallel requirements accept either start order but never disjoint executions", () => {
   const route: RouteStep[] = [{ tool: "read" }, { tool: "search", parallelWith: 0 }];
-  const calls: Call[] = [{ tool: "read", args: {} }, { tool: "search", args: {} }];
+  const calls: Call[] = [
+    { tool: "read", args: {} },
+    { tool: "search", args: {} },
+  ];
   const entries = events(calls, "codemode");
   const [parent, readStart, readEnd, searchStart, searchEnd, parentEnd] = entries;
   assert.ok(parent && readStart && readEnd && searchStart && searchEnd && parentEnd);
   for (const middle of [
     [readStart, searchStart, readEnd, searchEnd],
     [searchStart, readStart, searchEnd, readEnd],
-  ]) assert.ok(validateRoute({ steps: route }, [parent, ...middle, parentEnd], "codemode").passed);
+  ])
+    assert.ok(validateRoute({ steps: route }, [parent, ...middle, parentEnd], "codemode").passed);
   for (const middle of [
     [readStart, readEnd, searchStart, searchEnd],
     [searchStart, searchEnd, readStart, readEnd],
-  ]) assert.ok(!validateRoute({ steps: route }, [parent, ...middle, parentEnd], "codemode").passed);
+  ])
+    assert.ok(!validateRoute({ steps: route }, [parent, ...middle, parentEnd], "codemode").passed);
 });
+void test("the free gate rejects invalid or forward explicit dependencies", () => {
+  const task = { id: "dependency-fixture", capabilities: [], modes: ["direct"], steps: [
+    { tool: "write" }, { tool: "read", after: [0] },
+  ] };
+  assert.deepEqual(checkCoverage([], [task], []), []);
+  for (const after of [[-1], [1], [2], [0.5]]) {
+    assert.equal(checkCoverage([], [{ ...task, steps: [task.steps[0] ?? { tool: "write" }, { tool: "read", after }] }], []).length, 1);
+  }
+});
+
 const deferredCalls = [
   { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, text: "probe(1)" },
   { tool: "lsp_search", args: { query: "probe" }, text: "task.ts#probe" },

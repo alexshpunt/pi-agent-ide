@@ -531,9 +531,7 @@ export function validateRoute(
       const from = lines[offset - 1];
       if (from === undefined) continue;
       const to =
-        limit === undefined
-          ? content.length
-          : (lines[offset - 1 + limit] ?? content.length);
+        limit === undefined ? content.length : (lines[offset - 1 + limit] ?? content.length);
       return { content, selection: { content, from, to } };
     }
     return { content };
@@ -608,21 +606,29 @@ export function validateRoute(
   function walk(
     stepIndex: number,
     // A step that another route skips leaves its slot empty; steps reusing it cannot match.
-    selected: ({ event: RunEvent; start: number; end: number; parent?: string; call?: string } | undefined)[],
+    selected: (
+      | { event: RunEvent; start: number; end: number; parent?: string; call?: string }
+      | undefined
+    )[],
   ): boolean {
     furthest = Math.max(furthest, stepIndex);
     const step = task.steps[stepIndex];
     if (!step) return true;
-    if (!routeStepApplies(step, mode))
-      return walk(stepIndex + 1, [...selected, undefined]);
+    if (!routeStepApplies(step, mode)) return walk(stepIndex + 1, [...selected, undefined]);
     // In Codemode, a native text call either fails at once, such as one with a result-bound
     // selector, or is accepted into a batch whose commit fails its parent.
     const acceptedOrFailed = step.error === "direct" && mode === "codemode";
     const dependencies = [
       ...(step.after ?? []),
-      ...task.steps.slice(0, stepIndex).flatMap((prior, index) =>
-        mode === "direct" && prior.tool === "tool_search" &&
-        (!prior.discovers || prior.discovers.includes(step.tool)) ? [index] : []),
+      ...task.steps
+        .slice(0, stepIndex)
+        .flatMap((prior, index) =>
+          mode === "direct" &&
+          prior.tool === "tool_search" &&
+          (!prior.discovers || prior.discovers.includes(step.tool))
+            ? [index]
+            : [],
+        ),
     ];
     for (const start of starts) {
       const event = start.event;
@@ -635,7 +641,8 @@ export function validateRoute(
         (!acceptedOrFailed && end.event.isError !== Boolean(step.error))
       )
         continue;
-      if (dependencies.some((index) => !selected[index] || selected[index].end >= start.index)) continue;
+      if (dependencies.some((index) => !selected[index] || selected[index].end >= start.index))
+        continue;
       const execution = executionParent(start);
       if (!execution) continue;
       if (step.discovers) {
@@ -797,7 +804,13 @@ export function validateRoute(
       if (
         walk(stepIndex + 1, [
           ...selected,
-          { event: end.event, start: start.index, end: end.index, parent: execution.parent, call: execution.call },
+          {
+            event: end.event,
+            start: start.index,
+            end: end.index,
+            parent: execution.parent,
+            call: execution.call,
+          },
         ])
       )
         return true;
