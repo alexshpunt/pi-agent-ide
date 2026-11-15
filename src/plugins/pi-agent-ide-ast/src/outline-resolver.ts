@@ -62,7 +62,7 @@ function resolveAstOutlineSource(
           outline = await outlineManager.readDocumentOutline(
             snapshot.source,
             context.cwd,
-            snapshot.lines,
+            snapshot.lines.length === 0 ? [""] : snapshot.lines,
           );
         } else {
           if (filePath.startsWith("ssh://"))
