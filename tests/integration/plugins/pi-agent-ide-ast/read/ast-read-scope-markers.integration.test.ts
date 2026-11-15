@@ -80,7 +80,7 @@ test("read shows AST scope markers without changing the source", async () => {
   });
 }, 60_000);
 
-test("ast source returns a compressed outline with original file anchors", async () => {
+test("outline returns a compressed outline with original file anchors", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "outline.ts";
     const file = path.join(directory, fileName);
@@ -104,14 +104,14 @@ test("ast source returns a compressed outline with original file anchors", async
       testName: "read-ast-outline-source",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read"],
+      tools: ["read", "outline"],
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "read-ast-outline-source",
-              name: "read",
-              arguments: { path: `ast:${fileName}`, views: ["anchors"] },
+              name: "outline",
+              arguments: { path: fileName },
             }),
           ],
           { stopReason: "toolUse" },
@@ -182,7 +182,7 @@ test("range projection keeps only selected source lines and their visible marker
   });
 }, 60_000);
 
-test("ast source outlines a language shared with LSP and debugger", async () => {
+test("outline supports a language shared with LSP and debugger", async () => {
   await withTempDirectory(async (directory) => {
     const fileName = "main.go";
     await writeFile(
@@ -196,14 +196,14 @@ test("ast source outlines a language shared with LSP and debugger", async () => 
       testName: "read-native-ast-outline-source",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read"],
+      tools: ["read", "outline"],
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "read-native-ast-outline-source",
-              name: "read",
-              arguments: { path: `ast:${fileName}`, views: ["anchors", "ast"] },
+              name: "outline",
+              arguments: { path: fileName },
             }),
           ],
           { stopReason: "toolUse" },

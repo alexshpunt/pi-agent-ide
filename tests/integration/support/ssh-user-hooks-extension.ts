@@ -23,8 +23,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
         audience: event.audience,
         resolvedBy: event.resolvedBy,
       });
-      if (!/^(?:raw:|ast:)?ssh:\/\/fixture\//u.test(event.resourceSource))
-        return { decision: "allow" };
+      if (!/^(?:raw:)?ssh:\/\/fixture\//u.test(event.resourceSource)) return { decision: "allow" };
       if (event.resourceSource.endsWith("/throw.txt")) throw new Error("Owned read hook refused");
       return /\/secret\.(?:json|ts)$/u.test(event.resourceSource)
         ? { decision: "deny", reason: "Owned remote content is blocked" }

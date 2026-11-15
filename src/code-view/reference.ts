@@ -1,7 +1,11 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+<<<<<<< HEAD
 export type CodeViewScheme = "ast" | "graph";
+=======
+export type CodeViewScheme = "symbol" | "graph";
+>>>>>>> origin/develop
 
 export interface CodeViewReference {
   readonly scheme: CodeViewScheme;
@@ -30,12 +34,17 @@ export function parseCodeViewReference(
   const filePath = decodePart(encodedPath, `${scheme}: path`);
   const encodedSelector = fragmentAt === -1 ? undefined : value.slice(fragmentAt + 1);
 
+<<<<<<< HEAD
   if (scheme === "ast") {
     if (encodedSelector !== undefined) {
       throw new TypeError("ast: accepts only a file path and does not accept a symbol selector.");
     }
 
     return { scheme, path: filePath };
+=======
+  if (scheme === "symbol" && encodedSelector === undefined) {
+    throw new TypeError("symbol: requires #<symbol-selector> after the file path.");
+>>>>>>> origin/develop
   }
 
   if (encodedSelector === undefined) {

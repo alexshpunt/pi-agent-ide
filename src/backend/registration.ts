@@ -35,9 +35,10 @@ export async function registerSshResources(
     id: "ssh",
     description: "Set up SSH targets and use remote resources",
     triggers: [
-      { tool: "read", resourcePrefixes: ["ssh://", "raw:ssh://", "ast:ssh://", "web:ssh://"] },
+      { tool: "read", resourcePrefixes: ["ssh://", "raw:ssh://", "web:ssh://"] },
       { tool: "search", resourcePrefixes: ["ssh://", "web:ssh://"] },
       { tool: "debug", resourcePrefixes: ["ssh://"] },
+      { tool: "outline", resourcePrefixes: ["ssh://"] },
       ...["write", "replace", "insert", "delete", "copy", "move", "stage", "unstage", "undo"].map(
         (tool) => ({
           tool,

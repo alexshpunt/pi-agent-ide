@@ -130,6 +130,12 @@ export interface ReadTool {
     context: ResourceResolverContext,
     audience?: "agent" | "script",
   ): Promise<ReadToolResult>;
+  executeWith(
+    resolver: ResourceResolver,
+    request: ReadRequest,
+    context: ResourceResolverContext,
+    audience?: "agent" | "script",
+  ): Promise<ReadToolResult>;
   registerContributions(pluginId: string, contributions: ReadToolContributions): void;
   dispose(): Promise<void>;
 }
@@ -283,6 +289,22 @@ export function createReadTool(
         request,
         context,
         resolvers,
+        handlers,
+        views,
+        temporaryResources,
+        fragments,
+        targetResolvers,
+        resourceGuards,
+        audience,
+        outputSaver,
+      );
+      return withReadCancellation(result, request.path, context.signal);
+    },
+    async executeWith(resolver, request, context, audience = "agent") {
+      const result = await executeRead(
+        request,
+        context,
+        [{ resolver, preserveTruncatedOutput: false, priority: 0, order: 0 }],
         handlers,
         views,
         temporaryResources,
