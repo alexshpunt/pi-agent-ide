@@ -136,7 +136,7 @@ export interface RouteStep {
   after?: readonly number[];
   /** Require overlap with an earlier step's execution in the same native Codemode script. */
   parallelWith?: number;
-  /** Require two direct tool calls in the same completed assistant message, not a retry. */
+  /** Require one direct assistant message or overlapping children of one native script. */
   sameAssistantWith?: number;
   /** At least one reviewed argument variant must match, in addition to args. */
   argsAny?: Record<string, unknown>[];
@@ -555,8 +555,22 @@ export function validateRoute(
     if (content === undefined) return {};
     const selector = actual.anchor ?? actual.start;
     if (selector !== undefined) {
-      const first = wholeLineSelection(content, selector);
-      const last = actual.end === undefined ? first : wholeLineSelection(content, actual.end);
+      const issuers = selectionIssuers(file, before);
+      const whole = (value: unknown): LineSelection | undefined => {
+        const selected =
+          wholeLineSelection(content, value) ??
+          issuedSelection(content, value, issuers, (source) =>
+            matches({ path: file }, { path: source }),
+          );
+        // Issued inline matches cannot supply a whole line's terminal separator.
+        return selected &&
+          (selected.from === 0 || content[selected.from - 1] === "\n") &&
+          (selected.to === content.length || content[selected.to - 1] === "\n")
+          ? selected
+          : undefined;
+      };
+      const first = whole(selector);
+      const last = actual.end === undefined ? first : whole(actual.end);
       if (first && last && first.from <= last.from)
         return { content, selection: { content, from: first.from, to: last.to } };
     }
@@ -626,6 +640,15 @@ export function validateRoute(
     if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
       normalized.offset = 1;
     if (tool === "insert" && normalized.before === undefined) normalized.before = false;
+    // Read views are requirements, not positional output fields; other arrays stay ordered.
+    const views = normalized.views;
+    if (
+      tool === "read" &&
+      Array.isArray(expected.views) &&
+      Array.isArray(views) &&
+      expected.views.every((required) => views.some((view) => matches(required, view)))
+    )
+      normalized.views = expected.views;
     if (matches(expected, normalized)) return true;
     // One Read may include other sources, but must satisfy every required argument on that call.
     if (
@@ -878,19 +901,22 @@ export function validateRoute(
       if (step.sameAssistantWith !== undefined) {
         const prior = selected[step.sameAssistantWith];
         if (
-          mode !== "direct" ||
           prior === undefined ||
-          !events.some(
-            (entry) =>
-              entry.type === "message_end" &&
-              entry.message?.role === "assistant" &&
-              entry.message.content?.some(
-                (block) => block.type === "toolCall" && block.id === execution.call,
-              ) &&
-              entry.message.content.some(
-                (block) => block.type === "toolCall" && block.id === prior.call,
-              ),
-          )
+          (mode === "codemode"
+            ? start.index >= prior.end ||
+              end.index <= prior.start ||
+              prior.parent !== execution.parent
+            : !events.some(
+                (entry) =>
+                  entry.type === "message_end" &&
+                  entry.message?.role === "assistant" &&
+                  entry.message.content?.some(
+                    (block) => block.type === "toolCall" && block.id === execution.call,
+                  ) &&
+                  entry.message.content.some(
+                    (block) => block.type === "toolCall" && block.id === prior.call,
+                  ),
+              ))
         )
           continue;
       }
