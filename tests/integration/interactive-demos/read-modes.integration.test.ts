@@ -13,6 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
+import { isLineAnchor } from "pi-agent-text";
 
 import { generateReadExtensions } from "pi-agent-read/testing";
 import {
@@ -146,7 +147,9 @@ test("shows included views once in the real read panel", async () => {
     const rendered = stripTerminalSequences(result.tuiRenderedOutput);
     const panel = rendered.slice(rendered.lastIndexOf("╭─"));
 
-    expect(firstProjectedLine).toMatch(/^1#[A-F\d]+\|alpha$/u);
+    const [anchor, content] = firstProjectedLine.split("|");
+    expect(isLineAnchor(anchor ?? "")).toBe(true);
+    expect(content).toBe("alpha");
     expect(panel).toContain(firstProjectedLine);
   });
 });
