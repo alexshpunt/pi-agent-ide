@@ -8,6 +8,36 @@ import { expect, test, vi } from "vitest";
 import { createIdeTextResults } from "./text-results.ts";
 import { textValue } from "./script-values/text.ts";
 
+// Display-only batch arguments must not acquire source fields that no call supplied.
+test.each(["insert", "delete", "copy", "move"])(
+  "%s display preserves absent source fields",
+  (name) => {
+    let registered: ToolDefinition | undefined;
+    const stub: Partial<ExtensionAPI> = {
+      events: createEventBus(),
+      on: () => () => {},
+      registerTool: (definition) => {
+        registered = definition as ToolDefinition;
+      },
+    };
+    const ide = createIdeTextResults(stub as ExtensionAPI);
+    const renderCall = vi.fn((_args: unknown) => ({ render: () => [], invalidate: () => {} }));
+    ide.api.registerTool({
+      name,
+      label: name,
+      description: "fixture",
+      parameters: Type.Object({}),
+      execute: async () => ({ content: [], details: {} }),
+      renderCall,
+    });
+    const args = { text: "fixture" };
+    if (!registered?.renderCall) throw new Error("No call renderer");
+    registered.renderCall(args, undefined as never, undefined as never);
+    expect(renderCall.mock.calls[0]?.[0]).toStrictEqual(args);
+    expect(args).toEqual({ text: "fixture" });
+  },
+);
+
 test("a throwing projection returns null and reports the failure without exposing the private record", async () => {
   type Handler = (event: unknown, context: unknown) => unknown;
   const handlers = new Map<string, Handler>();
