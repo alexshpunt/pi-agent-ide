@@ -515,11 +515,41 @@ export function validateRoute(
       reusedPaths(reference, before).some((path) => fixturePath(path) === fixturePath(file))
     );
   }
+  /** Direct editor receipts identify calls planned against one shared snapshot. */
+  function sharesDirectSnapshot(prior: RunEvent, current: RunEvent | undefined): boolean {
+    if (
+      mode !== "direct" ||
+      !current ||
+      !["replace", "insert", "delete", "copy", "move"].includes(prior.toolName ?? "")
+    )
+      return false;
+    const first = ends.get(prior.toolCallId ?? "")?.event;
+    const second = ends.get(current.toolCallId ?? "")?.event;
+    if (first?.isError !== false || second?.isError !== false) return false;
+    type Receipt = { agenticIdeBatch?: { batchId?: string; calls?: ({ id?: string } | null)[] } };
+    const batch = (first.result?.details as Receipt | undefined)?.agenticIdeBatch;
+    const peer = (second.result?.details as Receipt | undefined)?.agenticIdeBatch;
+    const calls = batch?.calls;
+    return (
+      typeof batch?.batchId === "string" &&
+      batch.batchId.length > 0 &&
+      isDeepStrictEqual(batch, peer) &&
+      Array.isArray(calls) &&
+      [prior.toolCallId, current.toolCallId].every(
+        (id) => typeof id === "string" && calls.some((call) => call?.id === id),
+      )
+    );
+  }
   /** An edit overlapping or following the witness makes its source snapshot unsafe. */
   function sourceChanged(file: string, before: number, after = -1): boolean {
     for (const prior of starts) {
       const end = ends.get(prior.event.toolCallId ?? "");
-      if (prior.index >= before || (end && (end.index <= after || end.event.isError))) continue;
+      if (
+        prior.index >= before ||
+        (end && (end.index <= after || end.event.isError)) ||
+        sharesDirectSnapshot(prior.event, events[before])
+      )
+        continue;
       if (
         !["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(
           aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
