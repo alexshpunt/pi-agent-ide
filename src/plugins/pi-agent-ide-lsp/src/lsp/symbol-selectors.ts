@@ -367,6 +367,8 @@ function ambiguousSelector(
   );
 }
 
+/** A missing selector, distinct from ambiguity or a language-server failure. */
+export class SymbolNotFoundError extends Error {}
 function symbolNotFound(
   symbols: readonly LspCodeSymbol[],
   selector: readonly string[],
@@ -376,7 +378,7 @@ function symbolNotFound(
   const name = /^[^(]+/u.exec(last)?.[0].trim() ?? last;
   const known = name === last ? [] : declarationsNamed(symbols, name);
   const shown = known.slice(0, 10).map((group) => describeDeclaration(group, displayPath));
-  return new Error(
+  return new SymbolNotFoundError(
     `Symbol "${formatSymbolSelector(selector)}" was not found in ${displayPath}.${shown.length > 0 ? ` Declarations named "${name}": ${shown.join(", ")}.` : ""}`,
   );
 }

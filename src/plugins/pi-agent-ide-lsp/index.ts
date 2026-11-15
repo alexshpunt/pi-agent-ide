@@ -229,15 +229,11 @@ export async function registerLspWithOwner(
             .describeField(
               "path",
               operation === "replace"
-                ? "symbol:<file>#<selector>#name renames the symbol, with the new name in text."
+                ? "For a project-wide rename, use symbol:<file>#<selector>#name with literal #name; put the new identifier in text and omit start/end."
                 : "Also accepts symbol: declaration selectors.",
             );
           if (operation === "replace")
-            api
-              .tool(operation)
-              .describe(
-                "Use replace with a symbol:…#name path to rename a symbol across the project.",
-              );
+            api.tool(operation).describe("Use replace to rename a symbol across the project.");
           api.tool(operation).addHandler({
             stage: "text-pre-edit",
             async handler(state) {

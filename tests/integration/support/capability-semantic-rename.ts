@@ -31,16 +31,21 @@ const rejected = toolCall({
   name: "replace",
   arguments: { path: "symbol:task.ts#count#name", text: "" },
 });
+const malformed = toolCall({
+  id: "malformed-rename",
+  name: "replace",
+  arguments: { path: "symbol:task.ts#count#total", text: "total" },
+});
 const inspect = toolCall({ id: "after-rejection", name: "read", arguments: { path: "task.ts" } });
 const calls =
   mode === "direct"
-    ? [rejected, inspect, read, rename]
+    ? [read, rejected, malformed, inspect, rename]
     : [
         toolCall({
           id: "compose",
           name: "codemode",
           arguments: {
-            code: 'const rejected = (await tools.replace({path:"symbol:task.ts#count#name",text:""})) === null; if(!rejected) throw Error("Invalid rename succeeded"); text(await tools.read({path:"task.ts"})); await tools.lsp_search({declaration:"task.ts#count"}); text(await tools.replace({path:"symbol:task.ts#count#name",text:"total"}));',
+            code: 'await tools.lsp_search({declaration:"task.ts#count"}); const rejected = (await tools.replace({path:"symbol:task.ts#count#name",text:""})) === null; if(!rejected) throw Error("Invalid rename succeeded"); const malformed = (await tools.replace({path:"symbol:task.ts#count#total",text:"total"})) === null; if(!malformed) throw Error("Malformed rename succeeded"); text(await tools.read({path:"task.ts"})); text(await tools.replace({path:"symbol:task.ts#count#name",text:"total"}));',
           },
         }),
       ];
@@ -50,7 +55,8 @@ const run = await new PiIntegrationTest({
   cwd,
   // Use the checkout's pinned host from the read-only source mount, not a global installation.
   piCommand: "/source/node_modules/.bin/pi",
-  transport: "rpc",
+  transport: mode === "direct" ? "tui" : "rpc",
+  rawMode: false,
   timeoutMs: 90_000,
   extensions: ["/source/src/pi-agent-ide.ts", "builtin:codemode"],
   tools: ["read", "lsp_search", "replace", "codemode"],
@@ -77,9 +83,23 @@ console.log(
       .filter((event) => event.isError)
       .map((event) => ({ tool: event.toolName, id: event.toolCallId, text: resultText(event) })),
     errors: calls
-      .filter((call) => call.id !== "rejected-rename" && getToolExecution(run, call.id).isError)
+      .filter(
+        (call) =>
+          !["rejected-rename", "malformed-rename"].includes(call.id) &&
+          getToolExecution(run, call.id).isError,
+      )
       .map((call) => call.id),
     rejectedCount: failed.length,
+    renameHintPaths: failed
+      .filter((event) =>
+        events.some(
+          (start) =>
+            start.type === "tool_execution_start" &&
+            start.toolCallId === event.toolCallId &&
+            start.args?.path === "symbol:task.ts#count#total",
+        ),
+      )
+      .flatMap((event) => resultText(event).match(/symbol:task\.ts#count#name/gu) ?? []),
     unchangedAfterRejection: afterRejection?.result?.content?.some((block) =>
       block.text?.includes(task.files?.["task.ts"]?.trim() ?? ""),
     ),
