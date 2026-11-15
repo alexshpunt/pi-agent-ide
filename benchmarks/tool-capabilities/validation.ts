@@ -342,13 +342,20 @@ function reuses(
         ].map((match) => match[0]);
   return values(value).some((raw) => {
     const candidate = kind === "anchor" ? (issuedAnchor(raw, output) ?? raw) : raw;
+    // A bare selection UUID names the same issued target, not a different source.
+    const references = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u.test(candidate)
+      ? [candidate, `RESULT#${candidate}`]
+      : [candidate];
     return (
       candidate === output ||
-      ids.includes(candidate) ||
-      // A Codemode value issues its own ids, such as the id of each Search match.
-      (["result", "anchor"].includes(kind) && issued.includes(candidate)) ||
-      // `RESULT#<uuid>` names the result whose envelope carries that UUID.
-      (kind === "result" && ids.includes(candidate.replace(/^RESULT#/u, "")))
+      references.some(
+        (reference) =>
+          ids.includes(reference) ||
+          // A Codemode value issues its own ids, such as the id of each Search match.
+          (["result", "anchor"].includes(kind) && issued.includes(reference)) ||
+          // `RESULT#<uuid>` names the result whose envelope carries that UUID.
+          (kind === "result" && ids.includes(reference.replace(/^RESULT#/u, ""))),
+      )
     );
   });
 }
@@ -837,6 +844,7 @@ export function validateRoute(
         visit(prior.result?.structuredContent);
         const lines = resultText(prior)
           .split("\n")
+          .map((line) => line.trimStart())
           .filter((line) => line.startsWith("capture " + name + ": "));
         return reuses(candidate, lines.join("\n"), "result", captures.flatMap(valueIds));
       }

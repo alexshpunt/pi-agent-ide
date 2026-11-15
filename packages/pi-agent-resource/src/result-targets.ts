@@ -88,7 +88,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 5;
+export const RESULT_TARGET_STORE_VERSION = 6;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -405,8 +405,9 @@ export class ResultTargetStore {
       return input;
     }
     const result = this.#results.get(id);
-    // Existing backend selection handles share RESULT# syntax, but never accept an unknown UUID.
-    if (!result && !envelope && input.startsWith(prefix) && this.#entries.has(input)) return input;
+    // Backend selections and published results accept the same UUID forms, but only if issued.
+    const reference = `${prefix}${id}`;
+    if (!result && !envelope && this.#entries.has(reference)) return reference;
     if (!result) throw new Error(unknownReference);
     if (result.cwd !== path.resolve(cwd)) throw new Error("Result belongs to another worktree.");
     if (envelope && createHash("sha256").update(input).digest("hex") !== result.digest)

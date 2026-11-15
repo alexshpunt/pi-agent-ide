@@ -18,6 +18,73 @@ const target: ResultSourceTarget = {
 };
 
 describe("source result targets", () => {
+  const forms = {
+    prefixed: (id: string) => id,
+    uuid: (id: string) => id.slice("RESULT#".length),
+    value: (id: string) => ({ id, path: "/workspace/wrong.txt", ranges: [] }),
+    uuidValue: (id: string) => ({
+      id: id.slice("RESULT#".length),
+      path: "/workspace/wrong.txt",
+      ranges: [],
+    }),
+  };
+
+  for (const [form, reference] of Object.entries(forms)) {
+    test(`${form} preserves whole-result, match and capture selections`, () => {
+      const store = new ResultTargetStore();
+      const match = {
+        ...target,
+        ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 3 } }],
+      };
+      const matchId = store.register([match], "/workspace", false);
+      const captureId = store.register([target], "/workspace");
+      const shown = store.publish(
+        { status: "success", data: { target: matchId } },
+        "Selected match",
+        "/workspace",
+      );
+      const uuid = /<uuid>([a-f\d-]{36})<\/uuid>/u.exec(shown)?.[1];
+      expect(uuid).toBeDefined();
+      for (const [id, expected] of [
+        [`RESULT#${uuid ?? ""}`, { targets: [match], complete: false }],
+        [matchId, { targets: [match], complete: false }],
+        [captureId, { targets: [target], complete: true }],
+      ] as const) {
+        const input = reference(id);
+        expect(store.resolve(input, "/workspace")).toEqual(expected);
+        expect(
+          resultValueReference(
+            store,
+            { id: typeof input === "string" ? input : input.id },
+            "/workspace",
+          ),
+        ).toBe(id === captureId ? captureId : matchId);
+        expect(() => store.resolve(input, "/other-worktree")).toThrow(Error);
+      }
+      store.invalidate(target.source);
+      for (const id of [matchId, captureId, `RESULT#${uuid ?? ""}`])
+        expect(() => store.resolve(reference(id), "/workspace")).toThrow(Error);
+      expect(() =>
+        store.source(reference("RESULT#00000000-0000-4000-8000-000000000000"), "/workspace"),
+      ).toThrow(Error);
+    });
+
+    test(`${form} retains pending, rejection and edit-warning guards`, () => {
+      const store = new ResultTargetStore();
+      const pending = store.reserve("/workspace");
+      expect(() => store.resolve(reference(pending), "/workspace")).toThrow(Error);
+      store.reject(pending, "Cancelled operation");
+      expect(() => store.resolve(reference(pending), "/workspace")).toThrow(Error);
+      const unsafe = store.register([target], "/workspace", false, "Unsafe selection");
+      expect(store.resolve(reference(unsafe), "/workspace")).toEqual({
+        targets: [target],
+        complete: false,
+      });
+      expect(() => store.resolve(reference(unsafe), "/workspace", { forEdit: true })).toThrow(
+        Error,
+      );
+    });
+  }
   test("numbered Search aliases retain registered authority and worktree guards", () => {
     const store = new ResultTargetStore();
     const selected = store.register([target], "/workspace");
