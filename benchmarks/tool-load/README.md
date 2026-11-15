@@ -23,7 +23,7 @@ Each agent needs about 0.7 GB for Pi and 0.4 GB for the harness's terminal emula
 
 Agents are spread round-robin over the selected languages. Each language gets one generated project, and each agent edits its own generated file in it, of the sizes in `--sizes` (default 200, 500 and 1100 KB). With `--shared-file <kb>`, all agents of a language edit one file of that size, each in its own part, as several agents working on one large source file.
 
-Every agent repeats the same step sequence for `--cycles` cycles: read with views, search, replace, insert, delete, copy and move of text, `ast_search`, `lsp_search`, `symbol:` targets, diagnostics reads and a Codemode batch. Each step's result is checked, and the file is checked at the end of each cycle and of the run. A diagnostics read that still finds a checker pending is recorded as a note on the first cycle, when servers start cold, and on a shared file, which can change faster than its server checks it.
+Every agent repeats the same step sequence for `--cycles` cycles: read with views, search, replace, insert, delete, copy and move of text, `ast_search`, `lsp_search` declaration selections, diagnostics reads and a Codemode batch. Each step's result is checked, and the file is checked at the end of each cycle and of the run. A diagnostics read that still finds a checker pending is recorded as a note on the first cycle, when servers start cold, and on a shared file, which can change faster than its server checks it.
 
 `--pause-ms` sets the scripted model's think time before each step. The default 1000 ms is faster than most real model turns, which take several seconds.
 
