@@ -75,16 +75,16 @@ The `compose.shell-first-use-input` and `compose.debug-first-use-controls` capab
 
 Some cases need extra tools. The sandbox sees only `/usr`, `/etc`, `/opt`, and `~/.local/bin` and `~/.local/lib` of the user who runs the matrix. A tool installed elsewhere, such as rustup's `~/.cargo/bin`, stays invisible and its case reports `unavailable`. Each attempt also starts with an empty home, so caches in the host user's home do not reach it.
 
-| Tool                               | Cases                                                                                                                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `typescript-language-server`       | `lsp-read`, `lsp-rename`, `lsp-path-list`, `lsp-calls-script-value`, `deferred-navigation-recovery`, `delete-symbol`, `read-symbol-delete`, `reject-symbol-delete` |
-| `clangd`                           | `lsp-overload-rename`                                                                                                                                              |
-| `jq`                               | `read-jq`, `read-jq-bounded-input`                                                                                                                                 |
-| `cargo` and `rustfmt`              | `rust-style-preservation`                                                                                                                                          |
-| `rust-analyzer` and `cargo clippy` | `rust-diagnostics-no-build`                                                                                                                                        |
-| Python `debugpy`                   | `debug-roundtrip`, `debug-controls`, `debug-backend-fallback`                                                                                                      |
-| ColGREP                            | `semantic-code-search`, `semantic-script-files`                                                                                                                    |
-| Vera                               | `semantic-code-search-vera`, `semantic-vera-refresh`                                                                                                               |
+| Tool                               | Cases                                                                                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `typescript-language-server`       | `lsp-read`, `lsp-rename`, `lsp-path-list`, `lsp-calls-script-value`, `deferred-navigation-recovery`, `read-symbol-delete`, `reject-lsp-declaration` |
+| `clangd`                           | `lsp-overload-rename`                                                                                                                               |
+| `jq`                               | `read-jq`, `read-jq-bounded-input`                                                                                                                  |
+| `cargo` and `rustfmt`              | `rust-style-preservation`                                                                                                                           |
+| `rust-analyzer` and `cargo clippy` | `rust-diagnostics-no-build`                                                                                                                         |
+| Python `debugpy`                   | `debug-roundtrip`, `debug-controls`, `debug-backend-fallback`                                                                                       |
+| ColGREP                            | `semantic-code-search`, `semantic-script-files`                                                                                                     |
+| Vera                               | `semantic-code-search-vera`, `semantic-vera-refresh`                                                                                                |
 
 On Ubuntu 24.04, install the system packages:
 
@@ -218,7 +218,7 @@ A successful edit can resolve to `null` if its output selection cannot be verifi
 
 The `search-path-list` and `lsp-path-list` cases pass two directories as one `path` list to `search`, `file_search`, `ast_search` and `lsp_search`, in either order, and require that a third directory stays out of the results; `lsp-path-list` needs typescript-language-server. Overlapping paths, mixed lists of paths and results, and lists of SSH paths are covered by the focused `search-path-list` and `ssh-search-path-list` integration cases, not a paid route. Their direct and Codemode routes remain unverified until paid execution.
 
-The `lsp-overload-rename` case needs clangd. It requires a failed `declaration` for an overloaded name whose error lists a selector per overload, then a `symbol:` rename with the selector of one overload; the other overload's calls must stay unchanged. Listing overloads in `lsp_search` while clangd's index lags behind another session's writes needs a concurrent writer, so focused symbol-search tests cover it, not a paid route. Its direct and Codemode routes remain unverified until paid execution.
+The `lsp-overload-rename` case needs clangd. It requires a failed `declaration` for an overloaded name whose error lists a selector per overload, then an exact declaration query and a Replace of its issued name capture; the other overload's calls must stay unchanged. Listing overloads in `lsp_search` while clangd's index lags behind another session's writes needs a concurrent writer, so focused symbol-search tests cover it, not a paid route. Its direct and Codemode routes remain unverified until paid execution.
 
 In Codemode, `lsp_search` `query` and `declaration` return the same `{ id, complete, matches }` as Search, and `calls` returns `{ id, complete, matches, incoming, outgoing }` with each caller and callee as its whole declaration. The Codemode-only `lsp-calls-script-value` case checks the callers and callee of a function, including the callee's complete `lineText`, and deletes one caller by its `incoming` entry; it needs typescript-language-server. Merged file call graphs, lists past 100 entries and incomplete C/C++ coverage are covered by focused LSP resolver and value tests, not a paid route. `read-symbol-delete` accepts the declaration value or its match on its Codemode route. These routes remain unverified until paid execution.
 

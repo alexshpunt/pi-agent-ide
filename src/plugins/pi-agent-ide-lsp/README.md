@@ -1,13 +1,13 @@
 # LSP plugin
 
-This extension adds LSP diagnostics to normal filesystem reads, the `lsp_search` tool, and symbol targets for editing tools.
+This extension adds LSP diagnostics to normal filesystem reads, the `lsp_search` tool, and native rename through declaration name captures.
 
 ## lsp_search
 
 Pass exactly one mode:
 
 - `query`: workspace symbol search for declarations and references. `path` (file, directory or a returned result), `include` and `exclude` narrow it. `references: true` follows symbols found inside `path` to their references anywhere in the workspace. Each definition line shows the selector of its declaration, so the overloads of a name are listed apart, for example `selector main.cpp#clamp(int, int, int)`. The server's workspace index can lag behind edits from other sessions; the declarations of a name are then taken from the file's current document symbols, and references are asked for at the position a declaration has in the text the server holds, so the list stays complete while another session keeps writing the file.
-- `declaration: "<path>#<selector>"`: the full LSP document-symbol range as a guarded `SEARCH#` selection. A selector uses `/` for nesting, for example `UserService/getUser`. A one-part selector finds a nested symbol only when that name is unique in the file; a multi-part selector must match the document-symbol hierarchy exactly. See [Selectors and overloads](#selectors-and-overloads).
+- `declaration: "<path>#<selector>"`: the declaration's complete lines as a guarded `SEARCH#` selection, with a `name` capture for its identifier. A selector uses `/` for nesting, for example `UserService/getUser`. A one-part selector finds a nested symbol only when that name is unique in the file; a multi-part selector must match the document-symbol hierarchy exactly. See [Selectors and overloads](#selectors-and-overloads).
 - `calls: "<path>#<selector>"`: the definition, references grouped by file, incoming calls and outgoing calls. `calls: "<path>"` reports every top-level declaration in source order with the same relations and lists direct members with their `calls` values. When the server does not implement a call direction, such as outgoing calls in clangd 18, that section says so and the other relations are still reported.
 
 `<path>` may be relative to the session directory or absolute. The tool runs its resolver through the shared Search execution core, so scopes, SSH owners and selections behave as in `search`; it is not registered as a `search` query form.
@@ -16,13 +16,15 @@ Pass exactly one mode:
 
 A selector segment is a name, or a name with parameter types that names one overload: `clamp(int, int, int)`, `Box/get() const`. Types are compared with the signature the server reports in the document symbol's `detail`, such as clangd's `int (int, int, int)`. Spacing does not matter (`const Vec&` and `const Vec &` are the same), parameter names and default values copied from a declaration are ignored, and `(void)` is `()`. Trailing qualifiers such as `const` tell methods apart; a segment without them prefers the unqualified overload.
 
-Entries with the same name, kind and signature in one scope are one declaration, such as a C++ prototype and its definition. References, calls and renames are the same from either entry. A `declaration` selection and a `symbol:` text edit take the entry with a body; when no single entry has one, the call fails and names the lines.
+Entries with the same name, kind and signature in one scope are one declaration, such as a C++ prototype and its definition. References, calls and renames are the same from either entry. A `declaration` selection takes the entry with a body; when no single entry has one, the call fails and names the lines.
 
 When a selector names several declarations, the error lists a selector for each. Servers whose document symbols carry no signature, such as most TypeScript and Python servers, cannot tell overloads apart this way; their error says so.
 
 ## Editing targets
 
-`symbol:<path>#<selector>` is a path for `replace`, `copy`, `move` and `delete` without start/end. It edits only the declaration text; imports and references stay unchanged. `replace` on `symbol:<path>#<selector>#name` performs a native rename across references.
+Pass an `lsp_search` declaration result or its match to `replace`, `copy`, `move` or `delete` to edit its text. Imports and references stay unchanged. Complete-line selections include their final newline; include that newline in replacement text when keeping adjacent declarations on separate lines.
+
+A declaration also exposes `capture name: RESULT#…`. Pass that capture reference as `replace.path` and the new identifier as `text` to rename through the language server. In Codemode, use `declaration.matches[0].captures.name[0]` or its `id`. A rename requires one capture, non-empty text and no start/end. The server updates references, imports and shorthand forms, and the result identifies the native rename. A stale capture fails without a text-replacement fallback; repeat `lsp_search` to acquire a fresh one.
 
 ## Server lifecycle
 
@@ -36,7 +38,7 @@ File watches that servers request cover only the project: patterns based on a pa
 
 Opening a file for a request publishes the text that is on disk at that moment, and a single request opens files several times: a diagnostics or coverage check opens the same file again after its symbols were read. While another session writes that file, the server's text therefore moves ahead of the text a position was read from, inside one request.
 
-A position sent to the server is mapped onto the text the server holds and checked against it, and an answer is mapped back onto the text its hits are reported from. Both use the line diff that follows unchanged lines. When the line a position belongs to is gone from the other text, or the server replaces its text while it answers, the request fails with `SOURCE_CHANGED` and runs again on the current text. `lsp_search` with `references: true` and with `calls:` map their positions this way; a call graph reports every line from one text of each file, read once per graph. A `symbol:` rename takes the other route: it requires the server's text to be the text it read, in the file and in every participant, and runs again when it is not. A new request that sends a position of its own needs one of the two.
+A position sent to the server is mapped onto the text the server holds and checked against it, and an answer is mapped back onto the text its hits are reported from. Both use the line diff that follows unchanged lines. When the line a position belongs to is gone from the other text, or the server replaces its text while it answers, the request fails with `SOURCE_CHANGED` and runs again on the current text. `lsp_search` with `references: true` and with `calls:` map their positions this way; a call graph reports every line from one text of each file, read once per graph. A declaration name-capture rename takes the other route: it requires the server's text to be the text it read, in the file and in every participant, and runs again when it is not. A new request that sends a position of its own needs one of the two.
 
 ## Failures
 
@@ -46,7 +48,7 @@ A server that reports loading the project through `experimental/serverStatus`, a
 
 Diagnostics are pulled (`textDocument/diagnostic`) from servers that support it, including servers such as pyright and basedpyright that register pull diagnostics after they start. A pull returns the server's complete report for the current text. Pushed reports can be interim: pyright can push an empty report for a version and the report with its errors seconds later. When a pull server asks for new pulls (`workspace/diagnostic/refresh`), diagnostics of the files being checked are pulled again once these requests pause for 750 ms, or after 3 s while they keep coming. A repeated pull of the same text sends the previous result id, so the server can answer that nothing changed.
 
-A server that exits during startup, such as the rustup proxy when the `rust-analyzer` component is missing, fails the request at once with the exit code and the server's last error output. `lsp_search`, `symbol:` targets and `diagnostics` show that message. The failure is not remembered: the next request starts the server again, so installing it takes effect without restarting Pi.
+A server that exits during startup, such as the rustup proxy when the `rust-analyzer` component is missing, fails the request at once with the exit code and the server's last error output. `lsp_search`, name-capture renames and `diagnostics` show that message. The failure is not remembered: the next request starts the server again, so installing it takes effect without restarting Pi.
 
 A server may cancel a request because a document changed while it worked (`ContentModified`) or because it dropped the request (`ServerCancelled`), as rust-analyzer does while several sessions edit. Such a request is sent again up to 5 times over about 1.5 seconds, unless the server says a retry will not help or the caller stops waiting. Only a request still cancelled after that fails with the server's message.
 
