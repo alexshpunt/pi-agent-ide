@@ -48,9 +48,71 @@ function steps(id: string): RouteStep[] {
   return task.steps;
 }
 function check(route: RouteStep[], calls: readonly Call[], mode = "direct"): boolean {
-  return validateRoute({ steps: route }, events(calls, mode), mode).passed;
+  const task = capabilityCases.find((entry) => entry.steps === route) ?? { steps: route };
+  return validateRoute(task, events(calls, mode), mode).passed;
 }
 
+void test("Codemode skips every discovery step without changing later reuse indices", () => {
+  const searchId = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
+  const route: RouteStep[] = [
+    { tool: "tool_search", discovers: ["demo_read", "demo_search", "demo_replace"] },
+    { tool: "demo_read" },
+    { tool: "demo_search", reuse: { from: 1, field: "path" } },
+    { tool: "demo_replace", args: { text: "changed" }, reuse: { from: 2, field: "path" } },
+  ];
+  const calls: Call[] = [
+    { tool: "demo_read", args: { path: "memory://demo/note" }, value: { id: result } },
+    { tool: "demo_search", args: { path: { id: result }, query: "alpha" }, value: { id: searchId } },
+    { tool: "demo_replace", args: { path: { id: searchId }, text: "changed" } },
+  ];
+  for (const step of [route[0], { tool: "tool_search" }]) {
+    assert.ok(step);
+    const task = { steps: [step, ...route.slice(1)] };
+    for (const prefix of [
+      [],
+      events([{ tool: "tool_search", args: {}, details: { loaded: ["demo_read"] } }]),
+      events([{ tool: "tool_search", args: {}, error: true }]),
+    ]) {
+      assert.ok(validateRoute(task, [...prefix, ...events(calls, "codemode")], "codemode").passed);
+    }
+    assert.ok(!validateRoute(task, events(calls), "direct").passed);
+    assert.ok(!validateRoute(task, events(calls.slice(1), "codemode"), "codemode").passed);
+    assert.ok(!validateRoute(task, events([...calls.slice(0, 2), {
+      tool: "demo_replace", args: { path: { id: result }, text: "changed" },
+    }], "codemode"), "codemode").passed);
+  }
+});
+
+for (const mode of ["direct", "codemode"]) {
+  void test(`whole-line edit arguments share effect-based terminal-newline matching in ${mode}`, () => {
+    const files = { "task.txt": "first\nmiddle\nlast\n" };
+    function edit(tool: string, required: Record<string, unknown>, actual: Record<string, unknown>, content = files["task.txt"]) {
+      return validateRoute(
+        { files: { "task.txt": content }, steps: [{ tool, args: { path: "task.txt", ...required } }] },
+        events([{ tool, args: { path: "./task.txt", ...actual } }], mode), mode,
+      ).passed;
+    }
+    for (const tool of ["insert", "delete", "replace", "copy", "move"]) {
+      const selector = tool === "insert" ? "anchor" : "start";
+      const extra = tool === "insert" || tool === "replace" ? { text: "NEW\n" } : {};
+      const required = { [selector]: /^middle$/u, ...extra };
+      assert.ok(edit(tool, required, { [selector]: "middle\n", ...extra }), tool);
+      assert.ok(!edit(tool, required, { [selector]: "middle\n\n", ...extra }), tool);
+      assert.ok(!edit(tool, required, { [selector]: "other\n", ...extra }), tool);
+    }
+    assert.ok(edit("insert", { anchor: "middle", text: "NEW" }, { anchor: "middle", text: "NEW\n" }));
+    assert.ok(edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text: "NEW\n" }));
+    assert.ok(edit("replace", { start: "middle\n", text: "NEW\n" }, { start: "middle", text: "NEW" }));
+    for (const text of ["NEW\n\n", "NEW ", "OTHER\n"]) {
+      assert.ok(!edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text }));
+    }
+    // Match/partial spans and EOF cannot silently acquire a line break.
+    assert.ok(!edit("replace", { start: "midd", text: "NEW" }, { start: "midd", text: "NEW\n" }));
+    assert.ok(!edit("replace", { start: "last", text: "NEW" }, { start: "last", text: "NEW\n" }, "first\nlast"));
+    assert.ok(!edit("insert", { anchor: "last", text: "NEW\n" }, { anchor: "last", text: "NEW" }));
+    assert.ok(edit("insert", { anchor: "last", before: true, text: "NEW" }, { anchor: "last", before: true, text: "NEW\n" }, "first\nlast"));
+  });
+}
 const deferredCalls = [
   { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, text: "probe(1)" },
   { tool: "lsp_search", args: { query: "probe" }, text: "task.ts#probe" },
