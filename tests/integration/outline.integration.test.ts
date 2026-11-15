@@ -77,3 +77,62 @@ text("outline-composed");
     );
   });
 }, 90_000);
+
+test("outline rejects invalid file inputs and keeps an empty source reusable", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"], noPostProcessing: true }),
+    );
+    await writeFile(path.join(cwd, "empty.ts"), "");
+    await writeFile(path.join(cwd, "binary.ts"), "\0binary");
+    await writeFile(path.join(cwd, "unsupported.txt"), "ordinary text");
+    await writeFile(path.join(cwd, "large.ts"), "//" + "x".repeat(262_144));
+    const inputs = [
+      "missing.ts",
+      "binary.ts",
+      "unsupported.txt",
+      "large.ts",
+      ".",
+      "https://example.com/a.ts",
+      "ast:empty.ts",
+    ];
+    const run = await new PiIntegrationTest({
+      testName: "outline-invalid-inputs",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["outline", "search", "codemode"],
+      conversation: [
+        ...inputs.map((input, index) =>
+          assistantMessage([
+            toolCall({
+              id: "invalid-" + index,
+              name: "outline",
+              arguments: { path: input },
+            }),
+          ]),
+        ),
+        assistantMessage([
+          toolCall({
+            id: "empty",
+            name: "codemode",
+            arguments: {
+              code: `const value = await tools.outline({path:"empty.ts"});
+if (!value.id?.startsWith("RESULT#")) throw Error("Missing empty source selection");
+const found = await tools.search({path:value,query:"anything"});
+if (found.matches.length !== 0) throw Error("Empty source produced matches");
+text("empty-source");`,
+            },
+          }),
+        ]),
+        assistantMessage([text("Finished")]),
+      ],
+    }).run("Check outline errors and the empty file result.");
+    for (let index = 0; index < inputs.length; index++)
+      expect(getToolExecution(run, "invalid-" + index).isError, inputs[index]).toBe(true);
+    expect(getToolExecution(run, "empty").isError, getToolResultText(run, "empty")).toBe(false);
+  });
+}, 90_000);
