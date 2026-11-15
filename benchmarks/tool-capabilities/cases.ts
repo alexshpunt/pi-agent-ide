@@ -26,8 +26,7 @@ add(
     { tool: "search", args: { path: "task.txt", query: "beta" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true },
-      argsAny: [{ text: "added" }, { text: "added\n" }],
+      args: { path: "task.txt", anchor: "alpha", before: true, text: "added" },
       editorBatchSize: 3,
     },
     {
@@ -57,8 +56,7 @@ add(
     { tool: "read", args: { path: ".pi/issued-search.txt" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true },
-      argsAny: [{ text: "added" }, { text: "added\n" }],
+      args: { path: "task.txt", anchor: "alpha", before: true, text: "added" },
       editorBatchSize: 3,
     },
     {
@@ -90,7 +88,6 @@ add(
     {
       tool: "tool_search",
       discovers: ["ast_search", "lsp_search", "diff", "undo"],
-      modes: ["direct"],
     },
     { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, contains: "probe(1)" },
     { tool: "lsp_search", args: { query: "probe" }, contains: "task.ts#probe" },
@@ -117,7 +114,7 @@ add(
 add(
   "standalone-resource-host",
   ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
-  "Only standalone resource hosts are loaded; the full IDE is not enabled. Discover the demo namespace through tool_search. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. Finally reread memory://demo/note. Use demo tools, not the sibling namespace or filesystem tools.",
+  "Only standalone resource hosts are loaded; the full IDE is not enabled. In direct mode, discover the demo namespace through tool_search. In Codemode, call the demo tools directly; discovery is optional. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. Finally reread memory://demo/note. Use demo tools, not the sibling namespace or filesystem tools.",
   [
     {
       tool: "tool_search",
@@ -1128,9 +1125,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
           ? { args: { text: "NEW\n" } }
           : operation === "insert"
             ? {
-                args: { before: true },
-                // Inserting before a whole-line selection adds the line break when it is missing.
-                argsAny: [{ text: "ADDED" }, { text: "ADDED\n" }],
+                args: { before: true, text: "ADDED" },
               }
             : {}),
       })),
@@ -1272,8 +1267,7 @@ for (const operation of ["delete", "insert"] as const) {
       {
         tool: operation,
         ...(operation === "insert" && {
-          args: { before: true },
-          argsAny: [{ text: "BEFORE" }, { text: "BEFORE\n" }],
+          args: { before: true, text: "BEFORE" },
         }),
         reuse: reuse(0),
       },
@@ -2599,13 +2593,11 @@ for (const [name, eol, ending] of [
       { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
       {
         tool: "delete",
-        args: { path: "block.txt" },
-        argsAny: [{ start: ending ? /^Last\r?\nBlock(?:\r?\n)?$/u : /^Last\r?\nBlock$/u }],
+        args: { path: "block.txt", start: /^Last\r?\nBlock$/u },
       },
       {
         tool: "replace",
-        args: { path: "empty.txt", text: "" },
-        argsAny: [{ start: ending ? /^Last\r?\nBlock(?:\r?\n)?$/u : /^Last\r?\nBlock$/u }],
+        args: { path: "empty.txt", text: "", start: /^Last\r?\nBlock$/u },
       },
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
@@ -2980,7 +2972,7 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true, text: /^top\n?$/u },
+      args: { path: "task.txt", anchor: "alpha", before: true, text: "top\n" },
     },
     {
       tool: "delete",
