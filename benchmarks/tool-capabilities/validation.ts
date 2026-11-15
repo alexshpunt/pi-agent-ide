@@ -1,6 +1,10 @@
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { equivalentLineArguments, wholeLineSelection, type LineSelection } from "./edit-equivalence.ts";
+import {
+  equivalentLineArguments,
+  wholeLineSelection,
+  type LineSelection,
+} from "./edit-equivalence.ts";
 
 /** A retained JSON-mode event; unknown records remain in the evidence. */
 export interface RunEvent {
@@ -164,8 +168,10 @@ export interface RouteStep {
 
 /** Native Codemode tools do not depend on model-only discovery, even in mixed routes. */
 export function routeStepApplies(step: RouteStep, mode: string): boolean {
-  return !(mode === "codemode" && step.tool === "tool_search") &&
-    (!step.modes || step.modes.includes(mode));
+  return (
+    !(mode === "codemode" && step.tool === "tool_search") &&
+    (!step.modes || step.modes.includes(mode))
+  );
 }
 /** An executable task may protect several related capabilities. */
 export interface CapabilityCase {
@@ -436,22 +442,39 @@ export function validateRoute(
     return [];
   }
   /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
-  function editContext(tool: string, actual: Record<string, unknown>, before: number): {
-    content?: string; selection?: LineSelection;
+  function editContext(
+    tool: string,
+    actual: Record<string, unknown>,
+    before: number,
+  ): {
+    content?: string;
+    selection?: LineSelection;
   } {
     const source = actual.path ?? actual.anchor ?? actual.start;
     const paths = [...values(source), ...reusedPaths(source, before)];
     const file = Object.keys(task.files ?? {}).find((file) =>
-      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)));
+      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
+    );
     if (file === undefined) return {};
     for (const prior of starts) {
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
-      if (!["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(prior.event.toolName ?? "")) continue;
+      if (
+        !["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(
+          prior.event.toolName ?? "",
+        )
+      )
+        continue;
       const args = prior.event.args ?? {};
       const affected = [args.path, args.anchor, args.start, args.target, args.file];
-      if (affected.some((value) => [...values(value), ...reusedPaths(value, prior.index)]
-        .some((candidate) => fixturePath(candidate) === fixturePath(file)))) return {};
+      if (
+        affected.some((value) =>
+          [...values(value), ...reusedPaths(value, prior.index)].some(
+            (candidate) => fixturePath(candidate) === fixturePath(file),
+          ),
+        )
+      )
+        return {};
     }
     const content = task.files?.[file];
     if (content === undefined) return {};
@@ -466,12 +489,25 @@ export function validateRoute(
     for (const prior of starts) {
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
-      if (!reuses(reference, resultText(end.event), "result", valueIds(end.event.result?.structuredContent))) continue;
+      if (
+        !reuses(
+          reference,
+          resultText(end.event),
+          "result",
+          valueIds(end.event.result?.structuredContent),
+        )
+      )
+        continue;
       // A :line reference always owns its line separator when every fixture line is terminated.
       // Its exact position is not inferred, so this witness is used only for replacement.
-      if (tool === "replace" && typeof reference === "string" &&
+      if (
+        tool === "replace" &&
+        typeof reference === "string" &&
         /^SEARCH#[A-F0-9]+:(?:all|\d+):line$/u.test(reference) &&
-        prior.event.toolName === "search" && /\n$/u.test(content) && actual.end === undefined)
+        prior.event.toolName === "search" &&
+        content.endsWith("\n") &&
+        actual.end === undefined
+      )
         return { content, selection: { content, from: 0, to: content.length } };
       // Plain Read windows select whole lines; transformed views and Search matches do not.
       if (selector !== undefined || prior.event.toolName !== "read") continue;
@@ -479,13 +515,23 @@ export function validateRoute(
       if (Array.isArray(args.views) && args.views.some((view) => view !== "anchors")) continue;
       const offset = args.offset ?? 1;
       const limit = args.limit;
-      const lines = [0, ...[...content.matchAll(/\n/gu)].map((match) => match.index + 1)]
-        .filter((index) => index < content.length);
-      if (typeof offset !== "number" || !Number.isInteger(offset) || offset < 1 ||
-        (limit !== undefined && (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1))) continue;
+      const lines = [0, ...[...content.matchAll(/\n/gu)].map((match) => match.index + 1)].filter(
+        (index) => index < content.length,
+      );
+      if (
+        typeof offset !== "number" ||
+        !Number.isInteger(offset) ||
+        offset < 1 ||
+        (limit !== undefined &&
+          (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1))
+      )
+        continue;
       const from = lines[offset - 1];
       if (from === undefined) continue;
-      const to = limit === undefined ? content.length : (lines[offset - 1 + Number(limit)] ?? content.length);
+      const to =
+        limit === undefined
+          ? content.length
+          : (lines[offset - 1 + limit] ?? content.length);
       return { content, selection: { content, from, to } };
     }
     return { content };
@@ -541,7 +587,14 @@ export function validateRoute(
       if (issuer) normalized[field] = rest[field];
     }
     const context = editContext(tool, normalized, before);
-    const equivalent = equivalentLineArguments(tool, expected, normalized, context.content, context.selection, matches);
+    const equivalent = equivalentLineArguments(
+      tool,
+      expected,
+      normalized,
+      context.content,
+      context.selection,
+      matches,
+    );
     if (matches(expected, equivalent)) return true;
     if (!(typeof file === "string" || file instanceof RegExp) || !matches(rest, equivalent))
       return false;

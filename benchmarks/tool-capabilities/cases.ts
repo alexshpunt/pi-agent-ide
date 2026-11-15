@@ -873,9 +873,7 @@ add(
   [
     {
       tool: "read",
-      args: { path: "config.json", limit: 1 },
-      // Read starts at line 1 when offset is omitted.
-      argsAny: [{ offset: 1 }, { offset: undefined }],
+      args: { path: "config.json", offset: 1, limit: 1 },
     },
     { tool: "read", args: { views: ["jq:.status"] }, reuse: reuse(0), error: true },
     { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },

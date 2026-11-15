@@ -260,7 +260,10 @@ describe("capability route evidence", () => {
       fixture.index
     ];
     if (!step) throw new Error("Missing multiline selector capability step");
-    const route = { steps: [step], files: capabilityCases.find((candidate) => candidate.id === fixture.id)?.files };
+    const route = {
+      steps: [step],
+      files: capabilityCases.find((candidate) => candidate.id === fixture.id)?.files,
+    };
     const check = (selector: string) =>
       validateRoute(
         route,

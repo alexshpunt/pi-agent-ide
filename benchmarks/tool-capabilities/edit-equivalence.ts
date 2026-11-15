@@ -37,8 +37,11 @@ export function equivalentLineArguments(
   matches: (expected: unknown, actual: unknown) => boolean,
 ): Record<string, unknown> {
   const normalized = { ...actual };
-  if (content !== undefined && (actual.end === undefined ||
-    (wholeLineSelection(content, actual.start) && wholeLineSelection(content, actual.end)))) {
+  if (
+    content !== undefined &&
+    (actual.end === undefined ||
+      (wholeLineSelection(content, actual.start) && wholeLineSelection(content, actual.end)))
+  ) {
     for (const field of ["anchor", "start", "end"]) {
       const selector = actual[field];
       const required = expected[field];

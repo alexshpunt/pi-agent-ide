@@ -62,7 +62,11 @@ void test("Codemode skips every discovery step without changing later reuse indi
   ];
   const calls: Call[] = [
     { tool: "demo_read", args: { path: "memory://demo/note" }, value: { id: result } },
-    { tool: "demo_search", args: { path: { id: result }, query: "alpha" }, value: { id: searchId } },
+    {
+      tool: "demo_search",
+      args: { path: { id: result }, query: "alpha" },
+      value: { id: searchId },
+    },
     { tool: "demo_replace", args: { path: { id: searchId }, text: "changed" } },
   ];
   for (const step of [route[0], { tool: "tool_search" }]) {
@@ -77,19 +81,41 @@ void test("Codemode skips every discovery step without changing later reuse indi
     }
     assert.ok(!validateRoute(task, events(calls), "direct").passed);
     assert.ok(!validateRoute(task, events(calls.slice(1), "codemode"), "codemode").passed);
-    assert.ok(!validateRoute(task, events([...calls.slice(0, 2), {
-      tool: "demo_replace", args: { path: { id: result }, text: "changed" },
-    }], "codemode"), "codemode").passed);
+    assert.ok(
+      !validateRoute(
+        task,
+        events(
+          [
+            ...calls.slice(0, 2),
+            {
+              tool: "demo_replace",
+              args: { path: { id: result }, text: "changed" },
+            },
+          ],
+          "codemode",
+        ),
+        "codemode",
+      ).passed,
+    );
   }
 });
 
 for (const mode of ["direct", "codemode"]) {
   void test(`whole-line edit arguments share effect-based terminal-newline matching in ${mode}`, () => {
     const files = { "task.txt": "first\nmiddle\nlast\n" };
-    function edit(tool: string, required: Record<string, unknown>, actual: Record<string, unknown>, content = files["task.txt"]) {
+    function edit(
+      tool: string,
+      required: Record<string, unknown>,
+      actual: Record<string, unknown>,
+      content = files["task.txt"],
+    ) {
       return validateRoute(
-        { files: { "task.txt": content }, steps: [{ tool, args: { path: "task.txt", ...required } }] },
-        events([{ tool, args: { path: "./task.txt", ...actual } }], mode), mode,
+        {
+          files: { "task.txt": content },
+          steps: [{ tool, args: { path: "task.txt", ...required } }],
+        },
+        events([{ tool, args: { path: "./task.txt", ...actual } }], mode),
+        mode,
       ).passed;
     }
     for (const tool of ["insert", "delete", "replace", "copy", "move"]) {
@@ -100,30 +126,58 @@ for (const mode of ["direct", "codemode"]) {
       assert.ok(!edit(tool, required, { [selector]: "middle\n\n", ...extra }), tool);
       assert.ok(!edit(tool, required, { [selector]: "other\n", ...extra }), tool);
     }
-    assert.ok(edit("insert", { anchor: "middle", text: "NEW" }, { anchor: "middle", text: "NEW\n" }));
-    assert.ok(edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text: "NEW\n" }));
-    assert.ok(edit("replace", { start: "middle\n", text: "NEW\n" }, { start: "middle", text: "NEW" }));
+    assert.ok(
+      edit("insert", { anchor: "middle", text: "NEW" }, { anchor: "middle", text: "NEW\n" }),
+    );
+    assert.ok(
+      edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text: "NEW\n" }),
+    );
+    assert.ok(
+      edit("replace", { start: "middle\n", text: "NEW\n" }, { start: "middle", text: "NEW" }),
+    );
     for (const text of ["NEW\n\n", "NEW ", "OTHER\n"]) {
       assert.ok(!edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text }));
     }
     assert.ok(!edit("delete", { start: "fir", end: "middle" }, { start: "fir", end: "middle\n" }));
     // Match/partial spans and EOF cannot silently acquire a line break.
     assert.ok(!edit("replace", { start: "midd", text: "NEW" }, { start: "midd", text: "NEW\n" }));
-    assert.ok(!edit("replace", { start: "last", text: "NEW" }, { start: "last", text: "NEW\n" }, "first\nlast"));
+    assert.ok(
+      !edit(
+        "replace",
+        { start: "last", text: "NEW" },
+        { start: "last", text: "NEW\n" },
+        "first\nlast",
+      ),
+    );
     assert.ok(!edit("insert", { anchor: "last", text: "NEW\n" }, { anchor: "last", text: "NEW" }));
-    assert.ok(edit("insert", { anchor: "last", before: true, text: "NEW" }, { anchor: "last", before: true, text: "NEW\n" }, "first\nlast"));
+    assert.ok(
+      edit(
+        "insert",
+        { anchor: "last", before: true, text: "NEW" },
+        { anchor: "last", before: true, text: "NEW\n" },
+        "first\nlast",
+      ),
+    );
   });
 }
 void test("Search :line replacement allows one terminal separator, never :match or fabricated provenance", () => {
   for (const ending of ["\n", "\r\n"]) {
     const line = "SEARCH#ABCD:1:line";
-    const search: Call = { tool: "search", args: { path: "task.txt", query: "beta" }, text: line + "\nSEARCH#ABCD:1:match" };
+    const search: Call = {
+      tool: "search",
+      args: { path: "task.txt", query: "beta" },
+      text: line + "\nSEARCH#ABCD:1:match",
+    };
     const task = {
       files: { "task.txt": `alpha${ending}beta${ending}omega${ending}` },
-      steps: [{ tool: "search" }, {
-        tool: "replace", args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" },
-        reuse: { from: 0, field: "start" },
-      }],
+      steps: [
+        { tool: "search" },
+        {
+          tool: "replace",
+          args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" },
+          reuse: { from: 0, field: "start" },
+        },
+      ],
     };
     const replace: Call = { tool: "replace", args: { start: line, text: "BETA" + ending } };
     assert.ok(validateRoute(task, events([search, replace], "codemode"), "codemode").passed);
@@ -132,10 +186,29 @@ void test("Search :line replacement allows one terminal separator, never :match 
       { ...replace, args: { ...replace.args, start: "SEARCH#FFFF:1:line" } },
       { ...replace, args: { ...replace.args, text: "BETA" + ending + ending } },
       { ...replace, error: true },
-    ]) assert.ok(!validateRoute(task, events([search, changed], "codemode"), "codemode").passed);
-    assert.ok(!validateRoute(task, events([{ ...search, error: true }, replace], "codemode"), "codemode").passed);
-    const matchTask = { ...task, steps: [task.steps[0]!, { ...task.steps[1], tool: "replace", args: { start: "SEARCH#ABCD:1:match", text: "BETA" } }] };
-    assert.ok(!validateRoute(matchTask, events([search, { ...replace, args: { start: "SEARCH#ABCD:1:match", text: "BETA" + ending } }], "codemode"), "codemode").passed);
+    ])
+      assert.ok(!validateRoute(task, events([search, changed], "codemode"), "codemode").passed);
+    assert.ok(
+      !validateRoute(task, events([{ ...search, error: true }, replace], "codemode"), "codemode")
+        .passed,
+    );
+    const matchTask = {
+      ...task,
+      steps: [
+        { tool: "search" },
+        { ...task.steps[1], tool: "replace", args: { start: "SEARCH#ABCD:1:match", text: "BETA" } },
+      ],
+    };
+    assert.ok(
+      !validateRoute(
+        matchTask,
+        events(
+          [search, { ...replace, args: { start: "SEARCH#ABCD:1:match", text: "BETA" + ending } }],
+          "codemode",
+        ),
+        "codemode",
+      ).passed,
+    );
   }
 });
 const deferredCalls = [
