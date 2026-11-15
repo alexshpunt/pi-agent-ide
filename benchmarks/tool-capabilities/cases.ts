@@ -960,6 +960,7 @@ add(
     {
       tool: "read",
       args: { path: "task.txt", offset: 1, limit: 2 },
+      after: [0],
       contains: "STREAM-PAYLOAD-0001",
     },
   ],
@@ -2083,6 +2084,7 @@ add(
     {
       tool: "delete",
       args: { path: "symbol:task.ts#doomed", start: undefined, end: undefined },
+      after: [0],
       contains: "Text fallback: imports and references unchanged",
     },
   ],
@@ -2684,7 +2686,7 @@ add(
   "Replace OLD with NEW in task.txt. Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Repeat stage with that anchor and confirm it succeeds as already staged. Read changes again and unstage its current CHANGE anchor. Read changes once more and undo that current change. Leave source and index at the original clean state.",
   [
     { tool: "replace", args: { text: "NEW" } },
-    { tool: "read", args: { path: "task.txt", views: ["changes"] } },
+    { tool: "read", args: { path: "task.txt", views: ["changes"] }, after: [0] },
     {
       tool: "stage",
       args: { file: "task.txt" },
@@ -2696,10 +2698,11 @@ add(
       args: { file: "task.txt" },
       reuse: reuse(1, "change", "change"),
       contains: "already staged",
+      after: [2],
     },
-    { tool: "read", args: { path: "task.txt", views: ["changes"] } },
+    { tool: "read", args: { path: "task.txt", views: ["changes"] }, after: [3] },
     { tool: "unstage", args: { file: "task.txt" }, reuse: reuse(4, "change", "change") },
-    { tool: "read", args: { path: "task.txt", views: ["changes"] } },
+    { tool: "read", args: { path: "task.txt", views: ["changes"] }, after: [5] },
     { tool: "undo", args: { file: "task.txt" }, reuse: reuse(6, "change", "change") },
   ],
   { git: true },
@@ -2809,6 +2812,7 @@ add(
     },
     {
       tool: "semantic_search",
+      after: [0],
       args: { query: /nebulaOtterRefreshSentinel/i },
       contains: "fresh.ts",
     },
@@ -2947,17 +2951,18 @@ add(
   "Read task.txt with anchors. Replace OLD with NEW. Attempt Insert with the OLD Read's line-2 anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" }, after: [0] },
     {
       tool: "insert",
       args: { path: "task.txt", anchor: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: reuse(0, "anchor", "anchor"),
       error: true,
+      after: [1],
       finalContains: "is stale",
       // Allow retention notices above the 50 KiB useful-text budget.
       finalMaxBytes: 64 * 1024,
     },
-    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [2] },
     {
       tool: "insert",
       args: { path: "task.txt", text: "RECOVERED\n" },
@@ -3012,8 +3017,9 @@ add(
       args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: reuse(0, "start", "anchor"),
       error: true,
+      after: [1],
     },
-    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [2] },
     {
       tool: "delete",
       args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
@@ -3050,6 +3056,7 @@ add(
     {
       tool: "replace",
       args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, text: /^NEW\n?$/u },
+      after: [2],
       reuse: [reuse(1), reuse(0, "start", "anchor")],
     },
   ],
@@ -3107,11 +3114,11 @@ add(
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
-    { tool: "insert", args: { text: "Enter" }, reuse: reuse(0, "path", "shell") },
+    { tool: "insert", args: { text: "Enter" }, reuse: reuse(0, "path", "shell"), after: [1] },
     // A Codemode script gets null for terminal input, so only a direct route can read its result.
     { tool: "read", reuse: reuse(1), contains: "hello", modes: ["direct"] },
     { tool: "read", reuse: reuse(2), contains: "hello", modes: ["direct"] },
-    { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello" },
+    { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello", after: [2] },
     {
       tool: "replace",
       // The streaming authority guard may stop generation before text arrives.
@@ -3123,10 +3130,11 @@ add(
     {
       tool: "search",
       args: { query: "hello" },
+      after: [6],
       reuse: reuse(0, "path", "shell"),
       contains: "hello",
     },
-    { tool: "delete", reuse: reuse(0, "path", "shell") },
+    { tool: "delete", reuse: reuse(0, "path", "shell"), after: [7] },
   ],
   { expected: textFile, answer: "hello" },
 );
@@ -3193,21 +3201,22 @@ add(
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", reuse: reuse(0, "path", "debug") },
-    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
+    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] }, after: [0] },
     {
       tool: "insert",
       args: { path: /debug:.*\/source/, text: "breakpoint" },
       reuse: reuse(2, "anchor", "anchor"),
     },
-    { tool: "insert", args: { text: "start" }, reuse: reuse(0, "path", "debug") },
+    { tool: "insert", args: { text: "start" }, reuse: reuse(0, "path", "debug"), after: [3] },
     {
       tool: "insert",
       args: { text: "evaluate value" },
+      after: [4],
       reuse: reuse(0, "path", "debug"),
       contains: "42",
     },
-    { tool: "read", reuse: reuse(0, "path", "debug") },
-    { tool: "delete", reuse: reuse(0, "path", "debug") },
+    { tool: "read", reuse: reuse(0, "path", "debug"), after: [5] },
+    { tool: "delete", reuse: reuse(0, "path", "debug"), after: [6] },
   ],
   {
     files: { "task.py": "value = 42\nprint(value)\n" },
@@ -3256,7 +3265,7 @@ add(
     { tool: "insert", args: { text: "continue" }, reuse: reuse(0, "path", "debug") },
     { tool: "read", reuse: reuse(0, "path", "debug") },
     { tool: "delete", reuse: reuse(0, "path", "debug") },
-  ],
+  ].map((step, index) => ({ ...step, ...(index > 0 && { after: [index - 1] }) })),
   {
     files: {
       "task.py":
@@ -3278,21 +3287,22 @@ add(
       error: true,
       contains: "VS Code",
     },
-    { tool: "debug", args: { backend: "native", adapter: "debugpy", program: "task.py" } },
-    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
+    { tool: "debug", args: { backend: "native", adapter: "debugpy", program: "task.py" }, after: [0] },
+    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] }, after: [1] },
     {
       tool: "insert",
       args: { path: /debug:.*\/source/, text: "breakpoint" },
       reuse: reuse(2, "anchor", "anchor"),
     },
-    { tool: "insert", args: { text: "start" }, reuse: reuse(1, "path", "debug") },
+    { tool: "insert", args: { text: "start" }, reuse: reuse(1, "path", "debug"), after: [3] },
     {
       tool: "insert",
       args: { text: "evaluate value" },
+      after: [4],
       reuse: reuse(1, "path", "debug"),
       contains: "42",
     },
-    { tool: "delete", reuse: reuse(1, "path", "debug") },
+    { tool: "delete", reuse: reuse(1, "path", "debug"), after: [5] },
   ],
   {
     files: { "task.py": "value = 42\nprint(value)\n" },
@@ -3423,6 +3433,7 @@ add(
         path: /^symbol:main\.cpp#clamp\(const Vec ?&, ?float, ?float\)#name$/,
         text: "clampVec",
       },
+      after: [0],
       contains: "Renamed through LSP",
     },
   ],

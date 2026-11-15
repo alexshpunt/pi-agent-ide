@@ -831,6 +831,10 @@ export function checkCoverage(
   }
   for (const task of cases) {
     if (!task.steps.length || !task.modes.length) problems.push(`${task.id}: no route or mode`);
+    task.steps.forEach((step, index) => {
+      if (step.after?.some((prior) => !Number.isInteger(prior) || prior < 0 || prior >= index))
+        problems.push(`${task.id}: step ${index + 1} has an invalid dependency`);
+    });
     for (const id of task.capabilities)
       if (!ids.has(id)) problems.push(`${task.id}: unknown capability ${id}`);
       else if (!matrix.find((capability) => capability.id === id)?.cases.includes(task.id))
