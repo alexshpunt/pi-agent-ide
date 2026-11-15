@@ -160,10 +160,16 @@ export async function snapshotSource(
 ): Promise<{ source: string; revision: string; digest: string }> {
   const source = path.join(container, "source");
   const revision = git(repository, ["rev-parse", "HEAD"]).trim();
+  // Local trial clones copy object files directly. The freeze commit must not start
+  // detached maintenance that repacks or removes those files after this returns.
   const cloned = await runProcess("git", [
     "clone",
     "--quiet",
     "--no-hardlinks",
+    "--config",
+    "gc.auto=0",
+    "--config",
+    "maintenance.auto=false",
     repository,
     source,
   ]);
