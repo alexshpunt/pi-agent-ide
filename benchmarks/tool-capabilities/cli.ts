@@ -54,8 +54,8 @@ import {
 } from "./sandbox.ts";
 
 /**
- * Each attempt starts with an empty home, so engine setup downloads its runtime and model again.
- * The Linux ColGREP 1.8.5 build fetches about 460 MB (CUDA ONNX Runtime and model) on first use.
+ * Each attempt starts with an empty home. ColGREP uses installed read-only CPU assets;
+ * its index and configuration remain private to the trial.
  */
 const PREREQUISITE_TIMEOUT_MS = 120_000;
 
@@ -260,6 +260,17 @@ async function attempt(
       ].join(path.delimiter),
       PYTHONUSERBASE: path.join(os.homedir(), ".local"),
       HOME: "/state/home",
+      ...(task.resource === "colgrep"
+        ? {
+            ORT_DYLIB_PATH: "/state/colgrep-runtime/lib/libonnxruntime.so",
+            COLGREP_FORCE_CPU: "1",
+            RAYON_NUM_THREADS: "4",
+            CAPABILITY_COLGREP_ASSETS: path.join(
+              os.homedir(),
+              ".local/lib/pi-capability-assets/colgrep-1.8.5",
+            ),
+          }
+        : {}),
       PI_CODING_AGENT_DIR: "/state/agent",
       PI_OFFLINE: "1",
       PI_SKIP_VERSION_CHECK: "1",

@@ -118,7 +118,16 @@ tar -xf vera-x86_64-unknown-linux-gnu.tar.gz
 sudo install -m 0755 colgrep-x86_64-unknown-linux-gnu/colgrep vera-x86_64-unknown-linux-gnu/vera /usr/local/bin/
 ```
 
-The ColGREP and Vera prerequisites download their runtime and model into the attempt's empty home every time: about 460 MB for ColGREP's CUDA build of ONNX Runtime and its model, less for Vera's local model. The prerequisite timeout is 120 seconds. A timeout or nonzero exit makes the route `unavailable` without inference, including a process that handles timeout termination and exits zero. Each completed prerequisite retains `prerequisite.json` with its command, timing, exit status, timeout flag and redacted output.
+Prepare ColGREP's assets once, without inference, before running its cases:
+
+```bash
+bash benchmarks/tool-capabilities/prepare-colgrep.sh --download \
+  "$HOME/.local/lib/pi-capability-assets/colgrep-1.8.5"
+```
+
+The installer requires curl, tar, Git and sha256sum. It refuses an existing destination and publishes the directory only after checking the pinned downloads. The assets are ONNX Runtime 1.23.0 for CPU and the INT8 LateOn-Code-edge model at revision `4bcdf5ed93f791259eb130b577a240f753d68dd8`. A sandbox has no GPU devices, so these cases use CPU execution with one encoding session. The installed assets are read-only inside the sandbox; every trial keeps its own configuration, runtime copy and index. Initialization and searches need no asset downloads. The prerequisite verifies the assets and retains their checksum-manifest digest in its output. Missing or changed assets make the case unavailable.
+
+Vera still downloads its model into each attempt's empty home. The prerequisite timeout is 120 seconds. A timeout or nonzero exit makes the route `unavailable` without inference, including a process that handles timeout termination and exits zero. Each completed prerequisite retains `prerequisite.json` with its command, timing, exit status, timeout flag and redacted output.
 
 ## Connector runs
 

@@ -2838,7 +2838,7 @@ add(
   {
     // Serialize cold downloads and ONNX sessions, including searches after initialization.
     resource: "colgrep",
-    prerequisite: "command -v colgrep && colgrep init --yes --color never",
+    prerequisite: "/bin/bash /source/benchmarks/tool-capabilities/prepare-colgrep.sh",
     files: {
       "src with spaces/session.ts":
         "export function expireSession(session: { expiresAt: number }) { return Date.now() >= session.expiresAt; }\n",
@@ -2933,7 +2933,7 @@ add(
   {
     modes: ["codemode"],
     resource: "colgrep",
-    prerequisite: "command -v colgrep && colgrep init --yes --color never",
+    prerequisite: "/bin/bash /source/benchmarks/tool-capabilities/prepare-colgrep.sh",
     files: {
       "src with spaces/session.ts":
         "export function expireSession(session: { expiresAt: number }) { return Date.now() >= session.expiresAt; }\n",
