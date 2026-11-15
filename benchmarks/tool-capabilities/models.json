@@ -69,6 +69,11 @@
       "thinking": "high"
     },
     {
+      "id": "terra-6.1-low",
+      "model": "openai-codex/gpt-6.1-terra",
+      "thinking": "low"
+    },
+    {
       "id": "sol-6.1-low",
       "model": "openai-codex/gpt-6.1-sol",
       "thinking": "low"
