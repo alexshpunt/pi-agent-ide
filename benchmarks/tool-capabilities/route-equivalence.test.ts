@@ -403,9 +403,11 @@ for (const [id, tool, index] of [
     const args = { ...step.args };
     delete args.offset;
     const call = { tool, args, text: step.contains };
-    assert.ok(check([step], [call]));
-    assert.ok(!check([step], [{ ...call, args: { ...args, offset: 2 } }]));
-    assert.ok(!check([step], [{ ...call, args: { ...args, limit: 99 } }]));
+    const prerequisite: Call = { tool: "fixture_prerequisite", args: {} };
+    const route = [{ tool: prerequisite.tool }, step];
+    assert.ok(check(route, [prerequisite, call]));
+    assert.ok(!check(route, [prerequisite, { ...call, args: { ...args, offset: 2 } }]));
+    assert.ok(!check(route, [prerequisite, { ...call, args: { ...args, limit: 99 } }]));
   });
 }
 
