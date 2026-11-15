@@ -2699,23 +2699,30 @@ const line = (text: string) =>
 for (const method of ["all", "allSettled"] as const) {
   add(
     `parallel-edit-effects-${method}`,
-    ["codemode.parallel-edit-effects"],
-    `In one native Codemode script, use Promise.${method} to start six edits together, without awaiting an individual call first. Make three inserts, one after each line: FIRST plus a newline after first in insert.txt, MIDDLE plus a newline after middle in ./insert.txt, and LAST plus a newline after last in insert.txt. Concurrently make three deletes of unique whole lines: first from delete.txt, middle from ./delete.txt, and last from delete.txt. Print every value: each Insert resolves to the id of its inserted text and each Delete to null; the script result lists any failed call. Preserve all other bytes, including the existing blank lines and EOF.`,
+    ["codemode.parallel-edit-effects", "compose.read-concurrent-edit-snapshot"],
+    `In one native Codemode script, first Read insert.txt and delete.txt separately with the anchors view and retain both returned values. Then use one Promise.${method} to start six edits together, without awaiting an individual edit first. For the first two Inserts, pass the same unchanged insert Read value as path: insert FIRST plus a newline after first and MIDDLE plus a newline after middle. For the third Insert, pass "./insert.txt" as path and insert LAST plus a newline after last. For the first two Deletes, pass the same unchanged delete Read value as path: delete the unique whole lines first and middle. For the third Delete, pass "./delete.txt" as path and delete last. Use the corresponding line anchors from the Reads. Print every value: each Insert resolves to the id of its inserted text and each Delete to null; the script result lists any failed call. Preserve all other bytes, including the existing blank lines and EOF.`,
     [
-      { tool: "insert", args: { path: "insert.txt", anchor: line("first"), text: "FIRST\n" } },
+      { tool: "read", args: { path: "insert.txt", views: ["anchors"] } },
+      { tool: "read", args: { path: "delete.txt", views: ["anchors"] } },
       {
         tool: "insert",
-        args: { path: "./insert.txt", anchor: line("middle"), text: "MIDDLE\n" },
-        parallelWith: 0,
+        args: { anchor: line("first"), text: "FIRST\n" },
+        reuse: reuse(0),
       },
       {
         tool: "insert",
-        args: { path: "insert.txt", anchor: line("last"), text: "LAST\n" },
-        parallelWith: 1,
+        args: { anchor: line("middle"), text: "MIDDLE\n" },
+        reuse: reuse(0),
+        parallelWith: 2,
       },
-      { tool: "delete", args: { path: "delete.txt", start: line("first") } },
-      { tool: "delete", args: { path: "./delete.txt", start: line("middle") }, parallelWith: 3 },
-      { tool: "delete", args: { path: "delete.txt", start: line("last") }, parallelWith: 4 },
+      {
+        tool: "insert",
+        args: { path: "./insert.txt", anchor: line("last"), text: "LAST\n" },
+        parallelWith: 3,
+      },
+      { tool: "delete", args: { start: line("first") }, reuse: reuse(1), parallelWith: 4 },
+      { tool: "delete", args: { start: line("middle") }, reuse: reuse(1), parallelWith: 5 },
+      { tool: "delete", args: { path: "./delete.txt", start: line("last") }, parallelWith: 6 },
     ],
     {
       modes: ["codemode"],

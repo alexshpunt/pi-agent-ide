@@ -1,10 +1,10 @@
-/** A Search selection can join a native batch only when one local file owns it. */
-export function localSearchSource(
+/** A completed Read/Search selection can join a native batch only for one local file. */
+export function localSnapshotSource(
   value: string,
   targets: readonly { readonly source: string }[],
-  searchResults: ReadonlySet<string>,
+  snapshotResults: ReadonlySet<string>,
 ): string | undefined {
-  if (!value.startsWith("SEARCH#") && !searchResults.has(value)) return undefined;
+  if (!value.startsWith("SEARCH#") && !snapshotResults.has(value)) return undefined;
   if (targets.length !== 1) return undefined;
   const source = targets[0]?.source;
   if (source === undefined) return undefined;

@@ -240,7 +240,7 @@ const groups: [string[], string[]][] = [
     ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"],
   ],
   [
-    ["codemode.parallel-edit-effects"],
+    ["codemode.parallel-edit-effects", "compose.read-concurrent-edit-snapshot"],
     ["parallel-edit-effects-all", "parallel-edit-effects-allSettled"],
   ],
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],

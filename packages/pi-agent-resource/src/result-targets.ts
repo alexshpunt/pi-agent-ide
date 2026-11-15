@@ -687,6 +687,12 @@ function retiredReason(lost: readonly string[]): string {
   ].join("\n");
 }
 
+/** The final included line, excluding the next line's column-zero endpoint. */
+function lastSelectedLine({ start, end }: ResultRange): number {
+  return end.column === 0 && end.lineNumber > start.lineNumber
+    ? end.lineNumber - 1
+    : end.lineNumber;
+}
 /** Where the text of each adjusted range stands now, for the error of an edit that needs the old text. */
 function adjustedRegions(targets: readonly ResultSourceTarget[]): string[] {
   return targets.flatMap((target) => {
@@ -697,7 +703,7 @@ function adjustedRegions(targets: readonly ResultSourceTarget[]): string[] {
     return adjusted.map((range) => {
       const first = (lines[range.start.lineNumber - 1] ?? "").trim();
       const shown = first.length > 120 ? `${first.slice(0, 120)}…` : first;
-      return `lines ${String(range.start.lineNumber)}–${String(range.end.lineNumber)} changed: now ${String(range.start.lineNumber)}| ${shown}`;
+      return `lines ${String(range.start.lineNumber)}–${String(lastSelectedLine(range))} changed: now ${String(range.start.lineNumber)}| ${shown}`;
     });
   });
 }
@@ -841,11 +847,8 @@ export function describeAdjustedRanges(
     target.ranges
       .filter((range) => range.adjusted === true)
       .map((range) => {
-        const { start, end } = range;
-        const last =
-          end.column === 0 && end.lineNumber > start.lineNumber
-            ? end.lineNumber - 1
-            : end.lineNumber;
+        const { start } = range;
+        const last = lastSelectedLine(range);
         const prefix = cwd.endsWith(path.sep) ? cwd : `${cwd}${path.sep}`;
         const name = target.source.startsWith(prefix)
           ? target.source.slice(prefix.length)

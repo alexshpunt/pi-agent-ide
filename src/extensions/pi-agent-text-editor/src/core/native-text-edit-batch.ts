@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { withTextEditOrigin } from "./text-edit-origin.ts";
 import { TextAnchorResourceResolutionError } from "./text-anchor-registry.ts";
-import { localSearchSource } from "./native-search-source.ts";
+import { localSnapshotSource } from "./native-snapshot-source.ts";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
@@ -286,8 +286,8 @@ class NativeTextEditBatchCoordinator {
   >();
   private readonly scopedInvocations = new Map<string, ScriptBatch>();
   private readonly resultTargets: ResultTargetStore;
-  /** Only completed Search results may contribute local snapshot selections. */
-  private readonly searchResults = new Set<string>();
+  /** Only completed Read/Search results may contribute local snapshot selections. */
+  private readonly snapshotResults = new Set<string>();
 
   constructor(
     private readonly core: TextEditorCore,
@@ -339,7 +339,7 @@ class NativeTextEditBatchCoordinator {
       let ownsSource =
         (registration?.name === "copy" || registration?.name === "move") &&
         (isResultInput(input.path) || isResultInput(input.target));
-      // Only local, single-source Search references can share immutable batch snapshots.
+      // Only local, single-source Read/Search references can share immutable batch snapshots.
       // Keep the caller's input intact for every boundary call.
       const candidate = { ...input };
       const implicitAnchors: Record<string, string> = {};
@@ -360,7 +360,7 @@ class NativeTextEditBatchCoordinator {
             if (typeof value !== "string" || value.length === 0) continue;
             if (
               value.startsWith("RESULT#") &&
-              !this.searchResults.has(value) &&
+              !this.snapshotResults.has(value) &&
               !this.resultTargets.referenceName(value).startsWith("SEARCH#")
             ) {
               // Pending edit results and other resource-owned selections remain boundaries.
@@ -371,10 +371,10 @@ class NativeTextEditBatchCoordinator {
             if (result.kind === "not-handled") continue;
             const source =
               result.kind === "resolved"
-                ? localSearchSource(
+                ? localSnapshotSource(
                     this.resultTargets.referenceName(value),
                     result.targets,
-                    this.searchResults,
+                    this.snapshotResults,
                   )
                 : undefined;
             const firstAnchor = registration.anchors?.find(
@@ -405,7 +405,7 @@ class NativeTextEditBatchCoordinator {
             if (!isMutationAnchorValue(anchor, value)) continue;
             if (
               value.startsWith("RESULT#") &&
-              !this.searchResults.has(value) &&
+              !this.snapshotResults.has(value) &&
               !this.resultTargets.referenceName(value).startsWith("SEARCH#")
             ) {
               ownsSource = true;
@@ -417,10 +417,10 @@ class NativeTextEditBatchCoordinator {
               resolverContext,
             );
             if (targets === undefined) continue;
-            const source = localSearchSource(
+            const source = localSnapshotSource(
               this.resultTargets.referenceName(value),
               targets,
-              this.searchResults,
+              this.snapshotResults,
             );
             if (source === undefined) {
               ownsSource = true;
@@ -477,6 +477,28 @@ class NativeTextEditBatchCoordinator {
       return;
     });
     pi.on("tool_result", async (event) => {
+      // Read issues trusted text selections; non-text and multi-source results stay boundaries.
+      if (event.toolName === "read" && !event.isError) {
+        const outcome = event.structuredContent;
+        if (
+          outcome !== null &&
+          typeof outcome === "object" &&
+          "status" in outcome &&
+          outcome.status === "success" &&
+          "data" in outcome
+        ) {
+          const data = outcome.data;
+          if (
+            data !== null &&
+            typeof data === "object" &&
+            "kind" in data &&
+            data.kind === "text" &&
+            "target" in data &&
+            typeof data.target === "string"
+          )
+            this.snapshotResults.add(data.target);
+        }
+      }
       // These handles come from the Search owner, never from caller-supplied coordinates.
       if (event.toolName === "search" && !event.isError) {
         const details = event.details;
@@ -485,10 +507,10 @@ class NativeTextEditBatchCoordinator {
             ? details.payload
             : undefined;
         if (payload !== null && typeof payload === "object" && "target" in payload) {
-          if (typeof payload.target === "string") this.searchResults.add(payload.target);
+          if (typeof payload.target === "string") this.snapshotResults.add(payload.target);
           if ("matchTargets" in payload && Array.isArray(payload.matchTargets))
             for (const target of payload.matchTargets)
-              if (typeof target === "string") this.searchResults.add(target);
+              if (typeof target === "string") this.snapshotResults.add(target);
         }
       }
       this.scopedInvocations.get(event.toolCallId)?.unfinishedCalls.delete(event.toolCallId);
@@ -779,8 +801,8 @@ class NativeTextEditBatchCoordinator {
     };
     pi.on("agent_end", clear);
     pi.on("session_shutdown", clear);
-    pi.on("session_start", () => this.searchResults.clear());
-    pi.on("session_shutdown", () => this.searchResults.clear());
+    pi.on("session_start", () => this.snapshotResults.clear());
+    pi.on("session_shutdown", () => this.snapshotResults.clear());
   }
 
   /** Share post-edit state while allowing Write to finish its own processing immediately. */
