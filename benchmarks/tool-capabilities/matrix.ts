@@ -122,6 +122,8 @@ const groups: [string[], string[]][] = [
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
   [["edit.delete-exact-range"], ["exact-range-delete"]],
   [["edit.copy-exact-range", "edit.copy-exact-destination"], ["exact-range-copy"]],
+  // Range routes validate equal issued selections across path/start/anchor forms globally;
+  // exact-range-move also exercises multiline EOF selectors with LF/CRLF argument variants.
   [["edit.move-exact-range", "edit.move-exact-destination"], ["exact-range-move"]],
   [["edit.copy-source-range"], ["exact-range-copy", "selection-copy-move"]],
   [["edit.move-source-range"], ["exact-range-move", "selection-copy-move"]],

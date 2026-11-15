@@ -285,7 +285,13 @@ function values(value: unknown): string[] {
 function valueIds(value: unknown): string[] {
   if (Array.isArray(value)) return (value as unknown[]).flatMap(valueIds);
   if (value === null || typeof value !== "object") return [];
-  const own = "id" in value && typeof value.id === "string" ? [value.id] : [];
+  const own = Object.entries(value).flatMap(([key, item]) =>
+    typeof item === "string" &&
+    (key === "id" ||
+      (["target", "line", "match"].includes(key) && /^(?:RESULT|SEARCH)#/u.test(item)))
+      ? [item]
+      : [],
+  );
   return [...own, ...Object.values(value).flatMap(valueIds)];
 }
 
@@ -437,7 +443,7 @@ export function validateRoute(
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
       if (
-        !["result", "anchor"].some((kind) =>
+        !["result", "anchor", "change"].some((kind) =>
           reuses(value, resultText(end.event), kind, valueIds(end.event.result?.structuredContent)),
         )
       )
@@ -448,7 +454,7 @@ export function validateRoute(
         if (Array.isArray(prior.event.args?.path) && prior.event.args.path.length !== 1) return [];
       }
       // A Codemode parent can print a child's id; only a call with a path issued it.
-      const source = prior.event.args?.path;
+      const source = prior.event.args?.path ?? prior.event.args?.file;
       if (source === undefined) continue;
       const sources = Array.isArray(source) ? (source as unknown[]) : [source];
       const paths = sources.flatMap((item) =>
@@ -618,16 +624,52 @@ export function validateRoute(
           return true;
       }
     }
+    if (["undo", "stage", "unstage"].includes(tool)) {
+      if (actual.file === undefined) {
+        const files = [...new Set(reusedPaths(actual.change, before).map(fixturePath))];
+        if (files.length === 1) normalized.file = files[0];
+      }
+      return matches(expected, normalized);
+    }
     if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
-    const { path: file, ...rest } = expected;
-    // Moving a selector from path into start/anchor is only notation, provided its file agrees.
+    const file = expected.path;
     const location = actual.anchor ?? actual.start;
+    // Infer sources only from issued references; an explicit different file is never rescued.
+    for (const [sourceField, selector] of [
+      ["path", location],
+      ["target", actual.targetStart],
+    ] as const) {
+      const source = actual[sourceField] ?? selector;
+      const paths = [...new Set(reusedPaths(source, before).map(fixturePath))];
+      if (
+        (typeof expected[sourceField] === "string" || expected[sourceField] instanceof RegExp) &&
+        paths.length === 1 &&
+        matches(expected[sourceField], paths[0], sourceField)
+      )
+        normalized[sourceField] = paths[0];
+    }
+    // A complete single-match Search's match and whole-result reference name the same selection.
+    const selection = location ?? actual.path;
     if (
       file instanceof RegExp &&
-      sameSource(actual.path, location, before) &&
-      matches(file, location)
-    )
-      normalized.path = location;
+      selection !== undefined &&
+      (location === undefined ||
+        actual.path === undefined ||
+        sameSource(actual.path, location, before))
+    ) {
+      if (matches(file, selection)) normalized.path = selection;
+      else
+        for (const issuer of selectionIssuers(undefined, before)) {
+          if (issuer.tool !== "search" || !wholeSearchSelection(selection, issuer.end)) continue;
+          const references = valueIds(issuer.end.result?.structuredContent);
+          const envelope = /<uuid>([a-f0-9-]+)<\/uuid>/iu.exec(resultText(issuer.end))?.[1];
+          if (envelope) references.push(`RESULT#${envelope}`);
+          const equivalent = references.find(
+            (reference) => matches(file, reference) && wholeSearchSelection(reference, issuer.end),
+          );
+          if (equivalent) normalized.path = equivalent;
+        }
+    }
     for (const field of ["anchor", "start", "end", "targetStart", "targetEnd"]) {
       const target = field.startsWith("target");
       const source = target ? expected.target : file;
@@ -640,7 +682,9 @@ export function validateRoute(
       )
         continue;
       const issuers = selectionIssuers(source, before);
-      const selector = normalized[field];
+      const selector =
+        normalized[field] ??
+        (!target && ["start", "anchor"].includes(field) ? actual.path : undefined);
       const exact = expected[field];
       const hash = issuers
         .map((issuer) => issuedAnchor(selector, resultText(issuer.end)))
@@ -651,38 +695,24 @@ export function validateRoute(
       if (content === undefined) continue;
       const paired = target ? expected.targetEnd !== undefined : expected.end !== undefined;
       const required = exactSelection(content, exact, paired);
-      const selected = issuedSelection(
-        content,
-        selector ?? (!target && field === "start" ? actual.path : undefined),
-        issuers,
-        (candidate) => matches({ path: source }, { path: candidate }),
+      const selected = issuedSelection(content, selector, issuers, (candidate) =>
+        matches({ path: source }, { path: candidate }),
       );
-      if (required && selected && required.from === selected.from && required.to === selected.to) {
+      if (required && selected && required.from === selected.from && required.to === selected.to)
         normalized[field] = exact;
-        if (
-          !target &&
-          field === "start" &&
-          actual.start === undefined &&
-          actual.anchor === undefined
-        )
-          normalized.path = source;
-      }
     }
     const context = editContext(tool, normalized, before);
-    const equivalent = equivalentLineArguments(
-      tool,
+    return matches(
       expected,
-      normalized,
-      context.content,
-      context.selection,
-      matches,
+      equivalentLineArguments(
+        tool,
+        expected,
+        normalized,
+        context.content,
+        context.selection,
+        matches,
+      ),
     );
-    if (matches(expected, equivalent)) return true;
-    if (!(typeof file === "string" || file instanceof RegExp) || !matches(rest, equivalent))
-      return false;
-    // A selector can carry its own source. Never rescue an explicitly wrong path with it.
-    const source = actual.path !== undefined ? actual.path : (actual.anchor ?? actual.start);
-    return reusedPaths(source, before).some((path) => matches({ path: file }, { path }));
   }
   function argumentReuses(
     field: string,
@@ -695,8 +725,11 @@ export function validateRoute(
     const alternatives = [value];
     if (field === "path" && args) {
       for (const selector of [args.anchor, args.start])
-        if (sameSource(args.path, selector, before)) alternatives.push(selector);
+        if (args.path === undefined || sameSource(args.path, selector, before))
+          alternatives.push(selector);
     }
+    if (["start", "anchor"].includes(field) && args && value === undefined)
+      alternatives.push(args.path);
     return alternatives.some((candidate) => {
       if (reference.kind === "whole-result") {
         if (
@@ -808,7 +841,9 @@ export function validateRoute(
       if (step.args && !argsMatch(step.tool, step.args, event.args, start.index)) continue;
       if (
         step.argsAny &&
-        !step.argsAny.some((args) => argsMatch(step.tool, args, event.args, start.index))
+        !step.argsAny.some((args) =>
+          argsMatch(step.tool, { ...step.args, ...args }, event.args, start.index),
+        )
       )
         continue;
       const output = resultText(end.event);
