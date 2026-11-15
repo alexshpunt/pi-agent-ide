@@ -301,12 +301,22 @@ void test("parallel requirements accept either start order but never disjoint ex
     assert.ok(!validateRoute({ steps: route }, [parent, ...middle, parentEnd], "codemode").passed);
 });
 void test("the free gate rejects invalid or forward explicit dependencies", () => {
-  const task = { id: "dependency-fixture", capabilities: [], modes: ["direct"], steps: [
-    { tool: "write" }, { tool: "read", after: [0] },
-  ] };
+  const task = {
+    id: "dependency-fixture",
+    capabilities: [],
+    modes: ["direct"],
+    steps: [{ tool: "write" }, { tool: "read", after: [0] }],
+  };
   assert.deepEqual(checkCoverage([], [task], []), []);
   for (const after of [[-1], [1], [2], [0.5]]) {
-    assert.equal(checkCoverage([], [{ ...task, steps: [task.steps[0] ?? { tool: "write" }, { tool: "read", after }] }], []).length, 1);
+    assert.equal(
+      checkCoverage(
+        [],
+        [{ ...task, steps: [task.steps[0] ?? { tool: "write" }, { tool: "read", after }] }],
+        [],
+      ).length,
+      1,
+    );
   }
 });
 
