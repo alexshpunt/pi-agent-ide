@@ -1,5 +1,10 @@
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import {
+  equivalentLineArguments,
+  wholeLineSelection,
+  type LineSelection,
+} from "./edit-equivalence.ts";
 
 /** A retained JSON-mode event; unknown records remain in the evidence. */
 export interface RunEvent {
@@ -117,6 +122,8 @@ function fieldValue(value: unknown, field: string): unknown {
 /** One actual execution required to establish a capability. */
 export interface RouteStep {
   tool: string;
+  /** Require completion of these earlier declared steps before this call starts. */
+  after?: readonly number[];
   /** Require overlap with an earlier step's execution in the same native Codemode script. */
   parallelWith?: number;
   /** Require two direct tool calls in the same completed assistant message, not a retry. */
@@ -148,7 +155,7 @@ export interface RouteStep {
   /**
    * Require the native tool_search calls up to this one to have loaded these tools together. One
    * search may load several tools, so a tool may come from a search for another one. tool_search is
-   * model-only, so this step is a direct call in Codemode routes too.
+   * model-only, so only direct routes require this step.
    */
   discovers?: readonly string[];
   /** Routes that need this step, such as one only a direct call can take; others skip it. */
@@ -161,6 +168,13 @@ export interface RouteStep {
   reuse?: ResultReuse | ResultReuse[];
 }
 
+/** Native Codemode tools do not depend on model-only discovery, even in mixed routes. */
+export function routeStepApplies(step: RouteStep, mode: string): boolean {
+  return (
+    !(mode === "codemode" && step.tool === "tool_search") &&
+    (!step.modes || step.modes.includes(mode))
+  );
+}
 /** An executable task may protect several related capabilities. */
 export interface CapabilityCase {
   id: string;
@@ -321,9 +335,9 @@ function reuses(
   );
 }
 
-/** Require successful real executions in order, including result provenance and nesting. */
+/** Assign distinct real executions, respecting declared dependencies, provenance and nesting. */
 export function validateRoute(
-  task: Pick<CapabilityCase, "steps" | "forbiddenTools">,
+  task: Pick<CapabilityCase, "steps" | "forbiddenTools" | "files">,
   events: RunEvent[],
   mode: string,
   aliases: Readonly<Record<string, string>> = {},
@@ -429,6 +443,99 @@ export function validateRoute(
     }
     return [];
   }
+  /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
+  function editContext(
+    tool: string,
+    actual: Record<string, unknown>,
+    before: number,
+  ): {
+    content?: string;
+    selection?: LineSelection;
+  } {
+    const source = actual.path ?? actual.anchor ?? actual.start;
+    const paths = [...values(source), ...reusedPaths(source, before)];
+    const file = Object.keys(task.files ?? {}).find((file) =>
+      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
+    );
+    if (file === undefined) return {};
+    for (const prior of starts) {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      if (
+        !["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(
+          prior.event.toolName ?? "",
+        )
+      )
+        continue;
+      const args = prior.event.args ?? {};
+      const affected = [args.path, args.anchor, args.start, args.target, args.file];
+      if (
+        affected.some((value) =>
+          [...values(value), ...reusedPaths(value, prior.index)].some(
+            (candidate) => fixturePath(candidate) === fixturePath(file),
+          ),
+        )
+      )
+        return {};
+    }
+    const content = task.files?.[file];
+    if (content === undefined) return {};
+    const selector = actual.anchor ?? actual.start;
+    if (selector !== undefined) {
+      const first = wholeLineSelection(content, selector);
+      const last = actual.end === undefined ? first : wholeLineSelection(content, actual.end);
+      if (first && last && first.from <= last.from)
+        return { content, selection: { content, from: first.from, to: last.to } };
+    }
+    const reference = selector ?? actual.path;
+    for (const prior of starts) {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      if (
+        !reuses(
+          reference,
+          resultText(end.event),
+          "result",
+          valueIds(end.event.result?.structuredContent),
+        )
+      )
+        continue;
+      // A :line reference always owns its line separator when every fixture line is terminated.
+      // Its exact position is not inferred, so this witness is used only for replacement.
+      if (
+        tool === "replace" &&
+        typeof reference === "string" &&
+        /^SEARCH#[A-F0-9]+:(?:all|\d+):line$/u.test(reference) &&
+        prior.event.toolName === "search" &&
+        content.endsWith("\n") &&
+        actual.end === undefined
+      )
+        return { content, selection: { content, from: 0, to: content.length } };
+      // Plain Read windows select whole lines; transformed views and Search matches do not.
+      if (selector !== undefined || prior.event.toolName !== "read") continue;
+      const args = prior.event.args ?? {};
+      if (Array.isArray(args.views) && args.views.some((view) => view !== "anchors")) continue;
+      const offset = args.offset ?? 1;
+      const limit = args.limit;
+      const lines = [0, ...[...content.matchAll(/\n/gu)].map((match) => match.index + 1)].filter(
+        (index) => index < content.length,
+      );
+      if (
+        typeof offset !== "number" ||
+        !Number.isInteger(offset) ||
+        offset < 1 ||
+        (limit !== undefined &&
+          (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1))
+      )
+        continue;
+      const from = lines[offset - 1];
+      if (from === undefined) continue;
+      const to =
+        limit === undefined ? content.length : (lines[offset - 1 + limit] ?? content.length);
+      return { content, selection: { content, from, to } };
+    }
+    return { content };
+  }
   /**
    * Arguments match. For an edit, a reused result of the expected file also stands for its path:
    * the edit's selectors resolve inside that result. A search with a result is narrower, so it
@@ -479,8 +586,17 @@ export function validateRoute(
       });
       if (issuer) normalized[field] = rest[field];
     }
-    if (matches(expected, normalized)) return true;
-    if (!(typeof file === "string" || file instanceof RegExp) || !matches(rest, normalized))
+    const context = editContext(tool, normalized, before);
+    const equivalent = equivalentLineArguments(
+      tool,
+      expected,
+      normalized,
+      context.content,
+      context.selection,
+      matches,
+    );
+    if (matches(expected, equivalent)) return true;
+    if (!(typeof file === "string" || file instanceof RegExp) || !matches(rest, equivalent))
       return false;
     // A selector can carry its own source. Never rescue an explicitly wrong path with it.
     const source = actual.path !== undefined ? actual.path : (actual.anchor ?? actual.start);
@@ -489,28 +605,43 @@ export function validateRoute(
   let furthest = 0;
   function walk(
     stepIndex: number,
-    previousStart: number,
     // A step that another route skips leaves its slot empty; steps reusing it cannot match.
-    selected: ({ event: RunEvent; end: number; parent?: string; call?: string } | undefined)[],
+    selected: (
+      | { event: RunEvent; start: number; end: number; parent?: string; call?: string }
+      | undefined
+    )[],
   ): boolean {
     furthest = Math.max(furthest, stepIndex);
     const step = task.steps[stepIndex];
     if (!step) return true;
-    if (step.modes && !step.modes.includes(mode))
-      return walk(stepIndex + 1, previousStart, [...selected, undefined]);
+    if (!routeStepApplies(step, mode)) return walk(stepIndex + 1, [...selected, undefined]);
     // In Codemode, a native text call either fails at once, such as one with a result-bound
     // selector, or is accepted into a batch whose commit fails its parent.
     const acceptedOrFailed = step.error === "direct" && mode === "codemode";
+    const dependencies = [
+      ...(step.after ?? []),
+      ...task.steps
+        .slice(0, stepIndex)
+        .flatMap((prior, index) =>
+          mode === "direct" &&
+          prior.tool === "tool_search" &&
+          (!prior.discovers || prior.discovers.includes(step.tool))
+            ? [index]
+            : [],
+        ),
+    ];
     for (const start of starts) {
       const event = start.event;
       const end = ends.get(event.toolCallId ?? "");
       if (
-        start.index <= previousStart ||
+        selected.some((prior) => prior?.start === start.index) ||
         event.toolName !== step.tool ||
         !end ||
         end.index <= start.index ||
         (!acceptedOrFailed && end.event.isError !== Boolean(step.error))
       )
+        continue;
+      if (dependencies.some((index) => !selected[index] || selected[index].end >= start.index))
         continue;
       const execution = executionParent(start);
       if (!execution) continue;
@@ -537,6 +668,7 @@ export function validateRoute(
           mode !== "codemode" ||
           prior === undefined ||
           start.index >= prior.end ||
+          end.index <= prior.start ||
           prior.parent !== execution.parent
         )
           continue;
@@ -670,16 +802,22 @@ export function validateRoute(
       )
         continue;
       if (
-        walk(stepIndex + 1, start.index, [
+        walk(stepIndex + 1, [
           ...selected,
-          { event: end.event, end: end.index, parent: execution.parent, call: execution.call },
+          {
+            event: end.event,
+            start: start.index,
+            end: end.index,
+            parent: execution.parent,
+            call: execution.call,
+          },
         ])
       )
         return true;
     }
     return false;
   }
-  if (!walk(0, -1, []))
+  if (!walk(0, []))
     reasons.push(
       `Required step ${furthest + 1} (${task.steps[furthest]?.tool}) was not observed with the required arguments, completed result, reuse, and route`,
     );
@@ -706,6 +844,10 @@ export function checkCoverage(
   }
   for (const task of cases) {
     if (!task.steps.length || !task.modes.length) problems.push(`${task.id}: no route or mode`);
+    task.steps.forEach((step, index) => {
+      if (step.after?.some((prior) => !Number.isInteger(prior) || prior < 0 || prior >= index))
+        problems.push(`${task.id}: step ${index + 1} has an invalid dependency`);
+    });
     for (const id of task.capabilities)
       if (!ids.has(id)) problems.push(`${task.id}: unknown capability ${id}`);
       else if (!matrix.find((capability) => capability.id === id)?.cases.includes(task.id))

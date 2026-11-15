@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
 import { capabilityCases } from "./cases.ts";
-import { validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
+import { checkCoverage, validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
 
 interface Call {
   tool: string;
@@ -48,8 +48,277 @@ function steps(id: string): RouteStep[] {
   return task.steps;
 }
 function check(route: RouteStep[], calls: readonly Call[], mode = "direct"): boolean {
-  return validateRoute({ steps: route }, events(calls, mode), mode).passed;
+  const task = capabilityCases.find((entry) => entry.steps === route) ?? { steps: route };
+  return validateRoute(task, events(calls, mode), mode).passed;
 }
+
+void test("Codemode skips every discovery step without changing later reuse indices", () => {
+  const searchId = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
+  const route: RouteStep[] = [
+    { tool: "tool_search", discovers: ["demo_read", "demo_search", "demo_replace"] },
+    { tool: "demo_read" },
+    { tool: "demo_search", reuse: { from: 1, field: "path" } },
+    { tool: "demo_replace", args: { text: "changed" }, reuse: { from: 2, field: "path" } },
+  ];
+  const calls: Call[] = [
+    { tool: "demo_read", args: { path: "memory://demo/note" }, value: { id: result } },
+    {
+      tool: "demo_search",
+      args: { path: { id: result }, query: "alpha" },
+      value: { id: searchId },
+    },
+    { tool: "demo_replace", args: { path: { id: searchId }, text: "changed" } },
+  ];
+  for (const step of [route[0], { tool: "tool_search" }]) {
+    assert.ok(step);
+    const task = { steps: [step, ...route.slice(1)] };
+    for (const prefix of [
+      [],
+      events([{ tool: "tool_search", args: {}, details: { loaded: ["demo_read"] } }]),
+      events([{ tool: "tool_search", args: {}, error: true }]),
+    ]) {
+      assert.ok(validateRoute(task, [...prefix, ...events(calls, "codemode")], "codemode").passed);
+    }
+    assert.ok(!validateRoute(task, events(calls), "direct").passed);
+    assert.ok(!validateRoute(task, events(calls.slice(1), "codemode"), "codemode").passed);
+    assert.ok(
+      !validateRoute(
+        task,
+        events(
+          [
+            ...calls.slice(0, 2),
+            {
+              tool: "demo_replace",
+              args: { path: { id: result }, text: "changed" },
+            },
+          ],
+          "codemode",
+        ),
+        "codemode",
+      ).passed,
+    );
+  }
+});
+
+for (const mode of ["direct", "codemode"]) {
+  void test(`whole-line edit arguments share effect-based terminal-newline matching in ${mode}`, () => {
+    const files = { "task.txt": "first\nmiddle\nlast\n" };
+    function edit(
+      tool: string,
+      required: Record<string, unknown>,
+      actual: Record<string, unknown>,
+      content = files["task.txt"],
+    ) {
+      return validateRoute(
+        {
+          files: { "task.txt": content },
+          steps: [{ tool, args: { path: "task.txt", ...required } }],
+        },
+        events([{ tool, args: { path: "./task.txt", ...actual } }], mode),
+        mode,
+      ).passed;
+    }
+    for (const tool of ["insert", "delete", "replace", "copy", "move"]) {
+      const selector = tool === "insert" ? "anchor" : "start";
+      const extra = tool === "insert" || tool === "replace" ? { text: "NEW\n" } : {};
+      const required = { [selector]: /^middle$/u, ...extra };
+      assert.ok(edit(tool, required, { [selector]: "middle\n", ...extra }), tool);
+      assert.ok(!edit(tool, required, { [selector]: "middle\n\n", ...extra }), tool);
+      assert.ok(!edit(tool, required, { [selector]: "other\n", ...extra }), tool);
+    }
+    assert.ok(
+      edit("insert", { anchor: "middle", text: "NEW" }, { anchor: "middle", text: "NEW\n" }),
+    );
+    assert.ok(
+      edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text: "NEW\n" }),
+    );
+    assert.ok(
+      edit("replace", { start: "middle\n", text: "NEW\n" }, { start: "middle", text: "NEW" }),
+    );
+    for (const text of ["NEW\n\n", "NEW ", "OTHER\n"]) {
+      assert.ok(!edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text }));
+    }
+    assert.ok(!edit("delete", { start: "fir", end: "middle" }, { start: "fir", end: "middle\n" }));
+    // Match/partial spans and EOF cannot silently acquire a line break.
+    assert.ok(!edit("replace", { start: "midd", text: "NEW" }, { start: "midd", text: "NEW\n" }));
+    assert.ok(
+      !edit(
+        "replace",
+        { start: "last", text: "NEW" },
+        { start: "last", text: "NEW\n" },
+        "first\nlast",
+      ),
+    );
+    assert.ok(!edit("insert", { anchor: "last", text: "NEW\n" }, { anchor: "last", text: "NEW" }));
+    assert.ok(
+      edit(
+        "insert",
+        { anchor: "last", before: true, text: "NEW" },
+        { anchor: "last", before: true, text: "NEW\n" },
+        "first\nlast",
+      ),
+    );
+  });
+}
+void test("Search :line replacement allows one terminal separator, never :match or fabricated provenance", () => {
+  for (const ending of ["\n", "\r\n"]) {
+    const line = "SEARCH#ABCD:1:line";
+    const search: Call = {
+      tool: "search",
+      args: { path: "task.txt", query: "beta" },
+      text: line + "\nSEARCH#ABCD:1:match",
+    };
+    const task = {
+      files: { "task.txt": `alpha${ending}beta${ending}omega${ending}` },
+      steps: [
+        { tool: "search" },
+        {
+          tool: "replace",
+          args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" },
+          reuse: { from: 0, field: "start" },
+        },
+      ],
+    };
+    const replace: Call = { tool: "replace", args: { start: line, text: "BETA" + ending } };
+    assert.ok(validateRoute(task, events([search, replace], "codemode"), "codemode").passed);
+    for (const changed of [
+      { ...replace, args: { ...replace.args, start: "SEARCH#ABCD:1:match" } },
+      { ...replace, args: { ...replace.args, start: "SEARCH#FFFF:1:line" } },
+      { ...replace, args: { ...replace.args, text: "BETA" + ending + ending } },
+      { ...replace, error: true },
+    ])
+      assert.ok(!validateRoute(task, events([search, changed], "codemode"), "codemode").passed);
+    assert.ok(
+      !validateRoute(task, events([{ ...search, error: true }, replace], "codemode"), "codemode")
+        .passed,
+    );
+    const matchTask = {
+      ...task,
+      steps: [
+        { tool: "search" },
+        { ...task.steps[1], tool: "replace", args: { start: "SEARCH#ABCD:1:match", text: "BETA" } },
+      ],
+    };
+    assert.ok(
+      !validateRoute(
+        matchTask,
+        events(
+          [search, { ...replace, args: { start: "SEARCH#ABCD:1:match", text: "BETA" + ending } }],
+          "codemode",
+        ),
+        "codemode",
+      ).passed,
+    );
+  }
+});
+for (const mode of ["direct", "codemode"]) {
+  void test(`lsp-read accepts a recovered references call after independent operations in ${mode}`, () => {
+    const route = steps("lsp-read");
+    const query: Call = {
+      tool: "lsp_search",
+      args: { path: "task.ts", query: "count" },
+      text: `<uuid>${uuid}</uuid>\ncount`,
+      value: { id: result },
+    };
+    const references: Call = {
+      tool: "lsp_search",
+      args: { path: result, query: "count", references: true },
+      text: "count",
+    };
+    const independent: Call[] = [
+      { tool: "lsp_search", args: { declaration: "task.ts#count" }, text: "3" },
+      { tool: "lsp_search", args: { calls: "task.ts#count" }, text: "References" },
+      {
+        tool: "read",
+        args: { path: "diagnostics:problem.ts" },
+        text: "typescript-language-server:2322",
+      },
+      {
+        tool: "read",
+        args: { path: "problem.ts", views: ["diagnostics"] },
+        text: "typescript-language-server:2322",
+      },
+    ];
+    const recovered = [query, { ...references, error: true }, ...independent, references];
+    assert.ok(check(route, recovered, mode));
+    assert.ok(check(route, [...independent.toReversed(), query, references], mode));
+    for (const call of [query, references, ...independent]) {
+      assert.ok(
+        !check(
+          route,
+          recovered.filter((entry) => entry !== call),
+          mode,
+        ),
+        call.tool,
+      );
+    }
+    assert.ok(!check(route, [references, ...independent, query], mode));
+    assert.ok(
+      !check(
+        route,
+        [query, ...independent, { ...references, args: { ...references.args, path: "task.ts" } }],
+        mode,
+      ),
+    );
+  });
+
+  void test(`independent requirements need distinct successful executions in ${mode}`, () => {
+    const repeated: RouteStep[] = [{ tool: "read" }, { tool: "read" }];
+    const read: Call = { tool: "read", args: { path: "task.txt" } };
+    assert.ok(!check(repeated, [read], mode));
+    assert.ok(!check(repeated, [read, { ...read, error: true }], mode));
+    assert.ok(check(repeated, [read, read], mode));
+    const ordered: RouteStep[] = [{ tool: "write" }, { tool: "read", after: [0] }];
+    const write: Call = { tool: "write", args: { path: "task.txt", content: "new" } };
+    assert.ok(check(ordered, [write, read], mode));
+    assert.ok(!check(ordered, [read, write], mode));
+    const skipped: RouteStep[] = [
+      { tool: "write", modes: ["other"] },
+      ordered[1] ?? { tool: "read" },
+    ];
+    assert.ok(!check(skipped, [write, read], mode));
+  });
+}
+
+void test("parallel requirements accept either start order but never disjoint executions", () => {
+  const route: RouteStep[] = [{ tool: "read" }, { tool: "search", parallelWith: 0 }];
+  const calls: Call[] = [
+    { tool: "read", args: {} },
+    { tool: "search", args: {} },
+  ];
+  const entries = events(calls, "codemode");
+  const [parent, readStart, readEnd, searchStart, searchEnd, parentEnd] = entries;
+  assert.ok(parent && readStart && readEnd && searchStart && searchEnd && parentEnd);
+  for (const middle of [
+    [readStart, searchStart, readEnd, searchEnd],
+    [searchStart, readStart, searchEnd, readEnd],
+  ])
+    assert.ok(validateRoute({ steps: route }, [parent, ...middle, parentEnd], "codemode").passed);
+  for (const middle of [
+    [readStart, readEnd, searchStart, searchEnd],
+    [searchStart, searchEnd, readStart, readEnd],
+  ])
+    assert.ok(!validateRoute({ steps: route }, [parent, ...middle, parentEnd], "codemode").passed);
+});
+void test("the free gate rejects invalid or forward explicit dependencies", () => {
+  const task = {
+    id: "dependency-fixture",
+    capabilities: [],
+    modes: ["direct"],
+    steps: [{ tool: "write" }, { tool: "read", after: [0] }],
+  };
+  assert.deepEqual(checkCoverage([], [task], []), []);
+  for (const after of [[-1], [1], [2], [0.5]]) {
+    assert.equal(
+      checkCoverage(
+        [],
+        [{ ...task, steps: [task.steps[0] ?? { tool: "write" }, { tool: "read", after }] }],
+        [],
+      ).length,
+      1,
+    );
+  }
+});
 
 const deferredCalls = [
   { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, text: "probe(1)" },
@@ -134,9 +403,11 @@ for (const [id, tool, index] of [
     const args = { ...step.args };
     delete args.offset;
     const call = { tool, args, text: step.contains };
-    assert.ok(check([step], [call]));
-    assert.ok(!check([step], [{ ...call, args: { ...args, offset: 2 } }]));
-    assert.ok(!check([step], [{ ...call, args: { ...args, limit: 99 } }]));
+    const prerequisite: Call = { tool: "fixture_prerequisite", args: {} };
+    const route = [{ tool: prerequisite.tool }, step];
+    assert.ok(check(route, [prerequisite, call]));
+    assert.ok(!check(route, [prerequisite, { ...call, args: { ...args, offset: 2 } }]));
+    assert.ok(!check(route, [prerequisite, { ...call, args: { ...args, limit: 99 } }]));
   });
 }
 

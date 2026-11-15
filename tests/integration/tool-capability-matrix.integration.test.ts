@@ -15,6 +15,79 @@ import { parseEvents, validateRoute, type RunEvent } from "#capabilities/validat
 import { capabilityCases } from "#capabilities/cases.ts";
 
 test.each(["direct", "codemode"] as const)(
+  "whole-line route equivalence agrees with real edit bytes (%s)",
+  async (mode) => {
+    await withTempWorkspace(async (cwd) => {
+      const files = {
+        "insert.txt": "first\nmiddle\nlast\n",
+        "replace.txt": "first\nmiddle\nlast\n",
+        "delete.txt": "first\nmiddle\nlast\n",
+      };
+      for (const [file, content] of Object.entries(files))
+        await writeFile(path.join(cwd, file), content);
+      const steps = [
+        { tool: "insert", args: { path: "insert.txt", anchor: "middle", text: "NEW" } },
+        { tool: "replace", args: { path: "replace.txt", start: "middle", text: "NEW" } },
+        { tool: "delete", args: { path: "delete.txt", start: "middle" } },
+      ];
+      const actual = steps.map((step) => ({
+        ...step,
+        args: Object.fromEntries(
+          Object.entries(step.args).map(([key, value]) => [
+            key,
+            ["anchor", "start", "text"].includes(key) ? value + "\n" : value,
+          ]),
+        ),
+      }));
+      const requests =
+        mode === "direct"
+          ? actual.map((step, index) =>
+              assistantMessage(
+                [toolCall({ id: `edit-${index}`, name: step.tool, arguments: step.args })],
+                { stopReason: "toolUse" },
+              ),
+            )
+          : [
+              assistantMessage(
+                [
+                  toolCall({
+                    id: "edits",
+                    name: "codemode",
+                    arguments: {
+                      code: `await Promise.all(${JSON.stringify(actual)}.map(step => tools[step.tool](step.args)));`,
+                    },
+                  }),
+                ],
+                { stopReason: "toolUse" },
+              ),
+            ];
+      const run = await new PiIntegrationTest({
+        testName: `capability-linewise-equivalence-${mode}`,
+        transport: "rpc",
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        rawMode: false,
+        cwd,
+        extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+        tools: ["insert", "replace", "delete", "codemode"],
+        conversation: [...requests, assistantMessage([text("Done")])],
+      }).run("Apply the whole-line edits and preserve every other byte");
+      for (const [file, content] of Object.entries({
+        "insert.txt": "first\nmiddle\nNEW\nlast\n",
+        "replace.txt": "first\nNEW\nlast\n",
+        "delete.txt": "first\nlast\n",
+      }))
+        expect(await readFile(path.join(cwd, file), "utf8")).toBe(content);
+      const events = run.traceEvents.flatMap((entry) =>
+        "event" in entry && entry.event && typeof entry.event === "object"
+          ? [entry.event as RunEvent]
+          : [],
+      );
+      expect(validateRoute({ files, steps }, events, mode)).toEqual({ passed: true, reasons: [] });
+    });
+  },
+);
+
+test.each(["direct", "codemode"] as const)(
   "the capability validator preserves declared provider failures (%s)",
   async (mode) => {
     await withTempWorkspace(async (cwd) => {
