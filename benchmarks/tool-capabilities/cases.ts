@@ -510,6 +510,49 @@ add(
   },
 );
 add(
+  "parallel-directory-transfer-gates",
+  ["compose.parallel-object-transfer-refusals"],
+  (api) =>
+    `${parallelCalls(api, 4)} Copy source-tree to source-tree/new (overlap refusal); Copy source-tree to link (symlink destination refusal); Move tracked to new-target (approval unavailable in this non-interactive runtime); Move source-tree to .git (protected Git data refusal). Do not submit these four calls sequentially or retry them. After all four refusals, Read tracked/data to check unchanged KEEP content. Leave every fixture byte unchanged; new-target and source-tree/new must not exist.`,
+  [
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "source-tree/new" },
+      error: true,
+      contains: "OVERLAPPING_PATHS",
+    },
+    {
+      tool: "copy",
+      args: { path: "source-tree", target: "link" },
+      sameAssistantWith: 0,
+      error: true,
+      contains: "INVALID_FILE_TYPE",
+    },
+    {
+      tool: "move",
+      args: { path: "tracked", target: "new-target" },
+      sameAssistantWith: 0,
+      error: true,
+      contains: "DELETE_CONFIRMATION_REQUIRED",
+    },
+    {
+      tool: "move",
+      args: { path: "source-tree", target: ".git" },
+      sameAssistantWith: 0,
+      error: true,
+      contains: "DELETE_PROTECTED_TARGET",
+    },
+    { tool: "read", args: { path: "tracked/data" }, contains: "KEEP", after: [0, 1, 2, 3] },
+  ],
+  {
+    modes: ["direct"],
+    files: deleteFixture,
+    git: true,
+    setup: "directory-transfers",
+    expected: { "new-target": null, "source-tree/new": null },
+  },
+);
+add(
   "delete-temporary-defaults",
   ["edit.delete-temporary-defaults", "edit.delete-temporary-roots", "edit.delete-temporary-names"],
   "Delete nested/tmp/scratch, nested/.tmp/scratch, nested/temp/scratch, and nested/.temp/scratch through ordinary Delete paths. Then delete each named root itself: nested/tmp, nested/.tmp, nested/temp, and nested/.temp. This workspace has no Git; exact temporary path components need no approval. Leave sentinel.txt unchanged.",
