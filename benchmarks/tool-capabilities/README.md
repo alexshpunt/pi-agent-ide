@@ -35,7 +35,7 @@ pnpm validate:tools:models --run --model luna-6-low \
 
 No inference happens without both `--run` and an explicit model profile. The command is separate from ordinary tests and CI. Obtain permission for the selected provider, model, thinking level, and runs before using it. Being in `models.json` is not permission to spend.
 
-Use `--concurrency N` to run up to N attempts at once (default 1). Reports are updated as attempts finish and list completed attempts in selection order. An account stop or signal cancels active attempts and prevents new ones; already-started requests may still incur cost. Web fixtures using port 8765 are serialized within an invocation. Run only one invocation at a time on a host because separate invocations share that port. TUI and mutable dedicated authentication require concurrency 1.
+Use `--concurrency N` to run up to N attempts at once (default 1). Reports are updated as attempts finish and list completed attempts in selection order. An account stop or signal cancels active attempts and prevents new ones; already-started requests may still incur cost. Within an invocation, ColGREP attempts share one scheduling resource and web fixtures share another for port 8765. Each resource is held through setup, execution and cleanup; unrelated cases can run in parallel. ColGREP serialization prevents cold runtime/model downloads and ONNX sessions from competing with another ColGREP attempt. Queued attempts start their prerequisite timer only after admission. Run only one invocation at a time on a host because resource exclusion does not cross invocation boundaries. TUI and mutable dedicated authentication require concurrency 1.
 
 Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 low was added by explicit task approval. New models belong in `models.json`, not in case definitions. Use the same tasks and validators for each model.
 
@@ -110,7 +110,7 @@ tar -xf vera-x86_64-unknown-linux-gnu.tar.gz
 sudo install -m 0755 colgrep-x86_64-unknown-linux-gnu/colgrep vera-x86_64-unknown-linux-gnu/vera /usr/local/bin/
 ```
 
-The ColGREP and Vera prerequisites download their runtime and model into the attempt's empty home every time: about 460 MB for ColGREP's CUDA build of ONNX Runtime and its model, less for Vera's local model. The prerequisite timeout is 120 seconds. A slower download makes the route `unavailable`.
+The ColGREP and Vera prerequisites download their runtime and model into the attempt's empty home every time: about 460 MB for ColGREP's CUDA build of ONNX Runtime and its model, less for Vera's local model. The prerequisite timeout is 120 seconds. A timeout or nonzero exit makes the route `unavailable` without inference, including a process that handles timeout termination and exits zero. Each completed prerequisite retains `prerequisite.json` with its command, timing, exit status, timeout flag and redacted output.
 
 ## Connector runs
 
