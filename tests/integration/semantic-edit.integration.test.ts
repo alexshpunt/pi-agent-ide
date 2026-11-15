@@ -9,17 +9,12 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { afterAll, expect, test } from "vitest";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { expect, test } from "vitest";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
 import {
   enableNativeCodemode,
   withTempWorkspace,
 } from "#integration/support/pi-runtime/fixtures.ts";
-
-// Preserve process-local LSP isolation when cases reset the same staged workspace.
-const restore = forceStandaloneIntegrationFile();
-afterAll(restore);
 
 test("Native tools move an exact LSP declaration without matching unrelated text", async () => {
   await withTempWorkspace(async (cwd) => {
