@@ -71,7 +71,7 @@ describe("capability route evidence", () => {
       ).toBe(false);
     }
   });
-  test("whole-file routes reject filled-in selection arguments", () => {
+  test("whole-file routes compare omitted selectors after Pi parsing", () => {
     const fixture = capabilityCases.find((candidate) => candidate.id === "file-copy-move-delete");
     expect(fixture).toBeDefined();
     for (const step of fixture?.steps ?? []) {
@@ -92,12 +92,15 @@ describe("capability route evidence", () => {
       expect(check({ ...step.args }).passed).toBe(true);
       const selectors =
         step.tool === "delete" ? ["start", "end"] : ["start", "end", "targetStart", "targetEnd"];
-      for (const selector of selectors)
-        for (const value of ["", null])
+      for (const selector of selectors) {
+        // Pi removes optional null fields before invoking the tool.
+        expect(check({ ...step.args, [selector]: null }).passed).toBe(true);
+        for (const value of ["", "fragment"])
           expect(
             check({ ...step.args, [selector]: value }).passed,
             `${step.tool} ${selector}`,
           ).toBe(false);
+      }
     }
   });
 
@@ -217,7 +220,7 @@ describe("capability route evidence", () => {
   test.each([
     {
       id: "exact-range-move",
-      index: 3,
+      index: 5,
       field: "start",
       selector: "段🙂\n尾界",
       args: {
@@ -261,7 +264,8 @@ describe("capability route evidence", () => {
     ];
     if (!step) throw new Error("Missing multiline selector capability step");
     const route = {
-      steps: [step],
+      // Isolate selector matching from the full route’s cross-call constraints.
+      steps: [{ tool: step.tool, args: step.args, argsAny: step.argsAny }],
       files: capabilityCases.find((candidate) => candidate.id === fixture.id)?.files,
     };
     const check = (selector: string) =>

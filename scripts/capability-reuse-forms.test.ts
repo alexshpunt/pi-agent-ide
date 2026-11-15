@@ -12,9 +12,10 @@ interface Call {
   value?: unknown;
   error?: boolean;
   parent?: string;
+  details?: Record<string, unknown>;
 }
 
-function call({ id, tool, args = {}, uuid, text = "", value, error, parent }: Call) {
+function call({ id, tool, args = {}, uuid, text = "", value, error, parent, details }: Call) {
   const envelope = uuid ? `<uuid>${uuid}</uuid>\n` : "";
   return [
     {
@@ -32,6 +33,7 @@ function call({ id, tool, args = {}, uuid, text = "", value, error, parent }: Ca
       result: {
         content: [{ type: "text", text: envelope + text }],
         ...(value !== undefined && { structuredContent: value }),
+        ...(details !== undefined && { details }),
       },
     },
   ] satisfies RunEvent[];
@@ -334,6 +336,8 @@ describe("search-query", () => {
         args: { path, query: "regex:beta", wholeWord: true, caseSensitive: true, limit: 1 },
         text: "PASS-MARKER",
       },
+      { id: "docs", tool: "search", args: { path, query: "docs:debugger" }, text: "DOCS-MARKER" },
+      { id: "status", tool: "search", args: { path, query: "status:" }, text: "STATUS-MARKER" },
     ]);
 
   test("accepts the file_search value of one file as the searched path", () => {
@@ -343,6 +347,15 @@ describe("search-query", () => {
     });
   });
 
+  test.each(["docs", "status"])("rejects a missing %s search", (id) => {
+    expect(
+      validateRoute(
+        task,
+        events(["task.txt"]).filter((event) => event.toolCallId !== id),
+        "codemode",
+      ).passed,
+    ).toBe(false);
+  });
   test("rejects a list that names another or a further file", () => {
     expect(validateRoute(task, events(["other.txt"]), "codemode").passed).toBe(false);
     expect(validateRoute(task, events(["task.txt", "task2.txt"]), "codemode").passed).toBe(false);
@@ -420,12 +433,19 @@ describe("selection-batch-insert", () => {
       text: "OLD",
     }),
   );
+  const receipt = {
+    agenticIdeBatch: {
+      batchId: "selection-inserts",
+      calls: [0, 1, 2].map((index) => ({ id: `insert-${String(index)}`, name: "insert" })),
+    },
+  };
   const inserts = (text: string) =>
     [0, 1, 2].flatMap((index) =>
       call({
         id: `insert-${String(index)}`,
         tool: "insert",
         args: { path: { id: uuid(String(index + 1)) }, text, before: true },
+        details: receipt,
       }),
     );
   const batch = message("insert-0", "insert-1", "insert-2");
@@ -437,6 +457,35 @@ describe("selection-batch-insert", () => {
     });
   });
 
+  test.each([
+    undefined,
+    { agenticIdeBatch: { ...receipt.agenticIdeBatch, batchId: "another-batch" } },
+    {
+      agenticIdeBatch: { ...receipt.agenticIdeBatch, calls: [{ id: "insert-0", name: "insert" }] },
+    },
+  ])("rejects missing or inconsistent shared-snapshot receipts (%#)", (details) => {
+    const edits = inserts("ADDED\n").map((event) =>
+      event.type === "tool_execution_end" && event.toolCallId === "insert-0"
+        ? { ...event, result: { ...event.result, details } }
+        : event,
+    );
+    expect(validateRoute(task, [...reads, batch, ...edits], "direct").passed).toBe(false);
+  });
+
+  test.each([false, true])("rejects an unrelated write, completed=%s", (completed) => {
+    const write = call({
+      id: "write",
+      tool: "write",
+      args: { path: "task.txt", content: "changed" },
+    });
+    expect(
+      validateRoute(
+        task,
+        [...reads, ...(completed ? write : write.slice(0, 1)), batch, ...inserts("ADDED\n")],
+        "direct",
+      ).passed,
+    ).toBe(false);
+  });
   test("still requires one assistant message for the batch", () => {
     expect(
       validateRoute(
