@@ -279,6 +279,7 @@ export async function attachCommittedMutationTarget(
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (
     result.isError ||
+    result.details.results?.some((item) => !item.data.ok) ||
     typeof result.details.metadata?.resultTarget === "string" ||
     completions.some(
       (completion) =>

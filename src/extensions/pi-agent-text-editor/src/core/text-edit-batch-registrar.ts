@@ -1,5 +1,7 @@
 import {
   connectResultTargets,
+  resultValueId,
+  resultValueReference,
   type ResultTargetStore,
   type ResultSourceTarget,
 } from "pi-agent-resource";
@@ -125,9 +127,23 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
       // Batched calls bypass prepareArguments, so apply the same empty-anchor rule here.
       const call = {
         ...rawCall,
-        arguments: withoutEmptyOptionalAnchors(registration.anchors, rawCall.arguments),
+        arguments: { ...withoutEmptyOptionalAnchors(registration.anchors, rawCall.arguments) },
       };
 
+      // Streaming batches also bypass the standalone object-anchor normalization.
+      try {
+        for (const { field } of registration.anchors ?? []) {
+          if (resultValueId(call.arguments[field]) !== undefined)
+            call.arguments[field] = resultValueReference(
+              resultTargets,
+              call.arguments[field],
+              context.cwd,
+            );
+        }
+      } catch {
+        // Let the standalone boundary report rejected references without scheduling a write.
+        return;
+      }
       // Whole-object transfers use the same filesystem pipeline as standalone calls.
       if (isWholeFileInvocation(registration.wholeFileOperation, call.arguments)) return;
       // Derived protocol targets need their owning execution pipeline, not snapshot batching.
