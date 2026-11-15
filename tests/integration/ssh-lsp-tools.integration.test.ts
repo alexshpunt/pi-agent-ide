@@ -99,7 +99,7 @@ test.each(["diagnostics", "rename", "race"] as const)(
         rawMode: false,
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: ["read", "lsp_search", "replace", "write"],
+        tools: ["diagnostics", "read", "lsp_search", "replace", "write"],
         // Every step reaches the fixture server through SSH; the race rename plans twice, the
         // first time on a cold server, which takes up to about 70 s on a loaded machine.
         timeoutMs: 150_000,
@@ -109,22 +109,22 @@ test.each(["diagnostics", "rename", "race"] as const)(
                 assistantMessage([
                   toolCall({
                     id: "start-diagnostics",
-                    name: "read",
-                    arguments: { path: `diagnostics:${note}` },
+                    name: "diagnostics",
+                    arguments: { path: `${note}` },
                   }),
                 ]),
                 assistantMessage([
                   toolCall({
                     id: "wait-diagnostics",
-                    name: "read",
-                    arguments: { path: `diagnostics:${note}` },
+                    name: "diagnostics",
+                    arguments: { path: `${note}` },
                   }),
                 ]),
                 assistantMessage([
                   toolCall({
                     id: "diagnostics",
-                    name: "read",
-                    arguments: { path: `diagnostics:${note}` },
+                    name: "diagnostics",
+                    arguments: { path: `${note}` },
                   }),
                 ]),
                 assistantMessage([

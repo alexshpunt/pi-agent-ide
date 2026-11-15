@@ -229,8 +229,8 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "lsp_search", args: { declaration: "task.ts#count" }, text: "3" },
       { tool: "lsp_search", args: { calls: "task.ts#count" }, text: "References" },
       {
-        tool: "read",
-        args: { path: "diagnostics:problem.ts" },
+        tool: "diagnostics",
+        args: { path: "problem.ts" },
         text: "typescript-language-server:2322",
       },
       {

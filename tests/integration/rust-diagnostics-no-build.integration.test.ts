@@ -139,7 +139,7 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
             RAYON_NUM_THREADS: "4",
           },
           extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-          tools: ["read", "codemode", "lsp_search"],
+          tools: ["diagnostics", "read", "codemode", "lsp_search"],
           conversation: [
             assistantMessage(
               [toolCall({ id: "plain", name: "read", arguments: { path: "src/main.rs" } })],
@@ -151,7 +151,7 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
                   id: "diagnostics",
                   name: "codemode",
                   arguments: {
-                    code: 'await tools.read({path:"src/main.rs",views:["diagnostics"]}); await tools.read({path:"diagnostics:src/main.rs"});',
+                    code: 'await tools.read({path:"src/main.rs",views:["diagnostics"]}); await tools.diagnostics({path:"src/main.rs"});',
                   },
                 }),
               ],
@@ -171,8 +171,8 @@ process.exit(spawnSync(rustc, args, { stdio: "inherit" }).status ?? 1);
               [
                 toolCall({
                   id: "native-diagnostics",
-                  name: "read",
-                  arguments: { path: "diagnostics:src/main.rs" },
+                  name: "diagnostics",
+                  arguments: { path: "src/main.rs" },
                 }),
               ],
               { stopReason: "toolUse" },

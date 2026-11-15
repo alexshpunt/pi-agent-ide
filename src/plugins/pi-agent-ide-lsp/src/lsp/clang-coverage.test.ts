@@ -138,7 +138,6 @@ test("notes and rename refusals say what can be missing", () => {
   const notes = coverageNotes(coverage, display);
   expect(notes).toHaveLength(2);
   expect(notes[0]).toContain("a.cpp:2 'x.h' file not found");
-  expect(notes[0]).toContain("Read diagnostics:a.cpp");
   expect(notes[1]).toContain("3 more file(s)");
   const refusal = renameRefusal(coverage, display);
   expect(refusal).toMatch(/^LSP rename refused; no edits applied\./u);

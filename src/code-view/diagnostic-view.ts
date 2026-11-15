@@ -1,5 +1,3 @@
-import { resolveCodeViewPath } from "./reference.ts";
-
 import { formatDiagnostic } from "#src/toolchain/diagnostic.ts";
 
 import type { Diagnostic } from "#src/toolchain/types.ts";
@@ -25,30 +23,6 @@ export interface DiagnosticCheck {
 /** Controls the source context projected around diagnostic lines. */
 export interface DiagnosticViewOptions {
   readonly contextLines?: number;
-}
-
-export function resolveDiagnosticViewPath(
-  source: string,
-  scheme: string,
-  cwd: string,
-): string | undefined {
-  const prefix = `${scheme}:`;
-
-  if (!source.startsWith(prefix)) {
-    return undefined;
-  }
-
-  const requestedPath = source.slice(prefix.length);
-
-  if (requestedPath.length === 0) {
-    throw new Error(`${scheme}: requires a file path.`);
-  }
-
-  return resolveCodeViewPath(requestedPath, cwd);
-}
-
-export function formatDiagnosticViewSource(scheme: string, filePath: string): string {
-  return `${scheme}:${filePath}`;
 }
 
 /** Builds a source-mapped diagnostic read with merged context around every diagnostic line. */

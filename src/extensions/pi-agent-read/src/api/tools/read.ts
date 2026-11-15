@@ -480,6 +480,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export { readParameters, readRequestOf } from "#src/api/read-parameters.ts";
+export { createReadResultTargetHandler } from "#src/core/tools/read/result-target.ts";
 export {
   readDataSchema,
   readOutputSchema,

@@ -5,6 +5,7 @@
  */
 export const CAPABILITY_DEFAULT_TOOLS = [
   "read",
+  "diagnostics",
   "write",
   "bash",
   "search",

@@ -413,6 +413,22 @@
       }
     },
     {
+      "name": "diagnostics",
+      "namespace": "ide_diagnostics",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["path"],
+        "type": "object"
+      }
+    },
+    {
       "name": "diff",
       "namespace": "ide_read",
       "exposure": "deferred",

@@ -39,7 +39,7 @@ test.each([false, true])(
           path.resolve("src/pi-agent-ide.ts"),
           path.resolve("tests/integration/support/final-post-edit-extension.ts"),
         ],
-        tools: ["codemode", "read", "write", "replace", "copy", "move", "delete"],
+        tools: ["diagnostics", "codemode", "read", "write", "replace", "copy", "move", "delete"],
         conversation: [
           assistantMessage(
             [
@@ -62,11 +62,11 @@ ${fail ? 'throw new Error("planned failure");' : ""}
             { stopReason: "toolUse" },
           ),
           assistantMessage(
-            [toolCall({ id: "check-a", name: "read", arguments: { path: "diagnostics:a.note" } })],
+            [toolCall({ id: "check-a", name: "diagnostics", arguments: { path: "a.note" } })],
             { stopReason: "toolUse" },
           ),
           assistantMessage(
-            [toolCall({ id: "check-b", name: "read", arguments: { path: "diagnostics:b.note" } })],
+            [toolCall({ id: "check-b", name: "diagnostics", arguments: { path: "b.note" } })],
             { stopReason: "toolUse" },
           ),
           assistantMessage([text("Done")]),
@@ -123,7 +123,7 @@ test.each(["path", "result"] as const)(
           path.resolve("tests/integration/support/final-post-edit-extension.ts"),
           path.resolve("tests/integration/support/post-edit-external-change.ts"),
         ],
-        tools: ["codemode", "insert", "read", "post_edit_external_change"],
+        tools: ["diagnostics", "codemode", "insert", "read", "post_edit_external_change"],
         conversation: [
           assistantMessage(
             [
@@ -215,7 +215,7 @@ test("whole-file operations finalize only surviving text targets and preserve bi
         path.resolve("src/pi-agent-ide.ts"),
         path.resolve("tests/integration/support/final-post-edit-extension.ts"),
       ],
-      tools: ["codemode", "read", "write", "replace", "copy", "move", "delete"],
+      tools: ["diagnostics", "codemode", "read", "write", "replace", "copy", "move", "delete"],
       conversation: [
         assistantMessage(
           [
@@ -238,7 +238,7 @@ if((await tools.copy({path:"binary.note",target:"binary-copy.note"}))!==null) th
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "check", name: "read", arguments: { path: "diagnostics:final.note" } })],
+          [toolCall({ id: "check", name: "diagnostics", arguments: { path: "final.note" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage([text("Done")]),
