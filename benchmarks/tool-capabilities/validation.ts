@@ -122,6 +122,8 @@ function fieldValue(value: unknown, field: string): unknown {
 /** One actual execution required to establish a capability. */
 export interface RouteStep {
   tool: string;
+  /** Require completion of these earlier declared steps before this call starts. */
+  after?: readonly number[];
   /** Require overlap with an earlier step's execution in the same native Codemode script. */
   parallelWith?: number;
   /** Require two direct tool calls in the same completed assistant message, not a retry. */
@@ -333,7 +335,7 @@ function reuses(
   );
 }
 
-/** Require successful real executions in order, including result provenance and nesting. */
+/** Assign distinct real executions, respecting declared dependencies, provenance and nesting. */
 export function validateRoute(
   task: Pick<CapabilityCase, "steps" | "forbiddenTools" | "files">,
   events: RunEvent[],
@@ -605,29 +607,35 @@ export function validateRoute(
   let furthest = 0;
   function walk(
     stepIndex: number,
-    previousStart: number,
     // A step that another route skips leaves its slot empty; steps reusing it cannot match.
-    selected: ({ event: RunEvent; end: number; parent?: string; call?: string } | undefined)[],
+    selected: ({ event: RunEvent; start: number; end: number; parent?: string; call?: string } | undefined)[],
   ): boolean {
     furthest = Math.max(furthest, stepIndex);
     const step = task.steps[stepIndex];
     if (!step) return true;
     if (!routeStepApplies(step, mode))
-      return walk(stepIndex + 1, previousStart, [...selected, undefined]);
+      return walk(stepIndex + 1, [...selected, undefined]);
     // In Codemode, a native text call either fails at once, such as one with a result-bound
     // selector, or is accepted into a batch whose commit fails its parent.
     const acceptedOrFailed = step.error === "direct" && mode === "codemode";
+    const dependencies = [
+      ...(step.after ?? []),
+      ...task.steps.slice(0, stepIndex).flatMap((prior, index) =>
+        mode === "direct" && prior.tool === "tool_search" &&
+        (!prior.discovers || prior.discovers.includes(step.tool)) ? [index] : []),
+    ];
     for (const start of starts) {
       const event = start.event;
       const end = ends.get(event.toolCallId ?? "");
       if (
-        start.index <= previousStart ||
+        selected.some((prior) => prior?.start === start.index) ||
         event.toolName !== step.tool ||
         !end ||
         end.index <= start.index ||
         (!acceptedOrFailed && end.event.isError !== Boolean(step.error))
       )
         continue;
+      if (dependencies.some((index) => !selected[index] || selected[index].end >= start.index)) continue;
       const execution = executionParent(start);
       if (!execution) continue;
       if (step.discovers) {
@@ -653,6 +661,7 @@ export function validateRoute(
           mode !== "codemode" ||
           prior === undefined ||
           start.index >= prior.end ||
+          end.index <= prior.start ||
           prior.parent !== execution.parent
         )
           continue;
@@ -786,16 +795,16 @@ export function validateRoute(
       )
         continue;
       if (
-        walk(stepIndex + 1, start.index, [
+        walk(stepIndex + 1, [
           ...selected,
-          { event: end.event, end: end.index, parent: execution.parent, call: execution.call },
+          { event: end.event, start: start.index, end: end.index, parent: execution.parent, call: execution.call },
         ])
       )
         return true;
     }
     return false;
   }
-  if (!walk(0, -1, []))
+  if (!walk(0, []))
     reasons.push(
       `Required step ${furthest + 1} (${task.steps[furthest]?.tool}) was not observed with the required arguments, completed result, reuse, and route`,
     );

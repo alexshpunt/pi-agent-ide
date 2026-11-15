@@ -93,8 +93,8 @@ add(
     { tool: "lsp_search", args: { query: "probe" }, contains: "task.ts#probe" },
     { tool: "diff", args: { before: "task.ts", after: "task.ts" }, scriptResult: "" },
     { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
-    { tool: "undo", args: { file: "task.txt", change: "last" } },
-    { tool: "read", args: { path: "task.txt" }, contains: "OLD" },
+    { tool: "undo", args: { file: "task.txt", change: "last" }, after: [4] },
+    { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [5] },
   ],
   {
     files: {
@@ -130,7 +130,7 @@ add(
     { tool: "demo_read", args: { path: "local.txt" }, error: true },
     { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
     { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },
-    { tool: "demo_read", args: { path: "memory://demo/note" }, contains: "changed\nomega" },
+    { tool: "demo_read", args: { path: "memory://demo/note" }, contains: "changed\nomega", after: [3, 4, 5, 6] },
   ],
   {
     setup: "standalone-resource",
@@ -1242,11 +1242,13 @@ add(
         text: "TWO",
       },
       error: true,
+      after: [1],
       reuse: [reuse(0), reuse(0)],
     },
     {
       tool: "replace",
       args: { path: matchReference(2), text: "TWO" },
+      after: [2],
       reuse: reuse(0),
     },
   ],
@@ -1282,7 +1284,7 @@ add(
   ["edit.grouped-file-count"],
   "In one native Codemode script, sequentially read lines 1, 2, then 3 of task.txt as one-line windows (offset and limit 1) and replace each issued Read result with NEW followed by a newline. Await each replacement before reading the next line so each gets a fresh snapshot. Inspect the final editor summary: it must report three replacements in one file, not three files.",
   [1, 2, 3].flatMap((line, index): RouteStep[] => [
-    { tool: "read", args: { path: "task.txt", offset: line, limit: 1 } },
+    { tool: "read", args: { path: "task.txt", offset: line, limit: 1 }, ...(index > 0 && { after: [index * 2 - 1] }) },
     {
       tool: "replace",
       args: { text: "NEW\n" },
@@ -2212,15 +2214,16 @@ add(
       args: { path: "fixture://saved-canonicalized/content", content: "changed\n" },
       contains: "CHANGED",
     },
-    { tool: "read", args: { path: "fixture://saved-canonicalized/content" }, contains: "CHANGED" },
+    { tool: "read", args: { path: "fixture://saved-canonicalized/content" }, contains: "CHANGED", after: [0] },
     {
       tool: "write",
       args: { path: "fixture://saved-readback/content", content: "updated\n" },
+      after: [1],
       error: true,
       contains: "READBACK",
       excludes: "Write outcome unknown.",
     },
-    { tool: "read", args: { path: "fixture://saved-readback/content" }, contains: "updated" },
+    { tool: "read", args: { path: "fixture://saved-readback/content" }, contains: "updated", after: [2] },
   ],
   {
     setup: "write-effects",
@@ -2249,6 +2252,7 @@ add(
     {
       tool: "read",
       args: { path: "fixture://saved-mismatch/content" },
+      after: [0],
       contains: "changed",
     },
   ],
@@ -2276,6 +2280,7 @@ add(
     {
       tool: "read",
       args: { path: ".tmp/move-effects/unknown-after-target.txt" },
+      after: [0],
       contains: "MOVED-BYTES",
     },
   ],
@@ -2305,7 +2310,7 @@ add(
       error: true,
       contains: "ambiguous",
     },
-    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [0] },
     {
       tool: "copy",
       args: {
@@ -2663,8 +2668,8 @@ add(
   "Change OLD to NEW in task.txt using replace, then undo the last editor transaction using undo. Read the restored file and report its original marker.",
   [
     { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
-    { tool: "undo", args: { file: "task.txt", change: "last" } },
-    { tool: "read", args: { path: "task.txt" }, contains: "OLD" },
+    { tool: "undo", args: { file: "task.txt", change: "last" }, after: [0] },
+    { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [1] },
   ],
   {
     files: { "task.txt": "keep\r\nOLD\r\n" },
@@ -2971,11 +2976,13 @@ add(
     {
       tool: "insert",
       args: { path: "task.txt", anchor: "alpha", before: true, text: "top\n" },
+      after: [0],
     },
     {
       tool: "delete",
       args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: reuse(0, "start", "anchor"),
+      after: [1],
     },
   ],
   {
@@ -3061,7 +3068,7 @@ add(
       reuse: reuse(0),
       error: true,
     },
-    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" } },
+    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" }, after: [1] },
   ],
   { expected: { "task.txt": "keep\nOLD\nfixed\n" } },
 );
@@ -3072,9 +3079,9 @@ add(
   "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Then read the current file and report NEW. Do not try to revive the old result.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "replace", args: { text: "NEW" } },
-    { tool: "read", error: true, reuse: reuse(0) },
-    { tool: "read", args: { path: "task.txt" }, contains: "NEW" },
+    { tool: "replace", args: { text: "NEW" }, after: [0] },
+    { tool: "read", error: true, reuse: reuse(0), after: [1] },
+    { tool: "read", args: { path: "task.txt" }, contains: "NEW", after: [2] },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" }, answer: "NEW" },
 );
@@ -3377,6 +3384,7 @@ add(
     {
       tool: "replace",
       args: { path: /symbol:task.ts#.*count#name/, text: "total" },
+      after: [0],
       contains: "Renamed through LSP",
     },
   ],
