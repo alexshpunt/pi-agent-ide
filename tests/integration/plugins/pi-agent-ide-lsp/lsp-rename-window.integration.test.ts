@@ -10,13 +10,8 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { afterAll, expect, test } from "vitest";
-import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
-
-// Each writer scenario needs a fresh server; reused open buffers outlive fixture resets.
-const restore = forceStandaloneIntegrationFile();
-afterAll(restore);
 
 const SOURCE = 'export function greet() { return "greet"; }\n';
 const USAGE = 'import { greet } from "./source";\nexport const answer = greet();\n';
