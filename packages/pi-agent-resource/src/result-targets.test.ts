@@ -517,6 +517,18 @@ describe("selections whose own lines were edited, for readers", () => {
     expect(describeAdjustedRanges(current, directory)).toContain("a.txt:3-5");
   });
 
+  test.each([
+    [0, 3],
+    [2, 4],
+  ])("stale diagnostics respect the exclusive end column %i", (column, last) => {
+    const store = new ResultTargetStore();
+    const reference = select(store, {
+      start: { lineNumber: 1, column: 0 },
+      end: { lineNumber: 4, column },
+    });
+    writeFileSync(file, original.replace("two", "TWO"));
+    expect(() => store.resolve(reference, directory)).toThrow(new RegExp(`1–${last}\\b`, "u"));
+  });
   test("are refused to anything that edits, which needs the selected text", async () => {
     const store = new ResultTargetStore();
     const reference = select(store, block);
