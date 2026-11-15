@@ -1,4 +1,11 @@
 import path from "node:path";
+import {
+  exactSelection,
+  issuedAnchor,
+  issuedSelection,
+  wholeSearchSelection,
+  type SelectionIssuer,
+} from "./selection-evidence.ts";
 import { isDeepStrictEqual } from "node:util";
 import {
   equivalentLineArguments,
@@ -324,15 +331,17 @@ function reuses(
                     : /(?:SEARCH|RESULT)#[A-F0-9]+(?::[a-z0-9:]+)?|[0-9A-HJKMNP-TV-Z]{7}(?=\|)|scope-(?:begin|end)-[0-9A-HJKMNP-TV-Z]{7}/g,
           ),
         ].map((match) => match[0]);
-  return values(value).some(
-    (candidate) =>
+  return values(value).some((raw) => {
+    const candidate = kind === "anchor" ? (issuedAnchor(raw, output) ?? raw) : raw;
+    return (
       candidate === output ||
       ids.includes(candidate) ||
       // A Codemode value issues its own ids, such as the id of each Search match.
       (["result", "anchor"].includes(kind) && issued.includes(candidate)) ||
       // `RESULT#<uuid>` names the result whose envelope carries that UUID.
-      (kind === "result" && ids.includes(candidate.replace(/^RESULT#/u, ""))),
-  );
+      (kind === "result" && ids.includes(candidate.replace(/^RESULT#/u, "")))
+    );
+  });
 }
 
 /** Assign distinct real executions, respecting declared dependencies, provenance and nesting. */
@@ -437,11 +446,37 @@ export function validateRoute(
       if (source === undefined) continue;
       const sources = Array.isArray(source) ? (source as unknown[]) : [source];
       const paths = sources.flatMap((item) =>
-        typeof item === "string" ? [item] : reusedPaths(item, prior.index),
+        typeof item === "string" && !/^(?:RESULT|SEARCH)#/u.test(item)
+          ? [item]
+          : reusedPaths(item, prior.index),
       );
       if (paths.length > 0) return paths;
     }
     return [];
+  }
+  /** Only successful, completed issuers of this same source may justify selector equivalence. */
+  function selectionIssuers(file: unknown, before: number): SelectionIssuer[] {
+    return starts.flatMap((prior) => {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (prior.index >= before || !end || end.index >= before || end.event.isError) return [];
+      const source = prior.event.args?.path;
+      const paths = [...values(source), ...reusedPaths(source, prior.index)];
+      if (file !== undefined && !paths.some((path) => matches({ path: file }, { path }))) return [];
+      return [
+        {
+          tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
+          args: prior.event.args ?? {},
+          end: end.event,
+        },
+      ];
+    });
+  }
+  /** A literal file beside a reference must be the reference issuer's source, not a different file. */
+  function sameSource(file: unknown, reference: unknown, before: number): boolean {
+    return (
+      typeof file === "string" &&
+      reusedPaths(reference, before).some((path) => fixturePath(path) === fixturePath(file))
+    );
   }
   /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
   function editContext(
@@ -468,7 +503,10 @@ export function validateRoute(
       )
         continue;
       const args = prior.event.args ?? {};
-      const affected = [args.path, args.anchor, args.start, args.target, args.file];
+      const affected =
+        (aliases[prior.event.toolName ?? ""] ?? prior.event.toolName) === "copy"
+          ? [args.target]
+          : [args.path, args.anchor, args.start, args.target, args.file];
       if (
         affected.some((value) =>
           [...values(value), ...reusedPaths(value, prior.index)].some(
@@ -560,31 +598,68 @@ export function validateRoute(
       (typeof expected.path === "string" || expected.path instanceof RegExp)
     )
       return normalized.path.some((path: unknown) => matches(expected, { ...normalized, path }));
+    // A debugger source and its launched program name the same file for an anchored Read.
+    if (tool === "read" && Array.isArray(actual.views) && actual.views.includes("anchors")) {
+      for (const prior of selectionIssuers(undefined, before)) {
+        if (prior.tool !== "debug" || !matches({ path: prior.args.program }, { path: actual.path }))
+          continue;
+        const resources = resultText(prior.end).match(/debug:[a-z0-9-]+/giu) ?? [];
+        if (
+          resources.some((resource) =>
+            matches(expected, { ...normalized, path: `${resource}/source` }),
+          )
+        )
+          return true;
+      }
+    }
     if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
     const { path: file, ...rest } = expected;
-    // A real issued line anchor can name the exact line required by the route.
-    for (const field of ["anchor", "start", "end"]) {
+    // Moving a selector from path into start/anchor is only notation, provided its file agrees.
+    const location = actual.anchor ?? actual.start;
+    if (
+      file instanceof RegExp &&
+      sameSource(actual.path, location, before) &&
+      matches(file, location)
+    )
+      normalized.path = location;
+    for (const field of ["anchor", "start", "end", "targetStart", "targetEnd"]) {
+      const target = field.startsWith("target");
+      const source = target ? expected.target : file;
+      const actualSource = target ? actual.target : actual.path;
+      if (
+        source !== undefined &&
+        actualSource !== undefined &&
+        !matches({ path: source }, { path: actualSource }) &&
+        !sameSource(source, actualSource, before)
+      )
+        continue;
+      const issuers = selectionIssuers(source, before);
       const selector = normalized[field];
-      const exact = rest[field];
-      if (typeof exact !== "string" || typeof selector !== "string") continue;
-      const hash = /^([0-9A-HJKMNP-TV-Z]{7})(?:\|[^\r\n]*)?$/u.exec(selector)?.[1];
-      if (!hash) continue;
-      const issuer = starts.some((prior) => {
-        const end = ends.get(prior.event.toolCallId ?? "");
+      const exact = expected[field];
+      const hash = issuers
+        .map((issuer) => issuedAnchor(selector, resultText(issuer.end)))
+        .find(Boolean);
+      if (hash && exact instanceof RegExp && matches(exact, hash)) normalized[field] = hash;
+      if (typeof source !== "string" || typeof exact !== "string") continue;
+      const content = editContext(tool, { path: source }, before).content;
+      if (content === undefined) continue;
+      const paired = target ? expected.targetEnd !== undefined : expected.end !== undefined;
+      const required = exactSelection(content, exact, paired);
+      const selected = issuedSelection(
+        content,
+        selector ?? (!target && field === "start" ? actual.path : undefined),
+        issuers,
+      );
+      if (required && selected && required.from === selected.from && required.to === selected.to) {
+        normalized[field] = exact;
         if (
-          prior.index >= before ||
-          !end ||
-          end.index >= before ||
-          end.event.isError ||
-          !["read", "demo_read"].includes(prior.event.toolName ?? "")
+          !target &&
+          field === "start" &&
+          actual.start === undefined &&
+          actual.anchor === undefined
         )
-          return false;
-        if (file !== undefined && !matches({ path: file }, prior.event.args)) return false;
-        return resultText(end.event)
-          .split(/\r?\n/u)
-          .some((line) => line === `${hash}|${exact}` && (selector === hash || selector === line));
-      });
-      if (issuer) normalized[field] = rest[field];
+          normalized.path = source;
+      }
     }
     const context = editContext(tool, normalized, before);
     const equivalent = equivalentLineArguments(
@@ -601,6 +676,21 @@ export function validateRoute(
     // A selector can carry its own source. Never rescue an explicitly wrong path with it.
     const source = actual.path !== undefined ? actual.path : (actual.anchor ?? actual.start);
     return reusedPaths(source, before).some((path) => matches({ path: file }, { path }));
+  }
+  function argumentReuses(field: string, args: Record<string, unknown> | undefined, reference: ResultReuse, prior: RunEvent, before: number): boolean {
+    const value = fieldValue(args, field);
+    const alternatives = [value];
+    if (field === "path" && args) {
+      for (const selector of [args.anchor, args.start])
+        if (sameSource(args.path, selector, before)) alternatives.push(selector);
+    }
+    return alternatives.some((candidate) => {
+      if (reference.kind === "whole-result") {
+        if (args?.path !== undefined && candidate !== args.path && !sameSource(args.path, candidate, before)) return false;
+        return wholeSearchSelection(candidate, prior);
+      }
+      return reuses(candidate, resultText(prior), reference.kind, valueIds(prior.result?.structuredContent));
+    });
   }
   let furthest = 0;
   function walk(
@@ -788,12 +878,7 @@ export function validateRoute(
                     fieldValue(event.args, field),
                     field.split(".").at(-1),
                   )) ||
-                reuses(
-                  fieldValue(event.args, field),
-                  resultText(prior.event),
-                  reference.kind,
-                  valueIds(prior.event.result?.structuredContent),
-                ) ||
+                argumentReuses(field, event.args, reference, prior.event, start.index) ||
                 passesValue(fieldValue(event.args, field), prior.event),
             ) ||
             (reference.newParent && prior.parent === execution.parent)

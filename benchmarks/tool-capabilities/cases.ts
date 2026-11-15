@@ -710,7 +710,11 @@ add(
       reuse: reuse(2, ["path", "start"]),
     },
     { tool: "search", args: { path: "literal.txt", query: /^"alpha beta"$/u } },
-    { tool: "replace", args: { text: "LITERAL" }, reuse: reuse(4) },
+    {
+      tool: "replace",
+      args: { text: "LITERAL" },
+      reuse: reuse(4, ["path", "start", "anchor"], "whole-result"),
+    },
   ],
   {
     files: { "split.txt": "alpha\nbeta\n", "literal.txt": "alpha beta\n" },
@@ -1367,7 +1371,7 @@ if (storedOverview === undefined) throw new Error("Missing overview fixture");
 add(
   "read-large-store",
   ["compose.large-read-store-load"],
-  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged Read result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. Finally search the saved result for NEEDLE again and report whether the edited region still contains it.",
+  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged Read result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. Finally load and search the original saved Read result for NEEDLE again and report whether the edited region still contains it.",
   [
     {
       tool: "read",
@@ -2626,8 +2630,8 @@ for (const [name, eol, ending] of [
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
         tool: "delete",
-        args: { path: "line.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-        reuse: reuse(3, "start", "anchor"),
+        args: { path: "line.txt", start: "Last" },
+        reuse: reuse(3, ["path", "start"], "anchor"),
       },
     ],
     {
@@ -3102,12 +3106,12 @@ add(
 add(
   "stale-recovery",
   ["compose.stale-recovery", "read.reference-recovery"],
-  "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Then read the current file and report NEW. Do not try to revive the old result.",
+  "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Also read the current file after the replacement and report NEW; this is independent of the rejected old-result Read. Do not try to revive the old result.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", args: { text: "NEW" }, after: [0] },
     { tool: "read", error: true, reuse: reuse(0), after: [1] },
-    { tool: "read", args: { path: "task.txt" }, contains: "NEW", after: [2] },
+    { tool: "read", args: { path: "task.txt" }, contains: "NEW", after: [1] },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" }, answer: "NEW" },
 );

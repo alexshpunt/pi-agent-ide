@@ -165,6 +165,8 @@ for (const mode of ["direct", "codemode"]) {
       },
     ];
     assert.ok(passed(files, route, calls, mode));
+    const copy = calls[2];
+    assert.ok(copy);
     for (const change of [
       { start: "SEARCH#ABCD:1:line" },
       { start: "SEARCH#FFFF:1:match" },
@@ -175,7 +177,7 @@ for (const mode of ["direct", "codemode"]) {
         !passed(
           files,
           route,
-          [...calls.slice(0, 2), { ...calls[2]!, args: { ...calls[2]!.args, ...change } }],
+          [...calls.slice(0, 2), { ...copy, args: { ...copy.args, ...change } }],
           mode,
         ),
       );
