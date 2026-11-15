@@ -63,7 +63,7 @@ test("TypeScript push diagnostics appear in focused, annotated, and combined rea
     const file = path.join(directory, "src/catalog.ts");
     await writeFile(file, source);
     const calls = [
-      { id: "focused", arguments: { path: "diagnostics:src/catalog.ts" } },
+      { id: "focused", arguments: { path: "src/catalog.ts" } },
       { id: "annotated", arguments: { path: "src/catalog.ts", views: ["diagnostics"] } },
       {
         id: "combined",
@@ -75,24 +75,26 @@ test("TypeScript push diagnostics appear in focused, annotated, and combined rea
       testName: "typescript-push-diagnostic-reads",
       cwd: directory,
       extensions: [...generatedExtensions.paths, "builtin:codemode"],
-      tools: ["read", "codemode"],
+      tools: ["diagnostics", "read", "codemode"],
       conversation: [
-        // Agent reads may truthfully return pending after five seconds. A script read
-        // explicitly waits for the completed check before testing all three presentations.
+        // Start the check before exercising the three presentations.
         assistantMessage(
           [
             toolCall({
               id: "diagnostic-ready",
               name: "codemode",
               arguments: {
-                code: 'await tools.read({path:"diagnostics:src/catalog.ts"}); text("Diagnostic check completed.");',
+                code: 'await tools.diagnostics({path:"src/catalog.ts"}); text("Diagnostic check completed.");',
               },
             }),
           ],
           { stopReason: "toolUse" },
         ),
         ...calls.map((call) =>
-          assistantMessage([toolCall({ ...call, name: "read" })], { stopReason: "toolUse" }),
+          assistantMessage(
+            [toolCall({ ...call, name: call.id === "focused" ? "diagnostics" : "read" })],
+            { stopReason: "toolUse" },
+          ),
         ),
         assistantMessage([text("Diagnostic reads finished.")]),
       ],

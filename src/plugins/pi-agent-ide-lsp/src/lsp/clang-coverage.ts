@@ -191,7 +191,7 @@ export function coverageNotes(
       .join("; ");
     const first = display(requiredValue(coverage.fatal[0]).source);
     notes.push(
-      `Incomplete: clang stopped with a fatal error (${errors}), so references after it can be missing. Fix it (Read diagnostics:${first}) and search again, or search the text.`,
+      `Incomplete: clang stopped with a fatal error (${errors}), so references after it can be missing. Fix it (diagnostics with path ${first}) and search again, or search the text.`,
     );
   }
   if (coverage.unchecked > 0)
@@ -220,7 +220,7 @@ export function renameRefusal(
       .map((error) => `${display(error.source)}:${error.line} ${error.message}`)
       .join("; ");
     reasons.push(
-      `clang stopped with a fatal error (${errors}), so places after it can be missing from the rename. Fix it (Read diagnostics:${display(requiredValue(coverage.fatal[0]).source)}) and rename again.`,
+      `clang stopped with a fatal error (${errors}), so places after it can be missing from the rename. Fix it (diagnostics with path ${display(requiredValue(coverage.fatal[0]).source)}) and rename again.`,
     );
   }
   if (coverage.unchecked > 0)

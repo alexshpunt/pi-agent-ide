@@ -2,12 +2,13 @@ import { readFile } from "node:fs/promises";
 import type { ResultRange, ResultTargetStore } from "pi-agent-resource";
 import type { ReadPostReadHandler, ReadToolPluginApi } from "#src/api/tools/read.ts";
 
-/** Retain exact local or SSH text windows with an owning, guarded reread; never grant authority to converted output. */
+/** Retain exact source-backed text windows with an owning, guarded reread. An edit warning makes the issued selection read-only. */
 export function createReadResultTargetHandler(
   store: ResultTargetStore,
   read: ReadToolPluginApi["read"],
   ownsSource: (source: string, resolver: string) => boolean = (_source, resolver) =>
     ["filesystem", "ssh"].includes(resolver),
+  editWarning?: string,
 ): ReadPostReadHandler {
   return async (context) => {
     const state = context.state;
@@ -83,6 +84,7 @@ export function createReadResultTargetHandler(
               ],
           context.resolverContext.cwd,
           input?.complete ?? true,
+          editWarning,
         );
         return { ...result, script: { ...script, target } };
       },

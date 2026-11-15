@@ -62,6 +62,9 @@ importers:
       pi-agent-text-editor:
         specifier: workspace:^
         version: link:src/extensions/pi-agent-text-editor
+      pi-agent-tool-call-interception:
+        specifier: workspace:^
+        version: link:packages/pi-agent-tool-call-interception
       pi-agent-tool-ui:
         specifier: workspace:^
         version: link:packages/pi-agent-tool-ui

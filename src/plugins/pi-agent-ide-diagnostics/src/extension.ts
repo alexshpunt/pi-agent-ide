@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { hasDeferredPostEdit } from "pi-agent-text-editor/api/post-edit";
 
@@ -5,9 +6,7 @@ import {
   addDiagnosticAnnotations,
   diagnosticStatus,
   createDiagnosticViewContent,
-  createSourceMappedTextReadHandler,
-  formatDiagnosticViewSource,
-  resolveDiagnosticViewPath,
+  resolveCodeViewPath,
 } from "pi-agent-ide/api/code-view";
 import { connectIdePlugin } from "pi-agent-ide/api/connect-plugin";
 import {
@@ -26,16 +25,31 @@ import {
 import { createReadResultRenderer } from "pi-agent-read/api/rendering";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { ResourceResolutionAttempt, ResourceResolver } from "pi-agent-resource";
+import { connectResultTargets, trackScriptCalls } from "pi-agent-resource";
+import { Type } from "typebox";
+import { toolCallHeader } from "pi-agent-tool-ui";
+import {
+  ToolCallInterceptionRenderStore,
+  withToolCallInterceptionRendering,
+} from "pi-agent-tool-call-interception";
 import type { TextDocument, TextLinePresenter } from "pi-agent-text";
-import type { ReadRequest, ReadResultDetails } from "pi-agent-read/api/tools/read";
+import {
+  readOutputSchema,
+  createReadResultTargetHandler,
+  structuredRead,
+  type ReadRequest,
+  type ReadToolPluginApi,
+} from "pi-agent-read/api/tools/read";
 
-const DIAGNOSTIC_SCHEME = "diagnostics";
 const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "Diagnostics" });
 
 type ReadDiagnostics = IdePluginApi["readDiagnostics"];
 
 export default async function registerDiagnostics(pi: ExtensionAPI): Promise<void> {
+  const reports = new Map<string, string>();
+  pi.on("session_start", () => reports.clear());
+  pi.on("session_shutdown", () => reports.clear());
+  const targets = connectResultTargets(pi);
   let readDiagnostics: ReadDiagnostics | undefined;
   const collect: CollectDiagnostics = (filePath, cwd, options) => {
     if (readDiagnostics === undefined) {
@@ -53,8 +67,7 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
     },
   } satisfies IdePlugin;
   // Keep readiness outside source-line projection, including empty and ranged reads.
-  const checks = new WeakMap<ReadRequest, NonNullable<ReadResultDetails["diagnosticCheck"]>>();
-  const contents = new WeakMap<object, NonNullable<ReadResultDetails["diagnosticCheck"]>>();
+  let readApi: ReadToolPluginApi | undefined;
   const documents = new WeakMap<ReadRequest, TextDocument>();
   const statuses = new WeakMap<TextDocument, string>();
   const readPlugin = {
@@ -62,11 +75,32 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
     apiVersion: READ_API_VERSION,
     id: "diagnostics",
     setup(api) {
+      readApi = api;
+      const retainReport = createReadResultTargetHandler(
+        targets,
+        api.read,
+        (source) => reports.has(source),
+        "Diagnostic reports are read-only. Read the source file to edit it.",
+      );
       api.addResolver({
-        resolver: createDiagnosticResolver(collect, contents),
-        renderResult: renderReadResult,
+        resolver: {
+          id: "diagnostic-reports",
+          async tryResolve(source) {
+            const text = reports.get(source);
+            if (text === undefined) return { kind: "not-handled" };
+            return {
+              kind: "resolved",
+              resource: {
+                source,
+                sourceBytes: new TextEncoder().encode(text),
+                async read() {
+                  return [{ type: "text", text }];
+                },
+              },
+            };
+          },
+        },
       });
-      const mapSource = createSourceMappedTextReadHandler();
       api.addView({
         view: "diagnostics",
         priority: 100,
@@ -76,12 +110,6 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
         stage: "read",
         when: { resolvedBy: "any", contentKind: "text" },
         handler(context) {
-          if (context.state?.resolvedBy === "diagnostics") {
-            const content = context.state.content[0];
-            const check = contents.get(content);
-            if (check) checks.set(context.request, check);
-            return mapSource(context);
-          }
           if (
             context.state?.contentKind === "text" &&
             context.request.views?.includes("diagnostics")
@@ -94,17 +122,7 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
       api.addHandler({
         stage: "post-read",
         handler(context) {
-          const check = checks.get(context.request);
-          if (check && context.result) {
-            return {
-              kind: "continue",
-              context,
-              transform: (result) => ({
-                ...result,
-                details: { ...result.details, diagnosticCheck: check },
-              }),
-            };
-          }
+          if (context.state && reports.has(context.state.source)) return retainReport(context);
           const document = documents.get(context.request);
           const status = document && statuses.get(document);
           const result = context.result;
@@ -129,30 +147,90 @@ export default async function registerDiagnostics(pi: ExtensionAPI): Promise<voi
         },
       });
       api.describe({
-        path: "diagnostics:<path> — lint and language-server diagnostics.",
         views: "diagnostics — diagnostics beside the text.",
       });
     },
   } satisfies ReadPlugin;
 
   await Promise.all([connectIdePlugin(pi, idePlugin), connectReadPlugin(pi, readPlugin)]);
-}
-
-function createDiagnosticResolver(
-  collect: CollectDiagnostics,
-  contents: WeakMap<object, NonNullable<ReadResultDetails["diagnosticCheck"]>>,
-): ResourceResolver {
-  return {
-    id: "diagnostics",
-    tryResolve(source, context) {
-      return Promise.resolve(
-        resolveDiagnosticSource(source, context.cwd, collect, contents, {
-          signal: context.signal,
-          ...(context.audience === "script" && { mode: "complete" }),
-        }),
-      );
-    },
-  };
+  const scriptCall = trackScriptCalls(pi, "diagnostics");
+  pi.registerTool(
+    withToolCallInterceptionRendering(
+      {
+        name: "diagnostics",
+        label: "diagnostics",
+        exposure: "direct",
+        namespace: {
+          name: "ide_diagnostics",
+          description: "Check file diagnostics from lint and language servers.",
+        },
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+        description:
+          "Check lint and language-server diagnostics for a file, with nearby source context and check readiness. Returns a report reusable by Read and Search, not an editable source selection.",
+        promptSnippet: "Check file diagnostics and lint/language-server readiness",
+        parameters: Type.Object(
+          {
+            path: Type.String({
+              minLength: 1,
+              description: "Local file path or ssh:// file path.",
+            }),
+          },
+          { additionalProperties: false },
+        ),
+        outputSchema: readOutputSchema,
+        renderCall(parameters, theme, context) {
+          return toolCallHeader(
+            context.lastComponent,
+            {
+              tool: "diagnostics",
+              primary: { text: parameters.path, color: "accent", truncate: "start" },
+              expanded: context.expanded,
+            },
+            theme,
+          );
+        },
+        renderResult: renderReadResult,
+        async execute(id, parameters, signal, onUpdate, context) {
+          if (!readApi) throw new Error("diagnostics needs the Read module (read.core).");
+          const filePath = resolveCodeViewPath(parameters.path, context.cwd);
+          const script = scriptCall(id);
+          const snapshot = await collect(filePath, context.cwd, { signal });
+          const report = createDiagnosticViewContent(filePath, snapshot.content, snapshot.results);
+          // Do not expose report sourceLines: they map preview context back to editable file text.
+          const reportText = report.text.endsWith("\n") ? report.text : report.text + "\n";
+          const source = `diagnostic-report:${randomUUID()}`;
+          reports.set(source, reportText);
+          const result = await readApi.read(
+            { path: source },
+            {
+              cwd: context.cwd,
+              signal,
+              ...(onUpdate && { onUpdate }),
+            },
+            script ? "script" : "agent",
+          );
+          return structuredRead(
+            {
+              ...result,
+              details: {
+                ...result.details,
+                // Presentation names the checked file; script targets remain on the report.
+                source: filePath,
+                diagnosticCheck: report.diagnosticCheck,
+              },
+            },
+            { complete: script },
+          );
+        },
+      },
+      new ToolCallInterceptionRenderStore(),
+    ),
+  );
 }
 
 type CollectDiagnostics = (
@@ -160,39 +238,6 @@ type CollectDiagnostics = (
   cwd: string,
   options?: Omit<IdeDiagnosticReadContext, "cwd">,
 ) => ReturnType<IdePluginApi["readDiagnostics"]>;
-
-function resolveDiagnosticSource(
-  source: string,
-  cwd: string,
-  collect: CollectDiagnostics,
-  contents: WeakMap<object, NonNullable<ReadResultDetails["diagnosticCheck"]>>,
-  options?: Omit<IdeDiagnosticReadContext, "cwd">,
-): ResourceResolutionAttempt {
-  let filePath: string | undefined;
-
-  try {
-    filePath = resolveDiagnosticViewPath(source, DIAGNOSTIC_SCHEME, cwd);
-  } catch (error) {
-    return { kind: "failed", error };
-  }
-
-  if (filePath === undefined) {
-    return { kind: "not-handled" };
-  }
-
-  return {
-    kind: "resolved",
-    resource: {
-      source: formatDiagnosticViewSource(DIAGNOSTIC_SCHEME, filePath),
-      async read() {
-        const snapshot = await collect(filePath, cwd, options);
-        const content = createDiagnosticViewContent(filePath, snapshot.content, snapshot.results);
-        contents.set(content, content.diagnosticCheck);
-        return [content];
-      },
-    },
-  };
-}
 
 function createDiagnosticPresenter(
   collect: CollectDiagnostics,

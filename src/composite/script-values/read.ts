@@ -15,15 +15,17 @@ const imageBlockSchema = {
   required: ["type", "data", "mimeType"],
 };
 
+const textSourceSchema = {
+  type: "object",
+  description:
+    "Text, exactly as requested, without notices. Pass the value or its id to a source parameter.",
+  properties: { text: { type: "string" }, id: { type: "string" } },
+  required: ["text", "id"],
+};
+
 /** The value of one read source: text, raw bytes, a directory, an image or several frames. */
 const sourceValueSchemas = [
-  {
-    type: "object",
-    description:
-      "Text, exactly as requested, without notices. Pass the value or its id to a source parameter.",
-    properties: { text: { type: "string" }, id: { type: "string" } },
-    required: ["text", "id"],
-  },
+  textSourceSchema,
   {
     type: "object",
     properties: { bytes: { type: "string" } },
@@ -94,6 +96,12 @@ export const readValue: ScriptValue = {
         .join("\n") || undefined
     );
   },
+};
+
+/** A tool that returns only a text report uses Read's projection without its media and list union. */
+export const textReadValue: ScriptValue = {
+  schema: textSourceSchema,
+  project: readValue.project,
 };
 
 /** The value of each path of a Read of several paths, in order; null for a path that failed. */
