@@ -87,6 +87,66 @@ export function singleSearchMatch(value: unknown, end: RunEvent): boolean {
   );
 }
 
+/** Compare inline fragments using a Search line snapshot; callers must establish freshness. */
+export function issuedSearchFragment(
+  exact: string,
+  value: unknown,
+  paired: boolean,
+  issuers: SelectionIssuer[],
+  sameFile: (source: unknown) => boolean,
+): boolean {
+  for (const issuer of issuers) {
+    if (issuer.tool !== "search") continue;
+    const data = searchValue(issuer.end);
+    if (!Array.isArray(data.matches)) continue;
+    for (const [index, entry] of data.matches.entries()) {
+      const match = record(entry);
+      const range = record(match.range);
+      const line = match.line ?? range.startLine;
+      const content = match.lineText;
+      if (
+        !sameFile(match.path ?? match.source) ||
+        typeof content !== "string" ||
+        typeof line !== "number" ||
+        !Number.isInteger(line) ||
+        line < 1 ||
+        (range.startLine !== undefined && range.startLine !== line) ||
+        (!paired && wholeLineSelection(content, exact))
+      )
+        continue;
+      // A line snapshot omits its final separator, so it cannot prove whole-line ownership.
+      const required = exactSelection(content, exact, paired);
+      if (!required) continue;
+      const local = {
+        ...match,
+        line: 1,
+        range: {
+          ...range,
+          startLine: 1,
+          endLine: typeof range.endLine === "number" ? range.endLine - line + 1 : range.endLine,
+        },
+      };
+      const snapshot: SelectionIssuer = {
+        ...issuer,
+        end: {
+          ...issuer.end,
+          result: {
+            ...issuer.end.result,
+            structuredContent: {
+              ...record(issuer.end.result?.structuredContent),
+              ...data,
+              // Keep indices and cardinality: one selected match cannot become the whole result.
+              matches: data.matches.map((_, position) => (position === index ? local : null)),
+            },
+          },
+        },
+      };
+      const selected = issuedSelection(content, value, [snapshot], sameFile);
+      if (selected && required.from === selected.from && required.to === selected.to) return true;
+    }
+  }
+  return false;
+}
 export interface SelectionIssuer {
   tool: string;
   args: Record<string, unknown>;
