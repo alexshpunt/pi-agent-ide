@@ -271,6 +271,34 @@ for (const mode of ["direct", "codemode"]) {
       ),
     );
   });
+  void test(`multi-source results cannot borrow another file's identical text in ${mode}`, () => {
+    const files = { "task.txt": "OLD\n", "other.txt": "OLD\n" };
+    const route: RouteStep[] = [
+      { tool: "search" },
+      { tool: "copy", args: { path: "task.txt", start: "OLD", target: "target.txt" } },
+    ];
+    const found = search("other.txt", "OLD");
+    found.args.path = ["task.txt", "other.txt"];
+    const copy: Call = {
+      tool: "copy",
+      args: { path: "task.txt", start: "SEARCH#ABCD:1:line", target: "target.txt" },
+    };
+    assert.ok(!passed(files, route, [found, copy], mode));
+    const read: Call = {
+      tool: "read",
+      args: { path: ["task.txt", "other.txt"], views: ["anchors"] },
+      text: "123ABCD|OLD\n",
+      value: { id },
+    };
+    assert.ok(
+      !passed(
+        files,
+        [{ tool: "read" }, route[1] as RouteStep],
+        [read, { ...copy, args: { ...copy.args, start: "123ABCD|OLD\n" } }],
+        mode,
+      ),
+    );
+  });
   void test(`selection evidence cannot outlive a mutation or replace a required issuer in ${mode}`, () => {
     const files = { "task.txt": "OLD\nLast\n" };
     const route: RouteStep[] = [
