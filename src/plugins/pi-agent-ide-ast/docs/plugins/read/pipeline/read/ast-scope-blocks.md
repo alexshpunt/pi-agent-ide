@@ -4,9 +4,9 @@
 
 The `ast-scope-blocks` plugin identifies structural blocks in source text and attaches begin/end markers to the corresponding lines. It helps the agent understand nesting and provides stable locations for later anchored edits.
 
-It is an independently loaded Pi extension. It enriches normal filesystem reads and owns the `ast:` source resolver.
+It is an independently loaded Pi extension. It enriches normal filesystem reads and provides the `outline` tool.
 
-The `ast` view adds scope markers to filesystem text. Its read handler maps source positions for explicit `ast:` reads. Its post-read handler handles automatic overflow outlines and adds missing closing scope lines.
+The `ast` view adds scope markers to filesystem text. Its read handler maps source positions for explicit `outline` calls. Its post-read handler handles automatic overflow outlines and adds missing closing scope lines.
 
 The generated prompt explains these modes and how to read exact source text after an overview.
 
@@ -14,17 +14,17 @@ The generated prompt explains these modes and how to read exact source text afte
 
 When the requested filesystem text exceeds Pi's normal output buffer, the plugin tries a compact outline of the whole read snapshot. It keeps original line numbers, collapses bodies and starts at 12 syntax-tree levels. If the rendered overview still exceeds the buffer, it lowers the depth one level at a time and stops at the first fit. At depth zero only file-level information remains. It parses once and never rereads the file for these attempts.
 
-Small windows stay exact, even in large files. Unsupported files, invalid syntax and unavailable parsers keep normal truncation. The overview is labelled as compressed text; read a small source range when exact implementation text is needed. This mode does not restore the removed `lines` view or change explicit `ast:` depth.
+Small windows stay exact, even in large files. Unsupported files, invalid syntax and unavailable parsers keep normal truncation. The overview is labelled as compressed text; read a small source range when exact implementation text is needed. This mode does not restore the removed `lines` view or change explicit outline depth.
 
-The prompt recommends explicit `ast:<path>` when the agent needs structure to locate a declaration or choose a region. It does not require a structural read when the location or a sufficient edit anchor is already known.
+The prompt recommends `outline` when the agent needs structure to locate a declaration or choose a region. It does not require a structural read when the location or a sufficient edit anchor is already known.
 
-## Outline source
+## Outline tool
 
-Use `read` with `ast:<path>` to read a compressed outline of one source file. The path may be relative to the session directory or absolute. `ast:` does not accept a symbol fragment.
+Use `outline({ path: "<path>" })` for a compressed outline of one source file. The path may be relative to the session directory, absolute, or a configured `ssh://` file. It acquires text through its resource owner; no outline prefix is registered with Read.
 
 The result keeps declarations, signatures, imports, and structural boundaries while collapsing implementation bodies and data values. Every visible source line keeps its original line anchor and available scope markers, so it can be used in later edit calls.
 
-Malformed sources, unsupported file types, missing files, and unavailable parsers return a failed `read` result. They never fall back to the filesystem resolver.
+Unsupported file types, missing files, and unavailable parsers return a failed `outline` result. They never fall back to the filesystem resolver. Invalid syntax may produce a partial outline.
 
 ## Scope model
 

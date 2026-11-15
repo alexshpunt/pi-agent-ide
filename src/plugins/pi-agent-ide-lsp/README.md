@@ -58,4 +58,4 @@ Run the live TUI replay:
 ./scripts/interactive-demos/run-read-code-views-tui-loop.sh
 ```
 
-The demo copies `src/code-view/reference.ts` into an isolated TypeScript project and shows the `ast:` outline and `lsp_search` declaration, symbol calls and file calls results in order.
+The demo copies `src/code-view/reference.ts` into an isolated TypeScript project and shows the `outline` result and `lsp_search` declaration, symbol calls and file calls results in order.
