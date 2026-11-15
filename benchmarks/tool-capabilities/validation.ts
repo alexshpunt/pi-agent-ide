@@ -1,4 +1,5 @@
 import path from "node:path";
+import { executionArguments } from "./argument-equivalence.ts";
 import {
   exactSelection,
   issuedAnchor,
@@ -359,7 +360,19 @@ export function validateRoute(
   aliases: Readonly<Record<string, string>> = {},
 ): { passed: boolean; reasons: string[] } {
   const starts = events
-    .map((event, index) => ({ event, index }))
+    .map((event, index) => ({
+      event:
+        event.type === "tool_execution_start"
+          ? {
+              ...event,
+              args: executionArguments(
+                aliases[event.toolName ?? ""] ?? event.toolName ?? "",
+                event.args,
+              ),
+            }
+          : event,
+      index,
+    }))
     .filter(({ event }) => event.type === "tool_execution_start");
   const ends = new Map(
     events.flatMap((event, index) =>
@@ -602,6 +615,7 @@ export function validateRoute(
     const normalized = { ...actual };
     if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
       normalized.offset = 1;
+    if (tool === "insert" && normalized.before === undefined) normalized.before = false;
     if (matches(expected, normalized)) return true;
     // One Read may include other sources, but must satisfy every required argument on that call.
     if (
@@ -925,21 +939,22 @@ export function validateRoute(
       if (
         references.some((reference) => {
           const prior = selected[reference.from];
+          if (!prior || (reference.newParent && prior.parent === execution.parent)) return true;
+          // An explicit source is independent of the earlier result, but both calls remain required.
+          if (
+            reference.explicit !== undefined &&
+            (Array.isArray(reference.field) ? reference.field : [reference.field]).some((field) =>
+              matches(reference.explicit, fieldValue(event.args, field), field.split(".").at(-1)),
+            )
+          )
+            return false;
           return (
-            !prior ||
             prior.end >= start.index ||
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
-                (reference.explicit !== undefined &&
-                  matches(
-                    reference.explicit,
-                    fieldValue(event.args, field),
-                    field.split(".").at(-1),
-                  )) ||
                 argumentReuses(field, event.args, reference, prior.event, start.index) ||
                 passesValue(fieldValue(event.args, field), prior.event),
-            ) ||
-            (reference.newParent && prior.parent === execution.parent)
+            )
           );
         })
       )
