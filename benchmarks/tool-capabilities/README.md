@@ -21,6 +21,14 @@ Rust edition selection is formatter behavior after an edit, not a new model oper
 
 The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostics and requests a symbol from the real server. Its dependency-free build script records an unexpected compilation; the final validator requires that marker to remain absent. It covers default Cargo safety, not explicit build-backed opt-in or large-workspace performance. The focused Rust diagnostic integration case also guards compiler invocations on a cold target and can use a real large workspace. Direct and Codemode paid routes remain unverified until paid execution.
 
+### Route equivalence
+
+The validator compares execution arguments after Pi's argument parser applies the checked tool schemas in `contracts.json`. Numeric strings accepted by Pi match their numeric values. Arguments that fail schema parsing keep strict raw comparison, including deliberate invalid-call cases. Structured result values are never coerced. Retained events stay unchanged.
+
+Fixture paths match their equivalent relative or absolute spelling. An explicitly allowed source path does not depend on completion of another call. Reusing a returned reference still requires its completed issuer, and every declared call remains required. After a mutation, a fresh Search can prove an inline fragment from its public line snapshot. The witness must name the same file and range, and no source edit may overlap or follow it before the consuming call. This does not grant whole-line separator ownership or turn one match of a larger result into a whole-result selection.
+
+Boundary alternatives belong to individual cases through reviewed `argsAny` variants. In `exact-eof-lf` and `exact-eof-crlf`, deleting a block with its leading separator and without its terminal separator leaves the same expected bytes. The unterminated fixture rejects that variant because it would remove the preceding line's separator. In `insert-before`, `α` and `β` identify the beginning and end of the multiline fragment; the opening and closing insertions must keep their respective sides. Final fixture bytes are checked separately. Cases that test selection or reference reuse retain those constraints.
+
 ## Paid runs
 
 Requirements: Linux or WSL, Node 24, Git, Bubblewrap with user namespaces enabled, installed Pi with native Codemode and tool discovery, and provider credentials. The free inventory prefers the globally installed Pi; without one it uses the checkout's SDK. `--pi /absolute/path/to/pi` selects an installed runtime explicitly. Paid runs need Pi and its dependencies inside the read-only system toolchain mounts (`/usr`, `/opt`, or the local bin/lib directories under the user home).

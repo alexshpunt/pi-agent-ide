@@ -1162,7 +1162,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
       ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
     ],
     (api) =>
-      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset and limit 1) before editing. ${parallelCalls(api, 3)} Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Keep those scopes separate." : ""}`,
+      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset and limit 1) before editing. ${parallelCalls(api, 3)} Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
     [
       ...[2, 4, 6].map((line): RouteStep => ({
         tool: "read",
@@ -2054,7 +2054,7 @@ add(
 add(
   "insert-before",
   ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
-  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
+  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Use the exact multiline text as both anchors, or use α for [ with before: true and β for ] with before: false. Pass actual newline characters in multiline anchors; do not paste printed line-anchor prefixes. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
   [
     {
       tool: "insert",
@@ -2070,17 +2070,18 @@ add(
     },
     {
       tool: "insert",
-      args: { path: "literal.txt", anchor: "α🙂", text: "]" },
+      args: { path: "literal.txt", anchor: "α🙂", text: "]", before: false },
     },
     {
       tool: "insert",
       args: { path: "block.txt", text: "[", before: true },
-      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }],
+      // In this fixture α starts and β ends the requested multiline fragment.
+      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }, { anchor: "α" }],
     },
     {
       tool: "insert",
-      args: { path: "block.txt", text: "]" },
-      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }],
+      args: { path: "block.txt", text: "]", before: false },
+      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }, { anchor: "β" }],
     },
     { tool: "search", args: { path: "search.txt", query: "MATCH" } },
     {
@@ -2100,6 +2101,7 @@ add(
         path: "search.txt",
         anchor: matchReference(1),
         text: "]",
+        before: false,
       },
       reuse: reuse(7, "anchor", "anchor"),
     },
@@ -2676,11 +2678,21 @@ for (const [name, eol, ending] of [
       { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
       {
         tool: "delete",
-        args: { path: "block.txt", start: /^Last\r?\nBlock$/u },
+        args: { path: "block.txt", end: undefined },
+        // A leading separator can replace the terminal one only in a terminated fixture.
+        // Both exact deletions leave First plus its original separator; outcome checks keep bytes strict.
+        argsAny: [
+          { start: /^Last\r?\nBlock$/u },
+          ...(ending ? [{ start: `${eol}Last${eol}Block` }] : []),
+        ],
       },
       {
         tool: "replace",
-        args: { path: "empty.txt", text: "", start: /^Last\r?\nBlock$/u },
+        args: { path: "empty.txt", text: "", end: undefined },
+        argsAny: [
+          { start: /^Last\r?\nBlock$/u },
+          ...(ending ? [{ start: `${eol}Last${eol}Block` }] : []),
+        ],
       },
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
