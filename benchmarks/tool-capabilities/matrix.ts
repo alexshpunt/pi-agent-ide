@@ -329,6 +329,7 @@ const groups: [string[], string[]][] = [
       "lsp.rename",
       "lsp.rename-cross-file",
       "lsp.rename-keeps-unrelated-names",
+      "lsp.rename-refusal-recovery",
       "compose.symbol-read-rename",
     ],
     ["lsp-rename"],
