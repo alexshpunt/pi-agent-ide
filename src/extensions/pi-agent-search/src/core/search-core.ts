@@ -334,17 +334,12 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
           left.order - right.order,
       );
 
-      const emptyProtocol = /^[a-z][\w-]*:\s*$/iu.test(request.query);
-      const protocolLike = /^[a-z][\w-]*:/iu.test(request.query);
       for (const entry of snapshot) {
         if (context.scope !== undefined && entry.registration.resolver.supportsResultScope !== true)
           continue;
-        if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;
         if (context.scope !== undefined && resolver.supportsResultScope !== true) continue;
         if (request.paths !== undefined && resolver.supportsPathList !== true) continue;
-        // Unknown colon prefixes can be source text (for example, feature: "legacy").
-        // The fallback still searches only the verified scope; structural protocols stay above.
 
         try {
           const scope = Promise.resolve().then(async () => {
@@ -430,17 +425,7 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
                   {
                     content: [
                       ...adjustedNotice(latestScope, context.cwd),
-                      ...(entry.registration.fallback && protocolLike
-                        ? [
-                            {
-                              type: "text" as const,
-                              text: emptyProtocol
-                                ? "Search fallback: empty protocol query; searched the original text."
-                                : "Search fallback: unhandled protocol query; searched the original text.",
-                            },
-                            ...formatted.content,
-                          ]
-                        : formatted.content),
+                      ...formatted.content,
                       ...(isRecord(data) && data.complete === false
                         ? [
                             {

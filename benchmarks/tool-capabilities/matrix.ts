@@ -98,7 +98,8 @@ const groups: [string[], string[]][] = [
     ["codemode.read-bytes", "codemode.read-entries", "codemode.read-path-list"],
     ["read-script-values"],
   ],
-  [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
+  [["search.text"], ["search-anchor-insert", "search-query"]],
+  [["compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
   [["search.path-list", "file_search.path-list", "ast_search.path-list"], ["search-path-list"]],
   [
