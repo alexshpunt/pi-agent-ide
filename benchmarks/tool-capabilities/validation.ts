@@ -445,6 +445,7 @@ export function validateRoute(
       if ((aliases[prior.event.toolName ?? ""] ?? prior.event.toolName) === "search") {
         const sources = searchSources(value, end.event);
         if (sources !== undefined) return sources;
+        if (Array.isArray(prior.event.args?.path) && prior.event.args.path.length !== 1) return [];
       }
       // A Codemode parent can print a child's id; only a call with a path issued it.
       const source = prior.event.args?.path;

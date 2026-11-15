@@ -48,11 +48,12 @@ export function searchSources(value: unknown, end: RunEvent): string[] | undefin
     );
   });
   if (!selected.length) return undefined;
-  return selected.flatMap((entry) => {
+  const sources = selected.flatMap((entry) => {
     const match = record(entry);
     const path = match.path ?? match.source;
     return typeof path === "string" ? [path] : [];
   });
+  return sources.length ? sources : undefined;
 }
 /** Keep whole-result authority distinct from an individual match in a larger selection. */
 export function wholeSearchSelection(value: unknown, end: RunEvent): boolean {
