@@ -95,7 +95,7 @@ export function registerOutlineTool(
             );
             result = await current.api.readWith(
               resolver,
-              { path: parameters.path },
+              { path: parameters.path, views: ["anchors"] },
               {
                 cwd: context.cwd,
                 ...(signal === undefined ? {} : { signal }),
