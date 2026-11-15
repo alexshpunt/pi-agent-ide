@@ -1,8 +1,10 @@
 import path from "node:path";
+import { executionArguments } from "./argument-equivalence.ts";
 import {
   exactSelection,
   issuedAnchor,
   issuedSelection,
+  issuedSearchFragment,
   searchSources,
   wholeSearchSelection,
   type SelectionIssuer,
@@ -359,7 +361,19 @@ export function validateRoute(
   aliases: Readonly<Record<string, string>> = {},
 ): { passed: boolean; reasons: string[] } {
   const starts = events
-    .map((event, index) => ({ event, index }))
+    .map((event, index) => ({
+      event:
+        event.type === "tool_execution_start"
+          ? {
+              ...event,
+              args: executionArguments(
+                aliases[event.toolName ?? ""] ?? event.toolName ?? "",
+                event.args,
+              ),
+            }
+          : event,
+      index,
+    }))
     .filter(({ event }) => event.type === "tool_execution_start");
   const ends = new Map(
     events.flatMap((event, index) =>
@@ -467,7 +481,10 @@ export function validateRoute(
     return [];
   }
   /** Only successful, completed issuers of this same source may justify selector equivalence. */
-  function selectionIssuers(file: unknown, before: number): SelectionIssuer[] {
+  function selectionIssuers(
+    file: unknown,
+    before: number,
+  ): (SelectionIssuer & { start: number })[] {
     return starts.flatMap((prior) => {
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) return [];
@@ -479,6 +496,7 @@ export function validateRoute(
           tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
           args: prior.event.args ?? {},
           end: end.event,
+          start: prior.index,
         },
       ];
     });
@@ -490,24 +508,11 @@ export function validateRoute(
       reusedPaths(reference, before).some((path) => fixturePath(path) === fixturePath(file))
     );
   }
-  /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
-  function editContext(
-    tool: string,
-    actual: Record<string, unknown>,
-    before: number,
-  ): {
-    content?: string;
-    selection?: LineSelection;
-  } {
-    const source = actual.path ?? actual.anchor ?? actual.start;
-    const paths = [...values(source), ...reusedPaths(source, before)];
-    const file = Object.keys(task.files ?? {}).find((file) =>
-      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
-    );
-    if (file === undefined) return {};
+  /** An edit overlapping or following the witness makes its source snapshot unsafe. */
+  function sourceChanged(file: string, before: number, after = -1): boolean {
     for (const prior of starts) {
       const end = ends.get(prior.event.toolCallId ?? "");
-      if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      if (prior.index >= before || (end && (end.index <= after || end.event.isError))) continue;
       if (
         !["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(
           aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
@@ -526,8 +531,26 @@ export function validateRoute(
           ),
         )
       )
-        return {};
+        return true;
     }
+    return false;
+  }
+  /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
+  function editContext(
+    tool: string,
+    actual: Record<string, unknown>,
+    before: number,
+  ): {
+    content?: string;
+    selection?: LineSelection;
+  } {
+    const source = actual.path ?? actual.anchor ?? actual.start;
+    const paths = [...values(source), ...reusedPaths(source, before)];
+    const file = Object.keys(task.files ?? {}).find((file) =>
+      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
+    );
+    if (file === undefined) return {};
+    if (sourceChanged(file, before)) return {};
     const content = task.files?.[file];
     if (content === undefined) return {};
     const selector = actual.anchor ?? actual.start;
@@ -602,6 +625,7 @@ export function validateRoute(
     const normalized = { ...actual };
     if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
       normalized.offset = 1;
+    if (tool === "insert" && normalized.before === undefined) normalized.before = false;
     if (matches(expected, normalized)) return true;
     // One Read may include other sources, but must satisfy every required argument on that call.
     if (
@@ -692,8 +716,20 @@ export function validateRoute(
       if (hash && exact instanceof RegExp && matches(exact, hash)) normalized[field] = hash;
       if (typeof source !== "string" || typeof exact !== "string") continue;
       const content = editContext(tool, { path: source }, before).content;
-      if (content === undefined) continue;
       const paired = target ? expected.targetEnd !== undefined : expected.end !== undefined;
+      if (content === undefined) {
+        if (
+          issuedSearchFragment(
+            exact,
+            selector,
+            paired,
+            issuers.filter((issuer) => !sourceChanged(source, before, issuer.start)),
+            (candidate) => matches({ path: source }, { path: candidate }),
+          )
+        )
+          normalized[field] = exact;
+        continue;
+      }
       const required = exactSelection(content, exact, paired);
       const selected = issuedSelection(content, selector, issuers, (candidate) =>
         matches({ path: source }, { path: candidate }),
@@ -925,21 +961,22 @@ export function validateRoute(
       if (
         references.some((reference) => {
           const prior = selected[reference.from];
+          if (!prior || (reference.newParent && prior.parent === execution.parent)) return true;
+          // An explicit source is independent of the earlier result, but both calls remain required.
+          if (
+            reference.explicit !== undefined &&
+            (Array.isArray(reference.field) ? reference.field : [reference.field]).some((field) =>
+              matches(reference.explicit, fieldValue(event.args, field), field.split(".").at(-1)),
+            )
+          )
+            return false;
           return (
-            !prior ||
             prior.end >= start.index ||
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
-                (reference.explicit !== undefined &&
-                  matches(
-                    reference.explicit,
-                    fieldValue(event.args, field),
-                    field.split(".").at(-1),
-                  )) ||
                 argumentReuses(field, event.args, reference, prior.event, start.index) ||
                 passesValue(fieldValue(event.args, field), prior.event),
-            ) ||
-            (reference.newParent && prior.parent === execution.parent)
+            )
           );
         })
       )
