@@ -144,7 +144,7 @@ test("ordinary SSH writes run the owner formatter and reread its final content",
           toolCall({
             id: "diagnostics",
             name: "diagnostics",
-            arguments: { path: `${source}` },
+            arguments: { path: source },
           }),
         ]),
         assistantMessage([text("Verified owner formatting.")]),
