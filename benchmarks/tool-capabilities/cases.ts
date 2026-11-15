@@ -2959,8 +2959,8 @@ add(
 );
 add(
   "ast-capture-rename",
-  ["outline.file", "search.ast", "compose.ast-capture-edit"],
-  "Call outline for task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the NAME capture with renamed: in a direct call its displayed capture reference, in Codemode the capture from the match's captures.NAME or its id. Use the actual capture reference, not a file path or anchor.",
+  ["outline.file", "search.ast", "compose.ast-capture-edit", "compose.capture-uuid-source"],
+  'Call outline for task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the NAME capture with renamed. Take the UUID from its issued RESULT# reference (or captures.NAME[0].id in Codemode), omit the RESULT# prefix, and pass path as {id: "<uuid>"}. Use the actual capture UUID, not the whole result, a file path or an anchor.',
   [
     { tool: "outline", args: { path: "task.ts" }, contains: "first" },
     // A pattern or a rule with a pattern can both capture NAME.
@@ -2969,7 +2969,14 @@ add(
       argsAny: [{ path: "task.ts" }, { path: ["task.ts"] }],
       contains: "capture NAME",
     },
-    { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
+    {
+      tool: "replace",
+      args: {
+        path: { id: /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u },
+        text: "renamed",
+      },
+      reuse: reuse(1, "path", "capture:NAME"),
+    },
   ],
   {
     files: syntax,
@@ -3519,13 +3526,17 @@ add(
     "lsp.rename-keeps-unrelated-names",
     "lsp.rename-refusal-recovery",
     "compose.symbol-read-rename",
+    "compose.capture-uuid-source",
   ],
-  "Get the declaration of count in task.ts with lsp_search. Try replacing its name capture with empty text; this must fail without changes. Then replace the same issued name capture with total to rename through LSP: use its displayed capture reference in direct calls or matches[0].captures.name[0] (or its id) in Codemode. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.",
+  'Get the declaration of count in task.ts with lsp_search. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, take the UUID from the issued name capture RESULT# reference (or matches[0].captures.name[0].id in Codemode), omit RESULT#, and pass path as {id: "<uuid>"}. Then replace the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
   [
     { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
     {
       tool: "replace",
-      args: { text: "" },
+      args: {
+        path: { id: /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u },
+        text: "",
+      },
       reuse: reuse(0, "path", "capture:name"),
       after: [0],
       error: true,
