@@ -17,6 +17,78 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 const initial = "alpha\nbeta\ngamma\nomega\n";
 
+test.each([
+  ["read", "all"],
+  ["read", "allSettled"],
+  ["search", "all"],
+  ["search", "allSettled"],
+] as const)(
+  "concurrent %s result edits share one batch through Promise.%s",
+  async (source, method) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "insert.txt"), "first\nmiddle\nlast\n");
+      await writeFile(path.join(cwd, "delete.txt"), "one\ntwo\nthree\n");
+      const acquire = (file: string) =>
+        source === "read"
+          ? `tools.read({path:${JSON.stringify(file)},views:["anchors"]})`
+          : `tools.search({path:${JSON.stringify(file)},query:"regex:.+"})`;
+      const run = await runScripts(cwd, `shared-result-${source}-${method}`, [
+        `const ins = await ${acquire("insert.txt")};
+const del = await ${acquire("delete.txt")};
+const results = await Promise.${method}([
+  tools.insert({path:ins,anchor:${JSON.stringify(anchor(1, "first"))},text:"FIRST\\n"}),
+  tools.insert({path:ins,anchor:${JSON.stringify(anchor(2, "middle"))},text:"MIDDLE\\n"}),
+  tools.insert({path:"./insert.txt",anchor:${JSON.stringify(anchor(3, "last"))},text:"LAST\\n"}),
+  tools.delete({path:del,start:${JSON.stringify(anchor(1, "one"))}}),
+  tools.delete({path:del,start:${JSON.stringify(anchor(2, "two"))}}),
+  tools.delete({path:"./delete.txt",start:${JSON.stringify(anchor(3, "three"))}}),
+]);
+${method === "allSettled" ? 'if (results.some(result => result.status !== "fulfilled") || results.slice(0,3).some(result => result.value === null)) throw Error("Concurrent edit failed");' : 'if (results.slice(0,3).some(result => result === null)) throw Error("Concurrent edit failed");'}`,
+      ]);
+      expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+        false,
+      );
+      expect(codemodeFailures(getToolResultText(run, "script-0"))).toBe("");
+      expect(batchDetails(run).editorBatches.map((batch) => batch.calls.length)).toEqual([6]);
+      expect(await readFile(path.join(cwd, "insert.txt"), "utf8")).toBe(
+        "first\nFIRST\nmiddle\nMIDDLE\nlast\nLAST\n",
+      );
+      expect(await readFile(path.join(cwd, "delete.txt"), "utf8")).toBe("");
+    });
+  },
+);
+
+test.each(["inside", "outside", "changed"] as const)(
+  "native Read selection retains its scope when the target is %s",
+  async (scenario) => {
+    await withTempWorkspace(async (cwd) => {
+      const content = "alpha\nbeta\ngamma\nomega\n";
+      await writeFile(path.join(cwd, "note.txt"), content);
+      const run = await runScripts(cwd, "native-read-scope-" + scenario, [
+        `const found = await tools.read({path:"note.txt",offset:2,limit:2,views:["anchors"]});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+const result = await tools.replace({path:found,start:${JSON.stringify(scenario === "outside" ? "omega" : scenario === "changed" ? "gamma" : "beta")},text:${JSON.stringify(scenario === "changed" ? "RACE_REMOVE_GAMMA" : "BETA")}});
+if (${scenario === "outside" ? "result !== null" : "result === null"}) throw Error("Unexpected scoped edit result");`,
+      ]);
+      const failed = scenario === "changed";
+      expect(getToolExecution(run, "script-0").isError).toBe(failed);
+      expect(
+        batchDetails(run).editorBatches.map((batch) => batch.calls.map((call) => call.state)),
+      ).toEqual([
+        scenario === "outside"
+          ? ["completed"]
+          : ["completed", failed ? "failed-not-applied" : "completed"],
+      ]);
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        scenario === "inside"
+          ? "added\nalpha\nBETA\ngamma\nomega\n"
+          : failed
+            ? "added\nalpha\nbeta\nomega\n"
+            : "added\n" + content,
+      );
+    });
+  },
+);
 test.each(["value", "match", "numbered"] as const)(
   "native Search %s source scopes explicit anchors without broadening them",
   async (selection) => {
