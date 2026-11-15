@@ -498,7 +498,7 @@ export function validateRoute(
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
       if (
         !["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(
-          prior.event.toolName ?? "",
+          aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
         )
       )
         continue;
@@ -649,6 +649,7 @@ export function validateRoute(
         content,
         selector ?? (!target && field === "start" ? actual.path : undefined),
         issuers,
+        (candidate) => matches({ path: source }, { path: candidate }),
       );
       if (required && selected && required.from === selected.from && required.to === selected.to) {
         normalized[field] = exact;

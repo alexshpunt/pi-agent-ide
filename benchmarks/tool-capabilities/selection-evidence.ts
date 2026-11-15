@@ -88,6 +88,7 @@ export function issuedSelection(
   content: string,
   value: unknown,
   issuers: SelectionIssuer[],
+  sameFile: (source: unknown) => boolean,
 ): LineSelection | undefined {
   const lines = [0, ...[...content.matchAll(/\n/gu)].map((match) => match.index + 1)].filter(
     (from) => from < content.length,
@@ -95,6 +96,8 @@ export function issuedSelection(
   for (const issuer of issuers) {
     const output = resultText(issuer.end);
     if (issuer.tool === "read" || issuer.tool === "demo_read") {
+      // A combined Read does not identify which source owns each displayed line or window.
+      if (Array.isArray(issuer.args.path) && issuer.args.path.length !== 1) continue;
       const views = issuer.args.views;
       if (Array.isArray(views) && views.some((view) => view !== "anchors")) continue;
       const hash = issuedAnchor(value, output);
@@ -132,6 +135,7 @@ export function issuedSelection(
     if (!Array.isArray(data.matches)) continue;
     for (const [index, entry] of data.matches.entries()) {
       const match = record(entry);
+      if (!sameFile(match.path ?? match.source)) continue;
       const references = record(match.references);
       const reference = ids(value)[0];
       const direct = reference && /^SEARCH#[A-F0-9]+:(\d+):(line|match)$/u.exec(reference);
