@@ -864,6 +864,22 @@
       }
     },
     {
+      "name": "outline",
+      "namespace": "ide_outline",
+      "exposure": "direct",
+      "parameters": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["path"],
+        "type": "object"
+      }
+    },
+    {
       "name": "read",
       "namespace": "ide_read",
       "exposure": "direct",
