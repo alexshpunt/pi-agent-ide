@@ -121,6 +121,7 @@ const groups: [string[], string[]][] = [
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
   [["edit.delete-exact-range"], ["exact-range-delete"]],
+  // Exact destination cases require object-form Search endpoints alongside a peer transfer.
   [["edit.copy-exact-range", "edit.copy-exact-destination"], ["exact-range-copy"]],
   // Range routes validate equal issued selections across path/start/anchor forms globally;
   // exact-range-move also exercises multiline EOF selectors with LF/CRLF argument variants.

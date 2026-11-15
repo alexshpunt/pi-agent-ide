@@ -1783,7 +1783,7 @@ add(
     "edit.copy-source-range",
     "compose.search-range-endpoints",
   ],
-  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references (in Codemode, the ids of their matches) as targetStart and targetEnd. Replace only that inclusive destination span. Then select the whole line 段🙂 in whole.txt with a single start and no end. Copy that same source once over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd, and once after the whole ANCHOR line in inserted.txt, without targetEnd. Preserve the selected source's CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
+  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references as objects {id: reference} in targetStart and targetEnd. In Codemode, pass the corresponding match values. Issue the target.txt transfer and the inline.txt transfer together (direct: the same assistant message; Codemode: Promise.all). Replace only that inclusive destination span. Then select the whole line 段🙂 in whole.txt with a single start and no end. Copy that same source once over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd, and once after the whole ANCHOR line in inserted.txt, without targetEnd. Preserve the selected source's CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
   [
     { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
     { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
@@ -1794,13 +1794,14 @@ add(
         start: "COPY_BEGIN",
         end: "COPY_END",
         target: "target.txt",
-        targetStart: matchReference(1),
-        targetEnd: matchReference(1),
+        targetStart: { id: matchReference(1) },
+        targetEnd: { id: matchReference(1) },
       },
       reuse: [reuse(0, "targetStart", "anchor"), reuse(1, "targetEnd", "anchor")],
     },
     {
       tool: "copy",
+      sameAssistantWith: 2,
       args: {
         path: "whole.txt",
         start: "段🙂",
@@ -1848,10 +1849,12 @@ add(
     "edit.move-source-range",
     "compose.search-range-endpoints",
   ],
-  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Move that inline inclusive span into target.txt using the exact strings TARGET_BEGIN and TARGET_END as targetStart/targetEnd. Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Then move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt. Use that complete block as a single start with no end, and SLOT as both targetStart and targetEnd. Preserve the block's internal CRLF when inserting into the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Search target.txt separately for TARGET_BEGIN and TARGET_END. Move that inline inclusive span into target.txt using the destination :match references as objects {id: reference} in targetStart/targetEnd (in Codemode, pass the match values). Issue both Move calls together (direct: the same assistant message; Codemode: Promise.all). Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Then move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt. Use that complete block as a single start with no end, and SLOT as both targetStart and targetEnd. Preserve the block's internal CRLF when inserting into the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
   [
     { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
     { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
+    { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
+    { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
     {
       tool: "move",
       args: {
@@ -1859,13 +1862,19 @@ add(
         start: matchReference(1),
         end: matchReference(1),
         target: "target.txt",
-        targetStart: "TARGET_BEGIN",
-        targetEnd: "TARGET_END",
+        targetStart: { id: matchReference(1) },
+        targetEnd: { id: matchReference(1) },
       },
-      reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
+      reuse: [
+        reuse(0, "start", "anchor"),
+        reuse(1, "end", "anchor"),
+        reuse(2, "targetStart", "anchor"),
+        reuse(3, "targetEnd", "anchor"),
+      ],
     },
     {
       tool: "move",
+      sameAssistantWith: 4,
       args: {
         path: "eof.txt",
         end: undefined,
