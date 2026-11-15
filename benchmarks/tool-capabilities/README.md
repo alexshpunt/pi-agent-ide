@@ -252,7 +252,7 @@ Windows executable discovery ignores extensionless project shims, including POSI
 
 When an IDE tool or a supported composition changes:
 
-1. Review `matrix.ts`. Add, update, or remove the intended capability entries.
+1. Review `matrix.ts`. Add, update, or remove the intended capability entries. Keep one entry per capability ID and list all of its cases in that entry.
 2. Update the linked tasks in `cases.ts`, including their route and outcome checks. Include every required source/destination reference, not just one endpoint.
 3. Run the free gate and affected free regression tests.
 4. If the tool schema changed, review the cases first, then explicitly record the new contracts:
