@@ -99,7 +99,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
         (/^[0-9A-HJKMNP-TV-Z]{7}\|/mu.test(result) ? undefined : "no line anchors"),
     ),
     {
-      ...step("read-outline", "read", { path: `ast:${file}`, limit: 40 }, (result) =>
+      ...step("read-outline", "outline", { path: file }, (result) =>
         files.sizeBytes > AST_OUTLINE_LIMIT_BYTES
           ? expectAll(result, ["AST outline limit"])
           : expectAll(result, [unitName(agent, 0), "scope-begin-"]),
@@ -142,7 +142,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       (result) => expectAll(result, ["Inserted new text", spec.brokenLine(agent, cycle)]),
     ),
     {
-      ...step("read-diagnostics", "read", { path: `diagnostics:${file}` }, (result) =>
+      ...step("diagnostics", "diagnostics", { path: file }, (result) =>
         expectErrorOn(result, spec.brokenLine(agent, cycle)),
       ),
       // A shared file can change faster than its server checks it, so no revision settles.
@@ -263,7 +263,7 @@ await tools.replace({ path: file, start: match[1], text: match[2].replace(stepLi
 const [found, calls, diagnostics] = await Promise.all([
   tools.search({ query: JSON.stringify(stepLine + " + ${cycle}"), path: file }),
   tools.ast_search({ pattern: ${JSON.stringify(`${name}($A)`)}, path: file, language: ${JSON.stringify(spec.astLanguage)} }),
-  tools.read({ path: "diagnostics:" + file }),
+  tools.diagnostics({ path: file }),
 ]);
 if (found?.matches?.length !== 1) throw new Error("search after replace: " + JSON.stringify(found));
 if (!(calls?.matches?.length > 0)) throw new Error("ast_search found no call of ${name}");

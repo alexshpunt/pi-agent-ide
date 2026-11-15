@@ -17,6 +17,10 @@ const groups: [string[], string[]][] = [
   [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [
+    ["diagnostics.file", "compose.diagnostics-read-search", "diagnostics.readonly-report"],
+    ["diagnostics-report"],
+  ],
+  [
     ["read.failure", "read.provider-failure-ownership"],
     ["read-error-direct", "read-error-codemode"],
   ],

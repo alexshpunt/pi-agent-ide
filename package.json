@@ -249,6 +249,7 @@
     "pi-agent-search": "workspace:^",
     "pi-agent-text": "workspace:^",
     "pi-agent-text-editor": "workspace:^",
+    "pi-agent-tool-call-interception": "workspace:^",
     "pi-agent-tool-ui": "workspace:^",
     "playwright-core": "^1.62.1",
     "smol-toml": "1.9.1",

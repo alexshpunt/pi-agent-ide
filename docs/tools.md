@@ -6,7 +6,7 @@ The project is experimental. The behavior below describes the current implementa
 
 ## Tool discovery
 
-Read, Search, File Search and the common editing and terminal tools are declared initially. AST Search, LSP Search, Diff and Undo are deferred, alongside Stage, Unstage and Debug. Discover them with `tool_search`, or use `describeTool()` inside Codemode when the tool name is known. Deferred tools remain callable from scripts.
+Read, Diagnostics, Search, File Search and the common editing and terminal tools are declared initially. AST Search, LSP Search, Diff and Undo are deferred, alongside Stage, Unstage and Debug. Discover them with `tool_search`, or use `describeTool()` inside Codemode when the tool name is known. Deferred tools remain callable from scripts.
 
 Use AST Search for syntax patterns, captures and enclosing code. Use LSP Search for symbol definitions, references and call graphs through language servers.
 
@@ -30,7 +30,7 @@ An explicit request limit still selects what the tool produces; the saved file d
 
 Tool source fields take one complete resource reference. A filesystem path is the common case, but it is not the only kind of reference. Depending on the tool and loaded resolvers, a reference may name a file, URL, protocol source, temporary result, or a typed text selection.
 
-Read accepts a file or directory path, resource address, or issued result. Pass an array to read each source independently in order. Unsupported sources return an error. Built-in address forms include `raw:<file>` for bytes, `temp:<id>` for saved output, `diagnostics:<file>` for diagnostics, and `docs:<id>` for a guide. HTTP(S) URLs are fetched locally; `web:ssh://<target>/https://…` fetches on that target. Extensions register further resource addresses.
+Read accepts a file or directory path, resource address, or issued result. Pass an array to read each source independently in order. Unsupported sources return an error. Built-in address forms include `raw:<file>` for bytes, `temp:<id>` for saved output, and `docs:<id>` for a guide. HTTP(S) URLs are fetched locally; `web:ssh://<target>/https://…` fetches on that target. Extensions register further resource addresses.
 
 A typed `SEARCH#...` value is both an anchor and a resource reference. It carries its source or sources and its selected ranges. Pass it by itself in either role:
 
@@ -66,7 +66,7 @@ Use `outline({ path: "src/file.ts" })` for a compressed declaration outline with
 - HTTP and HTTPS resources;
 - HTML converted to readable Markdown;
 - AST-aware code views;
-- LSP diagnostics, symbols, references, and call graphs.
+- diagnostic overlays beside file text.
 
 A read result may include anchors, diagnostics, Git changes, or structural markers. Large text results are bounded. The shared limiter retains complete truncated text in a temporary file.
 
@@ -86,9 +86,13 @@ Use `read({path: "raw:sample.bin", offset: 0, limit: 64})` to inspect original f
 
 In Codemode, a `raw:` Read returns `{ bytes }`, the base64 of every requested byte; the Read panel shows the bounded hex view. This is read-only; byte editing and byte diff are not included.
 
-### Diagnostic completion
+## Diagnostics
 
-Edits save before background diagnostics finish. Automatic notifications show only sources with findings, in the chat as soon as they arrive, with a matching hidden message sent to the agent. A new finding wakes an idle agent; during a run it is queued as steering input for the next model call. Each source names the actual reporting command, such as `eslint_d` or `typescript-language-server`, rather than a wrapper extension. Chat summaries show that name in parentheses beside its counts. Pending, unavailable, and empty reports stay silent, including updates that clear earlier findings. Silence does not mean checks passed. Explicit `diagnostics:<path>` reads and the diagnostics view still return details and readiness.
+`diagnostics({ path: "src/app.ts" })` checks one local or `ssh://` file. It accepts only `path`, not Read's `offset`, `limit` or `views`. The tool is available initially. It returns lint and language-server findings with nearby source context and reports pending, unavailable or snapshot states without treating them as completed clean checks. A repeated call checks the current file; an issued report remains a snapshot.
+
+Pass the unchanged report or its UUID to Read or Search. In Codemode, the value is `{ text, id }`; reuse it unchanged. Report selections are read-only, including derived reads and searches: read the source file before editing it. Use Read with `views: ["diagnostics"]` when you need findings beside the file text rather than a focused report.
+
+Edits save before background diagnostics finish. Automatic notifications show only sources with findings, in the chat as soon as they arrive, with a matching hidden message sent to the agent. A new finding wakes an idle agent; during a run it is queued as steering input for the next model call. Each source names the actual reporting command, such as `eslint_d` or `typescript-language-server`, rather than a wrapper extension. Chat summaries show that name in parentheses beside its counts. Pending, unavailable, and empty reports stay silent, including updates that clear earlier findings. Silence does not mean checks passed. The `diagnostics` tool and the diagnostics view return details and readiness.
 
 LSP reads prefer standard pull reports. Servers that advertise a supported completed-request command can use an adapter; TypeScript language server uses one adapter for both TypeScript and JavaScript. Adapter selection uses server capabilities, not language names. All requests remain tied to the synchronized document revision and are canceled when it becomes stale.
 
