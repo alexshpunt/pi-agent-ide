@@ -30,7 +30,7 @@ An explicit request limit still selects what the tool produces; the saved file d
 
 Tool source fields take one complete resource reference. A filesystem path is the common case, but it is not the only kind of reference. Depending on the tool and loaded resolvers, a reference may name a file, URL, protocol source, temporary result, or a typed text selection.
 
-Read accepts a file or directory path, resource address, or issued result. Pass an array to read each source independently in order. Unsupported sources return an error. Built-in address forms include `raw:<file>` for bytes, `temp:<id>` for saved output, `ast:<file>` for a declaration outline, `diagnostics:<file>` for diagnostics, and `docs:<id>` for a guide. HTTP(S) URLs are fetched locally; `web:ssh://<target>/https://…` fetches on that target. Extensions register further resource addresses.
+Read accepts a file or directory path, resource address, or issued result. Pass an array to read each source independently in order. Unsupported sources return an error. Built-in address forms include `raw:<file>` for bytes, `temp:<id>` for saved output, `diagnostics:<file>` for diagnostics, and `docs:<id>` for a guide. HTTP(S) URLs are fetched locally; `web:ssh://<target>/https://…` fetches on that target. Extensions register further resource addresses.
 
 A typed `SEARCH#...` value is both an anchor and a resource reference. It carries its source or sources and its selected ranges. Pass it by itself in either role:
 
@@ -52,6 +52,10 @@ A source field such as `path` or mutation `target` is therefore a resource field
 Configure a Linux SSH target, then use `ssh://target/path` with the supported existing tools. The resource keeps its target owner through Read, Search, editing and transfers, Git, language tools, terminal and debugger sessions. Target-native web reads use explicit remote sources rather than changing where ordinary URLs execute.
 
 Authentication stays in OpenSSH. Target programs require their dependencies on that machine; missing support does not fall back to local execution. See [SSH configuration](./configuration.md#ssh-targets) and the [SSH guide](./agent-guides/ssh.md) for setup, prerequisites and supported sources.
+
+## Outline
+
+Use `outline({ path: "src/file.ts" })` for a compressed declaration outline without implementation bodies. The path can also be a configured `ssh://` file. Its visible declarations retain original source mappings and anchors: reuse the result in Read, Search, AST Search or editing tools. In Codemode, Outline returns `{ text, id }` with the complete outline text. Read with `views: ["ast"]` still shows the original text with scope markers.
 
 ## Read
 
