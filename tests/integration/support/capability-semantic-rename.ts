@@ -30,23 +30,39 @@ const rename = toolCall({
 const rejected = toolCall({
   id: "rejected-rename",
   name: "replace",
-  arguments: { path: "fixture:declaration:task.ts#count#name", text: "" },
+  arguments: { path: { id: "fixture:declaration:task.ts#count#name" }, text: "" },
 });
-const malformed = toolCall({
-  id: "malformed-rename",
-  name: "replace",
-  arguments: { path: "fixture:declaration:task.ts#count#name", start: "count", text: "total" },
-});
+const invalidRequests = [
+  { id: "whitespace-rename", arguments: { text: " \t" } },
+  { id: "malformed-rename", arguments: { start: "count", text: "total" } },
+  { id: "end-rename", arguments: { end: "count", text: "total" } },
+];
+const invalidCalls = invalidRequests
+  .filter(({ id }) => id === "whitespace-rename")
+  .map(({ id, arguments: args }) =>
+    toolCall({
+      id,
+      name: "replace",
+      arguments: { path: "fixture:declaration:task.ts#count#name", ...args },
+    }),
+  );
 const inspect = toolCall({ id: "after-rejection", name: "read", arguments: { path: "task.ts" } });
 const calls =
   mode === "direct"
-    ? [read, rejected, malformed, inspect, rename]
+    ? [read, rejected, ...invalidCalls, inspect, rename]
     : [
         toolCall({
           id: "compose",
           name: "codemode",
           arguments: {
-            code: 'const declaration = await tools.lsp_search({declaration:"task.ts#count"}); const name = declaration.matches[0].captures.name[0]; const rejected = (await tools.replace({path:name,text:""})) === null; if(!rejected) throw Error("Invalid rename succeeded"); const malformed = (await tools.replace({path:name,start:"count",text:"total"})) === null; if(!malformed) throw Error("Malformed rename succeeded"); text(await tools.read({path:"task.ts"})); text(await tools.replace({path:name,text:"total"}));',
+            code: `const declaration = await tools.lsp_search({declaration:"task.ts#count"});
+const name = declaration.matches[0].captures.name[0];
+if (await tools.replace({path:{id:name.id.replace(/^RESULT#/, "")},text:""}) !== null) throw Error("Invalid rename succeeded");
+for (const args of ${JSON.stringify(invalidRequests.map(({ arguments: args }) => args))}) {
+  if (await tools.replace({path:name,...args}) !== null) throw Error("Invalid rename succeeded");
+}
+text(await tools.read({path:"task.ts"}));
+text(await tools.replace({path:name,text:"total"}));`,
           },
         }),
       ];
@@ -88,11 +104,24 @@ console.log(
     errors: calls
       .filter(
         (call) =>
-          !["rejected-rename", "malformed-rename"].includes(call.id) &&
+          !["rejected-rename", ...invalidRequests.map(({ id }) => id)].includes(call.id) &&
           getToolExecution(run, call.id).isError,
       )
       .map((call) => call.id),
     rejectedCount: failed.length,
+    refusals: failed.map((event) => {
+      const details = event.result?.details as
+        | {
+            results?: { data: { errors?: { path: string; code: string; reason: string }[] } }[];
+            effect?: string;
+          }
+        | undefined;
+      return {
+        errors: details?.results?.flatMap(({ data }) => data.errors ?? []),
+        effect: details?.effect,
+        text: resultText(event),
+      };
+    }),
     unchangedAfterRejection: afterRejection?.result?.content?.some((block) =>
       block.text?.includes(task.files?.["task.ts"]?.trim() ?? ""),
     ),
