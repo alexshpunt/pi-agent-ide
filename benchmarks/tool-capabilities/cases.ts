@@ -38,9 +38,7 @@ add(
     {
       tool: "delete",
       args: { path: "task.txt" },
-      // These exact selectors remove the same complete line in this fixture, even while
-      // independent pending edits prevent generic post-edit content reconstruction.
-      argsAny: [{ start: "gamma" }, { start: "gamma\n" }],
+      exactText: ["start"],
       editorBatchSize: 3,
     },
   ],
@@ -157,7 +155,7 @@ add(
 add(
   "semantic-write-receipts",
   ["edit.semantic-write-receipt"],
-  "Use Write once each on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode a failed call resolves to null, so the remaining distinct actions still run. Report unknown for the uncertain action; do not call it a failed file save.",
+  "Use Write once each, in this listed order, on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode a failed call resolves to null, so the remaining distinct actions still run. Report unknown for the uncertain action; do not call it a failed file save.",
   [
     {
       tool: "write",
@@ -257,14 +255,14 @@ add(
 add(
   "docs-search",
   ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
-  "Read docs:terminal. Choose one unquoted word from that guide's body and search docs:terminal for that exact word with caseSensitive true, wholeWord true, and limit 10. The result must contain guide-body locations under docs:terminal, not editable Search references. Then search all guide bodies with path docs:all, query regex:^#, and limit 1000. Confirm it finds docs:terminal body headings rather than just the guide listing. Do not change files.",
+  "Read docs:terminal. Search docs:terminal with query terminal, caseSensitive true, wholeWord true and limit 10. The result must contain guide-body locations under docs:terminal, not editable Search references. Then Search path docs:all with query regex:^# and limit 1000. Confirm it finds docs:terminal body headings rather than just the guide listing. Do not change files.",
   [
     { tool: "read", args: { path: "docs:terminal" } },
     {
       tool: "search",
       args: {
         path: "docs:terminal",
-        query: /^[\p{L}\p{N}_-]+$/u,
+        query: "terminal",
         caseSensitive: true,
         wholeWord: true,
         limit: 10,
@@ -284,7 +282,7 @@ add(
 add(
   "docs-search-status",
   ["search.docs-limit", "search.docs-empty", "search.docs-unknown", "search.docs-bare"],
-  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:terminal with query regex:(?!) and confirm a successful empty result. Search bare docs: and observe an error directing you to docs:all. Finally search docs:lpt-723-missing and observe an unknown-documentation-ID error, not a filesystem search or zero matches. In Codemode the failed call resolves to null. Do not change files.",
+  "Search all guide bodies with path docs:all, query regex:., and limit 1; the result must report incomplete coverage. Search docs:terminal with query regex:(?!) and confirm a successful empty result. Search path docs: with query regex:. and observe an error directing you to docs:all. Finally Search path docs:lpt-723-missing with query regex:. and observe an unknown-documentation-ID error, not a filesystem search or zero matches. In Codemode the failed call resolves to null. Do not change files.",
   [
     {
       tool: "search",
@@ -296,7 +294,6 @@ add(
       args: { path: "docs:terminal", query: "regex:(?!)" },
       contains: "No matches",
     },
-    // The prompt names no query for the two refused scopes.
     { tool: "search", args: { path: "docs:" }, error: true, contains: "Use docs:all" },
     {
       tool: "search",
@@ -752,7 +749,6 @@ add(
     {
       tool: "replace",
       args: { text: "GREEN" },
-      argsAny: [{ path: matchReference(1) }, { start: matchReference(1) }],
       reuse: reuse(2, ["path", "start"]),
     },
     { tool: "search", args: { path: "literal.txt", query: /^"alpha beta"$/u } },
@@ -846,7 +842,7 @@ add(
 add(
   "read-text",
   ["read.text", "read.directory", "read.raw", "read.paging"],
-  "Use read to list this directory, read only line 2 of task.txt, then read its first 4 original bytes through raw:. Report the line-2 value.",
+  'Use Read with path "." to list this directory. Read task.txt with offset 2 and limit 1. Read raw:task.txt with offset 0 and limit 4 to get its first four original bytes. Report the line-2 value.',
   [
     { tool: "read", args: { path: "." } },
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 }, contains: "OLD" },
@@ -946,8 +942,8 @@ add(
   "Read task.txt. Pass the unchanged Read result or its UUID into search for OLD, then pass the Search result into replace to change just OLD to NEW. Do not retype a file path for the dependent calls. In Codemode, when the runtime offers local MCP forwarding aliases for Search or Replace, use those aliases rather than their flat source names; still pass the actual returned references.",
   [
     { tool: "read", args: { path: "task.txt" } },
-    { tool: "search", args: { query: "OLD" }, reuse: reuse(0) },
-    { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
+    { tool: "search", reuse: reuse(0) },
+    { tool: "replace", reuse: reuse(1) },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
@@ -955,7 +951,7 @@ add(
 add(
   "rust-style-preservation",
   ["edit.rust-style-preservation"],
-  "In unformatted.rs replace the text value=1 with value=2. In formatted.rs replace the line let value = 1; with let value=2;. Keep all other content. Use replace for both files.",
+  'Use Replace with these exact inputs: {"path":"unformatted.rs","start":"value=1","text":"value=2"} and {"path":"formatted.rs","start":"let value = 1;","text":"let value=2;"}. The second replacement payload deliberately has no spaces around =. Submit that payload unchanged so the formatter exercises preservation of the existing formatted style and produces let value = 2;. Keep every other byte, including child.rs, unchanged.',
   [
     { tool: "replace", args: { path: "unformatted.rs", start: "value=1", text: "value=2" } },
     {
@@ -1036,14 +1032,14 @@ add(
   "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Search the file again for NEW. Replace with that fresh Search result or UUID as path, start NEW, and text FINAL. This selector must resolve inside the issued selection, not treat its UUID as a filename. Read the current file and report FINAL. Keep every other byte unchanged.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
-    { tool: "replace", args: { text: "NEW" }, reuse: reuse(0) },
-    { tool: "search", args: { path: "task.txt", query: "NEW" } },
+    { tool: "replace", args: { text: "NEW", start: undefined, end: undefined }, reuse: reuse(0) },
+    { tool: "search", args: { path: "task.txt", query: "NEW" }, after: [1] },
     {
       tool: "replace",
       args: { start: "NEW", text: "FINAL" },
       reuse: reuse(2),
     },
-    { tool: "read", args: { path: "task.txt" }, contains: "FINAL" },
+    { tool: "read", args: { path: "task.txt" }, contains: "FINAL", after: [3] },
   ],
   { modes: ["direct"], expected: { "task.txt": "keep\nFINAL\nlast\n" }, answer: "FINAL" },
 );
@@ -1165,7 +1161,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
       ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
     ],
     (api) =>
-      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset and limit 1) before editing. ${parallelCalls(api, 3)} Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
+      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset 2, 4 and 6 respectively, each with limit 1) before editing. ${parallelCalls(api, 3)} Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
     [
       ...[2, 4, 6].map((line): RouteStep => ({
         tool: "read",
@@ -1385,7 +1381,7 @@ for (const operation of ["delete", "insert"] as const) {
 add(
   "grouped-replace-file-count",
   ["edit.grouped-file-count"],
-  "In one native Codemode script, sequentially read lines 1, 2, then 3 of task.txt as one-line windows (offset and limit 1) and replace each issued Read result with NEW followed by a newline. Await each replacement before reading the next line so each gets a fresh snapshot. Inspect the final editor summary: it must report three replacements in one file, not three files.",
+  "In one native Codemode script, sequentially read lines 1, 2, then 3 of task.txt as one-line windows (offset equal to that line number, each with limit 1) and replace each issued Read result with NEW followed by a newline. Await each replacement before reading the next line so each gets a fresh snapshot. Inspect the final editor summary: it must report three replacements in one file, not three files.",
   [1, 2, 3].flatMap((line, index): RouteStep[] => [
     {
       tool: "read",
@@ -1473,12 +1469,18 @@ add(
     },
     {
       tool: "search",
-      args: { query: "NEEDLE" },
+
       reuse: { ...reuse(0), newParent: true },
       contains: "large.ts:103:12-18",
     },
-    { tool: "replace", args: { text: "FOUND" }, reuse: reuse(1) },
-    { tool: "search", args: { query: "NEEDLE" }, reuse: reuse(0), contains: "No matches found" },
+    { tool: "replace", reuse: reuse(1) },
+    {
+      tool: "search",
+
+      reuse: reuse(0),
+      contains: "No matches found",
+      after: [2],
+    },
   ],
   {
     modes: ["codemode"],
@@ -1500,7 +1502,7 @@ add(
   "In one Codemode script, read data.json, a file larger than the model output limit, and parse its text with JSON.parse. Set status to done for the record with id 2499, then write the whole file back with JSON.stringify(rows, null, 2). Do not use Bash or the raw: prefix.",
   [
     { tool: "read", args: { path: "data.json" }, contains: '"name": "row 1250"' },
-    { tool: "write", args: { path: "data.json" } },
+    { tool: "write", args: { path: "data.json" }, after: [0] },
   ],
   {
     modes: ["codemode"],
@@ -1523,7 +1525,7 @@ add(
     { tool: "read", args: { path: "raw:data.bin" } },
     { tool: "read", args: { path: "folder" } },
     { tool: "read", args: { path: ["a.txt", "missing.txt", "c.txt"] }, error: true },
-    { tool: "write", args: { path: "summary.txt" } },
+    { tool: "write", args: { path: "summary.txt" }, after: [0, 1, 2] },
   ],
   {
     modes: ["codemode"],
@@ -1558,7 +1560,7 @@ add(
 add(
   "search-multiline-between",
   ["search.multiline", "compose.search-multiline-replace", "compose.search-retained-result"],
-  "Search task.txt with one multiline regex that selects old one, its line break, old two, and its following line break immediately before END. Do not select either marker line. In Codemode check that its only match has the complete text old one followed by a newline, old two, and a final newline. Retain this result, then Search task.txt for keep. Replace the FIRST Search selection with NEW and a line break, reusing its original reference or value, not the later search. Keep the marker lines and all other bytes.",
+  "Search task.txt with query regex:old one\\nold two\\n(?=END) and multiline true; pass backslash-n escapes in the regex. This selects both old lines and their following line breaks, not the marker lines. In Codemode confirm its only match has text old one followed by a newline, old two and a final newline. Retain this result, then Search task.txt with query keep. Replace the FIRST Search selection with text NEW followed by a newline, reusing its original reference or value, not the later Search. Keep the marker lines and all other bytes.",
   [
     {
       tool: "search",
@@ -1597,7 +1599,7 @@ add(
 add(
   "search-query",
   ["search.text", "search.boolean", "search.regex", "file_search.glob", "search.flags"],
-  "Use file_search to find task*.txt files; then Boolean-search task.txt for lines containing alpha and beta but not skip. Regex-search for beta with wholeWord and caseSensitive set to true, limited to one result. Also search task.txt for the plain text docs:debugger and then status:, passing each query unchanged. Report the Boolean matching line.",
+  "Use file_search with path . and pattern task*.txt. Search task.txt with the exact unquoted Boolean query alpha AND beta AND NOT skip. Search task.txt again with query regex:beta, wholeWord true, caseSensitive true and limit 1. Also Search task.txt for the plain text docs:debugger and then status:, passing each query unchanged. Report the Boolean matching line.",
   [
     { tool: "file_search", args: { pattern: /task\*?\.txt|task\*/ } },
     {
@@ -1641,10 +1643,7 @@ add(
   },
 );
 
-const listedDirectories = [
-  { path: ["src/code-view", "src/api"] },
-  { path: ["src/api", "src/code-view"] },
-];
+const listedDirectories = ["src/code-view", "src/api"];
 const pathListFiles = {
   "src/code-view/format.ts":
     "export function formatSymbolSelector(name: string): string {\n  return name;\n}\n",
@@ -1662,22 +1661,19 @@ add(
   [
     {
       tool: "search",
-      args: { query: "formatSymbolSelector" },
-      argsAny: listedDirectories,
+      args: { path: listedDirectories },
       contains: "src/api/use.ts",
       excludes: "src/other",
     },
     {
       tool: "file_search",
-      args: { pattern: /\*\.ts|\.ts/ },
-      argsAny: listedDirectories,
+      args: { path: listedDirectories },
       contains: "src/code-view/format.ts",
       excludes: "src/other",
     },
     {
       tool: "ast_search",
-      args: { pattern: /^formatSymbolSelector\(\$\$\$\w+\)$/ },
-      argsAny: listedDirectories,
+      args: { path: listedDirectories },
       contains: "PASS-MARKER",
       excludes: "OTHER-MARKER",
     },
@@ -1722,8 +1718,7 @@ add(
   [
     {
       tool: "lsp_search",
-      args: { query: "formatSymbolSelector" },
-      argsAny: listedDirectories,
+      args: { path: listedDirectories, query: "formatSymbolSelector" },
       contains: "src/api/use.ts",
       excludes: "src/other",
     },
@@ -1738,7 +1733,7 @@ add(
 add(
   "search-literal-operators",
   ["search.literal-operators", "search.script-line-text"],
-  "Search task.txt for the exact C++ text `flags | MASK`, including the spaced vertical bar, and report the full text of the only line that contains it. In Codemode use the returned match lineText, not text. Do not use Read or another tool to retrieve the line. Do not change files.",
+  'Search task.txt with query equal to "flags | MASK", including the two double-quote characters around the phrase, so the vertical bar is literal. Report the full text of the only matching line. In Codemode use the returned match lineText, not text. Do not use Read or another tool to retrieve the line. Do not change files.',
   [
     {
       tool: "search",
@@ -1781,7 +1776,6 @@ add(
       args: {
         start: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
         end: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
-        text: /^READY\n?$/,
       },
       reuse: [reuse(0, "start", "anchor"), reuse(0, "end", "anchor")],
     },
@@ -1792,21 +1786,20 @@ add(
 add(
   "exact-range-replace",
   ["edit.replace-exact-range", "edit.leading-newline-range"],
-  "Use Replace with paired exact-text start/end on both files. In sentence.txt replace START through END, including both endpoint fragments, with NEW while preserving left and right on the same line. In credit.txt remove only the suffix beginning with the two newlines immediately before Based on and ending with the closing period of Based on [source](credit). Include those two leading newlines in start and use an empty replacement. Keep the entire preceding paragraph, including its text and punctuation. Do not rewrite either whole file or use line anchors.",
+  'Use Replace with paired literal endpoints and these exact inputs: {"path":"sentence.txt","start":"START","end":"END","text":"NEW"} and {"path":"credit.txt","start":"\\n\\nBased on","end":"(credit).","text":""}. The first call removes both endpoint fragments along with the text between them; its final line must be left NEW right, followed by the existing newline. In the second input, decode each \\n as one newline character. Remove only that suffix, retaining the entire preceding paragraph and its punctuation. Do not rewrite either whole file or use line anchors.',
   [
     {
       tool: "replace",
-      args: { path: "sentence.txt", start: "START", end: "END", text: "NEW" },
+      args: { path: "sentence.txt" },
+      exactText: ["start", "end"],
     },
     {
       tool: "replace",
       args: {
         path: "credit.txt",
-        start: "\n\nBased on",
-        // Any unique fragment that ends with the closing period selects the same suffix.
-        end: /\(credit\)\.$/u,
         text: "",
       },
+      exactText: ["start", "end"],
     },
   ],
   {
@@ -1852,7 +1845,7 @@ add(
     "edit.copy-source-range",
     "compose.search-range-endpoints",
   ],
-  "Copy only the inline COPY_BEGIN through COPY_END span, including both endpoints, from source.txt into target.txt. Use those two exact strings as Copy start/end. First Search target.txt separately for TARGET_BEGIN and TARGET_END, then pass their actual :match references as objects {id: reference} in targetStart and targetEnd. In Codemode, pass the corresponding match values. Issue the target.txt transfer and the inline.txt transfer together (direct: the same assistant message; Codemode: Promise.all). Replace only that inclusive destination span. Then select the whole line 段🙂 in whole.txt with a single start and no end. Copy that same source once over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd, and once after the whole ANCHOR line in inserted.txt, without targetEnd. Preserve the selected source's CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
+  "First Search target.txt separately for TARGET_BEGIN and TARGET_END. Use the two actual :match references as objects {id: reference} in Copy targetStart and targetEnd (in Codemode, pass the corresponding match values). Perform three transfers: (1) Copy the inline span from start COPY_BEGIN through end COPY_END in source.txt over that inclusive destination span in target.txt. (2) Copy the whole line 段🙂 from whole.txt with a single start and no end over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd. Issue transfers (1) and (2) together, direct in the same assistant message or in Codemode with Promise.all. (3) Copy that same whole.txt line after the ANCHOR line in inserted.txt with targetStart ANCHOR and no targetEnd. Preserve the selected source line\u0027s CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
   [
     { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
     { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
@@ -1860,12 +1853,11 @@ add(
       tool: "copy",
       args: {
         path: "source.txt",
-        start: "COPY_BEGIN",
-        end: "COPY_END",
         target: "target.txt",
         targetStart: { id: matchReference(1) },
         targetEnd: { id: matchReference(1) },
       },
+      exactText: ["start", "end"],
       reuse: [reuse(0, "targetStart", "anchor"), reuse(1, "targetEnd", "anchor")],
     },
     {
@@ -1873,21 +1865,17 @@ add(
       sameAssistantWith: 2,
       args: {
         path: "whole.txt",
-        start: "段🙂",
         end: undefined,
         target: "inline.txt",
-        targetStart: "SLOT",
-        targetEnd: "SLOT",
       },
+      exactText: ["targetStart", "targetEnd"],
     },
     {
       tool: "copy",
       args: {
         path: "whole.txt",
-        start: "段🙂",
         end: undefined,
         target: "inserted.txt",
-        targetStart: "ANCHOR",
         targetEnd: undefined,
       },
     },
@@ -1918,7 +1906,7 @@ add(
     "edit.move-source-range",
     "compose.search-range-endpoints",
   ],
-  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Search target.txt separately for TARGET_BEGIN and TARGET_END. Move that inline inclusive span into target.txt using the destination :match references as objects {id: reference} in targetStart/targetEnd (in Codemode, pass the match values). Issue both Move calls together (direct: the same assistant message; Codemode: Promise.all). Remove only the source span and replace only the destination span. Preserve both files' surrounding sentence text, spaces and CRLF line endings. Then move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt. Use that complete block as a single start with no end, and SLOT as both targetStart and targetEnd. Preserve the block's internal CRLF when inserting into the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Search target.txt separately for TARGET_BEGIN and TARGET_END. Prepare two independent Move calls. (1) Move the inline inclusive span from source.txt into target.txt using the destination :match references as objects {id: reference} in targetStart/targetEnd (in Codemode, pass the match values). (2) Move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt, with start equal to 段🙂 followed by CRLF and 尾界, no end, and SLOT as both targetStart and targetEnd. Issue both Move calls together, direct in the same assistant message or in Codemode with Promise.all. Preserve the sentence text, surrounding spaces and CRLF endings in source.txt and target.txt. Preserve the moved block\u0027s internal CRLF in the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
   [
     { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
     { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
@@ -1948,10 +1936,7 @@ add(
         path: "eof.txt",
         end: undefined,
         target: "inline.txt",
-        targetStart: "SLOT",
-        targetEnd: "SLOT",
       },
-      argsAny: [{ start: "段🙂\n尾界" }, { start: "段🙂\r\n尾界" }],
     },
   ],
   {
@@ -2111,9 +2096,9 @@ add(
 add(
   "replace-read-search",
   ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
-  "Follow replace → read → search in that order. Use replace with the exact OLD fragment in task.txt to change it to NEW. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",
+  "Use Replace, then use its result for Read and Search. Use replace with the exact OLD fragment in task.txt to change it to NEW. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",
   [
-    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+    { tool: "replace", args: { path: "task.txt" }, exactText: ["start"] },
     { tool: "read", reuse: reuse(0), contains: "NEW" },
     { tool: "search", args: { query: "NEW" }, reuse: reuse(0), contains: "NEW" },
   ],
@@ -2123,7 +2108,7 @@ add(
 add(
   "insert-before",
   ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
-  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Use the exact multiline text as both anchors, or use α for [ with before: true and β for ] with before: false. Pass actual newline characters in multiline anchors; do not paste printed line-anchor prefixes. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
+  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Use anchor equal to α followed by CRLF followed by β for both calls, before true for [ and before false for ]. Pass actual newline characters in multiline anchors; do not paste printed line-anchor prefixes. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
   [
     {
       tool: "insert",
@@ -2135,22 +2120,23 @@ add(
     },
     {
       tool: "insert",
-      args: { path: "literal.txt", anchor: "α🙂", text: "[", before: true },
+      args: { path: "literal.txt", text: "[", before: true },
+      exactText: ["anchor"],
     },
     {
       tool: "insert",
-      args: { path: "literal.txt", anchor: "α🙂", text: "]", before: false },
+      args: { path: "literal.txt", text: "]", before: false },
+      exactText: ["anchor"],
     },
     {
       tool: "insert",
       args: { path: "block.txt", text: "[", before: true },
-      // In this fixture α starts and β ends the requested multiline fragment.
-      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }, { anchor: "α" }],
+      exactText: ["anchor"],
     },
     {
       tool: "insert",
       args: { path: "block.txt", text: "]", before: false },
-      argsAny: [{ anchor: "α\nβ" }, { anchor: "α\r\nβ" }, { anchor: "β" }],
+      exactText: ["anchor"],
     },
     { tool: "search", args: { path: "search.txt", query: "MATCH" } },
     {
@@ -2431,11 +2417,11 @@ add(
 add(
   "copy-destination-recovery",
   ["edit.copy-destination-recovery"],
-  "Exercise Copy destination recovery in task.txt. First request the alpha-through-beta source block with targetStart set to the ambiguous text }); and observe its rejection. Then Read the current file with anchors and copy the same exact source block after INSERT_HERE, using the issued destination anchor. Keep start alpha and end beta unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
+  "Exercise Copy destination recovery in task.txt. First Copy with path task.txt, start alpha, end beta and targetStart equal to the ambiguous text });, and observe its rejection. Then Read the current file with anchors and copy that same alpha-through-beta block after INSERT_HERE, using its issued destination anchor as targetStart. Keep the source selection unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
   [
     {
       tool: "copy",
-      args: { path: "task.txt", start: "alpha", end: "beta", targetStart: "});" },
+      args: { path: "task.txt", targetStart: "});" },
       error: true,
       contains: "ambiguous",
     },
@@ -2444,8 +2430,6 @@ add(
       tool: "copy",
       args: {
         path: "task.txt",
-        start: "alpha",
-        end: "beta",
         targetStart: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
       },
       reuse: reuse(1, "targetStart", "anchor"),
@@ -2468,12 +2452,12 @@ add(
     "compose.read-window-copy",
     "compose.read-window-move",
   ],
-  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result after DEST in dest.txt. Read the second line of task.txt again and move that result after TAIL in dest.txt. Then Read only the second line of copy-source.txt (offset 2, limit 1). Copy that returned window over only COPY_SLOT in copy-replaced.txt using paired targetStart/targetEnd, then copy the same window after the exact fragment COPY_POINT in copy-inserted.txt with targetStart and no targetEnd. Read two lines from move-replace-source.txt (offset 2, limit 2) and move that window over only MOVE_SLOT in move-replaced.txt using paired targetStart/targetEnd. Read two lines from move-insert-source.txt the same way and move that window after the exact fragment MOVE_POINT in move-inserted.txt with no targetEnd. Pass each returned Read result or its UUID unchanged as the source. Preserve the selected Unicode and CRLF bytes in these LF destinations, the surrounding destination text, and each Move source's preceding CRLF.",
+  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result to dest.txt with targetStart DEST and no targetEnd. Read the second line of task.txt again and Move that result to dest.txt with targetStart TAIL and no targetEnd. Then Read only the second line of copy-source.txt (offset 2, limit 1). Copy that returned window over only COPY_SLOT in copy-replaced.txt using paired targetStart/targetEnd, then copy the same window after the exact fragment COPY_POINT in copy-inserted.txt with targetStart and no targetEnd. Read two lines from move-replace-source.txt (offset 2, limit 2) and move that window over only MOVE_SLOT in move-replaced.txt using paired targetStart/targetEnd. Read two lines from move-insert-source.txt the same way and move that window after the exact fragment MOVE_POINT in move-inserted.txt with no targetEnd. Pass each returned Read result or its UUID unchanged as the source. Preserve the selected Unicode and CRLF bytes in these LF destinations, the surrounding destination text, and each Move source's preceding CRLF.",
   [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
-    { tool: "copy", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(0) },
+    { tool: "copy", args: { target: "dest.txt" }, reuse: reuse(0) },
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
-    { tool: "move", args: { target: "dest.txt", targetStart: /.+/ }, reuse: reuse(2) },
+    { tool: "move", args: { target: "dest.txt" }, reuse: reuse(2) },
     { tool: "read", args: { path: "copy-source.txt", offset: 2, limit: 1 } },
     {
       tool: "copy",
@@ -2547,21 +2531,18 @@ for (const scenario of ["restored", "target-failed", "target-failed-after-restor
   add(
     `move-rollback-${scenario}`,
     ["edit.move-rollback"],
-    `Move the complete move-me line from ${source} after top in ${target}. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read the source and the destination in two separate later calls. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
+    `Move from path ${source} with start move-me and target ${target} with targetStart top and no targetEnd. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read the source and the destination in two separate later calls. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
     [
       {
         tool: "move",
         error: "direct",
         args: {
           path: source,
-          // Exact text, a Search anchor or a line anchor such as 1A4YVAE|move-me.
-          start: /move-me|[A-Z]+#|^[0-9A-HJKMNP-TV-Z]{7}(?:\||$)/u,
           target,
-          targetStart: /top|[A-Z]+#|^[0-9A-HJKMNP-TV-Z]{7}(?:\||$)/u,
         },
       },
-      { tool: "read", args: { path: source }, contains: "move-me" },
-      { tool: "read", args: { path: target }, contains: "bottom" },
+      { tool: "read", args: { path: source }, contains: "move-me", after: [0] },
+      { tool: "read", args: { path: target }, contains: "bottom", after: [0] },
     ],
     {
       setup: "move-rollback",
@@ -2612,7 +2593,7 @@ add(
 add(
   "move-zero-width",
   ["edit.move-zero-width", "compose.move-point-replace", "compose.value-id-source"],
-  'Search task.txt with a zero-width regex for the point at its start. Search dest.txt with a zero-width regex for the point directly after "left " (offset 5). Move the source point to the destination point using both unchanged Search results as path and target. In Codemode, pass the entire returned Search values unchanged, without extracting ids or matches. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.',
+  'Search task.txt with query regex:^. Search dest.txt with query regex:(?<=^left ) for the point directly after "left " (character offset 5). Move the source point to the destination point using both unchanged Search results as path and target. In Codemode, pass the entire returned Search values unchanged, without extracting ids or matches. Move must succeed with no changes. Pass the unchanged Move result into replace with text NEW followed by one space. Only dest.txt should become left NEW right followed by its original newline.',
   [
     { tool: "search", args: { path: "task.txt", query: /^regex:/ } },
     { tool: "search", args: { path: "dest.txt", query: /^regex:/ } },
@@ -2726,20 +2707,12 @@ for (const [name, eol, ending] of [
       {
         tool: "delete",
         args: { path: "block.txt", end: undefined },
-        // A leading separator can replace the terminal one only in a terminated fixture.
-        // Both exact deletions leave First plus its original separator; outcome checks keep bytes strict.
-        argsAny: [
-          { start: /^Last\r?\nBlock$/u },
-          ...(ending ? [{ start: `${eol}Last${eol}Block` }] : []),
-        ],
+        exactText: ["start"],
       },
       {
         tool: "replace",
         args: { path: "empty.txt", text: "", end: undefined },
-        argsAny: [
-          { start: /^Last\r?\nBlock$/u },
-          ...(ending ? [{ start: `${eol}Last${eol}Block` }] : []),
-        ],
+        exactText: ["start"],
       },
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
@@ -2764,9 +2737,6 @@ for (const [name, eol, ending] of [
     },
   );
 }
-/** The exact text of a whole line, or its line anchor such as `YZVZ5WQ|first`. */
-const line = (text: string) =>
-  new RegExp(`^(?:[0-9A-HJKMNP-TV-Z]{7}(?:\\|${text})?|${text})$`, "u");
 for (const method of ["all", "allSettled"] as const) {
   add(
     `parallel-edit-effects-${method}`,
@@ -2777,23 +2747,23 @@ for (const method of ["all", "allSettled"] as const) {
       { tool: "read", args: { path: "delete.txt", views: ["anchors"] } },
       {
         tool: "insert",
-        args: { anchor: line("first"), text: "FIRST\n" },
+        args: { text: "FIRST\n" },
         reuse: reuse(0),
       },
       {
         tool: "insert",
-        args: { anchor: line("middle"), text: "MIDDLE\n" },
+        args: { text: "MIDDLE\n" },
         reuse: reuse(0),
         parallelWith: 2,
       },
       {
         tool: "insert",
-        args: { path: "./insert.txt", anchor: line("last"), text: "LAST\n" },
+        args: { path: "./insert.txt", text: "LAST\n" },
         parallelWith: 3,
       },
-      { tool: "delete", args: { start: line("first") }, reuse: reuse(1), parallelWith: 4 },
-      { tool: "delete", args: { start: line("middle") }, reuse: reuse(1), parallelWith: 5 },
-      { tool: "delete", args: { path: "./delete.txt", start: line("last") }, parallelWith: 6 },
+      { tool: "delete", reuse: reuse(1), parallelWith: 4 },
+      { tool: "delete", reuse: reuse(1), parallelWith: 5 },
+      { tool: "delete", args: { path: "./delete.txt" }, parallelWith: 6 },
     ],
     {
       modes: ["codemode"],
@@ -2855,11 +2825,11 @@ add(
 add(
   "read-search-narrow",
   ["compose.search-narrow-result"],
-  "Read only line 1 of task.txt (offset 1, limit 1). Search inside that unchanged Read result with a regex that matches only the text between the square brackets, without the brackets. Replace that Search selection with NEW. Keep all other bytes, including the bracketed text on line 2.",
+  "Read only line 1 of task.txt (offset 1, limit 1). Search inside that unchanged Read result with query regex:(?<=\\[)[^\\]]+(?=\\]), passing the regex backslashes unchanged. This selects only the text between the brackets. Replace that Search selection with NEW. Keep all other bytes, including the bracketed text on line 2.",
   [
     { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
     { tool: "search", args: { query: /^regex:/ }, reuse: reuse(0) },
-    { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
+    { tool: "replace", reuse: reuse(1) },
   ],
   {
     files: { "task.txt": "keep [OLD] keep\n[KEEP]\n" },
@@ -2871,22 +2841,27 @@ add(
   // This route starts with one prepared index; live engine switching is verified separately.
   "semantic-code-search",
   ["search.semantic", "search.semantic-scope-filters", "compose.semantic-read"],
-  "Use semantic_search to locate the function responsible for expiring a user session. First search the project. Then search the directory 'src with spaces' for TypeScript files while excluding test files using include '*.ts' and exclude '*.test.ts'. Search the relevant file again by setting path to that file, then read it and report the function name.",
+  "Use semantic_search with the exact query expire a user session in all three calls: first path ., then path src with spaces with include *.ts and exclude *.test.ts, then path src with spaces/session.ts. Read src with spaces/session.ts and report the function name. Do not change files.",
   [
     {
       tool: "semantic_search",
-      args: { query: /session/i },
+      args: { query: "expire a user session" },
       contains: "src with spaces/session.ts",
     },
     {
       tool: "semantic_search",
-      args: { query: /session/i, path: "src with spaces", include: "*.ts", exclude: "*.test.ts" },
+      args: {
+        query: "expire a user session",
+        path: "src with spaces",
+        include: "*.ts",
+        exclude: "*.test.ts",
+      },
       contains: "src with spaces/session.ts",
       excludes: "src with spaces/noise.test.ts",
     },
     {
       tool: "semantic_search",
-      args: { query: /session/i, path: "src with spaces/session.ts" },
+      args: { query: "expire a user session", path: "src with spaces/session.ts" },
       contains: "src with spaces/session.ts:1-1",
     },
     { tool: "read", args: { path: "src with spaces/session.ts" }, contains: "expireSession" },
@@ -2908,22 +2883,27 @@ add(
 add(
   "semantic-code-search-vera",
   ["search.semantic-vera", "search.semantic-vera-scope-filters", "compose.semantic-vera-read"],
-  "Use semantic_search to locate the function responsible for expiring a user session. First search the project. Then search the directory 'src with spaces' for TypeScript files while excluding test files using include '*.ts' and exclude '*.test.ts'. Search the relevant file again by setting path to that file, then read it and report the function name.",
+  "Use semantic_search with the exact query expire a user session in all three calls: first path ., then path src with spaces with include *.ts and exclude *.test.ts, then path src with spaces/session.ts. Read src with spaces/session.ts and report the function name. Do not change files.",
   [
     {
       tool: "semantic_search",
-      args: { query: /session/i },
+      args: { query: "expire a user session" },
       contains: "src with spaces/session.ts",
     },
     {
       tool: "semantic_search",
-      args: { query: /session/i, path: "src with spaces", include: "*.ts", exclude: "*.test.ts" },
+      args: {
+        query: "expire a user session",
+        path: "src with spaces",
+        include: "*.ts",
+        exclude: "*.test.ts",
+      },
       contains: "src with spaces/session.ts",
       excludes: "src with spaces/noise.test.ts",
     },
     {
       tool: "semantic_search",
-      args: { query: /session/i, path: "src with spaces/session.ts" },
+      args: { query: "expire a user session", path: "src with spaces/session.ts" },
       contains: "src with spaces/session.ts:1-1",
     },
     { tool: "read", args: { path: "src with spaces/session.ts" }, contains: "expireSession" },
@@ -2945,7 +2925,7 @@ add(
 add(
   "semantic-vera-refresh",
   ["search.semantic-vera-refresh"],
-  "Write fresh.ts with exactly `export function nebulaOtterRefreshSentinel() { return 73; }` followed by a newline. Then use semantic_search to find nebulaOtterRefreshSentinel in the newly written file, without running a separate index or update command. Report the returned path.",
+  "Write fresh.ts with exactly `export function nebulaOtterRefreshSentinel() { return 73; }` followed by a newline. Then use semantic_search with path . and query nebulaOtterRefreshSentinel to find the newly written file, without running a separate index or update command. Report the returned path.",
   [
     {
       tool: "write",
@@ -2957,7 +2937,7 @@ add(
     {
       tool: "semantic_search",
       after: [0],
-      args: { query: /nebulaOtterRefreshSentinel/i },
+      args: { query: "nebulaOtterRefreshSentinel" },
       contains: "fresh.ts",
     },
   ],
@@ -2976,11 +2956,11 @@ add(
 add(
   "semantic-script-files",
   ["search.semantic-script-files"],
-  "Use native Codemode. Call semantic_search for the function that expires a user session, take the first file of its ranked value, read that file in the same script and report the function name. Do not parse display text.",
+  "Use native Codemode. Call semantic_search with path . and query expire a user session, take the first file of its ranked value, read that file in the same script and report the function name. Do not parse display text.",
   [
     {
       tool: "semantic_search",
-      args: { query: /session/i },
+      args: { query: "expire a user session" },
       // The value lists ranked files; ranges stay in the readable text.
       scriptResult: { 0: "src with spaces/session.ts" },
     },
@@ -3005,8 +2985,8 @@ add(
   'Call outline for task.ts. Search its unchanged result for "first", passing the outline result itself (or its id) as path. Replace only the matched name with renamed, using the Search match or its displayed match reference. Do not read the whole file or replace a declaration.',
   [
     { tool: "outline", args: { path: "task.ts" }, contains: "first" },
-    { tool: "search", args: { query: "first" }, reuse: reuse(0), contains: "first" },
-    { tool: "replace", args: { text: "renamed" }, reuse: reuse(1) },
+    { tool: "search", reuse: reuse(0), contains: "first" },
+    { tool: "replace", reuse: reuse(1) },
   ],
   {
     files: syntax,
@@ -3016,13 +2996,13 @@ add(
 add(
   "ast-capture-rename",
   ["outline.file", "search.ast", "compose.ast-capture-edit", "compose.capture-uuid-source"],
-  'Call outline for task.ts. AST-search task.ts for the function whose body returns 7, capturing its name as $NAME. Replace the NAME capture with renamed. Take the UUID from its issued RESULT# reference (or captures.NAME[0].id in Codemode), omit the RESULT# prefix, and pass path as {id: "<uuid>"}. Use the actual capture UUID, not the whole result, a file path or an anchor.',
+  'Call outline with path task.ts. Call ast_search with path task.ts, language typescript and pattern "function $NAME() { return 7; }". Replace the NAME capture with renamed. Take the UUID from its issued RESULT# reference (or captures.NAME[0].id in Codemode), omit the RESULT# prefix, and pass path as {id: "<uuid>"}. Use the actual capture UUID, not the whole result, a file path or an anchor.',
   [
     { tool: "outline", args: { path: "task.ts" }, contains: "first" },
     // A pattern or a rule with a pattern can both capture NAME.
     {
       tool: "ast_search",
-      argsAny: [{ path: "task.ts" }, { path: ["task.ts"] }],
+      args: { path: "task.ts" },
       contains: "capture NAME",
     },
     {
@@ -3043,7 +3023,7 @@ add(
 add(
   "ast-search-enclosing",
   ["ast_search.rule", "compose.ast-search-enclosing"],
-  'Search task.ts for the text "return 9". Then use ast_search with that unchanged Search result (in Codemode, the Search value) as path, relation "enclosing", language typescript and an ast-grep rule for function declarations, to select the function that contains it. Replace that whole function with function second() { return 10; }. Keep the first function unchanged.',
+  'Search task.ts with query return 9. Then call ast_search with that unchanged Search result (the Search value in Codemode) as path, relation enclosing, language typescript and rule {kind: "function_declaration"}. Replace the returned whole function with text function second() { return 10; }. Keep the first function unchanged.',
   [
     { tool: "search", args: { path: "task.ts" }, contains: "return 9" },
     {
@@ -3091,8 +3071,8 @@ add(
   "In one Codemode call, read task.txt and store the unchanged result. In a second Codemode call, load it and search within that result for OLD. Pass the resulting Search selection into replace to change OLD to NEW. Do not reread or retype the file path for the dependent operations.",
   [
     { tool: "read", args: { path: "task.txt" } },
-    { tool: "search", args: { query: "OLD" }, reuse: { ...reuse(0), newParent: true } },
-    { tool: "replace", args: { text: "NEW" }, reuse: reuse(1) },
+    { tool: "search", reuse: { ...reuse(0), newParent: true } },
+    { tool: "replace", reuse: reuse(1) },
   ],
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
@@ -3104,8 +3084,8 @@ add(
   "In one Codemode call, read task.txt and pass the Read value itself as Search's path to find OLD. Pass the returned Search value itself as Replace's path to change OLD to NEW. Do not pass result strings, the file path or a bare UUID to Search or Replace.",
   [
     { tool: "read", args: { path: "task.txt" } },
-    { tool: "search", args: { query: "OLD", path: { id: /^RESULT#/u } }, reuse: reuse(0) },
-    { tool: "replace", args: { text: "NEW", path: { id: /^RESULT#/u } }, reuse: reuse(1) },
+    { tool: "search", args: { path: { id: /^RESULT#/u } }, reuse: reuse(0) },
+    { tool: "replace", args: { path: { id: /^RESULT#/u } }, reuse: reuse(1) },
   ],
   { modes: ["codemode"], expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
@@ -3116,7 +3096,7 @@ add(
   "Read task.txt with anchors. Replace OLD with NEW. Attempt Insert with the OLD Read's line-2 anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" }, after: [0] },
+    { tool: "replace", args: { path: "task.txt" }, after: [0] },
     {
       tool: "insert",
       args: { path: "task.txt", anchor: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
@@ -3275,7 +3255,7 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  "Start a background Bash command that waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
+  "Start Bash with command IFS= read -r line; printf '%s\\n' \"$line\" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -3307,7 +3287,7 @@ add(
 add(
   "shell-screen",
   ["shell.image", "shell.sequence"],
-  "Start a completed Bash command that prints SCREEN-MARKER. Capture its shell resource with the image view and then with a short sequence view containing at least two frames. Report the printed marker. Do not edit files.",
+  'Run Bash with command printf SCREEN-MARKER and background false. Read its returned shell resource with views ["image"], then with views ["sequence:duration=1,interval=0.25"]. The sequence must contain at least two frames. Report the printed marker. Do not edit files.',
   [
     { tool: "bash", args: { command: /SCREEN-MARKER/ } },
     {
@@ -3331,7 +3311,7 @@ add(
 add(
   "shell-catalog",
   ["shell.name", "shell.list", "shell.search-all", "shell.rename"],
-  "Start a background Bash command named catalog-worker that prints CATALOG-ONE and then sleeps 30 seconds. Then run a Bash command without a name that prints CATALOG-TWO and exits. Read the list of your terminal sessions, then search all of them at once for CATALOG. Rename catalog-worker to catalog-renamed, read the renamed session at its new address, and delete it. Report the marker the renamed session printed. Do not edit files.",
+  "Run Bash with command printf CATALOG-ONE; sleep 30, name catalog-worker and background true. Then run Bash with command printf CATALOG-TWO, background false and no name. Read the list of your terminal sessions, then search all of them at once for CATALOG. Rename catalog-worker to catalog-renamed, read the renamed session at its new address, and delete it. Report the marker the renamed session printed. Do not edit files.",
   [
     { tool: "bash", args: { name: "catalog-worker", background: true } },
     { tool: "bash", args: { command: /CATALOG-TWO/ } },
@@ -3347,7 +3327,7 @@ add(
 add(
   "shell-script-value",
   ["shell.script-value"],
-  "Use native Codemode. Run the Bash command printf partial; exit 3 and take its exit code and output from the returned object, not from display text. A non-zero exit code is a value, not a failure; do not catch errors. Then start a background Bash command that prints READY and sleeps 30 seconds, and delete its session using the session field of its returned object. Report the exit code and output of the first command. Do not edit files.",
+  "Use native Codemode. Run the Bash command printf partial; exit 3 and take its exit code and output from the returned object, not from display text. A non-zero exit code is a value, not a failure; do not catch errors. Then run Bash with command printf READY; sleep 30 and background true, and delete its session using the session field of its returned object. Report the exit code and output of the first command. Do not edit files.",
   [
     {
       tool: "bash",
@@ -3374,7 +3354,7 @@ add(
     "debug.delete",
     "discovery.debug",
   ],
-  "Discover debug and create a debugpy session for task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and start the debugger. When stopped, evaluate value with insert evaluate value. Read the stopped session, report value=42, then delete the debugger session. Source must stay unchanged.",
+  "Discover debug and call it with adapter debugpy and program task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and start the debugger. When stopped, evaluate value with insert evaluate value. Read the stopped session, report value=42, then delete the debugger session. Source must stay unchanged.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", reuse: reuse(0, "path", "debug") },
@@ -3413,7 +3393,7 @@ add(
     "compose.debug-breakpoint-delete-read-session",
     "read.breakpoints",
   ],
-  "Discover debug and create a debugpy session for task.py. Wait for the debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start, then step into the twice function, step over its first assignment, and evaluate result while stopped. Step out, read the stopped session, delete the returned breakpoint resource, read the session to confirm it is still stopped, continue to completion, read the completed session, and delete the session. Read stopped state before each next control action. Report the evaluated result. Do not change source files.",
+  "Discover debug and call it with adapter debugpy and program task.py. Wait for the debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start, then step into the twice function, step over its first assignment, and evaluate result while stopped. Step out, read the stopped session, delete the returned breakpoint resource, read the session to confirm it is still stopped, continue to completion, read the completed session, and delete the session. Read stopped state before each next control action. Report the evaluated result. Do not change source files.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
@@ -3456,7 +3436,7 @@ add(
 add(
   "debug-backend-fallback",
   ["debug.backend-vscode-refusal", "debug.backend-native"],
-  "Discover debug and create a session for task.py with backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value. Do not change source files.",
+  "Discover debug and call it with adapter debugpy, program task.py and backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value. Do not change source files.",
   [
     {
       tool: "debug",
@@ -3547,12 +3527,11 @@ add(
 add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
-  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search for the declaration of count and for its calls. Call diagnostics with path problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
+  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search with declaration task.ts#count, then with calls task.ts#count. Call diagnostics with path problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
   [
     {
       tool: "lsp_search",
-      args: { query: "count" },
-      argsAny: [{ path: "task.ts" }, { path: ["task.ts"] }],
+      args: { path: "task.ts", query: "count" },
       contains: "count",
     },
     {
@@ -3596,7 +3575,7 @@ add(
     "compose.symbol-read-rename",
     "compose.capture-uuid-source",
   ],
-  'Get the declaration of count in task.ts with lsp_search. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, take the UUID from the issued name capture RESULT# reference (or matches[0].captures.name[0].id in Codemode), omit RESULT#, and pass path as {id: "<uuid>"}. Then replace the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
+  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, take the UUID from the issued name capture RESULT# reference (or matches[0].captures.name[0].id in Codemode), omit RESULT#, and pass path as {id: "<uuid>"}. Then replace the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
   [
     { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
     {

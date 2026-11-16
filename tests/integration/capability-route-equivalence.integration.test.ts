@@ -11,6 +11,107 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { validateRoute, type RunEvent } from "#capabilities/validation.ts";
+import { capabilityCases } from "#capabilities/cases.ts";
+import { validateFiles } from "#capabilities/sandbox.ts";
+
+test.each(["direct", "codemode"])(
+  "exact selection spelling and final bytes are independent contracts (%s)",
+  async (mode) => {
+    await withTempWorkspace(async (cwd) => {
+      const files = {
+        "valid.txt": "First\nLast\nBlock\n",
+        "invalid.txt": "First\nLast\nBlock\n",
+        "lowercase.txt": "First\nabcdefg\n",
+        "collision.txt": "First\nPACKAGE\n",
+        "constant-like.txt": "First\nEND\n",
+        "sentinel.txt": "KEEP\n",
+      };
+      for (const [file, content] of Object.entries(files))
+        await writeFile(path.join(cwd, file), content);
+      const argumentsList = [
+        { path: "valid.txt", start: "\nLast\nBlock" },
+        { path: "invalid.txt", start: "First\nLast\nBlock" },
+        { path: "lowercase.txt", start: "abcdefg" },
+        { path: "collision.txt", start: "PACKAGE" },
+        { path: "constant-like.txt", start: "END" },
+      ];
+      const calls =
+        mode === "direct"
+          ? argumentsList.map((args, index) =>
+              toolCall({
+                id: `delete-${String(index)}`,
+                name: "delete",
+                arguments: args,
+                chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
+              }),
+            )
+          : [
+              toolCall({
+                id: "route",
+                name: "codemode",
+                arguments: {
+                  code: `for (const args of ${JSON.stringify(argumentsList)}) text(await tools.delete(args));`,
+                },
+                chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
+              }),
+            ];
+      const run = await new PiIntegrationTest({
+        testName: `capability-selection-outcome-${mode}`,
+        transport: "rpc",
+        cwd,
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        extensions: [
+          path.resolve("src/pi-agent-ide.ts"),
+          ...(mode === "codemode" ? ["builtin:codemode"] : []),
+        ],
+        tools: ["delete", ...(mode === "codemode" ? ["codemode"] : [])],
+        conversation: [
+          assistantMessage(calls, { stopReason: "toolUse" }),
+          assistantMessage([
+            text("Done", { chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER } }),
+          ]),
+        ],
+      }).run("Perform the supplied exact-text deletions");
+      expect(await readFile(path.join(cwd, "valid.txt"), "utf8")).toBe("First\n");
+      expect(await readFile(path.join(cwd, "invalid.txt"), "utf8")).toBe("");
+      const step = capabilityCases.find((task) => task.id === "exact-eof-lf")?.steps[1];
+      if (!step) throw new Error("Missing exact EOF capability");
+      const events = run.traceEvents.flatMap((entry) =>
+        "event" in entry && entry.event && typeof entry.event === "object"
+          ? [entry.event as RunEvent]
+          : [],
+      );
+      expect(
+        validateRoute(
+          {
+            files,
+            steps: argumentsList.map((args) => ({
+              ...step,
+              args: { ...step.args, path: args.path },
+            })),
+          },
+          events,
+          mode,
+        ).passed,
+      ).toBe(true);
+      const initial = Object.fromEntries(
+        Object.entries(files).map(([file, content]) => [file, Buffer.from(content)]),
+      );
+      const expected = {
+        "valid.txt": "First\n",
+        "invalid.txt": "First\n",
+        "lowercase.txt": "First\n",
+        "collision.txt": "First\n",
+        "constant-like.txt": "First\n",
+      };
+      expect(await validateFiles(cwd, initial, expected)).toHaveLength(1);
+      await writeFile(path.join(cwd, "invalid.txt"), "First\n");
+      expect(await validateFiles(cwd, initial, expected)).toEqual([]);
+      await writeFile(path.join(cwd, "sentinel.txt"), "CHANGED\n");
+      expect(await validateFiles(cwd, initial, expected)).toHaveLength(1);
+    });
+  },
+);
 
 test("direct editor batches retain a shared snapshot for newline-equivalent inserts", async () => {
   await withTempWorkspace(async (cwd) => {

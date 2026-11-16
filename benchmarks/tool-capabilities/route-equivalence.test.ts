@@ -3,6 +3,161 @@ import test from "node:test";
 import { capabilityCases } from "./cases.ts";
 import { checkCoverage, validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
 
+for (const mode of ["direct", "codemode"]) {
+  void test(`whole-line transfers accept issued source and destination selectors (${mode})`, () => {
+    const task = capabilityCases.find((entry) => entry.id === "exact-range-copy");
+    assert.ok(task);
+    const route = task.steps.slice(3).map((step) => ({ ...step, sameAssistantWith: undefined }));
+    const calls: Call[] = [
+      { tool: "read", args: { path: "whole.txt", views: ["anchors"] }, text: "T286A4V|段🙂" },
+      { tool: "read", args: { path: "inserted.txt", views: ["anchors"] }, text: "6QG98NT|ANCHOR" },
+      {
+        tool: "copy",
+        args: {
+          path: "whole.txt",
+          start: "T286A4V",
+          target: "inline.txt",
+          targetStart: "SLOT",
+          targetEnd: "SLOT",
+        },
+      },
+      {
+        tool: "copy",
+        args: {
+          path: "whole.txt",
+          start: "T286A4V",
+          target: "inserted.txt",
+          targetStart: "6QG98NT",
+        },
+      },
+    ];
+    assert.ok(validateRoute({ ...task, steps: route }, events(calls, mode), mode).passed);
+    assert.ok(
+      !validateRoute({ ...task, steps: route }, events(calls.slice(0, -1), mode), mode).passed,
+    );
+    const move = steps("exact-range-move")[5];
+    assert.ok(move);
+    assert.ok(
+      check(
+        [{ ...move, sameAssistantWith: undefined }],
+        [
+          {
+            tool: "move",
+            args: {
+              path: "eof.txt",
+              start: result,
+              target: "inline.txt",
+              targetStart: "SLOT",
+              targetEnd: "SLOT",
+            },
+          },
+        ],
+        mode,
+      ),
+    );
+  });
+  void test(`destination recovery leaves source boundary representation free (${mode})`, () => {
+    const calls: Call[] = [
+      {
+        tool: "read",
+        args: { path: "task.txt", views: ["anchors"] },
+        text: "S5BM5NA|alpha\nFDCR4F0|beta",
+      },
+      {
+        tool: "copy",
+        args: { path: "task.txt", start: "S5BM5NA|alpha", end: "FDCR4F0|beta", targetStart: "});" },
+        error: true,
+        text: "ambiguous",
+      },
+      {
+        tool: "read",
+        args: { path: "task.txt", views: ["anchors"] },
+        text: "S5BM5NA|alpha\nFDCR4F0|beta\n7EQS4MN|INSERT_HERE",
+      },
+      {
+        tool: "copy",
+        args: {
+          path: "task.txt",
+          start: "S5BM5NA|alpha",
+          end: "FDCR4F0|beta",
+          targetStart: "7EQS4MN|INSERT_HERE",
+        },
+      },
+    ];
+    const route = steps("copy-destination-recovery");
+    assert.ok(check(route, calls, mode));
+    assert.ok(
+      !check(
+        route,
+        calls.map((call) => (call.error ? { ...call, error: false } : call)),
+        mode,
+      ),
+    );
+    assert.ok(
+      !check(
+        route,
+        [
+          ...calls.slice(0, -1),
+          {
+            ...calls[3],
+            tool: "copy",
+            args: { path: "task.txt", start: "alpha", end: "beta", targetStart: "INSERT_HERE" },
+          },
+        ],
+        mode,
+      ),
+    );
+  });
+}
+
+for (const mode of ["direct", "codemode"]) {
+  void test(`path-list searches check roots and results independently of query spelling (${mode})`, () => {
+    const calls: [Call, Call, Call] = [
+      {
+        tool: "search",
+        args: { path: ["src/api", "src/code-view"], query: "formatSymbolSelector" },
+        text: "src/api/use.ts",
+      },
+      {
+        tool: "file_search",
+        args: { path: ["src/api", "src/code-view"], pattern: "*.ts" },
+        text: "src/code-view/format.ts",
+      },
+      {
+        tool: "ast_search",
+        args: {
+          path: ["src/api", "src/code-view"],
+          pattern: "formatSymbolSelector($$$ARGS)",
+          language: "typescript",
+        },
+        text: "PASS-MARKER",
+      },
+    ];
+    const route = steps("search-path-list");
+    assert.ok(check(route, calls, mode));
+    for (const index of [0, 1, 2]) {
+      assert.ok(
+        !check(
+          route,
+          calls.filter((_, at) => at !== index),
+          mode,
+        ),
+      );
+      assert.ok(
+        !check(
+          route,
+          calls.map((call, at) =>
+            at === index
+              ? { ...call, args: { ...call.args, path: ["src/api", "src/other"] } }
+              : call,
+          ),
+          mode,
+        ),
+      );
+    }
+    assert.ok(!check(route, [...calls.slice(0, 2), { ...calls[2], text: "OTHER-MARKER" }], mode));
+  });
+}
 void test("raw Read defaults to byte zero without relaxing line paging or byte limits", () => {
   const calls: [Call, Call, Call] = [
     { tool: "read", args: { path: "." } },
@@ -63,7 +218,7 @@ void test("native value batch accepts the complete gamma line and retains its ba
   assert.ok(
     batch([...calls.slice(0, 3), { ...calls[3], args: { path: "task.txt", start: "gamma" } }]),
   );
-  for (const start of ["gamma\n\n", "omega", "gam", "beta\ngamma\n"])
+  for (const start of [undefined, "SEARCH#ABCD:1:line", "regex:gamma"])
     assert.ok(!batch([...calls.slice(0, 3), { ...calls[3], args: { path: "task.txt", start } }]));
   assert.ok(!batch(calls, 2));
   assert.ok(
@@ -265,6 +420,66 @@ function check(route: RouteStep[], calls: readonly Call[], mode = "direct"): boo
   return validateRoute(task, events(calls, mode), mode).passed;
 }
 
+for (const mode of ["direct", "codemode"]) {
+  void test(`standalone calls accept parsed reference objects and retain namespace ownership (${mode})`, () => {
+    const searchId = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
+    const route: RouteStep[] = [
+      { tool: "demo_read", args: { path: "memory://demo/note", offset: 1, limit: 1 } },
+      { tool: "demo_search", reuse: { from: 0, field: "path" } },
+      { tool: "demo_replace", reuse: { from: 1, field: "path" } },
+    ];
+    const calls: Call[] = [
+      {
+        tool: "demo_read",
+        args: { path: "memory://demo/note", offset: "1", limit: "1" },
+        value: { id: result },
+      },
+      {
+        tool: "demo_search",
+        args: { path: JSON.stringify({ id: result.replace("RESULT#", "") }), query: "alpha" },
+        value: { id: searchId },
+      },
+      {
+        tool: "demo_replace",
+        args: { path: JSON.stringify({ id: searchId.replace("RESULT#", "") }), text: "changed" },
+      },
+    ];
+    assert.ok(check(route, calls, mode));
+    assert.ok(
+      !check(
+        route,
+        calls.map((call) => ({ ...call, tool: call.tool.replace("demo_", "other_") })),
+        mode,
+      ),
+    );
+    assert.ok(
+      !check(
+        route,
+        calls.map((call, index) =>
+          index === 1
+            ? {
+                ...call,
+                args: {
+                  path: JSON.stringify({ id: "ffffffff-aaaa-4aaa-8aaa-111111111111" }),
+                  query: "alpha",
+                },
+              }
+            : call,
+        ),
+        mode,
+      ),
+    );
+    assert.ok(
+      !check(
+        route,
+        calls.map((call, index) =>
+          index === 1 ? { ...call, args: { path: "memory://demo/note", query: "alpha" } } : call,
+        ),
+        mode,
+      ),
+    );
+  });
+}
 void test("Codemode skips every discovery step without changing later reuse indices", () => {
   const searchId = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
   const route: RouteStep[] = [
@@ -879,7 +1094,7 @@ for (const ending of ["lf", "crlf"]) {
         steps(`exact-eof-${ending}`),
         [
           calls[0],
-          { ...calls[1], args: { ...calls[1].args, start: `Last${eol}Block${eol}${eol}` } },
+          { ...calls[1], args: { ...calls[1].args, start: "SEARCH#ABCD:1:line" } },
           ...calls.slice(2),
         ],
         "codemode",
@@ -890,7 +1105,7 @@ for (const ending of ["lf", "crlf"]) {
         steps(`exact-eof-${ending}`),
         [
           calls[0],
-          { ...calls[1], args: { path: "block.txt", start: `First${eol}Last${eol}Block${eol}` } },
+          { ...calls[1], args: { path: "block.txt", start: undefined } },
           ...calls.slice(2),
         ],
         "codemode",
@@ -899,7 +1114,7 @@ for (const ending of ["lf", "crlf"]) {
   });
 }
 
-void test("token edit accepts an issued first match in start but not an outer result or other match", () => {
+void test("token edit accepts an issued selection in start but rejects fabricated provenance", () => {
   const route = steps("token-search-edit-guard");
   const calls = [
     {
@@ -922,7 +1137,7 @@ void test("token edit accepts an issued first match in start but not an outer re
     { tool: "replace", args: { path: result, text: "LITERAL" } },
   ] as const satisfies readonly Call[];
   assert.ok(check(route, calls));
-  for (const start of [result, "SEARCH#ABCD:2:match", "SEARCH#FFFF:1:match"]) {
+  for (const start of [result, "SEARCH#FFFF:1:match"]) {
     assert.ok(
       !check(route, [
         ...calls.slice(0, 3),

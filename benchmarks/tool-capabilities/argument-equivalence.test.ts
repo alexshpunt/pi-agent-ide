@@ -1,8 +1,39 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { validateFiles } from "./sandbox.ts";
 import { capabilityCases } from "./cases.ts";
 import { validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
 
+for (const id of ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated", "insert-before"]) {
+  void test(`${id}: outcome validation rejects boundary damage even when the literal route is valid`, async () => {
+    const fixture = task(id);
+    const root = await mkdtemp(path.join(os.tmpdir(), "capability-outcome-"));
+    try {
+      const initial = Object.fromEntries(
+        Object.entries(fixture.files ?? {}).map(([name, value]) => [name, Buffer.from(value)]),
+      );
+      const expected = fixture.expected ?? {};
+      for (const [name, value] of Object.entries(expected)) {
+        assert.equal(typeof value, "string");
+        await writeFile(path.join(root, name), value as string);
+      }
+      assert.deepEqual(await validateFiles(root, initial, expected), []);
+      for (const [name, value] of Object.entries(expected)) {
+        assert.ok(typeof value === "string");
+        for (const damaged of [`\n${value}`, `${value}\n`, value.slice(1)]) {
+          await writeFile(path.join(root, name), damaged);
+          assert.ok((await validateFiles(root, initial, expected)).length > 0);
+        }
+        await writeFile(path.join(root, name), value);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
 interface Call {
   tool: string;
   args: Record<string, unknown>;
@@ -499,7 +530,7 @@ for (const mode of ["direct", "codemode"]) {
     });
   }
   for (const ending of ["lf", "crlf", "unterminated"]) {
-    void test(`${mode}: exact-eof-${ending} reviews the leading-separator selector without widening other boundaries`, () => {
+    void test(`${mode}: exact-eof-${ending} requires literal block selection and omitted end without prescribing boundary spelling`, () => {
       const eol = ending === "crlf" ? "\r\n" : "\n";
       const calls: [Call, Call, Call, Call, Call] = [
         { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
@@ -509,7 +540,7 @@ for (const mode of ["direct", "codemode"]) {
         { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
       ];
       const id = `exact-eof-${ending}`;
-      assert.equal(passes(id, calls, mode), ending !== "unterminated");
+      assert.ok(passes(id, calls, mode));
       for (const start of [
         `${eol}${eol}Last${eol}Block`,
         `First${eol}Last${eol}Block`,
@@ -521,10 +552,15 @@ for (const mode of ["direct", "codemode"]) {
             [calls[0], { ...calls[1], args: { ...calls[1].args, start } }, ...calls.slice(2)],
             mode,
           ),
-          false,
+          true,
         );
       }
-      for (const field of [{ path: "wrong.txt" }, { end: "Block" }]) {
+      for (const field of [
+        { path: "wrong.txt" },
+        { end: "Block" },
+        { start: "regex:Last" },
+        { start: "SEARCH#ABCD:1:match" },
+      ]) {
         assert.equal(
           passes(
             id,
@@ -562,9 +598,22 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "insert", args: { path: "search.txt", anchor: "SEARCH#DCBA:1:match", text: "]" } },
     ];
     assert.ok(passes("insert-before", calls, mode));
+    for (const [index, anchor] of [
+      [3, "β"],
+      [4, "α"],
+    ] as const)
+      assert.ok(
+        passes(
+          "insert-before",
+          calls.map((call, position) =>
+            position === index ? { ...call, args: { ...call.args, anchor } } : call,
+          ),
+          mode,
+        ),
+      );
     for (const [index, fields] of [
-      [3, { anchor: "β" }],
-      [4, { anchor: "α" }],
+      [3, { anchor: "regex:α" }],
+      [4, { anchor: "SEARCH#ABCD:1:match" }],
       [3, { before: false }],
       [4, { before: true }],
       [3, { path: "literal.txt" }],
