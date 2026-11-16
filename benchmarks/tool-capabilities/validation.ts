@@ -5,6 +5,7 @@ import {
   issuedAnchor,
   issuedSelection,
   issuedSearchFragment,
+  readSourceIssuers,
   searchSources,
   wholeSearchSelection,
   type SelectionIssuer,
@@ -463,6 +464,27 @@ export function validateRoute(
     for (const prior of starts) {
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      const tool = aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "";
+      if (["read", "demo_read"].includes(tool) && Array.isArray(prior.event.args?.path)) {
+        const sources = readSourceIssuers({ tool, args: prior.event.args, end: end.event });
+        const paths = sources.flatMap((issuer) => {
+          // Text can quote a foreign RESULT id. Only this item's own id or line anchors count.
+          const output = Array.isArray(end.event.result?.structuredContent)
+            ? ""
+            : resultText(issuer.end);
+          if (
+            !reuses(value, output, "result", valueIds(issuer.end.result?.structuredContent)) &&
+            !issuedAnchor(value, resultText(issuer.end))
+          )
+            return [];
+          const source = issuer.args.path;
+          return typeof source === "string" && !/^(?:RESULT|SEARCH)#/u.test(source)
+            ? [source]
+            : reusedPaths(source, prior.index);
+        });
+        if (paths.length) return paths;
+        continue;
+      }
       if (
         !["result", "anchor", "change"].some((kind) =>
           reuses(value, resultText(end.event), kind, valueIds(end.event.result?.structuredContent)),
@@ -495,17 +517,17 @@ export function validateRoute(
     return starts.flatMap((prior) => {
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) return [];
-      const source = prior.event.args?.path;
-      const paths = [...values(source), ...reusedPaths(source, prior.index)];
-      if (file !== undefined && !paths.some((path) => matches({ path: file }, { path }))) return [];
-      return [
-        {
-          tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
-          args: prior.event.args ?? {},
-          end: end.event,
-          start: prior.index,
-        },
-      ];
+      return readSourceIssuers({
+        tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
+        args: prior.event.args ?? {},
+        end: end.event,
+      }).flatMap((issuer) => {
+        const source = issuer.args.path;
+        const paths = [...values(source), ...reusedPaths(source, prior.index)];
+        if (file !== undefined && !paths.some((path) => matches({ path: file }, { path })))
+          return [];
+        return [{ ...issuer, start: prior.index }];
+      });
     });
   }
   /** A literal file beside a reference must be the reference issuer's source, not a different file. */
@@ -768,8 +790,21 @@ export function validateRoute(
       const issuers = selectionIssuers(source, before);
       const selector =
         normalized[field] ??
-        (!target && ["start", "anchor"].includes(field) ? actual.path : undefined);
+        (["start", "anchor"].includes(field)
+          ? actual.path
+          : field === "targetStart"
+            ? actual.target
+            : undefined);
       const exact = expected[field];
+      // A source or target result already selects its issued range without a separate start.
+      if (
+        exact instanceof RegExp &&
+        ["start", "anchor", "targetStart"].includes(field) &&
+        normalized[field] === undefined &&
+        sameSource(source, selector, before) &&
+        matches(exact, selector)
+      )
+        normalized[field] = selector;
       const hash = issuers
         .map((issuer) => issuedAnchor(selector, resultText(issuer.end)))
         .find(Boolean);
