@@ -5,7 +5,7 @@ description: Run the pi-agent-ide paid real-model tool capability matrix, select
 
 # Run the tool capability matrix
 
-Check whether a real model can execute the requested tool chains. A pass requires both the requested outcome and the actual route, including reuse of returned references. This is not a model ranking or a replacement for deterministic tool tests.
+Check whether agents and models can carry out the tools' contracts without surprises, given a precise, complete and unambiguous task with every dependent value supplied. Do not test whether a model guesses the intended task or preferred arguments. A pass requires both the requested outcome and the actual capability route, including required reuse and refusals. This is not a model ranking or a replacement for deterministic tool tests.
 
 Resolve the repository root three directories above this skill directory. Run commands from that root. Read `benchmarks/tool-capabilities/README.md` for the runner's current requirements and evidence format; use the existing CLI, not a new harness.
 
@@ -59,11 +59,13 @@ Read the run's `manifest.json`, `matrix.md`, and `attempts.json`. For failed or 
 Keep these distinctions:
 
 - `pass`: the required route and outcome were observed.
-- `route_failed` or `outcome_failed`: the model did not complete the required contract.
+- `route_failed` or `outcome_failed`: the recorded route or outcome did not satisfy a check; this status alone does not identify the cause.
 - `model_error`, `infra_error`, `timed_out`, `cancelled`, or `unavailable`: no verified success; inspect the evidence before assigning a cause.
 - Not run: unverified, not a pass.
 
-Preserve every attempt. A later pass does not erase an earlier failure or prove reliability. Keep source digests separate; historical passes from different revisions are not one all-pass run of the current code. If a case or validator appears wrong, report the evidence and seek approval before changing it. Do not rewrite old statuses after a correction.
+Classify each evidenced failure as a tool defect (a documented contract was broken), an unclear tool contract (a required fact was missing, such as units), or model noncompliance (an exact usable instruction was not followed). Inspect the supplied prompt and values before blaming the model. An ambiguous case or incidental-argument check is a bench false failure, not model noncompliance; report it separately and correct it only when the current task authorizes that work. Leave unavailable or insufficient evidence unverified.
+
+Preserve every attempt. A later pass does not erase an earlier failure or prove reliability. Keep source digests separate; historical passes from different revisions are not one all-pass run of the current code. If a case or validator appears wrong, retain the evidence and report it; seek approval before changing it unless the current task already authorizes that correction. Follow the README's case-contract rule, not per-case spelling alternatives. Do not rewrite old statuses after a correction.
 
 ## Report and preserve
 
