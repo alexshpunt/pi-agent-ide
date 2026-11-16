@@ -1,8 +1,8 @@
 # Paid tool capability matrix
 
-This checks whether a real model can execute our designed IDE operations and tool chains. It is not a model ranking, a reliability score, or a replacement for unit and integration tests.
+This checks whether agents and models can carry out the IDE tools' contracts without surprises. Each case supplies a precise, complete and unambiguous task, including the call shape and every value it depends on. It does not test guessing the intended task or the author's preferred arguments, rank models, measure reliability, or replace unit and integration tests.
 
-Each short task names the required route. The model must choose the arguments, use actual returned references, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass. In a Git fixture, the commit and index must also stay as prepared; expected worktree changes, such as deleting a tracked directory, are part of the final bytes.
+Each task supplies a runnable recipe. Use actual returned references where a value must come from an earlier call, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass. In a Git fixture, the commit and index must also stay as prepared; expected worktree changes, such as deleting a tracked directory, are part of the final bytes.
 
 ## Free checks
 
@@ -21,13 +21,30 @@ Rust edition selection is formatter behavior after an edit, not a new model oper
 
 The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostics and requests a symbol from the real server. Its dependency-free build script records an unexpected compilation; the final validator requires that marker to remain absent. It covers default Cargo safety, not explicit build-backed opt-in or large-workspace performance. The focused Rust diagnostic integration case also guards compiler invocations on a cold target and can use a real large workspace. Direct and Codemode paid routes remain unverified until paid execution.
 
-### Route equivalence
+### Case contracts
 
-The validator prepares execution arguments with the IDE's shared schema-aware JSON-text decoder, then applies Pi's argument parser with the checked tool schemas in `contracts.json`. JSON text in object and array positions matches the corresponding native input. Numeric strings accepted by Pi match their numeric values. Arguments that fail schema parsing keep strict raw comparison, including deliberate invalid-call cases. Structured result values are never coerced. Retained events stay unchanged.
+Check the subject of the case, not an example call:
 
-Fixture paths match their equivalent relative or absolute spelling. An explicitly allowed source path does not depend on completion of another call. Reusing a returned reference still requires its completed issuer, and every declared call remains required. After a mutation, a fresh Search can prove an inline fragment from its public line snapshot. The witness must name the same file and range, and no source edit may overlap or follow it before the consuming call. This does not grant whole-line separator ownership or turn one match of a larger result into a whole-result selection.
+- Require actual successful tool executions on the selected direct or native-Codemode route. Require a refusal instead where refusal is the subject; a recovered success does not replace that observation.
+- Require reuse of the completed issuer's result when composition is the subject. Keep source and destination provenance separate. Equivalent supported representations of the same issued selection remain valid.
+- Require order only for a real dependency: consuming a result, observing a changed state, or using loaded tools. Run independent operations in any order. Require batching or overlap only when concurrency is the subject.
+- Check all final fixture bytes, including untouched files, and the requested answer or observed value. An accepted route alone is not a pass. In Git fixtures, also preserve the prepared commit and index.
+- Put only capability-defining arguments and call discriminators in `RouteStep.args`. Do not copy a complete example call into it. Check argument values or shapes only when they define the capability, such as paging, a bounded source, a view, an omitted endpoint or an explicit invalid request.
+- Use `exactText` when literal-text selection is the capability. It requires the named selector fields to contain literal text, not a regex or issued reference; it does not prescribe which equivalent boundary spelling to use. Final bytes decide whether the edit was correct. Do not add per-case alternative-argument lists.
 
-Boundary alternatives belong to individual cases through reviewed `argsAny` variants. In `exact-eof-lf` and `exact-eof-crlf`, deleting a block with its leading separator and without its terminal separator leaves the same expected bytes. The unterminated fixture rejects that variant because it would remove the preceding line's separator. In `insert-before`, `α` and `β` identify the beginning and end of the multiline fragment; the opening and closing insertions must keep their respective sides. Final fixture bytes are checked separately. Cases that test selection or reference reuse retain those constraints.
+Supply exact queries, target names, payloads, flags and parameterized views in each prompt. For example, a sequence check must name a duration and interval that produce its required frame count. Runtime-issued references are the only values that must be obtained from earlier calls. Review the prompt and every step together: a model following the recipe literally must pass. Rewrite ambiguous instructions rather than counting an interpretation as a model failure.
+
+The validator decodes execution arguments with the IDE's schema-aware JSON-text decoder and Pi's checked schemas. Supported numeric strings and JSON-text structures compare by their parsed values; structured results and retained events stay unchanged. Fixture paths compare by source identity. Independent search roots are unordered; transfer source/destination lists remain paired. Required views allow additional views. Generic selection equivalence uses completed public witnesses, never invented hashes or an unproven post-edit snapshot. These normalizations support subject checks; they are not a reason to assert incidental arguments.
+
+### Failure analysis
+
+A runner status is an observation, not a diagnosis. Inspect the prompt, arguments, tool results, final files and answer before assigning a cause:
+
+- **Tool defect:** a tool violated its documented contract on the supplied input.
+- **Unclear tool contract:** the model needed a fact the tool interface did not state, such as a parameter's units.
+- **Model noncompliance:** the task and tool contract supplied an exact, usable instruction, but the model did not follow it.
+
+An ambiguous case or an overstrict validator is a false failure in the bench, not model noncompliance. Correct it under the current task's authorization and rerun the affected routes. Preserve the original attempt and source revision; never rewrite its status into a pass. Authentication, prerequisites, quota, infrastructure, cancellation and timeout without enough evidence remain unverified rather than being forced into one of the three causes.
 
 ## Paid runs
 
