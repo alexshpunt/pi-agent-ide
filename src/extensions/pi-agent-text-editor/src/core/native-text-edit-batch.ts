@@ -29,6 +29,7 @@ import {
 import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.ts";
 import { isWholeFileInvocation } from "./file-operation-tools.ts";
 import { isResultInput } from "./result-transfer.ts";
+import { resolveResultScope } from "./result-scope.ts";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.ts";
 import { writeProblemNotices } from "./write-agent-result.ts";
 import {
@@ -398,8 +399,14 @@ class NativeTextEditBatchCoordinator {
                   isMutationAnchorValue(anchor, input[anchor.field]),
               )
             )
-              scopedSources[descriptor.field] = value;
-            else if (isMutationAnchorValue(firstAnchor, input[firstAnchor.field]))
+            {
+              const scope = resolveResultScope(this.resultTargets, value, context.cwd);
+              if (!scope.complete) {
+                ownsSource = true;
+                continue;
+              }
+              scopedSources[descriptor.field] = this.resultTargets.register(scope.targets, context.cwd);
+            } else if (isMutationAnchorValue(firstAnchor, input[firstAnchor.field]))
               implicitAnchors[firstAnchor.field] = value;
             else candidate[firstAnchor.field] = value;
           }

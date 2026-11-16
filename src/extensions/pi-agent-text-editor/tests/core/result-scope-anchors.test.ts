@@ -160,11 +160,7 @@ async function tokenFixture(complete = true) {
     ],
   }));
   const whole = f.store.register(targets, cwd, complete, "Unsafe token union");
-  const matches = targets.map((target, index) => {
-    const reference = `SEARCH#ABCD:${index + 1}:match`;
-    f.store.registerSearchReference(reference, f.store.register([target], cwd), cwd);
-    return reference;
-  });
+  const matches = targets.map((target) => f.store.register([target], cwd));
   return { ...f, whole, matches, original };
 }
 
@@ -193,17 +189,27 @@ test.each([
   const { result, text } = await f.run(tool, {
     path: { id: f.whole },
     ...(tool.name === "insert" ? { anchor: f.matches[0], text: "NEW" } : { start: f.matches[0] }),
-    ...(["copy", "move"].includes(tool.name) && { target: "target.txt", targetStart: "SLOT", targetEnd: "SLOT" }),
+    ...(["copy", "move"].includes(tool.name) && {
+      target: "target.txt",
+      targetStart: "SLOT",
+      targetEnd: "SLOT",
+    }),
   });
   expect(result.details.effect, text).not.toBe("not-applied");
   expect(await f.content("tokens.txt")).toBe(expected);
-  expect(await f.content("target.txt")).toBe(["copy", "move"].includes(tool.name) ? "red\n" : "SLOT\n");
+  expect(await f.content("target.txt")).toBe(
+    ["copy", "move"].includes(tool.name) ? "red\n" : "SLOT\n",
+  );
 });
 
 test("a scope never rescues its stale individual match", async () => {
   const f = await tokenFixture();
   await f.run(replaceMutationTool, { path: f.matches[0], text: "RED" });
-  const { result } = await f.run(replaceMutationTool, { path: { id: f.whole }, start: f.matches[0], text: "BAD" });
+  const { result } = await f.run(replaceMutationTool, {
+    path: { id: f.whole },
+    start: f.matches[0],
+    text: "BAD",
+  });
   expect(result.details.effect).toBe("not-applied");
   expect(await f.content("tokens.txt")).toBe("RED blue\n");
 });
