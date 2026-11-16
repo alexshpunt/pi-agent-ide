@@ -475,16 +475,39 @@ for (const mode of ["direct", "codemode"]) {
     const source = mode === "codemode" ? read.value : result;
     for (const text of ["BEFORE", "BEFORE\n"]) {
       const insert: Call = { tool: "insert", args: { path: source, before: true, text } };
+      const withPaths = (path: string | string[]): Call => ({
+        ...read,
+        args: { ...read.args, path },
+        value: Array.isArray(path)
+          ? path.map((file) =>
+              file === "task.txt"
+                ? read.value
+                : {
+                    id: "RESULT#33333333-aaaa-4aaa-8aaa-333333333333",
+                    text: "OTHER\n",
+                  },
+            )
+          : read.value,
+      });
       for (const path of ["task.txt", ["task.txt"], ["other.txt", "task.txt"]]) {
-        assert.ok(check(route, [{ ...read, args: { ...read.args, path } }, insert], mode));
+        assert.ok(check(route, [withPaths(path), insert], mode));
       }
+      assert.ok(
+        !check(
+          route.map((step) =>
+            step.tool === "insert" ? { ...step, args: { ...step.args, path: "task.txt" } } : step,
+          ),
+          [{ ...read, args: { ...read.args, path: ["other.txt", "task.txt"] } }, insert],
+          mode,
+        ),
+      );
       assert.ok(!check(route, [insert], mode));
       for (const args of [
         { ...read.args, path: ["other.txt"] },
         { ...read.args, path: ["other.txt", "task.txt"], offset: 1 },
         { ...read.args, path: ["other.txt", "task.txt"], limit: 2 },
       ]) {
-        assert.ok(!check(route, [{ ...read, args }, insert], mode));
+        assert.ok(!check(route, [{ ...withPaths(args.path), args }, insert], mode));
       }
       assert.ok(!check(route, [{ ...read, error: true }, insert], mode));
       for (const path of ["task.txt", "RESULT#22222222-aaaa-4aaa-8aaa-222222222222"]) {

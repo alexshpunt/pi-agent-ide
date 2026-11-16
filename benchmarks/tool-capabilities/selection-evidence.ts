@@ -152,6 +152,35 @@ export interface SelectionIssuer {
   args: Record<string, unknown>;
   end: RunEvent;
 }
+/** Multi-Read returns one value per requested source, in order; never use its combined display. */
+export function readSourceIssuers(issuer: SelectionIssuer): SelectionIssuer[] {
+  if (!["read", "demo_read"].includes(issuer.tool) || !Array.isArray(issuer.args.path))
+    return [issuer];
+  const paths: unknown[] = issuer.args.path;
+  const items: unknown = issuer.end.result?.structuredContent;
+  if (!Array.isArray(items))
+    return paths.length === 1 ? [{ ...issuer, args: { ...issuer.args, path: paths[0] } }] : [];
+  if (items.length !== paths.length) return [];
+  const references = items.flatMap((item) => ids(item).map((id) => id.replace(/^RESULT#/u, "")));
+  if (new Set(references).size !== references.length) return [];
+  return items.flatMap((item: unknown, index: number) => {
+    const value = record(item);
+    if (typeof value.id !== "string" || typeof value.text !== "string") return [];
+    return [
+      {
+        ...issuer,
+        args: { ...issuer.args, path: paths[index] },
+        end: {
+          ...issuer.end,
+          result: {
+            content: [{ type: "text", text: value.text }],
+            structuredContent: item,
+          },
+        },
+      },
+    ];
+  });
+}
 /** An exact string without an end selects a whole line when it is the complete line. */
 export function exactSelection(
   content: string,
@@ -181,7 +210,7 @@ export function issuedSelection(
   for (const issuer of issuers) {
     const output = resultText(issuer.end);
     if (issuer.tool === "read" || issuer.tool === "demo_read") {
-      // A combined Read does not identify which source owns each displayed line or window.
+      // Unprojected combined displays have no per-source selection authority.
       if (Array.isArray(issuer.args.path) && issuer.args.path.length !== 1) continue;
       const views = issuer.args.views;
       if (Array.isArray(views) && views.some((view) => view !== "anchors")) continue;
