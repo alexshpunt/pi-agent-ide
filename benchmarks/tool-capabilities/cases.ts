@@ -1073,25 +1073,25 @@ add(
 );
 add(
   "search-issued-scope",
-  ["compose.search-issued-scope"],
-  "Search task.txt for title. Use its issued SEARCH :all:line as the scope for legacyCheckout: there must be zero matches, because all feature lines are gaps. Search its first :line for first (one match), then its first :match for first (zero). Keep the bytes unchanged and use the exact issued selectors, not a file path or UUID.",
+  ["compose.search-issued-scope", "compose.search-object-scope"],
+  'Search task.txt for title. Pass its issued SEARCH :all:line selector as an object {"id":"SEARCH#…:all:line"} in Search path for legacyCheckout: there must be zero matches, because all feature lines are gaps. Use the same object form for its first :line when searching for first (one match), then its first :match for first (zero). Keep the bytes unchanged and use the exact issued selectors, not a file path or UUID.',
   [
     { tool: "search", args: { path: "task.txt", query: "title" } },
     {
       tool: "search",
-      args: { path: /^SEARCH#[A-F0-9]+:all:line$/, query: "legacyCheckout" },
+      args: { path: { id: /^SEARCH#[A-F0-9]+:all:line$/ }, query: "legacyCheckout" },
       reuse: reuse(0),
       contains: "No matches found",
     },
     {
       tool: "search",
-      args: { path: /^SEARCH#[A-F0-9]+:1:line$/, query: "first" },
+      args: { path: { id: /^SEARCH#[A-F0-9]+:1:line$/ }, query: "first" },
       reuse: reuse(0),
       contains: "1 match in 1 file",
     },
     {
       tool: "search",
-      args: { path: /^SEARCH#[A-F0-9]+:1:match$/, query: "first" },
+      args: { path: { id: /^SEARCH#[A-F0-9]+:1:match$/ }, query: "first" },
       reuse: reuse(0),
       contains: "No matches found",
     },

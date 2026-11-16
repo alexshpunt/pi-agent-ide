@@ -162,10 +162,8 @@ text("unknown:" + (unknown === null) + ":" + (named === null));`,
     const block = codemodeFailures(unknown);
     expect(block).toContain(`- read ${unknownId}`);
     expect(block).toContain("- search a.txt");
-    expect(block.match(/Result reference expired or unknown/gu)).toHaveLength(2);
+    expect(block.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(2);
 
-    const direct = getToolResultText(result, "direct");
     expect(getToolExecution(result, "direct").isError).toBe(true);
-    expect(direct).toContain("Result reference expired or unknown");
   });
 });

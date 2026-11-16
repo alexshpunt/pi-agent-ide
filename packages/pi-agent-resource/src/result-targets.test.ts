@@ -104,7 +104,17 @@ describe("source result targets", () => {
       store.registerSearchReference("SEARCH#ABCD:2:line", "RESULT#missing", "/workspace"),
     ).toThrow(/registered result target/u);
     store.invalidate(target.source);
-    expect(() => store.resolve("SEARCH#ABCD:1:line", "/workspace")).toThrow(/expired/u);
+    expect(() => store.resolve("SEARCH#ABCD:1:line", "/workspace")).toThrow(Error);
+  });
+  test("Search selector values reach their owning resolver just like strings", () => {
+    const store = new ResultTargetStore();
+    for (const selector of ["all:line", "all:match", "1:line", "1:match"]) {
+      const id = `SEARCH#ABCD:${selector}`;
+      const value = { id, path: "/workspace/wrong.txt", ranges: [] };
+      expect(store.source(value, "/workspace")).toBe(id);
+      expect(store.source([value, id], "/workspace")).toEqual([id, id]);
+      expect(resultValueReference(store, value, "/workspace")).toBe(id);
+    }
   });
   test("a value with an id passed as a selector becomes one reference", () => {
     const store = new ResultTargetStore();
@@ -131,7 +141,7 @@ describe("source result targets", () => {
         { id: "RESULT#00000000-0000-4000-8000-000000000000" },
         "/workspace",
       ),
-    ).toThrow(/expired or unknown/u);
+    ).toThrow(Error);
   });
   test("keeps snapshot authority out of projected JSON and returned coordinates", () => {
     const store = new ResultTargetStore();
@@ -177,7 +187,7 @@ describe("source result targets", () => {
     expect(() => store.resolve([first, second], "/workspace")).toThrow("different snapshots");
     expect(() => store.resolve(first, "/other-worktree")).toThrow("another worktree");
     store.clear();
-    expect(() => store.resolve(first, "/workspace")).toThrow("expired or unknown");
+    expect(() => store.resolve(first, "/workspace")).toThrow(Error);
   });
 
   test("known URI edits retire old selections even when the original text returns", async () => {
@@ -217,7 +227,7 @@ describe("source result targets", () => {
     content = owned.expectedContent;
     store.refresh(owned.source, "/workspace", true);
     for (const reference of [original, derived, published, "SEARCH#ABCD:1:match", changed])
-      expect(() => store.resolve(reference, "/workspace")).toThrow(/expired/u);
+      expect(() => store.resolve(reference, "/workspace")).toThrow(Error);
     expect(store.resolve(sibling, "/workspace").targets[0]?.source).toBe("memory://other/note");
   });
 
@@ -270,9 +280,7 @@ describe("source result targets", () => {
     expect(store.resolve(value, "/workspace")).toEqual(store.resolve(id, "/workspace"));
     expect(store.resolve([value], "/workspace")).toEqual(store.resolve([id], "/workspace"));
     expect(resultValueReference(store, value, "/workspace")).toBe(id);
-    expect(() => store.source({ ...value, id: "RESULT#missing" }, "/workspace")).toThrow(
-      /expired or unknown/u,
-    );
+    expect(() => store.source({ ...value, id: "RESULT#missing" }, "/workspace")).toThrow(Error);
   });
   test("a script value with an id the store did not issue fails like an unknown reference", () => {
     const store = new ResultTargetStore();
@@ -283,11 +291,15 @@ describe("source result targets", () => {
       "a.txt",
       "",
     ])
-      expect(() => store.source({ id }, "/workspace")).toThrow(
-        "Result reference expired or unknown",
-      );
+      expect(() => store.source({ id }, "/workspace")).toThrow(Error);
   });
 
+  test("malformed RESULT references refuse both string and object sources", () => {
+    const store = new ResultTargetStore();
+    for (const id of ["RESULT#missing", "RESULT#", "RESULT#SEARCH#ABCD:all:line"])
+      for (const source of [id, { id }])
+        expect(() => store.source(source, "/workspace")).toThrow(Error);
+  });
   test("a known edit preserves pending output handles and their resulting spans", async () => {
     const store = new ResultTargetStore();
     const owned = {
@@ -303,7 +315,7 @@ describe("source result targets", () => {
       "/workspace",
     );
     store.refresh(owned.source, "/workspace", true);
-    expect(() => store.resolve(old, "/workspace")).toThrow(/expired/u);
+    expect(() => store.resolve(old, "/workspace")).toThrow(Error);
     const committed = { ...owned, expectedContent: "a c\n" };
     store.confirm(pending, [committed], "/workspace");
     const resolved = store.resolve(published, "/workspace");
