@@ -148,7 +148,7 @@ async function fixture(files: Record<string, string>) {
 
 async function tokenFixture(complete = true) {
   const original = "red blue\n";
-  const f = await fixture({ "tokens.txt": original, "target.txt": "SLOT\n" });
+  const f = await fixture({ "tokens.txt": original, "target.txt": "left SLOT right\n" });
   const targets = [0, 4].map((column) => ({
     source: path.join(cwd, "tokens.txt"),
     expectedContent: original,
@@ -198,7 +198,7 @@ test.each([
   expect(result.details.effect, text).not.toBe("not-applied");
   expect(await f.content("tokens.txt")).toBe(expected);
   expect(await f.content("target.txt")).toBe(
-    ["copy", "move"].includes(tool.name) ? "red\n" : "SLOT\n",
+    ["copy", "move"].includes(tool.name) ? "left red right\n" : "left SLOT right\n",
   );
 });
 
