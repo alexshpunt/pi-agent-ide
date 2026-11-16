@@ -1048,7 +1048,7 @@ add(
 add(
   "read-scoped-boolean",
   ["compose.scoped-boolean"],
-  'Read only line 2 of task.txt. Forward that result or its UUID to Search with the unchanged query feature: "legacy​Checkout". Also search that same result for feature: AND outside. Find exactly one feature match and no outside match; do not search the file path or change bytes.',
+  'Read only line 2 of task.txt. Forward that result or its UUID to Search twice, using the exact queries `feature: "legacy​Checkout"` and `feature: AND outside`. Report both search results. Do not search the file path or change bytes.',
   [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     {

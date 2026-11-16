@@ -241,6 +241,18 @@ function fixturePath(value: string): string {
   return prefix + path.posix.relative("/workspace/fixture", resolved);
 }
 
+function diffSource(value: unknown): unknown {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    Object.entries(value).every(([field, item]) => field === "path" || item === undefined) &&
+    "path" in value &&
+    typeof value.path === "string"
+  )
+    return value.path;
+  return value;
+}
+
 function matches(expected: unknown, actual: unknown, field = ""): boolean {
   if (expected instanceof RegExp)
     // A Codemode value passed as a source, such as a Search match, counts by its id.
@@ -710,6 +722,15 @@ export function validateRoute(
       normalized.views = expected.views.map((required) =>
         (views as unknown[]).find((view) => matches(required, view)),
       );
+    if (tool === "diff")
+      return Object.entries(expected).every(([field, value]) => {
+        if (!["before", "after"].includes(field)) return matches(value, normalized[field], field);
+        const source = diffSource(value);
+        const other = diffSource(normalized[field]);
+        return typeof source === "string" && typeof other === "string"
+          ? fixturePath(source) === fixturePath(other)
+          : matches(source, other);
+      });
     if (matches(expected, normalized)) return true;
     // One Read may include other sources, but must satisfy every required argument on that call.
     if (
