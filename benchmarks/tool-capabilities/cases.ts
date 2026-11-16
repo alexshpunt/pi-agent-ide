@@ -3004,7 +3004,7 @@ add(
 add(
   "ast-capture-rename",
   ["outline.file", "search.ast", "compose.ast-capture-edit", "compose.capture-uuid-source"],
-  'Call outline with path task.ts. Call ast_search with path task.ts, language typescript and pattern "function $NAME() { return 7; }". Replace the NAME capture with renamed. Take the UUID from its issued RESULT# reference (or captures.NAME[0].id in Codemode), omit the RESULT# prefix, and pass path as {id: "<uuid>"}. Use the actual capture UUID, not the whole result, a file path or an anchor.',
+  'Call outline with path task.ts. Call ast_search with path task.ts, language typescript and pattern "function $NAME() { return 7; }". Replace the NAME capture with renamed, passing path as {id: "<bare UUID>"}. In direct calls, take the issued NAME capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the ast_search return value to result, take const captureId = result.matches[0].captures.NAME[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Do not use the whole result, a file path or an anchor.',
   [
     { tool: "outline", args: { path: "task.ts" }, contains: "first" },
     // A pattern or a rule with a pattern can both capture NAME.
@@ -3580,7 +3580,7 @@ add(
     "compose.symbol-read-rename",
     "compose.capture-uuid-source",
   ],
-  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, take the UUID from the issued name capture RESULT# reference (or matches[0].captures.name[0].id in Codemode), omit RESULT#, and pass path as {id: "<uuid>"}. Then replace the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
+  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Then replace the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
   [
     { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
     {
