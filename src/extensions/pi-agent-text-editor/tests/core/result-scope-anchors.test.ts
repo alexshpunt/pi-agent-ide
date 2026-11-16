@@ -148,7 +148,7 @@ async function fixture(files: Record<string, string>) {
 
 async function tokenFixture(complete = true) {
   const original = "red blue\n";
-  const f = await fixture({ "tokens.txt": original });
+  const f = await fixture({ "tokens.txt": original, "target.txt": "SLOT\n" });
   const targets = [0, 4].map((column) => ({
     source: path.join(cwd, "tokens.txt"),
     expectedContent: original,
@@ -183,6 +183,30 @@ test.each([false, true])(
   },
 );
 
+test.each([
+  { tool: insertMutationTool, expected: "redNEW blue\n" },
+  { tool: deleteMutationTool, expected: " blue\n" },
+  { tool: copyMutationTool, expected: "red blue\n" },
+  { tool: moveMutationTool, expected: " blue\n" },
+])("$tool.name uses a guarded result only as its selector scope", async ({ tool, expected }) => {
+  const f = await tokenFixture();
+  const { result, text } = await f.run(tool, {
+    path: { id: f.whole },
+    ...(tool.name === "insert" ? { anchor: f.matches[0], text: "NEW" } : { start: f.matches[0] }),
+    ...(["copy", "move"].includes(tool.name) && { target: "target.txt", targetStart: "SLOT", targetEnd: "SLOT" }),
+  });
+  expect(result.details.effect, text).not.toBe("not-applied");
+  expect(await f.content("tokens.txt")).toBe(expected);
+  expect(await f.content("target.txt")).toBe(["copy", "move"].includes(tool.name) ? "red\n" : "SLOT\n");
+});
+
+test("a scope never rescues its stale individual match", async () => {
+  const f = await tokenFixture();
+  await f.run(replaceMutationTool, { path: f.matches[0], text: "RED" });
+  const { result } = await f.run(replaceMutationTool, { path: { id: f.whole }, start: f.matches[0], text: "BAD" });
+  expect(result.details.effect).toBe("not-applied");
+  expect(await f.content("tokens.txt")).toBe("RED blue\n");
+});
 test.each(["whole", "whole-anchor", "cross-range", "outside", "incomplete"])(
   "a guarded scope does not authorize %s edits",
   async (kind) => {
