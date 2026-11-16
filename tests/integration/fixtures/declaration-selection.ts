@@ -21,12 +21,14 @@ export default function declarationSelection(pi: ExtensionAPI): void {
         content: event.message.content.map((block) => {
           if (block.type !== "toolCall") return block;
           const input = block.arguments;
-          if (typeof input.path !== "string" || !input.path.startsWith("fixture:declaration:")) return block;
-          const kind = input.path.endsWith("#name") ? "name" : "declaration";
-          const declaration = input.path.slice("fixture:declaration:".length).replace(/#name$/u, "");
+          const reference = typeof input.path === "object" && input.path !== null
+            ? (input.path as { id?: unknown }).id : input.path;
+          if (typeof reference !== "string" || !reference.startsWith("fixture:declaration:")) return block;
+          const kind = reference.endsWith("#name") ? "name" : "declaration";
+          const declaration = reference.slice("fixture:declaration:".length).replace(/#name$/u, "");
           const selected = selections.get(declaration)?.[kind];
           if (selected === undefined) throw new Error(`Missing issued ${kind} selection for ${block.id}`);
-          return { ...block, arguments: { ...input, path: selected } };
+          return { ...block, arguments: { ...input, path: typeof input.path === "object" ? { id: selected.replace(/^RESULT#/u, "") } : selected } };
         }),
       },
     };
