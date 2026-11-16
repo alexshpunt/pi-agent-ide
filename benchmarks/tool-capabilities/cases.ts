@@ -3251,11 +3251,23 @@ add(
 add(
   "shell-screen",
   ["shell.image", "shell.sequence"],
-  "Start a completed Bash command that prints SCREEN-MARKER. Capture its shell resource with the image view and then with a short sequence view. Report the printed marker. Do not edit files.",
+  "Start a completed Bash command that prints SCREEN-MARKER. Capture its shell resource with the image view and then with a short sequence view containing at least two frames. Report the printed marker. Do not edit files.",
   [
     { tool: "bash", args: { command: /SCREEN-MARKER/ } },
-    { tool: "read", args: { views: ["image"] }, reuse: reuse(0, "path", "shell"), image: true },
-    { tool: "read", args: { views: [/sequence/] }, reuse: reuse(0, "path", "shell"), image: true },
+    {
+      tool: "read",
+      args: { views: ["image"] },
+      reuse: reuse(0, "path", "shell"),
+      image: true,
+      scriptResult: { type: "image", mimeType: "image/png" },
+    },
+    {
+      tool: "read",
+      args: { views: [/sequence/] },
+      reuse: reuse(0, "path", "shell"),
+      image: true,
+      scriptResult: { type: "images" },
+    },
   ],
   { answer: "SCREEN-MARKER" },
 );

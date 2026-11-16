@@ -296,6 +296,7 @@ const groups: [string[], string[]][] = [
     ],
     ["shell-roundtrip"],
   ],
+  // Real-Pi regression coverage also checks completed local/SSH shells without ignored-view metadata.
   [["shell.image", "shell.sequence"], ["shell-screen"]],
   // The process list sent after compaction has deterministic registry and live checks.
   [["shell.name", "shell.list", "shell.search-all", "shell.rename"], ["shell-catalog"]],

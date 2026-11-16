@@ -116,6 +116,14 @@ export async function registerTerminalResources(
     apiVersion: READ_API_VERSION,
     id: "terminal",
     setup(api) {
+      // Native captures return before presentation, but Read still validates their view names.
+      for (const view of ["image", "sequence"]) {
+        api.addView({
+          view,
+          contentKind: "any",
+          presenter: { id: `terminal-${view}`, present: (document) => document },
+        });
+      }
       api.addResolver({
         resolver: createReadResolver(manager, ownerSessionId),
         preserveTruncatedOutput: true,
