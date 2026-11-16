@@ -73,6 +73,10 @@ const groups: [string[], string[]][] = [
   [["edit.replace-search-anchor-list"], ["replace-search-anchor-list"]],
   [["edit.already-done-targets"], ["replace-already-done-anchor-list"]],
   [["edit.insert-search-anchor-list"], ["insert-search-anchor-list"]],
+  ...["insert", "replace", "delete"].map((operation): [string[], string[]] => [
+    [`edit.${operation}-list-selectors-refused`],
+    [`${operation}-list-selectors-refused`],
+  ]),
   [["edit.search-anchor-list-unusable"], ["replace-search-anchor-list-unusable"]],
   ...["delete", "insert"].map((operation): [string[], string[]] => [
     [`edit.search-line-batch-${operation}`],

@@ -146,6 +146,58 @@ async function fixture(files: Record<string, string>) {
   return { store, run, lines, content };
 }
 
+test.each([insertMutationTool, replaceMutationTool, deleteMutationTool])(
+  "$name refuses selectors on multiple result inputs before writing any file",
+  async (tool) => {
+    for (const sameFile of [true, false]) {
+      const original = "first\nmiddle\nlast\n";
+      const f = await fixture({ "one.txt": original, "two.txt": original });
+      const first = await f.lines("one.txt", 1, 1);
+      const second = await f.lines(sameFile ? "one.txt" : "two.txt", 3, 3);
+      for (const objectValues of [false, true]) {
+        const selector = lineAnchor("one.txt", original, 1);
+        const { result } = await f.run(tool, {
+          path: objectValues ? [{ id: first }, { id: second }] : [first, second],
+          ...(tool.name === "insert" ? { anchor: selector } : { start: selector, end: selector }),
+          ...(tool.name === "delete" ? {} : { text: "CHANGED\n" }),
+        });
+        expect(result.details.effect).toBe("not-applied");
+        expect(await f.content("one.txt")).toBe(original);
+        expect(await f.content("two.txt")).toBe(original);
+      }
+    }
+  },
+);
+
+test.each([
+  { tool: insertMutationTool, expected: "first\nNEW\nmiddle\nlast\nNEW\n" },
+  { tool: replaceMutationTool, expected: "NEW\nmiddle\nNEW\n" },
+  { tool: deleteMutationTool, expected: "middle\n" },
+])("$tool.name without selectors applies every result input", async ({ tool, expected }) => {
+  const f = await fixture({ "one.txt": "first\nmiddle\nlast\n" });
+  const first = await f.lines("one.txt", 1, 1);
+  const last = await f.lines("one.txt", 3, 3);
+  const { result } = await f.run(tool, {
+    path: [first, last],
+    ...(tool.name === "delete" ? {} : { text: "NEW\n" }),
+  });
+  expect(result.details.effect).not.toBe("not-applied");
+  expect(await f.content("one.txt")).toBe(expected);
+});
+
+test("a single-element result list still scopes its selector", async () => {
+  const original = "first\nmiddle\nlast\n";
+  const f = await fixture({ "one.txt": original });
+  const scope = await f.lines("one.txt", 1, 3);
+  const { result } = await f.run(insertMutationTool, {
+    path: [scope],
+    anchor: lineAnchor("one.txt", original, 2),
+    text: "NEW\n",
+  });
+  expect(result.details.effect).not.toBe("not-applied");
+  expect(await f.content("one.txt")).toBe("first\nmiddle\nNEW\nlast\n");
+});
+
 test("a line anchor inside a Read result deletes that line", async () => {
   const f = await fixture({ "line.txt": "First\nLast\n" });
   const read = await f.lines("line.txt", 1, 2);

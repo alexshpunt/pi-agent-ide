@@ -252,6 +252,10 @@ export function createTextTool<TParameters extends TSchema>(
                         anchor.sourceField === definition.source.field &&
                         isMutationAnchorValue(anchor, input[anchor.field]),
                     );
+                    if (scoped && Array.isArray(sourceInput) && sourceInput.length > 1)
+                      throw new Error(
+                        "A result list cannot be combined with explicit selectors. Omit anchor/start/end to edit every listed target, or pass one result as path to select inside it. No targets were edited.",
+                      );
                     const selected = scoped
                       ? resolveResultScope(resultTargets, expanded, context.cwd)
                       : resultTargets.resolve(expanded, context.cwd, { forEdit: true });
