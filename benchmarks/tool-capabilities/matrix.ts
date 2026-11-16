@@ -3,6 +3,8 @@ import type { Capability } from "./validation.ts";
 // This declared inventory is reviewed separately from executable cases.
 // SDK capability-loader rendering retains model results and adds no paid operation.
 // Native cards and receipt visibility have deterministic real-Pi coverage.
+// Refusal routes retain authority/provenance and invalid argument shape, not incidental payloads,
+// selectors or insertion direction; early authority guards may stop before these fields arrive.
 // Active-loadout selection is lifecycle behavior; discovery.* checks fresh-session direct discovery
 // and Codemode execution, where reaching session tools needs no discovery.
 const groups: [string[], string[]][] = [

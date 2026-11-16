@@ -460,6 +460,122 @@ function check(route: RouteStep[], calls: readonly Call[], mode = "direct"): boo
   return validateRoute(task, events(calls, mode), mode).passed;
 }
 
+for (const id of [
+  "shell-roundtrip",
+  "diagnostics-report",
+  "directory-transfers",
+  "binary-copy-move",
+]) {
+  const task = capabilityCases.find((entry) => entry.id === id);
+  assert.ok(task);
+  const refusal = task.steps.find((step) => step.error);
+  assert.ok(refusal && refusal.reuse && !Array.isArray(refusal.reuse));
+  const issuer = task.steps[refusal.reuse.from];
+  assert.ok(issuer);
+  const route: RouteStep[] = [
+    { tool: issuer.tool },
+    { ...refusal, reuse: { ...refusal.reuse, from: 0 } },
+  ];
+  for (const mode of task.modes.filter((mode) => !refusal.modes || refusal.modes.includes(mode))) {
+    void test(`${id} accepts early authority refusals without incidental arguments (${mode})`, () => {
+      const issued: Call = {
+        tool: issuer.tool,
+        args: {},
+        text: `<uuid>${uuid}</uuid>`,
+        value: { id: result },
+      };
+      for (const extras of refusal.tool === "replace"
+        ? [{ text: "BAD" }, { start: "another selection", text: "different payload" }, {}]
+        : [{ query: "BAD" }, { query: "different query" }]) {
+        const rejected: Call = {
+          tool: refusal.tool,
+          args: { path: { id: uuid }, ...extras },
+          error: true,
+          text: refusal.contains ?? "refused",
+        };
+        assert.ok(check(route, [issued, rejected], mode));
+        assert.ok(!check(route, [issued, { ...rejected, error: false }], mode));
+        assert.ok(!check(route, [issued], mode));
+        assert.ok(!check(route, [issued, { ...rejected, tool: "delete" }], mode));
+        for (const path of ["task.txt", { id: "99999999-aaaa-4aaa-8aaa-999999999999" }]) {
+          assert.ok(
+            !check(route, [issued, { ...rejected, args: { ...rejected.args, path } }], mode),
+          );
+        }
+      }
+    });
+  }
+}
+
+for (const mode of ["direct", "codemode"]) {
+  void test(`missing-selector refusals require argument shape, not payload spelling (${mode})`, () => {
+    const route = steps("missing-edit-selector-recovery");
+    const insert = route[0];
+    const copy = route[3];
+    assert.ok(insert && copy);
+    const checkRefusal = (step: RouteStep, args: Record<string, unknown>, error = true) =>
+      check(
+        [{ ...step, after: undefined }],
+        [{ tool: step.tool, args, error, text: step.contains }],
+        mode,
+      );
+    assert.ok(checkRefusal(insert, { path: "task.txt", text: "different payload" }));
+    assert.ok(!checkRefusal(insert, { path: "task.txt" }));
+    assert.ok(!checkRefusal(insert, { path: "task.txt", anchor: "OLD", text: "added" }));
+    assert.ok(!checkRefusal(insert, { path: "task.txt", text: "added" }, false));
+    assert.ok(checkRefusal(copy, { path: "task.txt", start: "OLD\n", target: "target.txt" }));
+    assert.ok(!checkRefusal(copy, { path: "task.txt", target: "target.txt" }));
+    assert.ok(
+      !checkRefusal(copy, {
+        path: "task.txt",
+        start: "OLD",
+        target: "target.txt",
+        targetStart: "DEST",
+      }),
+    );
+    assert.ok(!checkRefusal(copy, { path: "wrong.txt", start: "OLD", target: "target.txt" }));
+    assert.ok(!checkRefusal(copy, { path: "task.txt", start: "OLD", target: "target.txt" }, false));
+  });
+}
+
+void test("ambiguous Insert list refusal does not depend on insertion direction", () => {
+  const route = steps("insert-list-selectors-refused").slice(0, 3);
+  const calls: Call[] = [
+    { tool: "search", args: { path: "task.txt", query: "OLD" }, text: "SEARCH#ABCD:1:line" },
+    { tool: "search", args: { path: "task.txt", query: "TAIL" }, text: "SEARCH#DCBA:1:line" },
+    {
+      tool: "insert",
+      args: {
+        path: ["SEARCH#ABCD:1:line", "SEARCH#DCBA:1:line"],
+        anchor: "SEARCH#ABCD:1:line",
+        text: "NEW",
+      },
+      error: true,
+    },
+  ];
+  const rejected = calls[2];
+  assert.ok(rejected);
+  for (const before of [undefined, false, true]) {
+    const attempt = {
+      ...rejected,
+      args: { ...rejected.args, ...(before === undefined ? {} : { before }) },
+    };
+    assert.ok(check(route, [...calls.slice(0, 2), attempt]));
+    assert.ok(!check(route, [...calls.slice(0, 2), { ...attempt, error: false }]));
+    assert.ok(
+      !check(route, [
+        ...calls.slice(0, 2),
+        { ...attempt, args: { ...attempt.args, anchor: undefined } },
+      ]),
+    );
+    assert.ok(
+      !check(route, [
+        ...calls.slice(0, 2),
+        { ...attempt, args: { ...attempt.args, anchor: "SEARCH#FFFF:1:line" } },
+      ]),
+    );
+  }
+});
 for (const mode of ["direct", "codemode"]) {
   void test(`standalone calls accept parsed reference objects and retain namespace ownership (${mode})`, () => {
     const searchId = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
