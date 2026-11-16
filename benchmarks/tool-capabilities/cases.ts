@@ -37,7 +37,10 @@ add(
     },
     {
       tool: "delete",
-      args: { path: "task.txt", start: "gamma" },
+      args: { path: "task.txt" },
+      // These exact selectors remove the same complete line in this fixture, even while
+      // independent pending edits prevent generic post-edit content reconstruction.
+      argsAny: [{ start: "gamma" }, { start: "gamma\n" }],
       editorBatchSize: 3,
     },
   ],
@@ -592,7 +595,7 @@ add(
 add(
   "delete-temporary-config",
   ["edit.delete-temporary-config", "edit.move-temporary-config"],
-  "Delete the directory custom itself (path custom). The project deletion setting replaces the default temporary roots with this custom directory. Then Delete nested/tmp, and Move nested/tmp to the target moved: nested/tmp is no longer temporary, so both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode the expected refusals resolve to null.",
+  'Delete the directory custom itself (path custom). The project deletion setting replaces the default temporary roots with this custom directory. Then Delete nested/tmp, and Move nested/tmp with target: "moved": nested/tmp is no longer temporary, so both must require approval unavailable in this non-interactive runtime. Leave nested/tmp/data and sentinel.txt unchanged. In Codemode the expected refusals resolve to null.',
   [
     { tool: "delete", args: { path: "custom" }, contains: "delete: applied" },
     {
@@ -1361,7 +1364,7 @@ for (const operation of ["delete", "insert"] as const) {
   add(
     `read-window-${operation}`,
     [`compose.read-window-${operation}`],
-    `Read only the second line of task.txt (offset 2, limit 1). Forward that Read result or its UUID to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE before that line; keep every original byte."}`,
+    `Read only the second line of task.txt (offset 2, limit 1). Forward that Read result or its UUID to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : 'Insert the literal text "BEFORE" as a new line before the selected line, with before: true; keep every original byte.'}`,
     [
       { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
       {
@@ -1515,7 +1518,7 @@ add(
 add(
   "read-script-values",
   ["codemode.read-bytes", "codemode.read-entries", "codemode.read-path-list"],
-  "In one Codemode script, read raw:data.bin and take its base64 bytes, read the folder directory and take its entries sorted, and read a.txt, missing.txt and c.txt in one Read call with an array path; a path that fails becomes null. Write summary.txt with three lines and a final newline: the base64 bytes, the entries joined by commas, and the array items' texts without their trailing newline joined by |, with missing for a null item. Do not use Bash.",
+  'In one Codemode script, read raw:data.bin and take its base64 bytes, read the directory at path "folder" and take its entries sorted, and read a.txt, missing.txt and c.txt in one Read call with an array path; a path that fails becomes null. Write summary.txt with three lines and a final newline: the base64 bytes, the entries joined by commas, and the array items\' texts without their trailing newline joined by |, with missing for a null item. Do not use Bash.',
   [
     { tool: "read", args: { path: "raw:data.bin" } },
     { tool: "read", args: { path: "folder" } },
@@ -1538,10 +1541,16 @@ add(
 add(
   "search-anchor-insert",
   ["search.text", "compose.search-insert", "edit.insert"],
-  "Search for OLD using task.txt as path. Use the returned line anchor as insert.path, or use task.txt as path plus that anchor, to put NEW on the following line. Do not combine a result input with an anchor argument. Do not supply an extra blank line.",
+  "Search for OLD using task.txt as path. Insert NEW on the following line. In direct mode use the issued :line anchor as insert.path, or use task.txt as path plus that anchor, with text NEW. In Codemode pass the first Search match value unchanged, or its id, as insert.path; set text to a newline followed by NEW because the match selects OLD without its line break. Do not combine a result input with an anchor argument. Do not supply an extra blank line.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
-    { tool: "insert", args: { text: "NEW" }, reuse: reuse(0, ["anchor", "path"], "anchor") },
+    {
+      tool: "insert",
+      modes: ["direct"],
+      args: { text: "NEW" },
+      reuse: reuse(0, ["anchor", "path"], "anchor"),
+    },
+    { tool: "insert", modes: ["codemode"], args: { text: "\nNEW" }, reuse: reuse(0) },
   ],
   { expected: { "task.txt": "keep\nOLD\nNEW\nlast\n" } },
 );
@@ -3131,7 +3140,7 @@ add(
 add(
   "repeated-line-anchor-after-shift",
   ["edit.repeated-line-anchor-shift"],
-  "Read task.txt with anchors. Insert the line top before alpha, which shifts every line down. Then delete the final } line of the file using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
+  "Read task.txt with anchors. Insert the line top before alpha, which shifts every line down. Wait for the Insert result before starting Delete. Then delete the final } line of the file using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -3231,7 +3240,7 @@ add(
       reuse: reuse(0),
       error: true,
     },
-    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" }, after: [1] },
+    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" } },
   ],
   { expected: { "task.txt": "keep\nOLD\nfixed\n" } },
 );

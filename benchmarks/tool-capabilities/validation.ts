@@ -704,12 +704,13 @@ export function validateRoute(
     expected: Record<string, unknown>,
     actual: Record<string, unknown> | undefined,
     before: number,
+    sourceListItem = false,
   ): boolean {
     if (!actual) return false;
-    // Read's first line is the default, not a different selection.
+    // Text starts at line one; raw sources start at byte zero.
     const normalized = { ...actual };
     if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
-      normalized.offset = 1;
+      normalized.offset = typeof actual.path === "string" && actual.path.startsWith("raw:") ? 0 : 1;
     if (tool === "insert" && normalized.before === undefined) normalized.before = false;
     // Read views are requirements, not positional output fields; other arrays stay ordered.
     const views = normalized.views;
@@ -740,7 +741,12 @@ export function validateRoute(
     )
       return normalized.path.some((path: unknown) => matches(expected, { ...normalized, path }));
     // A debugger source and its launched program name the same file for an anchored Read.
-    if (tool === "read" && Array.isArray(actual.views) && actual.views.includes("anchors")) {
+    if (
+      tool === "read" &&
+      !sourceListItem &&
+      Array.isArray(actual.views) &&
+      actual.views.includes("anchors")
+    ) {
       for (const prior of selectionIssuers(undefined, before)) {
         if (prior.tool !== "debug" || !matches({ path: prior.args.program }, { path: actual.path }))
           continue;
@@ -928,7 +934,14 @@ export function validateRoute(
     stepIndex: number,
     // A step that another route skips leaves its slot empty; steps reusing it cannot match.
     selected: (
-      | { event: RunEvent; start: number; end: number; parent?: string; call?: string }
+      | {
+          event: RunEvent;
+          start: number;
+          end: number;
+          parent?: string;
+          call?: string;
+          readIndex?: number;
+        }
       | undefined
     )[],
   ): boolean {
@@ -951,11 +964,34 @@ export function validateRoute(
             : [],
         ),
     ];
-    for (const start of starts) {
+    // Read executes each array source independently. Match each required source against one
+    // item, never against the combined array, so separate reuse witnesses stay mandatory.
+    const candidates: ((typeof starts)[number] & { readIndex?: number })[] = starts.flatMap(
+      (start) => {
+        const args = start.event.args;
+        return step.tool === "read" &&
+          start.event.toolName === "read" &&
+          Array.isArray(args?.path) &&
+          !Array.isArray(step.args?.path)
+          ? args.path.map((path: unknown, readIndex) => ({
+              ...start,
+              readIndex,
+              event: { ...start.event, args: { ...args, path } },
+            }))
+          : [start];
+      },
+    );
+    for (const start of candidates) {
       const event = start.event;
       const end = ends.get(event.toolCallId ?? "");
       if (
-        selected.some((prior) => prior?.start === start.index) ||
+        selected.some(
+          (prior) =>
+            prior?.start === start.index &&
+            (prior.readIndex === undefined ||
+              start.readIndex === undefined ||
+              prior.readIndex === start.readIndex),
+        ) ||
         event.toolName !== step.tool ||
         !end ||
         end.index <= start.index ||
@@ -1016,11 +1052,21 @@ export function validateRoute(
         )
           continue;
       }
-      if (step.args && !argsMatch(step.tool, step.args, event.args, start.index)) continue;
+      if (
+        step.args &&
+        !argsMatch(step.tool, step.args, event.args, start.index, start.readIndex !== undefined)
+      )
+        continue;
       if (
         step.argsAny &&
         !step.argsAny.some((args) =>
-          argsMatch(step.tool, { ...step.args, ...args }, event.args, start.index),
+          argsMatch(
+            step.tool,
+            { ...step.args, ...args },
+            event.args,
+            start.index,
+            start.readIndex !== undefined,
+          ),
         )
       )
         continue;
@@ -1130,6 +1176,7 @@ export function validateRoute(
             event: end.event,
             start: start.index,
             end: end.index,
+            readIndex: start.readIndex,
             parent: execution.parent,
             call: execution.call,
           },
