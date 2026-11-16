@@ -19,6 +19,39 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 add(
+  "missing-edit-selector-recovery",
+  ["edit.missing-selector-recovery"],
+  'First call insert on task.txt with text "added" and no anchor; it must fail without editing. Read task.txt, then retry insert with anchor "OLD" and the same text. Next call copy from task.txt, start "OLD", to target.txt without targetStart; it must fail without editing either file. Read target.txt and retry copy with targetStart "DEST". Keep all existing lines. Do not use whole-file operations or write. In Codemode, keep going after each refused call using the returned null and the failure summary.',
+  [
+    {
+      tool: "insert",
+      args: { path: "task.txt", anchor: undefined, text: "added" },
+      error: true,
+      contains: "INVALID_REQUEST",
+    },
+    { tool: "read", args: { path: "task.txt" }, after: [0] },
+    { tool: "insert", args: { path: "task.txt", anchor: "OLD", text: "added" }, after: [1] },
+    {
+      tool: "copy",
+      args: { path: "task.txt", start: "OLD", target: "target.txt", targetStart: undefined },
+      error: true,
+      contains: "INVALID_REQUEST",
+      after: [2],
+    },
+    { tool: "read", args: { path: "target.txt" }, after: [3] },
+    {
+      tool: "copy",
+      args: { path: "task.txt", start: "OLD", target: "target.txt", targetStart: "DEST" },
+      after: [4],
+    },
+  ],
+  {
+    modes: both,
+    files: { ...textFile, "target.txt": "DEST\n" },
+    expected: { "task.txt": "keep\nOLD\nadded\nlast\n", "target.txt": "DEST\nOLD\n" },
+  },
+);
+add(
   "codemode-search-value-batch",
   ["compose.codemode-search-value-batch"],
   "In native Codemode, Search task.txt for beta and retain the returned value. Then in one script run the three independent edits concurrently with Promise.all, without any other tool between them: Insert added before alpha in task.txt; Replace beta by passing the first Search match value as path, with BETA; Delete gamma using exact text in task.txt. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
