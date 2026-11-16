@@ -38,7 +38,7 @@ export interface ResolvedResultTargets {
 
 /**
  * A value that a tool returned to a Codemode script, such as a Read or Search value. Its `id` is the
- * `RESULT#` reference of its selection; other fields are ignored.
+ * issued result UUID, `RESULT#` reference, or `SEARCH#` selector; other fields are ignored.
  */
 export const resultValueSchema = Type.Object({ id: Type.String() });
 
@@ -56,7 +56,9 @@ const prefix = "RESULT#";
 const uuidPattern = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
 const event = "pi-agent-resource:result-targets";
 const unknownReference =
-  "Result reference expired or unknown. Run Read/Search again and use the new result.";
+  "Result reference is unknown or no longer available. Run Read/Search again and use the new result.";
+const invalidReference =
+  "Invalid result id. Use an issued UUID, RESULT# reference, or SEARCH# selector.";
 
 /**
  * The `id` of a value passed as a source, such as a Read or Search value in a Codemode script, or
@@ -68,7 +70,7 @@ export function resultValueId(input: unknown): string | undefined {
   return input.id;
 }
 /**
- * The `RESULT#` reference of a value with an `id` passed where a single text selection is
+ * The reference of a value with an `id` passed where a single text selection is
  * expected, such as an edit anchor: the id of a Search match, or of a Read or Search value. A
  * result of several selections is registered as one. Any other input is returned unchanged.
  */
@@ -88,7 +90,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 6;
+export const RESULT_TARGET_STORE_VERSION = 7;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -387,10 +389,11 @@ export class ResultTargetStore {
     if (Array.isArray(input)) return input.map((item) => this.source(item, cwd, allowResource));
     const valueId = resultValueId(input);
     if (valueId !== undefined) {
-      // A value's id is a reference, never a path: an id the store did not issue is unknown.
+      // Search owns its selectors; normalize the value exactly as its string form.
+      // An id is never an arbitrary path, even if the value includes preview source fields.
       const uuid = valueId.startsWith(prefix) ? valueId.slice(prefix.length) : valueId;
-      if (!uuidPattern.test(uuid) && !this.#matchReferences.has(valueId))
-        throw new Error(unknownReference);
+      if (!uuidPattern.test(uuid) && !valueId.startsWith("SEARCH#"))
+        throw new Error(invalidReference);
       return this.source(valueId, cwd, allowResource);
     }
     if (typeof input !== "string") return input;
@@ -401,6 +404,7 @@ export class ResultTargetStore {
     const id = envelope?.[1] ?? (input.startsWith(prefix) ? input.slice(prefix.length) : input);
     const isId = uuidPattern.test(id);
     if (!envelope && !isId) {
+      if (input.startsWith(prefix)) throw new Error(invalidReference);
       if (input.startsWith("<system-result")) throw new Error("Invalid system result reference.");
       return input;
     }
@@ -615,8 +619,7 @@ export class ResultTargetStore {
     const sources = new Set<string>();
     for (const reference of references) {
       const entry = this.#entries.get(reference);
-      if (entry === undefined)
-        throw new Error("Result target expired or unknown; repeat Read/Search.");
+      if (entry === undefined) throw new Error(unknownReference);
       if (entry.cwd !== path.resolve(cwd))
         throw new Error("Result target belongs to another worktree.");
       if (entry.state === "pending")
