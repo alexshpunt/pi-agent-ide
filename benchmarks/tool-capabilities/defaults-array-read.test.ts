@@ -171,6 +171,16 @@ void test("standalone discovery may load each tool before its first use", () => 
     { tool: "demo_read", args: { path: "memory://demo/note" }, text: "changed\nomega" },
   ];
   assert.ok(validateRoute(task, events(calls, "direct"), "direct").passed);
+  for (const changed of [
+    calls.filter((_, index) => index !== 3),
+    [...calls.slice(0, 3), calls[4] as Call, calls[3] as Call, ...calls.slice(5)],
+    calls.map((call, index) => index === 3 ? { ...call, error: true } : call),
+  ]) assert.equal(validateRoute(task, events(changed, "direct"), "direct").passed, false);
+  const overlapping = events(calls, "direct");
+  const discoveryEnd = overlapping.splice(7, 1)[0];
+  assert.ok(discoveryEnd);
+  overlapping.splice(9, 0, discoveryEnd);
+  assert.equal(validateRoute(task, overlapping, "direct").passed, false);
   assert.equal(
     validateRoute(
       task,

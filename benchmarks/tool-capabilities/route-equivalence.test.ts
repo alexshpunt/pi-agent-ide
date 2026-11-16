@@ -283,7 +283,15 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
       args: { path: "shell:input-check", text: "Enter" },
       text: `<uuid>${insertId}</uuid>`,
     },
-    { tool: "read", args: { path: sources }, text: `<uuid>${uuid}</uuid>\nhello` },
+    {
+      tool: "read",
+      args: { path: sources },
+      text: `<uuid>${uuid}</uuid>\nhello`,
+      value: sources.map((_, index) => ({
+        id: `RESULT#44444444-aaaa-4aaa-8aaa-44444444444${index}`,
+        text: "hello",
+      })),
+    },
     {
       tool: "replace",
       args: { path: result, start: "hello", text: "BAD" },
@@ -298,7 +306,7 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
   assert.ok(
     check(route, [
       ...calls.slice(0, 3),
-      ...sources.map((source) => ({ ...calls[3], args: { path: source } })),
+      ...sources.map((source) => ({ ...calls[3], args: { path: source }, value: undefined })),
       ...calls.slice(4),
     ]),
   );
@@ -991,7 +999,18 @@ void test("debug source Read accepts a path list only with the source and anchor
     assert.ok(
       check(route, [
         ...calls.slice(0, 2),
-        { ...read, args: { path, views: ["anchors"] } },
+        {
+          ...read,
+          args: { path, views: ["anchors"] },
+          text: Array.isArray(path)
+            ? path
+                .map(
+                  (source) =>
+                    `--- ${source} ---\n${source.endsWith("/source") ? "ABCDEFG|print(value)" : "debug:abcd"}`,
+                )
+                .join("\n\n")
+            : read.text,
+        },
         ...calls.slice(3),
       ]),
     );

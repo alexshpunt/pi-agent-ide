@@ -944,6 +944,7 @@ export function validateRoute(
     prior: RunEvent,
     before: number,
     readItem = false,
+    receipt = "",
   ): boolean {
     const value = fieldValue(args, field);
     const alternatives = [value];
@@ -985,10 +986,17 @@ export function validateRoute(
           return false;
         return wholeSearchSelection(candidate, prior);
       }
-      if (readItem) return (
-        (reference.kind === "anchor" && issuedAnchor(candidate, resultText(prior)) !== undefined) ||
-        reuses(candidate, "", reference.kind, valueIds(prior.result?.structuredContent))
-      );
+      if (readItem)
+        return (
+          (reference.kind === "anchor" &&
+            issuedAnchor(candidate, resultText(prior)) !== undefined) ||
+          reuses(
+            candidate,
+            reference.kind === undefined || reference.kind === "result" ? receipt : "",
+            reference.kind,
+            valueIds(prior.result?.structuredContent),
+          )
+        );
       return reuses(
         candidate,
         resultText(prior),
@@ -1010,6 +1018,7 @@ export function validateRoute(
           parent?: string;
           call?: string;
           readIndex?: number;
+          receipt?: string;
           editorBatch?: { applied: boolean; calls: { id: string }[] };
         }
       | undefined
@@ -1058,8 +1067,12 @@ export function validateRoute(
               args: startsById.get(event.toolCallId)?.event.args ?? {},
               end: completed.event,
             })[start.readIndex];
-      if (start.readIndex !== undefined && !item) continue;
-      const end = completed && { ...completed, event: item?.end ?? completed.event };
+      const end = completed && {
+        ...completed,
+        event:
+          item?.end ??
+          (start.readIndex === undefined ? completed.event : { ...completed.event, result: {} }),
+      };
       if (
         selected.some(
           (prior) =>
@@ -1241,8 +1254,15 @@ export function validateRoute(
             prior.end >= start.index ||
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
-                argumentReuses(field, event.args, reference, prior.event, start.index, prior.readIndex !== undefined) ||
-                passesValue(fieldValue(event.args, field), prior.event),
+                argumentReuses(
+                  field,
+                  event.args,
+                  reference,
+                  prior.event,
+                  start.index,
+                  prior.readIndex !== undefined,
+                  prior.receipt,
+                ) || passesValue(fieldValue(event.args, field), prior.event),
             )
           );
         })
@@ -1274,6 +1294,12 @@ export function validateRoute(
             start: start.index,
             end: end.index,
             readIndex: start.readIndex,
+            receipt:
+              start.readIndex === undefined
+                ? undefined
+                : /^((?:<system-result\b[^>]*>)?<uuid>[a-f0-9-]+<\/uuid>(?:<\/system-result>)?)/iu.exec(
+                    resultText(completed.event),
+                  )?.[1],
             parent: execution.parent,
             call: execution.call,
             editorBatch,
