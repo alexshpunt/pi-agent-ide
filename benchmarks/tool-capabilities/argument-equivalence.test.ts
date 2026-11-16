@@ -23,7 +23,10 @@ for (const id of ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated", "i
       assert.deepEqual(await validateFiles(root, initial, expected), []);
       for (const [name, value] of Object.entries(expected)) {
         assert.ok(typeof value === "string");
-        for (const damaged of [`\n${value}`, `${value}\n`, value.slice(1)]) {
+        const damagedValues = [`\n${value}`, `${value}\n`, value.slice(1)];
+        if (id === "insert-before" && name === "block.txt")
+          damagedValues.push("left [α\r\nβ[ right\r\n");
+        for (const damaged of damagedValues) {
           await writeFile(path.join(root, name), damaged);
           assert.ok((await validateFiles(root, initial, expected)).length > 0);
         }
@@ -617,7 +620,6 @@ for (const mode of ["direct", "codemode"]) {
       [3, { before: false }],
       [4, { before: true }],
       [3, { path: "literal.txt" }],
-      [4, { text: "[" }],
       [6, { anchor: "SEARCH#FFFF:1:match" }],
       [8, { anchor: "SEARCH#ABCD:1:match" }],
       [6, { anchor: "MATCH" }],

@@ -1,5 +1,9 @@
 import { strict as assert } from "node:assert";
 import test from "node:test";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { validateFiles } from "./sandbox.ts";
 import { capabilityCases } from "./cases.ts";
 import { checkCoverage, validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
 
@@ -190,7 +194,14 @@ void test("native value batch accepts the complete gamma line and retains its ba
     { tool: "delete", args: { path: "task.txt", start: "gamma\n" } },
   ];
   function batch(input: Call[], size = 3): boolean {
-    const entries = events(input, "codemode");
+    const serial = events(input, "codemode");
+    const edits = serial.slice(3, -1);
+    const entries = [
+      ...serial.slice(0, 3),
+      ...edits.filter((entry) => entry.type === "tool_execution_start"),
+      ...edits.filter((entry) => entry.type === "tool_execution_end"),
+      ...serial.slice(-1),
+    ];
     const parentEnd = entries.at(-1);
     assert.ok(parentEnd);
     parentEnd.result = {
@@ -351,7 +362,7 @@ void test("a multi-source Read cannot replace repeated calls or an ordered Read 
     assert.ok(!check(route, [{ ...calls[0], args }]));
 });
 
-void test("native Search insertion requires a leading separator at its match boundary", () => {
+void test("native Search insertion checks reuse and its final match-boundary bytes", async () => {
   const calls: [Call, Call] = [
     {
       tool: "search",
@@ -362,10 +373,13 @@ void test("native Search insertion requires a leading separator at its match bou
   ];
   const route = steps("search-anchor-insert");
   assert.ok(check(route, calls, "codemode"));
-  for (const text of ["NEW", "\n\nNEW", "\nOTHER"])
+  assert.ok(await outputPasses("search-anchor-insert", "keep\nOLD\nNEW\nlast\n"));
+  for (const text of ["NEW", "\n\nNEW", "\nOTHER"]) {
     assert.ok(
-      !check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, text } }], "codemode"),
+      check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, text } }], "codemode"),
     );
+    assert.equal(await outputPasses("search-anchor-insert", `keep\nOLD${text}\nlast\n`), false);
+  }
   assert.ok(
     !check(
       route,
@@ -379,6 +393,21 @@ void test("native Search insertion requires a leading separator at its match bou
   ];
   assert.ok(check(route, direct));
 });
+async function outputPasses(id: string, text: string): Promise<boolean> {
+  const task = capabilityCases.find((entry) => entry.id === id);
+  assert.ok(task);
+  assert.deepEqual(Object.keys(task.expected ?? {}), ["task.txt"]);
+  const root = await mkdtemp(path.join(os.tmpdir(), "capability-insert-outcome-"));
+  try {
+    await writeFile(path.join(root, "task.txt"), text);
+    const initial = Object.fromEntries(
+      Object.entries(task.files ?? {}).map(([name, value]) => [name, Buffer.from(value)]),
+    );
+    return (await validateFiles(root, initial, task.expected)).length === 0;
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
 interface Call {
   tool: string;
   args: Record<string, unknown>;
@@ -900,7 +929,7 @@ for (const mode of ["direct", "codemode"]) {
 }
 
 for (const mode of ["direct", "codemode"]) {
-  void test(`read-window-insert accepts one terminal newline and requires its Read result in ${mode}`, () => {
+  void test(`read-window-insert checks its Read result and final bytes in ${mode}`, async () => {
     const route = steps("read-window-insert");
     const read: Call = {
       tool: "read",
@@ -950,10 +979,13 @@ for (const mode of ["direct", "codemode"]) {
         assert.ok(!check(route, [read, { ...insert, args: { ...insert.args, path } }], mode));
       }
     }
+    assert.ok(await outputPasses("read-window-insert", "keep\nBEFORE\nOLD\nlast\n"));
     for (const text of ["BEFORE\n\n", "BEFORE ", "OTHER"]) {
       assert.ok(
-        !check(route, [read, { tool: "insert", args: { path: source, before: true, text } }], mode),
+        check(route, [read, { tool: "insert", args: { path: source, before: true, text } }], mode),
       );
+      const inserted = text.endsWith("\n") ? text : `${text}\n`;
+      assert.equal(await outputPasses("read-window-insert", `keep\n${inserted}OLD\nlast\n`), false);
     }
     assert.ok(
       !check(
@@ -1068,7 +1100,7 @@ void test("debug source accepts the earlier Read value, not an unrelated or fail
   assert.ok(!check(route, [{ ...read, error: true }, edit], "codemode"));
 });
 
-void test("shifted repeated-line route accepts the issued alpha anchor and line separation", () => {
+void test("shifted repeated-line route checks issued anchors and final line separation", async () => {
   const calls = [
     {
       tool: "read",
@@ -1081,11 +1113,17 @@ void test("shifted repeated-line route accepts the issued alpha anchor and line 
   const route = steps("repeated-line-anchor-after-shift");
   assert.ok(check(route, calls));
   assert.ok(
-    !check(route, [
+    check(route, [
       calls[0],
       { ...calls[1], args: { ...calls[1].args, text: "top\n\n" } },
       calls[2],
     ]),
+  );
+  const expected = "top\nalpha\nfn one() {\n  work();\n}\nfn two() {\n  more();\n";
+  assert.ok(await outputPasses("repeated-line-anchor-after-shift", expected));
+  assert.equal(
+    await outputPasses("repeated-line-anchor-after-shift", expected.replace("top\n", "top\n\n")),
+    false,
   );
   for (const anchor of ["HJKMNPQ", "7654321"]) {
     assert.ok(
