@@ -1,5 +1,6 @@
 import {
   connectResultTargets,
+  normalizeStructuredArguments,
   resultValueId,
   resultValueReference,
   type ResultTargetStore,
@@ -124,10 +125,15 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
       if (registration === undefined) {
         return;
       }
-      // Batched calls bypass prepareArguments, so apply the same empty-anchor rule here.
+      // Batched snapshots bypass the tool argument-preparation boundary.
       const call = {
         ...rawCall,
-        arguments: { ...withoutEmptyOptionalAnchors(registration.anchors, rawCall.arguments) },
+        arguments: {
+          ...withoutEmptyOptionalAnchors(
+            registration.anchors,
+            normalizeStructuredArguments(rawCall.arguments, registration.parameters),
+          ),
+        },
       };
 
       // Streaming batches also bypass the standalone object-anchor normalization.

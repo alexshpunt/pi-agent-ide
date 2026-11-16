@@ -3795,5 +3795,29 @@ add(
   },
 );
 
+add(
+  "json-structured-arguments",
+  ["compose.json-text-structured-arguments"],
+  'Pass structured arguments as JSON text strings, not native arrays or objects. Read a.txt and b.txt together using path equal to the string ["a.txt","b.txt"]. Search those same two files for MARKER with that JSON-text path list. Then use diff with before and after equal to JSON-text objects {"path":"a.txt"} and {"path":"b.txt"}; report the added marker. Finally diff again with JSON-text objects {"path":"a.txt","limit":0} and {"path":"b.txt","limit":0}; this must show no file lines. Do not edit files.',
+  [
+    { tool: "read", args: { path: ["a.txt", "b.txt"] }, contains: "OLD-MARKER" },
+    {
+      tool: "search",
+      args: { path: ["a.txt", "b.txt"], query: "MARKER" },
+      contains: "b.txt",
+    },
+    {
+      tool: "diff",
+      args: { before: { path: "a.txt" }, after: { path: "b.txt" } },
+      contains: "NEW-MARKER",
+    },
+    {
+      tool: "diff",
+      args: { before: { path: "a.txt", limit: 0 }, after: { path: "b.txt", limit: 0 } },
+      excludes: "MARKER",
+    },
+  ],
+  { files: { "a.txt": "OLD-MARKER\n", "b.txt": "NEW-MARKER\n" }, answer: "NEW-MARKER" },
+);
 /** The same small tasks are used for every configured model. */
 export const capabilityCases: CapabilityCase[] = cases;

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { validateToolArguments, type Tool, type ToolCall } from "@earendil-works/pi-ai";
+import { normalizeStructuredArguments } from "pi-agent-resource/json-structured-arguments";
 
 // The free inventory gate checks these structural schemas against the running IDE.
 // Use Pi's parser, rather than approximating its coercion with Number()/parseInt().
@@ -20,7 +21,7 @@ export function executionArguments(
       type: "toolCall",
       id: "validation",
       name,
-      arguments: args as ToolCall["arguments"],
+      arguments: normalizeStructuredArguments(args, tool.parameters) as ToolCall["arguments"],
     }) as Record<string, unknown>;
   } catch {
     // Intentional invalid-call routes must still see their original arguments.

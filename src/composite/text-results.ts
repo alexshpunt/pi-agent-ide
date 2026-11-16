@@ -16,6 +16,7 @@ import {
   resultValueId,
   resultValueReference,
   TempResourceStore,
+  normalizeStructuredArguments,
 } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
@@ -337,6 +338,19 @@ export function createIdeTextResults(
     names.add(definition.name);
     const publicDefinition = {} as typeof definition;
     const descriptors = Object.getOwnPropertyDescriptors(definition);
+    // Pi validates before tool_call hooks. Prepare both direct and nested calls before that
+    // boundary, retaining each tool's own compatibility rules and its live schema getter.
+    const prepareArguments = (args: unknown): unknown => {
+      const normalized = normalizeStructuredArguments(args, definition.parameters);
+      return definition.prepareArguments ? definition.prepareArguments(normalized) : normalized;
+    };
+    descriptors.prepareArguments = {
+      // Preparation is intentionally permissive; Pi validates the returned object next.
+      value: prepareArguments as NonNullable<typeof definition.prepareArguments>,
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    };
     // Scripts get the tool's declared value, or null when the call failed. Private records stay hidden.
     descriptors.outputSchema = {
       value: nullableValueSchema(scriptValueOf(definition.name)),

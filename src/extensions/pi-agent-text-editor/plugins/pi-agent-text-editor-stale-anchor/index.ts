@@ -1,5 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
-import { connectResultTargets } from "pi-agent-resource";
+import { connectResultTargets, normalizeStructuredArguments } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -92,7 +92,10 @@ function createHandler(
         return;
       }
 
-      const arguments_ = context.partialArgs ?? context.args;
+      const arguments_ = normalizeStructuredArguments(
+        context.partialArgs ?? context.args,
+        schema.parameters,
+      );
       // Issued selections belong to the result-input pipeline, not filename anchor inspection.
       // This also leaves unsupported selector combinations and expired IDs to their owner.
       try {
