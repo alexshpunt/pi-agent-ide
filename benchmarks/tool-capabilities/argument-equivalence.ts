@@ -9,16 +9,19 @@ const contracts = JSON.parse(
 ) as { tools: Tool[] };
 const tools = new Map(contracts.tools.map((tool) => [tool.name, { ...tool, description: "" }]));
 
+/** Standalone registrations share semantics and schemas, but keep distinct execution names. */
+export function toolSemantics(name: string): string {
+  return (
+    /^(?:demo|other)_(read|search|write|replace|insert|delete|copy|move)$/u.exec(name)?.[1] ?? name
+  );
+}
+
 /** Compare executed arguments as Pi delivered them; leave retained evidence unchanged. */
 export function executionArguments(
   name: string,
   args: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
-  // The standalone fixture registers these namespaces with the same shared tool schemas.
-  // This selects a parser only; route matching still checks the original execution name.
-  const standaloneTool =
-    /^(?:demo|other)_(read|search|write|replace|insert|delete|copy|move)$/u.exec(name)?.[1];
-  const tool = tools.get(standaloneTool ?? name);
+  const tool = tools.get(toolSemantics(name));
   if (!tool || !args) return args;
   try {
     return validateToolArguments(tool, {
