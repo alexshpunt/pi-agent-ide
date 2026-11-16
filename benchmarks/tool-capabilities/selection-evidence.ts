@@ -162,23 +162,24 @@ export function readSourceIssuers(issuer: SelectionIssuer): SelectionIssuer[] {
     if (items.length !== paths.length) return [];
     const references = items.flatMap((item) => ids(item).map((id) => id.replace(/^RESULT#/u, "")));
     if (new Set(references).size !== references.length) return [];
-    if (
-      items.some(
-        (item) => typeof record(item).id !== "string" || typeof record(item).text !== "string",
-      )
-    )
-      return [];
-    return items.map((item: unknown, index: number) => ({
-      ...issuer,
-      args: { ...issuer.args, path: paths[index] },
-      end: {
-        ...issuer.end,
-        result: {
-          content: [{ type: "text", text: record(item).text as string }],
-          structuredContent: item,
+    return items.map((item: unknown, index: number) => {
+      const value = record(item);
+      const valid = typeof value.id === "string" && typeof value.text === "string";
+      return {
+        ...issuer,
+        args: { ...issuer.args, path: paths[index] },
+        end: {
+          ...issuer.end,
+          // Empty siblings keep their slot without issuing selection authority.
+          result: valid
+            ? {
+                content: [{ type: "text", text: value.text as string }],
+                structuredContent: item,
+              }
+            : {},
         },
-      },
-    }));
+      };
+    });
   }
   if (paths.length === 1) return [{ ...issuer, args: { ...issuer.args, path: paths[0] } }];
   if (!paths.length || paths.some((source) => typeof source !== "string")) return [];
