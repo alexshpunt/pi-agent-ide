@@ -103,7 +103,7 @@ export function tokenSelectionWarning(
   if (fallback?.mode !== "words" && (condition === undefined || condition.kind === "term"))
     return undefined;
   const query = recipe.originalQuery;
-  return `Bulk edit is unsafe (${JSON.stringify(query)}, ${String(count)}${complete ? "" : "+"}). Select a match.`;
+  return `Search query ${JSON.stringify(query)} matched ${String(count)}${complete ? "" : "+"} separate tokens, not the phrase. Editing the whole result is unsafe; use an individual match as path, or use the result as path with that match as start (and the same match as end if needed), or search for ${JSON.stringify(query)} as a quoted literal.`;
 }
 /** Tell the agent how a broadened search may be used, because its matches can differ from the query. */
 export function fallbackNotice(mode: SearchFallback["mode"]): string {
