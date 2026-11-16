@@ -73,6 +73,23 @@ export function wholeSearchSelection(value: unknown, end: RunEvent): boolean {
     singleSearchMatch(value, end)
   );
 }
+/** Canonical numbered match issued by this Search, including native match-value aliases. */
+export function searchMatchReference(value: unknown, end: RunEvent): string | undefined {
+  const shown = [...resultText(end).matchAll(/SEARCH#[A-F0-9]+:\d+:match\b/gu)].map(
+    (match) => match[0],
+  );
+  const data = searchValue(end);
+  const matches = Array.isArray(data.matches) ? data.matches : [];
+  for (const [index, entry] of matches.entries()) {
+    const match = record(entry);
+    const reference =
+      record(match.references).match ??
+      shown.find((ref) => ref.split(":")[1] === String(index + 1));
+    if (typeof reference !== "string") continue;
+    if (names(value, match.id ?? match.target) || names(value, reference)) return reference;
+  }
+  return ids(value).find((id) => shown.includes(id));
+}
 /** Only a complete, single-match Search makes its individual match the whole result. */
 export function singleSearchMatch(value: unknown, end: RunEvent): boolean {
   const data = searchValue(end);
