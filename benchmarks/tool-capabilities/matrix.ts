@@ -15,6 +15,7 @@ const groups: [string[], string[]][] = [
     ["standalone-resource-host"],
   ],
   [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
+  [["edit.missing-selector-recovery"], ["missing-edit-selector-recovery"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["compose.json-text-structured-arguments"], ["json-structured-arguments"]],
   [
