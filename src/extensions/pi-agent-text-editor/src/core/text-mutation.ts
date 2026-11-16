@@ -1198,9 +1198,7 @@ export function createMutationContext(
       const implicitTargets = sources.implicitTargets.get(field);
 
       if (descriptor === undefined) {
-        throw new Error(
-          `Mutation tool ${definition.name} tried to resolve undeclared anchor ${field}`,
-        );
+        throw new Error(`The ${definition.name} tool does not support selector "${field}".`);
       }
 
       const scope = sources.scopes.get(descriptor.sourceField);
@@ -1256,8 +1254,19 @@ export function createMutationContext(
       }
 
       if (explicitAnchors === undefined) {
+        const example: Record<string, string> = {};
+        for (const selector of definition.anchors ?? []) {
+          if (selector.optional && selector.field !== field) continue;
+          example[selector.sourceField] = sourceFor(selector.sourceField);
+          example[selector.field] = "exact existing text";
+        }
+        if (definition.name === "insert" || definition.name === "replace")
+          example.text = "new text";
         throw new Error(
-          `Mutation tool ${definition.name} tried to resolve undeclared anchor ${field}`,
+          `Missing "${field}" for ${definition.name} with a file path in "${descriptor.sourceField}". ` +
+            `Read the file and supply "${field}" as exact existing text or an issued selection reference. ` +
+            `Example shape: ${definition.name}(${JSON.stringify(example)}). ` +
+            `Replace the example text with text from your file, or pass a Read/Search selection as "${descriptor.sourceField}" instead of a file path.`,
         );
       }
       return explicitAnchors;
