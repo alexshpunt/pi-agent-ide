@@ -3596,6 +3596,8 @@ add(
         path: { id: /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u },
         text: "",
       },
+      contains: "INVALID_REQUEST",
+      excludes: "PLUGIN_FAILED",
       reuse: reuse(0, "path", "capture:name"),
       after: [0],
       error: true,

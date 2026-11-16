@@ -343,6 +343,7 @@ const groups: [string[], string[]][] = [
       "lsp.rename",
       "lsp.rename-cross-file",
       "lsp.rename-keeps-unrelated-names",
+      // Refusals must be actionable INVALID_REQUEST results, not plugin crashes.
       "lsp.rename-refusal-recovery",
       "compose.symbol-read-rename",
     ],
