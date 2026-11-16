@@ -72,7 +72,7 @@ for (const mode of ["direct", "codemode"]) {
           args: {
             path: "task.txt",
             query: "value",
-            limit: 50,
+            limit: mode === "codemode" ? Number.MAX_SAFE_INTEGER : 50,
             caseSensitive: false,
             wholeWord: false,
             multiline: false,
@@ -135,7 +135,7 @@ for (const mode of ["direct", "codemode"]) {
                   issuer,
                   ...edits.slice(0, 3),
                   {
-                    ...edits[3]!,
+                    tool: "delete",
                     args: { path: "line.txt", start },
                   },
                 ],

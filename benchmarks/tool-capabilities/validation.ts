@@ -1,5 +1,6 @@
 import path from "node:path";
-import { executionArguments } from "./argument-equivalence.ts";
+import { executionArguments, toolSemantics } from "./argument-equivalence.ts";
+import { searchCallPolicy } from "#src/extensions/pi-agent-search/src/api/search-call-policy.ts";
 import {
   exactSelection,
   issuedAnchor,
@@ -166,9 +167,8 @@ export interface RouteStep {
   /** Require image blocks in the completed result; a number sets the minimum frame count. */
   image?: boolean | number;
   /**
-   * Require the native tool_search calls up to this one to have loaded these tools together. One
-   * search may load several tools, so a tool may come from a search for another one. tool_search is
-   * model-only, so only direct routes require this step.
+   * Require successful native discovery of these tools, each before its first execution. Searches
+   * may load tools incrementally or together. Only direct routes require model-only discovery.
    */
   discovers?: readonly string[];
   /** Routes that need this step, such as one only a direct call can take; others skip it. */
@@ -465,22 +465,37 @@ export function validateRoute(
     }
     return { call: current.event.toolCallId };
   }
-  /** Tools that successful native tool_search calls started up to `index` reported as loaded. */
+  /** Tools reported as loaded by successful native searches completed before `index`. */
   function discovered(index: number): Set<string> {
     return new Set(
-      starts.flatMap(({ event, index: startIndex }) => {
-        const end = ends.get(event.toolCallId ?? "")?.event;
-        const loaded = (end?.result?.details as { loaded?: unknown } | undefined)?.loaded;
-        return startIndex <= index &&
+      starts.flatMap(({ event }) => {
+        const end = ends.get(event.toolCallId ?? "");
+        const loaded = (end?.event.result?.details as { loaded?: unknown } | undefined)?.loaded;
+        return end &&
+          end.index < index &&
           event.toolName === "tool_search" &&
           !event.parentToolCallId &&
-          end?.isError === false &&
+          end.event.isError === false &&
           Array.isArray(loaded)
           ? loaded.filter((name): name is string => typeof name === "string")
           : [];
       }),
     );
   }
+  const requiredDiscovery =
+    mode === "direct"
+      ? task.steps.flatMap((step) =>
+          routeStepApplies(step, mode) ? [...(step.discovers ?? [])] : [],
+        )
+      : [];
+  if (
+    requiredDiscovery.some(
+      (tool) =>
+        !discovered(events.length).has(tool) ||
+        starts.some((start) => start.event.toolName === tool && !discovered(start.index).has(tool)),
+    )
+  )
+    reasons.push("Required tools were not discovered before use");
   /**
    * The paths an earlier completed call read or searched to issue the result that a source value
    * reuses: passing that result names the same file as passing its path.
@@ -490,13 +505,11 @@ export function validateRoute(
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
       const tool = aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "";
-      if (["read", "demo_read"].includes(tool) && Array.isArray(prior.event.args?.path)) {
+      if (toolSemantics(tool) === "read" && Array.isArray(prior.event.args?.path)) {
         const sources = readSourceIssuers({ tool, args: prior.event.args, end: end.event });
         const paths = sources.flatMap((issuer) => {
           // Text can quote a foreign RESULT id. Only this item's own id or line anchors count.
-          const output = Array.isArray(end.event.result?.structuredContent)
-            ? ""
-            : resultText(issuer.end);
+          const output = "";
           if (
             !reuses(value, output, "result", valueIds(issuer.end.result?.structuredContent)) &&
             !issuedAnchor(value, resultText(issuer.end))
@@ -720,16 +733,33 @@ export function validateRoute(
     sourceListItem = false,
   ): boolean {
     if (!actual) return false;
-    // Text starts at line one; raw sources start at byte zero.
+    tool = toolSemantics(tool);
+    // Defaults describe execution semantics; they never rewrite retained call evidence.
     const normalized = { ...actual };
     if (tool === "debug" && typeof expected.program === "string") {
       // A relative program is launched from this call's cwd, not necessarily the fixture root.
       expected = { ...expected, program: debugProgram(expected) };
       normalized.program = debugProgram(normalized);
     }
-    if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
+    if (tool === "read" && normalized.offset === undefined)
       normalized.offset = typeof actual.path === "string" && actual.path.startsWith("raw:") ? 0 : 1;
-    if (tool === "insert" && normalized.before === undefined) normalized.before = false;
+    if (tool === "insert") {
+      if (normalized.before === undefined) normalized.before = false;
+      if (normalized.separation === undefined) normalized.separation = "line";
+    }
+    if (tool === "search") {
+      for (const flag of ["caseSensitive", "wholeWord", "multiline"])
+        if (normalized[flag] === undefined) normalized[flag] = false;
+      // A result reference or extension URI does not reveal its resolver or limit policy.
+      const source = normalized.path;
+      if (normalized.limit === undefined && typeof source === "string") {
+        if (/^(?:docs:|https?:)/u.test(source)) normalized.limit = 50;
+        else if (source.startsWith("shell:")) normalized.limit = 100;
+        else if (!/^[a-z][a-z0-9+.-]*:|^(?:RESULT|SEARCH)#/iu.test(source))
+          normalized.limit =
+            searchCallPolicy(undefined, mode === "codemode", "matches").limit ?? 50;
+      }
+    }
     // Search roots form an unordered collection. Transfer source/target arrays remain paired.
     if (
       ["search", "file_search", "ast_search", "lsp_search"].includes(tool) &&
@@ -913,6 +943,7 @@ export function validateRoute(
     reference: ResultReuse,
     prior: RunEvent,
     before: number,
+    readItem = false,
   ): boolean {
     const value = fieldValue(args, field);
     const alternatives = [value];
@@ -954,6 +985,10 @@ export function validateRoute(
           return false;
         return wholeSearchSelection(candidate, prior);
       }
+      if (readItem) return (
+        (reference.kind === "anchor" && issuedAnchor(candidate, resultText(prior)) !== undefined) ||
+        reuses(candidate, "", reference.kind, valueIds(prior.result?.structuredContent))
+      );
       return reuses(
         candidate,
         resultText(prior),
@@ -992,11 +1027,7 @@ export function validateRoute(
       ...task.steps
         .slice(0, stepIndex)
         .flatMap((prior, index) =>
-          mode === "direct" &&
-          prior.tool === "tool_search" &&
-          (!prior.discovers || prior.discovers.includes(step.tool))
-            ? [index]
-            : [],
+          mode === "direct" && prior.tool === "tool_search" && !prior.discovers ? [index] : [],
         ),
     ];
     // Read executes each array source independently. Match each required source against one
@@ -1004,8 +1035,8 @@ export function validateRoute(
     const candidates: ((typeof starts)[number] & { readIndex?: number })[] = starts.flatMap(
       (start) => {
         const args = start.event.args;
-        return step.tool === "read" &&
-          start.event.toolName === "read" &&
+        return toolSemantics(step.tool) === "read" &&
+          start.event.toolName === step.tool &&
           Array.isArray(args?.path) &&
           !Array.isArray(step.args?.path)
           ? args.path.map((path: unknown, readIndex) => ({
@@ -1018,7 +1049,17 @@ export function validateRoute(
     );
     for (const start of candidates) {
       const event = start.event;
-      const end = ends.get(event.toolCallId ?? "");
+      const completed = ends.get(event.toolCallId ?? "");
+      const item =
+        start.readIndex === undefined || !completed
+          ? undefined
+          : readSourceIssuers({
+              tool: step.tool,
+              args: startsById.get(event.toolCallId)?.event.args ?? {},
+              end: completed.event,
+            })[start.readIndex];
+      if (start.readIndex !== undefined && !item) continue;
+      const end = completed && { ...completed, event: item?.end ?? completed.event };
       if (
         selected.some(
           (prior) =>
@@ -1038,8 +1079,8 @@ export function validateRoute(
       const execution = executionParent(start);
       if (!execution) continue;
       if (step.discovers) {
-        if (execution.parent || !step.discovers.every((name) => discovered(start.index).has(name)))
-          continue;
+        const loaded = (end.event.result?.details as { loaded?: string[] } | undefined)?.loaded;
+        if (execution.parent || !step.discovers.some((name) => loaded?.includes(name))) continue;
       } else if (mode === "codemode" && !codemodeParents.has(execution.parent)) continue;
       // An accepted native text call fails when its parent commits the batch.
       if (
@@ -1200,7 +1241,7 @@ export function validateRoute(
             prior.end >= start.index ||
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
-                argumentReuses(field, event.args, reference, prior.event, start.index) ||
+                argumentReuses(field, event.args, reference, prior.event, start.index, prior.readIndex !== undefined) ||
                 passesValue(fieldValue(event.args, field), prior.event),
             )
           );
