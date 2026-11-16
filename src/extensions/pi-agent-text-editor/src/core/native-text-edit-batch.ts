@@ -398,14 +398,16 @@ class NativeTextEditBatchCoordinator {
                   anchor.sourceField === descriptor.field &&
                   isMutationAnchorValue(anchor, input[anchor.field]),
               )
-            )
-            {
+            ) {
               const scope = resolveResultScope(this.resultTargets, value, context.cwd);
               if (!scope.complete) {
                 ownsSource = true;
                 continue;
               }
-              scopedSources[descriptor.field] = this.resultTargets.register(scope.targets, context.cwd);
+              scopedSources[descriptor.field] = this.resultTargets.register(
+                scope.targets,
+                context.cwd,
+              );
             } else if (isMutationAnchorValue(firstAnchor, input[firstAnchor.field]))
               implicitAnchors[firstAnchor.field] = value;
             else candidate[firstAnchor.field] = value;
