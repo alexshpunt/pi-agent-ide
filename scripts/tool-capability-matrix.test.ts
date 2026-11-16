@@ -219,18 +219,6 @@ describe("capability route evidence", () => {
   });
   test.each([
     {
-      id: "exact-range-move",
-      index: 5,
-      field: "start",
-      selector: "段🙂\n尾界",
-      args: {
-        path: "eof.txt",
-        target: "inline.txt",
-        targetStart: "SLOT",
-        targetEnd: "SLOT",
-      },
-    },
-    {
       id: "exact-eof-crlf",
       index: 1,
       field: "start",
@@ -258,14 +246,14 @@ describe("capability route evidence", () => {
       selector: "α\nβ",
       args: { path: "block.txt", text: "]" },
     },
-  ])("$id step $index accepts exact LF and CRLF selectors without widening", (fixture) => {
+  ])("$id step $index checks exact selection independently of spelling", (fixture) => {
     const step = capabilityCases.find((candidate) => candidate.id === fixture.id)?.steps[
       fixture.index
     ];
     if (!step) throw new Error("Missing multiline selector capability step");
     const route = {
       // Isolate selector matching from the full route’s cross-call constraints.
-      steps: [{ tool: step.tool, args: step.args, argsAny: step.argsAny }],
+      steps: [{ tool: step.tool, args: step.args, exactText: step.exactText }],
       files: capabilityCases.find((candidate) => candidate.id === fixture.id)?.files,
     };
     const check = (selector: string) =>
@@ -284,8 +272,10 @@ describe("capability route evidence", () => {
       ).passed;
     expect(check(fixture.selector)).toBe(true);
     expect(check(fixture.selector.replace("\n", "\r\n"))).toBe(true);
-    expect(check(`${fixture.selector}\n`)).toBe(fixture.id.startsWith("exact-eof-"));
-    expect(check(fixture.selector.replace("\n", "\r\r\n"))).toBe(false);
+    // Only the outcome validator decides whether literal boundaries changed the right bytes.
+    expect(check(`${fixture.selector}\n`)).toBe(true);
+    expect(check("SEARCH#ABCD:1:line")).toBe(false);
+    expect(check("regex:.*")).toBe(false);
   });
   test("direct batch evidence requires both call ids in one completed assistant message", () => {
     const route = { steps: [{ tool: "read" }, { tool: "search", sameAssistantWith: 0 }] };
@@ -584,14 +574,13 @@ describe("capability route evidence", () => {
       ).passed,
     ).toBe(true);
   });
-  test("accepts only reviewed argument alternatives without weakening result reuse", () => {
+  test("checks subject filters without weakening required result reuse", () => {
     const route = {
       steps: [
         { tool: "read" },
         {
           tool: "search",
           args: { query: "marker" },
-          argsAny: [{ path: result }, { include: "task.txt" }],
           reuse: { from: 0, field: "path" },
         },
       ],
@@ -603,7 +592,7 @@ describe("capability route evidence", () => {
         : event,
     );
     const scoped = {
-      steps: [{ tool: "search", argsAny: [{ path: "task.txt" }, { include: "task.txt" }] }],
+      steps: [{ tool: "search", args: { include: "task.txt" } }],
     };
     expect(validateRoute(scoped, wrongScope, "direct").passed).toBe(false);
     const included = events.map((event) =>
@@ -694,7 +683,7 @@ describe("capability route evidence", () => {
       ).passed,
     ).toBe(false);
   });
-  test("accepts a Move rollback by line anchor and rejects a constant selector", () => {
+  test("accepts selection spelling independently but still requires rollback and later inspection", () => {
     const rollback = capabilityCases.find((item) => item.id === "move-rollback-restored");
     if (!rollback) throw Error("Missing Move rollback capability case");
     const source = ".tmp/move-rollback/restored-source.txt";
@@ -736,8 +725,23 @@ describe("capability route evidence", () => {
     ];
     expect(validateRoute(rollback, route("1A4YVAE"), "codemode").passed).toBe(true);
     expect(validateRoute(rollback, route("1A4YVAE|move-me"), "codemode").passed).toBe(true);
-    // `begin` selects the first line, not move-me.
-    expect(validateRoute(rollback, route("begin"), "codemode").passed).toBe(false);
+    expect(validateRoute(rollback, route("begin"), "codemode").passed).toBe(true);
+    expect(
+      validateRoute(
+        rollback,
+        route("begin").filter(
+          (event) => event.toolCallId !== "m" || event.type !== "tool_execution_end",
+        ),
+        "codemode",
+      ).passed,
+    ).toBe(false);
+    expect(
+      validateRoute(
+        rollback,
+        route("move-me").filter((event) => event.toolCallId !== "r1"),
+        "codemode",
+      ).passed,
+    ).toBe(false);
   });
   test("distinguishes direct calls from real nested Codemode calls", () => {
     expect(validateRoute(task, events, "codemode").passed).toBe(false);

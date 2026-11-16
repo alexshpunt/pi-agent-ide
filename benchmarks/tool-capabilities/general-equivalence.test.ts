@@ -79,15 +79,6 @@ function passes(steps: RouteStep[], calls: Call[], mode: string) {
   return validateRoute({ files, steps }, events(calls, mode), mode).passed;
 }
 for (const mode of ["direct", "codemode"]) {
-  void test(`argument variants cannot override a base constraint in ${mode}`, () => {
-    assert.ok(
-      !passes(
-        [{ tool: "read", args: { path: "task.txt" }, argsAny: [{ path: "wrong.txt" }] }],
-        [{ tool: "read", args: { path: "wrong.txt" } }],
-        mode,
-      ),
-    );
-  });
   for (const tool of ["replace", "insert", "delete", "copy", "move"]) {
     void test(`${tool} accepts displayed anchors and inferred sources in ${mode}`, () => {
       const field = tool === "insert" ? "anchor" : "start";
@@ -148,11 +139,6 @@ for (const mode of ["direct", "codemode"]) {
         { ...edit.args, [field]: "SEARCH#FFFF:1:match" },
       ])
         assert.ok(!passes(steps, [found, { ...edit, args }], mode));
-      const variantSteps: RouteStep[] = [
-        { tool: "search" },
-        { tool, args: { path: "task.txt", ...extra }, argsAny: [{ [field]: "段🙂\r\n尾界" }] },
-      ];
-      assert.ok(passes(variantSteps, [found, edit], mode));
       const wrongSpan = {
         ...found,
         value: {

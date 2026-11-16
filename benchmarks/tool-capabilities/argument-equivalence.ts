@@ -14,7 +14,11 @@ export function executionArguments(
   name: string,
   args: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
-  const tool = tools.get(name);
+  // The standalone fixture registers these namespaces with the same shared tool schemas.
+  // This selects a parser only; route matching still checks the original execution name.
+  const standaloneTool =
+    /^(?:demo|other)_(read|search|write|replace|insert|delete|copy|move)$/u.exec(name)?.[1];
+  const tool = tools.get(standaloneTool ?? name);
   if (!tool || !args) return args;
   try {
     return validateToolArguments(tool, {

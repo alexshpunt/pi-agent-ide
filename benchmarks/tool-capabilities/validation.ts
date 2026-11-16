@@ -139,9 +139,10 @@ export interface RouteStep {
   parallelWith?: number;
   /** Require one direct assistant message or overlapping children of one native script. */
   sameAssistantWith?: number;
-  /** At least one reviewed argument variant must match, in addition to args. */
-  argsAny?: Record<string, unknown>[];
+  /** Only capability-defining arguments and call discriminators, not an example call. */
   args?: Record<string, unknown>;
+  /** Exercise literal text selection without pinning a boundary spelling; outcomes check bytes. */
+  exactText?: readonly string[];
   contains?: string;
   /**
    * Match the public value delivered to a Codemode script, not human-facing text: an object's
@@ -729,6 +730,21 @@ export function validateRoute(
     if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
       normalized.offset = typeof actual.path === "string" && actual.path.startsWith("raw:") ? 0 : 1;
     if (tool === "insert" && normalized.before === undefined) normalized.before = false;
+    // Search roots form an unordered collection. Transfer source/target arrays remain paired.
+    if (
+      ["search", "file_search", "ast_search", "lsp_search"].includes(tool) &&
+      Array.isArray(expected.path) &&
+      Array.isArray(normalized.path)
+    ) {
+      const remaining = [...(normalized.path as unknown[])];
+      for (const required of expected.path) {
+        const index = remaining.findIndex((root) => matches(required, root, "path"));
+        if (index < 0) return false;
+        remaining.splice(index, 1);
+      }
+      if (remaining.length) return false;
+      normalized.path = expected.path;
+    }
     // Read views are requirements, not positional output fields; other arrays stay ordered.
     const views = normalized.views;
     if (
@@ -1071,16 +1087,24 @@ export function validateRoute(
       )
         continue;
       if (
-        step.argsAny &&
-        !step.argsAny.some((args) =>
-          argsMatch(
-            step.tool,
-            { ...step.args, ...args },
-            event.args,
-            start.index,
-            start.readIndex !== undefined,
-          ),
-        )
+        step.exactText?.some((field) => {
+          const value = fieldValue(event.args, field);
+          if (typeof value !== "string" || value.length === 0) return true;
+          if (
+            /^(?:regex:|RESULT#|SEARCH#|CHANGE#|scope-(?:begin|end)-|begin$|end$|<system-result)/u.test(
+              value,
+            )
+          )
+            return true;
+          if (!/^[0-9A-HJKMNP-TV-Z]{7}(?:\||$)/u.test(value.trim())) return false;
+          const source = field.startsWith("target") ? event.args?.target : event.args?.path;
+          // Anchor-shaped fixture text is literal unless a completed issuer identifies it as an anchor.
+          return (
+            selectionIssuers(source, start.index).some((issuer) =>
+              issuedAnchor(value.trim(), resultText(issuer.end)),
+            ) || !editContext(step.tool, { path: source }, start.index).content?.includes(value)
+          );
+        })
       )
         continue;
       const output = resultText(end.event);
