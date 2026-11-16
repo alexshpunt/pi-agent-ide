@@ -25,7 +25,7 @@ add(
   [
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: undefined, text: "added" },
+      args: { path: "task.txt", anchor: undefined, text: /[\s\S]+/u },
       error: true,
       contains: "INVALID_REQUEST",
     },
@@ -33,7 +33,8 @@ add(
     { tool: "insert", args: { path: "task.txt", anchor: "OLD", text: "added" }, after: [1] },
     {
       tool: "copy",
-      args: { path: "task.txt", start: "OLD", target: "target.txt", targetStart: undefined },
+      args: { path: "task.txt", target: "target.txt", targetStart: undefined },
+      exactText: ["start"],
       error: true,
       contains: "INVALID_REQUEST",
       after: [2],
@@ -474,7 +475,6 @@ add(
     { tool: "read", args: { path: "moved-target/nested/empty" } },
     {
       tool: "search",
-      args: { query: "BAD" },
       reuse: reuse(0),
       error: true,
       contains: "no reusable text selection",
@@ -858,7 +858,6 @@ add(
     },
     {
       tool: "search",
-      args: { query: "BAD" },
       reuse: reuse(0),
       error: true,
       contains: "no reusable text selection",
@@ -1275,8 +1274,6 @@ for (const operation of ["insert", "replace", "delete"] as const) {
         args: {
           path: [lineReference, lineReference],
           [selector]: lineReference,
-
-          ...(operation === "insert" ? { before: true } : {}),
         },
         error: true,
         reuse: [reuse(0), reuse(1), reuse(0, selector)],
@@ -3275,8 +3272,7 @@ add(
     { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello", after: [2] },
     {
       tool: "replace",
-      // The streaming authority guard may stop generation before text arrives.
-      args: { start: "hello" },
+      // Authority checks may refuse before either the selector or the payload arrives.
       reuse: reuse(5),
       error: true,
       contains: "no reusable text selection",
@@ -3493,7 +3489,7 @@ add(
     },
     { tool: "read", reuse: reuse(0), contains: "typescript-language-server:2322" },
     { tool: "search", args: { query: "2322" }, reuse: reuse(0), contains: "2322" },
-    { tool: "replace", args: { start: "broken" }, reuse: reuse(0), error: true },
+    { tool: "replace", reuse: reuse(0), error: true },
   ],
   {
     files: {
