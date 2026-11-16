@@ -261,7 +261,7 @@ export function createTextTool<TParameters extends TSchema>(
                       : resultTargets.resolve(expanded, context.cwd, { forEdit: true });
                     if (!selected.complete)
                       throw new Error(
-                        "Incomplete result targets cannot establish a complete edit. Run Search again with a higher limit or a narrower query, then use the complete result.",
+                        "This selection is incomplete. Obtain a complete selection before editing.",
                       );
                     // A whole-file write needs the selected text now. Other edits compare it with
                     // the file under the file lock, and a write by another process in between
