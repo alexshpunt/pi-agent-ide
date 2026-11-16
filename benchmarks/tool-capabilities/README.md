@@ -23,7 +23,7 @@ The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostic
 
 ### Route equivalence
 
-The validator compares execution arguments after Pi's argument parser applies the checked tool schemas in `contracts.json`. Numeric strings accepted by Pi match their numeric values. Arguments that fail schema parsing keep strict raw comparison, including deliberate invalid-call cases. Structured result values are never coerced. Retained events stay unchanged.
+The validator prepares execution arguments with the IDE's shared schema-aware JSON-text decoder, then applies Pi's argument parser with the checked tool schemas in `contracts.json`. JSON text in object and array positions matches the corresponding native input. Numeric strings accepted by Pi match their numeric values. Arguments that fail schema parsing keep strict raw comparison, including deliberate invalid-call cases. Structured result values are never coerced. Retained events stay unchanged.
 
 Fixture paths match their equivalent relative or absolute spelling. An explicitly allowed source path does not depend on completion of another call. Reusing a returned reference still requires its completed issuer, and every declared call remains required. After a mutation, a fresh Search can prove an inline fragment from its public line snapshot. The witness must name the same file and range, and no source edit may overlap or follow it before the consuming call. This does not grant whole-line separator ownership or turn one match of a larger result into a whole-result selection.
 

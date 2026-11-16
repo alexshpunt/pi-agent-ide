@@ -18,6 +18,10 @@ if (source !== null) {
 
 Pass a Read value, a Search value, one of its matches, any of their `id`s, an edit's id or an unchanged result string to a supported source parameter. Direct calls also accept the issued UUID. A source parameter accepts any object whose `id` holds a `RESULT#` reference, alone or in a list; the IDE resolves the id and ignores the object's other fields. An id the IDE did not issue fails like an unknown reference, even when it names a file. `file_search` and `semantic_search` take paths only, not results or values. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
 
+Where an input schema accepts an object or array, IDE tools also accept its JSON-text form. For example, Read accepts `path: '["a.txt","b.txt"]'`, and Diff accepts `before: '{"path":"a.txt","limit":0}'`. Nested composite fields follow the same rule. Native objects and arrays remain the preferred form. Schema validation and issued-reference ownership checks still apply after decoding.
+
+This applies to direct and Codemode calls, local and SSH sources, and parallel edit batches. Ordinary strings and malformed JSON keep their meaning. Fields that accept only strings, including file contents and replacement text, are never decoded.
+
 A result identifies its backend-owned ranges, not the text in its preview. Shortened output does not clip a complete selection or make an incomplete selection complete. Read around a selection may show context without granting authority to edit it.
 
 ## Reference ownership
