@@ -11,7 +11,8 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
-    }
+    },
+    "./json-structured-arguments": "./src/json-structured-arguments.ts"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.5.2",
