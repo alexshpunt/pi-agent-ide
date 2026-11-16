@@ -1235,6 +1235,53 @@ add(
     expected: { "task.txt": "keep1\nADDED\nOLD\nkeep2\nOLD\nkeep3\nADDED\nTAIL\n" },
   },
 );
+for (const operation of ["insert", "replace", "delete"] as const) {
+  const selector = operation === "insert" ? "anchor" : "start";
+  const lineReference = /^SEARCH#[A-F0-9]+:1:line$/u;
+  add(
+    `${operation}-list-selectors-refused`,
+    [`edit.${operation}-list-selectors-refused`],
+    `Search task.txt for OLD, then separately search task.txt for TAIL. Call ${operation} with path as an array of the first issued :line reference from each search, AND ${selector} as the first search's same :line reference.${operation === "delete" ? "" : " Use text NEW."}${operation === "insert" ? " Set before: true on this first call." : ""} This ambiguous combination must fail without changing either target. After that failure, retry once with the same path array but omit ${selector}; ${operation === "insert" ? "insert NEW before both selected lines with text NEW and before: true" : operation === "replace" ? "replace both selected lines with NEW" : "delete both selected lines, keeping the file"}. Do not retype the file path, reread or search again. Keep every other byte.`,
+    [
+      { tool: "search", args: { path: "task.txt", query: "OLD" } },
+      { tool: "search", args: { path: "task.txt", query: "TAIL" } },
+      {
+        tool: operation,
+        args: {
+          path: [lineReference, lineReference],
+          [selector]: lineReference,
+          ...(operation === "delete" ? {} : { text: "NEW" }),
+          ...(operation === "insert" ? { before: true } : {}),
+        },
+        error: true,
+        reuse: [reuse(0), reuse(1), reuse(0, selector)],
+      },
+      {
+        tool: operation,
+        args: {
+          path: [lineReference, lineReference],
+          ...(operation === "delete" ? {} : { text: "NEW" }),
+          ...(operation === "insert" ? { before: true } : {}),
+        },
+        after: [2],
+        reuse: [reuse(0), reuse(1)],
+      },
+    ],
+    {
+      // Readable Search line references are not part of the Codemode Search value.
+      modes: ["direct"],
+      files: { "task.txt": "keep1\nOLD\nkeep2\nTAIL\nkeep3\n" },
+      expected: {
+        "task.txt":
+          operation === "insert"
+            ? "keep1\nNEW\nOLD\nkeep2\nNEW\nTAIL\nkeep3\n"
+            : operation === "replace"
+              ? "keep1\nNEW\nkeep2\nNEW\nkeep3\n"
+              : "keep1\nkeep2\nkeep3\n",
+      },
+    },
+  );
+}
 add(
   "replace-search-anchor-list",
   ["edit.replace-search-anchor-list"],

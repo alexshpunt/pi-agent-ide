@@ -48,6 +48,81 @@ async function run(
   }).run("Edit inside results with selectors.");
 }
 
+test.each(["direct", "codemode"] as const)(
+  "%s: result lists with explicit selectors refuse all mutations and can be retried without selectors",
+  async (route) => {
+    await withTempWorkspace(async (cwd) => {
+      const original = "first\nmiddle\nlast\n";
+      await writeFile(path.join(cwd, "task.txt"), original);
+      const steps: { id: string; name: string; arguments: Record<string, JsonValue> }[] = [
+        { id: "first", name: "search", arguments: { path: "task.txt", query: "first" } },
+        { id: "last", name: "search", arguments: { path: "task.txt", query: "last" } },
+      ];
+      if (route === "direct") {
+        for (const name of ["insert", "replace", "delete"]) {
+          steps.push({
+            id: name,
+            name,
+            arguments: {
+              path: [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }],
+              ...(name === "insert"
+                ? { anchor: "$issued-search:first:1" }
+                : { start: "$issued-search:first:1", end: "$issued-search:first:1" }),
+              ...(name === "delete" ? {} : { text: "BAD\n" }),
+            },
+          });
+        }
+        steps.push({
+          id: "retry",
+          name: "insert",
+          arguments: {
+            path: [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }],
+            text: "NEW\n",
+          },
+        });
+      } else {
+        steps.push({
+          id: "code",
+          name: "codemode",
+          arguments: {
+            code: `
+const path = [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }];
+const anchor = "$issued-search:first:1";
+const refused = [];
+refused.push(await tools.insert({ path, anchor, text: "BAD\\n" }));
+refused.push(await tools.replace({ path, start: anchor, end: anchor, text: "BAD\\n" }));
+refused.push(await tools.delete({ path, start: anchor, end: anchor }));
+const retry = await tools.insert({ path, text: "NEW\\n" });
+text(JSON.stringify({ refused, retry: retry !== null }));
+`,
+          },
+        });
+      }
+      const result = await run(
+        cwd,
+        `result-list-selectors-${route}`,
+        steps,
+        route === "direct" ? "tui" : "rpc",
+      );
+      if (route === "direct") {
+        for (const id of ["insert", "replace", "delete"])
+          expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(true);
+        expect(getToolExecution(result, "retry").isError, getToolResultText(result, "retry")).toBe(
+          false,
+        );
+      } else {
+        expect(getToolExecution(result, "code").isError).toBe(false);
+        expect(getToolResultText(result, "code")).toContain(
+          JSON.stringify({ refused: [null, null, null], retry: true }),
+        );
+      }
+      expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
+        "first\nNEW\nmiddle\nlast\nNEW\n",
+      );
+    });
+  },
+);
+
 test("direct edits resolve selectors inside the result passed as path", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "line.txt"), "First\nLast\n");
