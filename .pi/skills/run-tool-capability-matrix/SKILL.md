@@ -50,6 +50,8 @@ Run parallel attempts within one invocation and one ZinPC worker job slot, not a
 
 Use `--concurrency N` only within the approved attempt and cost scope; the default is 1. A stop cancels active attempts, but requests already started may incur cost. Web fixtures serialize within the invocation; TUI and mutable dedicated authentication require concurrency 1.
 
+For a whole-matrix run on ZinPC (16 cores, 15.5 GB RAM, 4 GB swap), use `--concurrency 25`. Measured on Terra 6.1 low: at 20 the run took 305 s with a memory peak of 11.6 GB and PSI some avg10 at most 2.2; at 30 it took 341 s, filled memory to 15.2 GB, used 1 GB of swap and reached PSI 13.7, without timeouts or extra failures. 25 is the agreed balance; drop to 20 if a run shows timeouts or memory pressure.
+
 Use a background terminal for a long run and inspect its progress. If cancelled, stop the owned invocation and inspect the partial report. A nonzero exit is not a reason to retry automatically.
 
 ## Inspect the evidence
