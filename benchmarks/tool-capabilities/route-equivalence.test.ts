@@ -476,7 +476,7 @@ for (const id of [
     { tool: issuer.tool },
     { ...refusal, reuse: { ...refusal.reuse, from: 0 } },
   ];
-  for (const mode of task.modes) {
+  for (const mode of task.modes.filter((mode) => !refusal.modes || refusal.modes.includes(mode))) {
     void test(`${id} accepts early authority refusals without incidental arguments (${mode})`, () => {
       const issued: Call = {
         tool: issuer.tool,
