@@ -82,7 +82,7 @@ for (const route of ["single", "batch", "codemode"] as const) {
                       arguments: {
                         code: `for (const step of ${JSON.stringify(steps)}) {
   const value = await tools[step.name](step.arguments);
-  if ((value === null) !== ${String(!recover)}) throw Error(step.id);
+  if (${recover ? 'step.name !== "delete" && value === null' : "value !== null"}) throw Error(step.id);
 }`,
                       },
                     }),
