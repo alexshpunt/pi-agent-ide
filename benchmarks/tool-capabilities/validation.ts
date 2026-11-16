@@ -162,7 +162,8 @@ export interface RouteStep {
   finalContains?: string;
   /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
   finalMaxBytes?: number;
-  image?: boolean;
+  /** Require image blocks in the completed result; a number sets the minimum frame count. */
+  image?: boolean | number;
   /**
    * Require the native tool_search calls up to this one to have loaded these tools together. One
    * search may load several tools, so a tool may come from a search for another one. tool_search is
@@ -231,16 +232,21 @@ export function resultText(event: RunEvent): string {
     .join("\n");
 }
 
-function fixturePath(value: string): string {
+function fixturePath(value: string, cwd = "."): string {
   if (/^https?:/.test(value)) return new URL(value).href;
   const prefix = value.startsWith("raw:") ? "raw:" : "";
   const source = value.slice(prefix.length);
   if (/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith("file://")) return value;
   const absolute = source.startsWith("file://") ? new URL(source).pathname : source;
-  const resolved = path.posix.resolve("/workspace/fixture", absolute);
+  const resolved = path.posix.resolve("/workspace/fixture", cwd, absolute);
   return prefix + path.posix.relative("/workspace/fixture", resolved);
 }
 
+function debugProgram(args: Record<string, unknown>): unknown {
+  return typeof args.program === "string"
+    ? fixturePath(args.program, typeof args.cwd === "string" ? fixturePath(args.cwd) : ".")
+    : args.program;
+}
 function diffSource(value: unknown): unknown {
   if (
     value !== null &&
@@ -273,9 +279,15 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
         matches(value, (actual as Record<string, unknown>)[key], key),
       )
     );
-  if (["path", "file", "target"].includes(field) && typeof expected === "string") {
+  if (
+    ["path", "file", "target", "program", "cwd"].includes(field) &&
+    typeof expected === "string"
+  ) {
     // A list of one source, such as a file_search value, names the same source.
-    const source = Array.isArray(actual) && actual.length === 1 ? (actual[0] as unknown) : actual;
+    const source =
+      !["program", "cwd"].includes(field) && Array.isArray(actual) && actual.length === 1
+        ? (actual[0] as unknown)
+        : actual;
     return typeof source === "string" && fixturePath(expected) === fixturePath(source);
   }
   if (
@@ -709,6 +721,11 @@ export function validateRoute(
     if (!actual) return false;
     // Text starts at line one; raw sources start at byte zero.
     const normalized = { ...actual };
+    if (tool === "debug" && typeof expected.program === "string") {
+      // A relative program is launched from this call's cwd, not necessarily the fixture root.
+      expected = { ...expected, program: debugProgram(expected) };
+      normalized.program = debugProgram(normalized);
+    }
     if (["read", "demo_read"].includes(tool) && normalized.offset === undefined)
       normalized.offset = typeof actual.path === "string" && actual.path.startsWith("raw:") ? 0 : 1;
     if (tool === "insert" && normalized.before === undefined) normalized.before = false;
@@ -740,15 +757,13 @@ export function validateRoute(
       (typeof expected.path === "string" || expected.path instanceof RegExp)
     )
       return normalized.path.some((path: unknown) => matches(expected, { ...normalized, path }));
-    // A debugger source and its launched program name the same file for an anchored Read.
-    if (
-      tool === "read" &&
-      !sourceListItem &&
-      Array.isArray(actual.views) &&
-      actual.views.includes("anchors")
-    ) {
+    // A debugger source and its launched program name the same file, with the same requested views.
+    if (tool === "read" && !sourceListItem) {
       for (const prior of selectionIssuers(undefined, before)) {
-        if (prior.tool !== "debug" || !matches({ path: prior.args.program }, { path: actual.path }))
+        if (
+          prior.tool !== "debug" ||
+          !matches({ path: debugProgram(prior.args) }, { path: actual.path })
+        )
           continue;
         const resources = resultText(prior.end).match(/debug:[a-z0-9-]+/giu) ?? [];
         if (
@@ -761,7 +776,9 @@ export function validateRoute(
     }
     if (["undo", "stage", "unstage"].includes(tool)) {
       if (actual.file === undefined) {
-        const files = [...new Set(reusedPaths(actual.change, before).map(fixturePath))];
+        const files = [
+          ...new Set(reusedPaths(actual.change, before).map((source) => fixturePath(source))),
+        ];
         if (files.length === 1) normalized.file = files[0];
       }
       return matches(expected, normalized);
@@ -775,7 +792,7 @@ export function validateRoute(
       ["target", actual.targetStart],
     ] as const) {
       const source = actual[sourceField] ?? selector;
-      const paths = [...new Set(reusedPaths(source, before).map(fixturePath))];
+      const paths = [...new Set(reusedPaths(source, before).map((source) => fixturePath(source)))];
       if (
         (typeof expected[sourceField] === "string" || expected[sourceField] instanceof RegExp) &&
         paths.length === 1 &&
@@ -930,6 +947,7 @@ export function validateRoute(
     });
   }
   let furthest = 0;
+  const imageFailures = new Map<number, Set<string>>();
   function walk(
     stepIndex: number,
     // A step that another route skips leaves its slot empty; steps reusing it cannot match.
@@ -1011,11 +1029,6 @@ export function validateRoute(
         acceptedOrFailed &&
         !end.event.isError &&
         ends.get(execution.parent ?? "")?.event.isError !== true
-      )
-        continue;
-      if (
-        step.scriptResult !== undefined &&
-        !matches(step.scriptResult, end.event.result?.structuredContent)
       )
         continue;
       if (mode === "direct" && execution.parent) continue;
@@ -1143,8 +1156,6 @@ export function validateRoute(
         )
           continue;
       }
-      if (step.image && !end.event.result?.content?.some((block) => block.type === "image"))
-        continue;
       const references = step.reuse ? (Array.isArray(step.reuse) ? step.reuse : [step.reuse]) : [];
       if (
         references.some((reference) => {
@@ -1169,6 +1180,24 @@ export function validateRoute(
         })
       )
         continue;
+      if (step.image) {
+        const minimum = typeof step.image === "number" ? step.image : 1;
+        const frames =
+          end.event.result?.content?.filter((block) => block.type === "image").length ?? 0;
+        if (frames < minimum) {
+          const failures = imageFailures.get(stepIndex) ?? new Set<string>();
+          failures.add(
+            `Step ${stepIndex + 1} (${step.tool}), call ${event.toolCallId}: received ${frames} image frame(s); required at least ${minimum}`,
+          );
+          imageFailures.set(stepIndex, failures);
+          continue;
+        }
+      }
+      if (
+        step.scriptResult !== undefined &&
+        !matches(step.scriptResult, end.event.result?.structuredContent)
+      )
+        continue;
       if (
         walk(stepIndex + 1, [
           ...selected,
@@ -1186,10 +1215,14 @@ export function validateRoute(
     }
     return false;
   }
-  if (!walk(0, []))
-    reasons.push(
-      `Required step ${furthest + 1} (${task.steps[furthest]?.tool}) was not observed with the required arguments, completed result, reuse, and route`,
-    );
+  if (!walk(0, [])) {
+    const frameFailures = imageFailures.get(furthest);
+    if (frameFailures?.size) reasons.push(...frameFailures);
+    else
+      reasons.push(
+        `Required step ${furthest + 1} (${task.steps[furthest]?.tool}) was not observed with the required arguments, completed result, reuse, and route`,
+      );
+  }
   return { passed: reasons.length === 0, reasons };
 }
 
