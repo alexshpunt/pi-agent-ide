@@ -3,11 +3,44 @@ import {
   type ExtensionAPI,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type TSchema } from "typebox";
 import { expect, test, vi } from "vitest";
 import { createIdeTextResults } from "./text-results.ts";
 import { textValue } from "./script-values/text.ts";
 
+test("argument preparation uses the current schema before the tool's own preparation", () => {
+  let registered: ToolDefinition | undefined;
+  const stub: Partial<ExtensionAPI> = {
+    events: createEventBus(),
+    on: () => () => {},
+    registerTool: (definition) => {
+      registered = definition as ToolDefinition;
+    },
+  };
+  const ide = createIdeTextResults(stub as ExtensionAPI);
+  let schema: TSchema = Type.Object({ path: Type.String() });
+  const prepareArguments = vi.fn((args: unknown) => args as Record<string, unknown>);
+  ide.api.registerTool({
+    name: "fixture",
+    label: "fixture",
+    description: "fixture",
+    get parameters() {
+      return schema;
+    },
+    prepareArguments,
+    execute: async () => ({ content: [], details: {} }),
+  });
+  const args = { path: '["a.txt","b.txt"]' };
+  expect(registered?.prepareArguments?.(args)).toEqual(args);
+  schema = Type.Object({
+    path: Type.Union([Type.String(), Type.Array(Type.String())]),
+  });
+  expect(registered?.prepareArguments?.(args)).toEqual({ path: ["a.txt", "b.txt"] });
+  expect(prepareArguments.mock.calls.map(([input]) => input)).toEqual([
+    args,
+    { path: ["a.txt", "b.txt"] },
+  ]);
+});
 // Display-only batch arguments must not acquire source fields that no call supplied.
 test.each(["insert", "delete", "copy", "move"])(
   "%s display preserves absent source fields",
