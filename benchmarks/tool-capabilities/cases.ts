@@ -1105,7 +1105,7 @@ add(
 add(
   "search-issued-scope",
   ["compose.search-issued-scope", "compose.search-object-scope"],
-  'Search task.txt for title. Pass its issued SEARCH :all:line selector as an object {"id":"SEARCH#…:all:line"} in Search path for legacyCheckout: there must be zero matches, because all feature lines are gaps. Use the same object form for its first :line when searching for first (one match), then its first :match for first (zero). Keep the bytes unchanged and use the exact issued selectors, not a file path or UUID.',
+  'Search task.txt for title. Pass the title Search\'s issued SEARCH :all:line selector as an object {"id":"SEARCH#…:all:line"} in Search path for legacyCheckout: there must be zero matches, because all feature lines are gaps. Use the same object form for the title Search\'s first :line when searching for first (one match), then the title Search\'s first :match for first (zero). Keep the bytes unchanged and use the exact issued selectors, not a file path or UUID.',
   [
     { tool: "search", args: { path: "task.txt", query: "title" } },
     {
@@ -1699,7 +1699,7 @@ add(
 add(
   "file-search-script-paths",
   ["file_search.script-paths", "file_search.script-limit", "compose.file-search-paths-read"],
-  "Use native Codemode. The logs directory holds 150 .log files. Call file_search for *.log in logs without a limit and check that its value lists all 150 paths. Call it again with limit 2 and check that the value has two paths. Then read the first result's path that ends with entry-137.log and report its content. Do not parse display text.",
+  "Use native Codemode. The logs directory holds 150 .log files. Call file_search for *.log in logs without a limit and check that its value lists all 150 paths. Call it again with limit 2 and check that the value has two paths. Then read the path that ends with entry-137.log from the initial unlimited file_search result and report its content. Do not parse display text.",
   [
     {
       tool: "file_search",
@@ -2569,7 +2569,7 @@ for (const scenario of ["restored", "target-failed", "target-failed-after-restor
 add(
   "paired-copy",
   ["compose.paired-sources-targets"],
-  "Read a.txt and b.txt in separate calls. Also read dest-a.txt and dest-b.txt. Use copy with the two Read results as paired source and destination arrays, replacing both whole destination files.",
+  "Read a.txt and b.txt in separate calls. Also read dest-a.txt and dest-b.txt. Use copy with the a.txt and b.txt Read results as the path array and the dest-a.txt and dest-b.txt Read results as the target array, in those orders, replacing both whole destination files.",
   [
     { tool: "read", args: { path: "a.txt" } },
     { tool: "read", args: { path: "b.txt" } },
