@@ -96,6 +96,139 @@ for (const mode of ["direct", "codemode"]) {
       );
     }
   });
+  void test(`${mode}: Search defaults keep resolver limits distinct`, () => {
+    for (const [path, limit] of [
+      ["docs:guide", 50],
+      ["shell:session", 100],
+      ["task.txt", mode === "codemode" ? Number.MAX_SAFE_INTEGER : 50],
+    ] as const) {
+      const task = { steps: [{ tool: "search", args: { path, query: "value", limit } }] };
+      assert.ok(
+        validateRoute(
+          task,
+          events([{ tool: "search", args: { path, query: "value" } }], mode),
+          mode,
+        ).passed,
+      );
+      assert.equal(
+        validateRoute(
+          task,
+          events([{ tool: "search", args: { path, query: "value", limit: limit - 1 } }], mode),
+          mode,
+        ).passed,
+        false,
+      );
+    }
+    for (const path of ["memory://demo/note", "RESULT#11111111-aaaa-4aaa-8aaa-111111111111"]) {
+      assert.equal(
+        validateRoute(
+          { steps: [{ tool: "search", args: { path, limit: 50 } }] },
+          events([{ tool: "search", args: { path } }], mode),
+          mode,
+        ).passed,
+        false,
+      );
+    }
+    for (const flag of ["caseSensitive", "wholeWord", "multiline"]) {
+      assert.equal(
+        validateRoute(
+          { steps: [{ tool: "search", args: { [flag]: true } }] },
+          events([{ tool: "search", args: { path: "task.txt", query: "value" } }], mode),
+          mode,
+        ).passed,
+        false,
+      );
+    }
+    assert.equal(
+      validateRoute(
+        { steps: [{ tool: "demo_read", args: { path: "task.txt", offset: 1 } }] },
+        events([{ tool: "other_read", args: { path: "task.txt" } }], mode),
+        mode,
+      ).passed,
+      false,
+    );
+  });
+  void test(`${mode}: array Read keeps output and selection evidence with its source`, () => {
+    const paths = ["a.txt", "b.txt"];
+    const read: Call = {
+      tool: "read",
+      args: { path: paths, views: ["anchors"] },
+      text: "--- a.txt ---\nBCDEFGH|Alpha\n\n--- b.txt ---\nABCDEFG|Beta\n",
+    };
+    const readStep: RouteStep = { tool: "read", args: { path: "b.txt" }, contains: "Beta" };
+    const editStep: RouteStep = {
+      tool: "delete",
+      args: { path: "b.txt", start: /^ABCDEFG$/u },
+      reuse: { from: 0, field: "start", kind: "anchor" },
+    };
+    const task = { steps: [readStep, editStep] };
+    const edit: Call = { tool: "delete", args: { path: "b.txt", start: "ABCDEFG" } };
+    assert.ok(validateRoute(task, events([read, edit], mode), mode).passed);
+    assert.equal(
+      validateRoute(
+        { steps: [{ tool: "read", args: { path: "a.txt" }, contains: "Beta" }] },
+        events([read], mode),
+        mode,
+      ).passed,
+      false,
+    );
+    assert.ok(read.text);
+    for (const text of [
+      read.text.replace("--- b.txt ---", "--- other.txt ---"),
+      read.text.replace("--- a.txt ---", "--- b.txt ---"),
+      read.text + "\n--- b.txt ---\nABCDEFG|Beta",
+      "--- a.txt ---\nABCDEFG|Beta\n\n--- b.txt ---\nBCDEFGH|Alpha",
+    ]) {
+      assert.equal(
+        validateRoute(task, events([{ ...read, text }, edit], mode), mode).passed,
+        false,
+      );
+    }
+    assert.equal(
+      validateRoute(
+        { steps: [{ ...readStep, args: { path: "a.txt" }, contains: "Alpha" }, editStep] },
+        events([read, edit], mode),
+        mode,
+      ).passed,
+      false,
+    );
+    const resultTask = {
+      steps: [
+        { tool: "read", args: { path: "b.txt" } },
+        {
+          tool: "replace",
+          args: { path: "b.txt", text: "Changed" },
+          reuse: { from: 0, field: "path" },
+        },
+      ],
+    };
+    const a = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
+    const b = "RESULT#33333333-aaaa-4aaa-8aaa-333333333333";
+    const valued = {
+      ...read,
+      value: [
+        { id: a, text: "Alpha" },
+        { id: b, text: "Beta" },
+      ],
+    };
+    assert.ok(
+      validateRoute(
+        resultTask,
+        events([valued, { tool: "replace", args: { path: b, text: "Changed" } }], mode),
+        mode,
+      ).passed,
+    );
+    for (const path of [a, "RESULT#11111111-aaaa-4aaa-8aaa-111111111111"]) {
+      assert.equal(
+        validateRoute(
+          resultTask,
+          events([valued, { tool: "replace", args: { path, text: "Changed" } }], mode),
+          mode,
+        ).passed,
+        false,
+      );
+    }
+  });
   for (const ending of ["lf", "crlf", "unterminated"]) {
     void test(`${mode}: exact EOF accepts array Read anchors only from the selected source`, () => {
       const task = capabilityCases.find((entry) => entry.id === `exact-eof-${ending}`);
@@ -174,8 +307,9 @@ void test("standalone discovery may load each tool before its first use", () => 
   for (const changed of [
     calls.filter((_, index) => index !== 3),
     [...calls.slice(0, 3), calls[4] as Call, calls[3] as Call, ...calls.slice(5)],
-    calls.map((call, index) => index === 3 ? { ...call, error: true } : call),
-  ]) assert.equal(validateRoute(task, events(changed, "direct"), "direct").passed, false);
+    calls.map((call, index) => (index === 3 ? { ...call, error: true } : call)),
+  ])
+    assert.equal(validateRoute(task, events(changed, "direct"), "direct").passed, false);
   const overlapping = events(calls, "direct");
   const discoveryEnd = overlapping.splice(7, 1)[0];
   assert.ok(discoveryEnd);
