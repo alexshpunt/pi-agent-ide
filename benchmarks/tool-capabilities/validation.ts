@@ -707,7 +707,9 @@ export function validateRoute(
       Array.isArray(views) &&
       expected.views.every((required) => views.some((view) => matches(required, view)))
     )
-      normalized.views = expected.views;
+      normalized.views = expected.views.map((required) =>
+        (views as unknown[]).find((view) => matches(required, view)),
+      );
     if (matches(expected, normalized)) return true;
     // One Read may include other sources, but must satisfy every required argument on that call.
     if (
