@@ -193,15 +193,17 @@ void test("native value batch accepts the complete gamma line and retains its ba
     { tool: "replace", args: { path: { id: result }, text: "BETA" } },
     { tool: "delete", args: { path: "task.txt", start: "gamma\n" } },
   ];
-  function batch(input: Call[], size = 3): boolean {
+  function batch(input: Call[], size = 3, concurrent = true): boolean {
     const serial = events(input, "codemode");
     const edits = serial.slice(3, -1);
-    const entries = [
-      ...serial.slice(0, 3),
-      ...edits.filter((entry) => entry.type === "tool_execution_start"),
-      ...edits.filter((entry) => entry.type === "tool_execution_end"),
-      ...serial.slice(-1),
-    ];
+    const entries = concurrent
+      ? [
+          ...serial.slice(0, 3),
+          ...edits.filter((entry) => entry.type === "tool_execution_start"),
+          ...edits.filter((entry) => entry.type === "tool_execution_end"),
+          ...serial.slice(-1),
+        ]
+      : serial;
     const parentEnd = entries.at(-1);
     assert.ok(parentEnd);
     parentEnd.result = {
@@ -226,6 +228,7 @@ void test("native value batch accepts the complete gamma line and retains its ba
     ).passed;
   }
   assert.ok(batch(calls));
+  assert.ok(!batch(calls, 3, false));
   assert.ok(
     batch([...calls.slice(0, 3), { ...calls[3], args: { path: "task.txt", start: "gamma" } }]),
   );
