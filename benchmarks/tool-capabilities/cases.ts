@@ -26,19 +26,20 @@ add(
     { tool: "search", args: { path: "task.txt", query: "beta" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true, text: "added" },
+      args: { path: "task.txt", anchor: "alpha", before: true },
       editorBatchSize: 3,
     },
     {
       tool: "replace",
-      args: { text: "BETA" },
       reuse: reuse(0),
+      sameAssistantWith: 1,
       editorBatchSize: 3,
     },
     {
       tool: "delete",
       args: { path: "task.txt" },
       exactText: ["start"],
+      sameAssistantWith: 2,
       editorBatchSize: 3,
     },
   ],
@@ -57,19 +58,21 @@ add(
     { tool: "read", args: { path: ".pi/issued-search.txt" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true, text: "added" },
+      args: { path: "task.txt", anchor: "alpha", before: true },
       editorBatchSize: 3,
     },
     {
       tool: "replace",
-      args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" },
+      args: { path: undefined, start: /^SEARCH#[A-F0-9]+:1:line$/u },
       reuse: reuse(0, "start"),
+      sameAssistantWith: 2,
       editorBatchSize: 3,
     },
     {
       tool: "delete",
-      args: { start: /^SEARCH#[A-F0-9]+:2:line$/u },
+      args: { path: undefined, start: /^SEARCH#[A-F0-9]+:2:line$/u },
       reuse: reuse(0, "start"),
+      sameAssistantWith: 3,
       editorBatchSize: 3,
     },
   ],
@@ -93,7 +96,7 @@ add(
     { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, contains: "probe(1)" },
     { tool: "lsp_search", args: { query: "probe" }, contains: "task.ts#probe" },
     { tool: "diff", args: { before: "task.ts", after: "task.ts" }, scriptResult: "" },
-    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+    { tool: "replace", args: { path: "task.txt", start: "OLD" } },
     { tool: "undo", args: { file: "task.txt", change: "last" }, after: [4] },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [5] },
   ],
@@ -127,7 +130,7 @@ add(
       contains: "alpha",
     },
     { tool: "demo_search", args: { query: "alpha" }, reuse: reuse(1), contains: "alpha" },
-    { tool: "demo_replace", args: { text: "changed" }, reuse: reuse(2) },
+    { tool: "demo_replace", reuse: reuse(2) },
     { tool: "demo_read", args: { path: "local.txt" }, error: true },
     { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
     { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },
@@ -159,20 +162,20 @@ add(
   [
     {
       tool: "write",
-      args: { path: "fixture:semantic/applied", content: "probe" },
+      args: { path: "fixture:semantic/applied" },
       contains: "Semantic action applied",
       excludes: "Saved file.",
     },
     {
       tool: "write",
-      args: { path: "fixture:semantic/not-applied", content: "probe" },
+      args: { path: "fixture:semantic/not-applied" },
       error: true,
       contains: "Semantic action not-applied",
       excludes: "no file was written",
     },
     {
       tool: "write",
-      args: { path: "fixture:semantic/unknown", content: "probe" },
+      args: { path: "fixture:semantic/unknown" },
       error: true,
       contains: "Semantic action unknown",
       excludes: "Write outcome unknown.",
@@ -194,7 +197,7 @@ add(
   'In native Codemode, call Insert once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report unknown for the uncertain action.',
   ["applied", "not-applied", "unknown"].map((effect) => ({
     tool: "insert",
-    args: { path: `fixture:semantic-script/${effect}`, text: "probe" },
+    args: { path: `fixture:semantic-script/${effect}` },
     error: effect !== "applied",
     contains: `Semantic action ${effect}`,
     parentStructuredValue: true,
@@ -689,7 +692,7 @@ add(
       args: { path: "task.txt", query: "regex:^ABSENT$" },
       scriptResult: { complete: true, matches: { length: 0 } },
     },
-    { tool: "replace", args: { text: "BAD" }, reuse: reuse(0) },
+    { tool: "replace", reuse: reuse(0) },
     {
       tool: "ast_search",
       args: { path: "scope.ts", pattern: "probe($ARG)", limit: 1 },
@@ -704,10 +707,10 @@ add(
       reuse: reuse(2),
       scriptResult: { complete: false, matches: { length: 0 } },
     },
-    { tool: "replace", args: { text: "BAD" }, reuse: reuse(3), error: true },
+    { tool: "replace", reuse: reuse(3), error: true },
     {
       tool: "replace",
-      args: { path: "task.txt", text: "BAD" },
+      args: { path: "task.txt" },
       reuse: reuse(0, "start"),
       error: true,
     },
@@ -721,7 +724,7 @@ add(
       args: { path: "task.txt", query: "OLD", limit: 1000 },
       scriptResult: { complete: true, matches: { length: 2 } },
     },
-    { tool: "replace", args: { text: "NEW" }, reuse: reuse(7) },
+    { tool: "replace", reuse: reuse(7) },
   ],
   {
     modes: ["codemode"],
@@ -740,7 +743,6 @@ add(
     { tool: "search", args: { path: "split.txt", query: /^alpha beta$/u } },
     {
       tool: "replace",
-      args: { text: "BAD" },
       reuse: reuse(0),
       error: true,
       contains: "alpha beta",
@@ -748,13 +750,11 @@ add(
     { tool: "search", args: { path: "split.txt", query: "alpha OR beta" } },
     {
       tool: "replace",
-      args: { text: "GREEN" },
       reuse: reuse(2, ["path", "start"]),
     },
     { tool: "search", args: { path: "literal.txt", query: /^"alpha beta"$/u } },
     {
       tool: "replace",
-      args: { text: "LITERAL" },
       reuse: reuse(4, ["path", "start", "anchor"], "whole-result"),
     },
   ],
@@ -803,7 +803,7 @@ add(
         },
       },
     },
-    { tool: "replace", args: { path: /^RESULT#[a-f\d-]{36}$/u, text: "LAST" }, reuse: reuse(0) },
+    { tool: "replace", args: { path: /^RESULT#[a-f\d-]{36}$/u }, reuse: reuse(0) },
   ],
   {
     modes: ["codemode"],
@@ -1032,11 +1032,11 @@ add(
   "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Search the file again for NEW. Replace with that fresh Search result or UUID as path, start NEW, and text FINAL. This selector must resolve inside the issued selection, not treat its UUID as a filename. Read the current file and report FINAL. Keep every other byte unchanged.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
-    { tool: "replace", args: { text: "NEW", start: undefined, end: undefined }, reuse: reuse(0) },
+    { tool: "replace", args: { start: undefined, end: undefined }, reuse: reuse(0) },
     { tool: "search", args: { path: "task.txt", query: "NEW" }, after: [1] },
     {
       tool: "replace",
-      args: { start: "NEW", text: "FINAL" },
+      args: { start: "NEW" },
       reuse: reuse(2),
     },
     { tool: "read", args: { path: "task.txt" }, contains: "FINAL", after: [3] },
@@ -1119,7 +1119,7 @@ for (const operation of ["delete", "insert"] as const) {
         tool: operation,
         args: {
           path: new RegExp(`^SEARCH#[A-F0-9]+:${index}:line$`, "u"),
-          ...(operation === "insert" && { text: "ADDED", before: true }),
+          ...(operation === "insert" && { before: true }),
         },
         reuse: reuse(0),
         ...(index > 1 && { sameAssistantWith: 1 }),
@@ -1171,13 +1171,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
         tool: operation,
         reuse: reuse(index),
         ...(index > 0 && { sameAssistantWith: 3 }),
-        ...(operation === "replace"
-          ? { args: { text: "NEW\n" } }
-          : operation === "insert"
-            ? {
-                args: { before: true, text: "ADDED" },
-              }
-            : {}),
+        ...(operation === "insert" && { args: { before: true } }),
       })),
       ...(operation === "replace"
         ? [3, 4, 5].flatMap((index): RouteStep[] => [
@@ -1221,7 +1215,6 @@ add(
       tool: "insert",
       args: {
         path: [/^SEARCH#[A-F0-9]+:1:line$/u, /^SEARCH#[A-F0-9]+:1:line$/u],
-        text: "ADDED",
         before: true,
       },
       reuse: [reuse(0), reuse(1)],
@@ -1249,7 +1242,7 @@ for (const operation of ["insert", "replace", "delete"] as const) {
         args: {
           path: [lineReference, lineReference],
           [selector]: lineReference,
-          ...(operation === "delete" ? {} : { text: "NEW" }),
+
           ...(operation === "insert" ? { before: true } : {}),
         },
         error: true,
@@ -1259,7 +1252,6 @@ for (const operation of ["insert", "replace", "delete"] as const) {
         tool: operation,
         args: {
           path: [lineReference, lineReference],
-          ...(operation === "delete" ? {} : { text: "NEW" }),
           ...(operation === "insert" ? { before: true } : {}),
         },
         after: [2],
@@ -1292,7 +1284,6 @@ add(
       tool: "replace",
       args: {
         path: [matchReference(1), matchReference(1)],
-        text: "NEW",
       },
       reuse: [reuse(0), reuse(1)],
     },
@@ -1312,7 +1303,6 @@ add(
       tool: "replace",
       args: {
         path: [1, 2, 3, 4].map(matchReference),
-        text: "NEW",
       },
       reuse: [reuse(0), reuse(0), reuse(0), reuse(0)],
       contains: "Already had this text, left as is: 2 targets",
@@ -1331,14 +1321,13 @@ add(
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
       tool: "replace",
-      args: { path: matchReference(1), text: "ONE" },
+      args: { path: matchReference(1) },
       reuse: reuse(0),
     },
     {
       tool: "replace",
       args: {
         path: [matchReference(1), matchReference(2)],
-        text: "TWO",
       },
       error: true,
       after: [1],
@@ -1346,7 +1335,7 @@ add(
     },
     {
       tool: "replace",
-      args: { path: matchReference(2), text: "TWO" },
+      args: { path: matchReference(2) },
       after: [2],
       reuse: reuse(0),
     },
@@ -1366,7 +1355,7 @@ for (const operation of ["delete", "insert"] as const) {
       {
         tool: operation,
         ...(operation === "insert" && {
-          args: { before: true, text: "BEFORE" },
+          args: { before: true },
         }),
         reuse: reuse(0),
       },
@@ -1390,7 +1379,6 @@ add(
     },
     {
       tool: "replace",
-      args: { text: "NEW\n" },
       reuse: reuse(index * 2),
       ...(line === 3 && { parentContains: "Applied 3 replacements in 1 file." }),
     },
@@ -1549,10 +1537,9 @@ add(
     {
       tool: "insert",
       modes: ["direct"],
-      args: { text: "NEW" },
       reuse: reuse(0, ["anchor", "path"], "anchor"),
     },
-    { tool: "insert", modes: ["codemode"], args: { text: "\nNEW" }, reuse: reuse(0) },
+    { tool: "insert", modes: ["codemode"], reuse: reuse(0) },
   ],
   { expected: { "task.txt": "keep\nOLD\nNEW\nlast\n" } },
 );
@@ -1580,13 +1567,11 @@ add(
     {
       tool: "replace",
       modes: ["direct"],
-      args: { text: /^NEW\r?\n$/ },
       reuse: reuse(0, ["path", "start"]),
     },
     {
       tool: "replace",
       modes: ["codemode"],
-      args: { text: /^NEW\r?\n$/ },
       reuse: reuse(1, ["path", "start"]),
     },
   ],
@@ -1963,7 +1948,7 @@ add(
     { tool: "read", args: { path: "line-start.txt", views: ["anchors"] } },
     {
       tool: "replace",
-      args: { path: "line-start.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, end: "END", text: "NEW" },
+      args: { path: "line-start.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, end: "END" },
       reuse: reuse(0, "start", "anchor"),
     },
     { tool: "search", args: { path: "line-end.txt", query: "END" } },
@@ -1973,7 +1958,6 @@ add(
         path: "line-end.txt",
         start: "START",
         end: /^SEARCH#[A-F0-9]+:1:line$/u,
-        text: "NEW\n",
       },
       reuse: reuse(2, "end", "anchor"),
     },
@@ -1999,7 +1983,7 @@ add(
   [
     {
       tool: "write",
-      args: { path: "answer.txt", content: "ready\n" },
+      args: { path: "answer.txt" },
       contains: "Read the file",
       excludes: "ready\n",
     },
@@ -2015,7 +1999,7 @@ add(
   [
     {
       tool: "write",
-      args: { path: "review.txt", content: "WRITE_HOOK_BODY review\n" },
+      args: { path: "review.txt" },
       contains: "Saved edit needs review",
       excludes: "WRITE_HOOK_BODY",
     },
@@ -2034,7 +2018,7 @@ add(
   [
     {
       tool: "write",
-      args: { path: "silent.txt", content: "SILENT_WRITE_BODY\n" },
+      args: { path: "silent.txt" },
       parentExcludes: "SILENT_WRITE_BODY",
     },
   ],
@@ -2048,7 +2032,7 @@ add(
   [
     {
       tool: "write",
-      args: { path: "saved.txt", content: "RECEIPT_BODY\n" },
+      args: { path: "saved.txt" },
       parentContains: "saved.txt",
       parentExcludes: "RECEIPT_BODY",
     },
@@ -2083,7 +2067,7 @@ add(
   ["compose.write-large-read"],
   "Use one Codemode script to write large.txt with exactly 1024 copies of retained line followed by a newline (use repeat). Pass the returned Write result directly into Read with offset 1024 and limit 1. Print that Read result and report its last-line value. Do not shorten the saved content to match a display preview.",
   [
-    { tool: "write", args: { path: "large.txt", content: "retained line\n".repeat(1024) } },
+    { tool: "write", args: { path: "large.txt" } },
     { tool: "read", args: { offset: 1024, limit: 1 }, reuse: reuse(0), contains: "retained line" },
   ],
   {
@@ -2113,29 +2097,28 @@ add(
     {
       tool: "insert",
       args: {
-        text: "NOTE",
         before: true,
         separation: "blank-line",
       },
     },
     {
       tool: "insert",
-      args: { path: "literal.txt", text: "[", before: true },
+      args: { path: "literal.txt", before: true },
       exactText: ["anchor"],
     },
     {
       tool: "insert",
-      args: { path: "literal.txt", text: "]", before: false },
+      args: { path: "literal.txt", before: false },
       exactText: ["anchor"],
     },
     {
       tool: "insert",
-      args: { path: "block.txt", text: "[", before: true },
+      args: { path: "block.txt", before: true },
       exactText: ["anchor"],
     },
     {
       tool: "insert",
-      args: { path: "block.txt", text: "]", before: false },
+      args: { path: "block.txt", before: false },
       exactText: ["anchor"],
     },
     { tool: "search", args: { path: "search.txt", query: "MATCH" } },
@@ -2144,7 +2127,6 @@ add(
       args: {
         path: "search.txt",
         anchor: matchReference(1),
-        text: "[",
         before: true,
       },
       reuse: reuse(5, "anchor", "anchor"),
@@ -2155,7 +2137,6 @@ add(
       args: {
         path: "search.txt",
         anchor: matchReference(1),
-        text: "]",
         before: false,
       },
       reuse: reuse(7, "anchor", "anchor"),
@@ -2244,7 +2225,7 @@ add(
   (api) =>
     `${parallelCalls(api, 4)} Include one Insert and three whole-file Deletes. Use Insert with path note.txt, anchor keep and text ${JSON.stringify("ADDED\n")} (no leading newline). Delete a.txt, b.txt and c.txt by ordinary paths without start/end. Keep note.txt and its other bytes; do not turn the file deletions into text selections.`,
   [
-    { tool: "insert", args: { path: "note.txt", anchor: "keep", text: "ADDED\n" } },
+    { tool: "insert", args: { path: "note.txt", anchor: "keep" } },
     ...["a.txt", "b.txt", "c.txt"].map((source): RouteStep => ({
       tool: "delete",
       args: { path: source, start: undefined, end: undefined },
@@ -2316,7 +2297,7 @@ add(
   [
     {
       tool: "write",
-      args: { path: "fixture://saved-canonicalized/content", content: "changed\n" },
+      args: { path: "fixture://saved-canonicalized/content" },
       contains: "CHANGED",
     },
     {
@@ -2327,7 +2308,7 @@ add(
     },
     {
       tool: "write",
-      args: { path: "fixture://saved-readback/content", content: "updated\n" },
+      args: { path: "fixture://saved-readback/content" },
       after: [1],
       error: true,
       contains: "READBACK",
@@ -2359,7 +2340,7 @@ add(
   [
     {
       tool: "write",
-      args: { path: "fixture://saved-mismatch/content", content: "changed\n" },
+      args: { path: "fixture://saved-mismatch/content" },
       error: true,
       contains: "PROVIDER_SAVE_VERIFICATION_FAILED",
       excludes: "No file was changed.",
@@ -2602,7 +2583,7 @@ add(
       reuse: [reuse(0), reuse(1, "target")],
       contains: "No changes: zero-width selections.",
     },
-    { tool: "replace", args: { text: "NEW " }, reuse: reuse(2) },
+    { tool: "replace", reuse: reuse(2) },
   ],
   {
     files: { "task.txt": "source\n", "dest.txt": "left right\n" },
@@ -2703,7 +2684,7 @@ for (const [name, eol, ending] of [
     ["edit.exact-eof", "edit.delete-empty-replace"],
     "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For each block, pass both lines together as one start string and omit the end parameter entirely. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.",
     [
-      { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
+      { tool: "replace", args: { path: "last.txt", start: "Last" } },
       {
         tool: "delete",
         args: { path: "block.txt", end: undefined },
@@ -2747,18 +2728,16 @@ for (const method of ["all", "allSettled"] as const) {
       { tool: "read", args: { path: "delete.txt", views: ["anchors"] } },
       {
         tool: "insert",
-        args: { text: "FIRST\n" },
         reuse: reuse(0),
       },
       {
         tool: "insert",
-        args: { text: "MIDDLE\n" },
         reuse: reuse(0),
         parallelWith: 2,
       },
       {
         tool: "insert",
-        args: { path: "./insert.txt", text: "LAST\n" },
+        args: { path: "./insert.txt" },
         parallelWith: 3,
       },
       { tool: "delete", reuse: reuse(1), parallelWith: 4 },
@@ -2783,7 +2762,7 @@ add(
   ["edit.undo-last", "compose.mutation-undo"],
   "Change OLD to NEW in task.txt using replace, then undo the last editor transaction using undo. Read the restored file and report its original marker.",
   [
-    { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+    { tool: "replace", args: { path: "task.txt", start: "OLD" } },
     { tool: "undo", args: { file: "task.txt", change: "last" }, after: [0] },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [1] },
   ],
@@ -2799,7 +2778,7 @@ add(
   ["git.changes", "git.stage", "git.stage-noop", "git.unstage", "git.undo-change", "discovery.git"],
   "Replace OLD with NEW in task.txt. Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Repeat stage with that anchor and confirm it succeeds as already staged. Read changes again and unstage its current CHANGE anchor. Read changes once more and undo that current change. Leave source and index at the original clean state.",
   [
-    { tool: "replace", args: { text: "NEW" } },
+    { tool: "replace" },
     { tool: "read", args: { path: "task.txt", views: ["changes"] }, after: [0] },
     {
       tool: "stage",
@@ -2931,7 +2910,6 @@ add(
       tool: "write",
       args: {
         path: "fresh.ts",
-        content: "export function nebulaOtterRefreshSentinel() { return 73; }\n",
       },
     },
     {
@@ -3009,7 +2987,6 @@ add(
       tool: "replace",
       args: {
         path: { id: /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u },
-        text: "renamed",
       },
       reuse: reuse(1, "path", "capture:NAME"),
     },
@@ -3032,7 +3009,7 @@ add(
       reuse: reuse(0),
       contains: "function second",
     },
-    { tool: "replace", args: { text: /^function second\(\) \{ return 10; \}$/ }, reuse: reuse(1) },
+    { tool: "replace", reuse: reuse(1) },
   ],
   {
     files: syntax,
@@ -3051,7 +3028,6 @@ add(
       args: {
         start: /scope-begin-/,
         end: /scope-end-/,
-        text: /^function renamed\(\) \{ return 8; \}\n?$/,
       },
       reuse: [reuse(0, "start", "anchor"), reuse(0, "end", "anchor")],
     },
@@ -3110,7 +3086,7 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [2] },
     {
       tool: "insert",
-      args: { path: "task.txt", text: "RECOVERED\n" },
+      args: { path: "task.txt" },
       reuse: reuse(3, "anchor", "anchor"),
     },
   ],
@@ -3125,7 +3101,7 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true, text: "top\n" },
+      args: { path: "task.txt", anchor: "alpha", before: true },
       after: [0],
     },
     {
@@ -3192,7 +3168,7 @@ add(
     { tool: "read", args: { offset: 2, limit: 1 } },
     {
       tool: "replace",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, text: "BAD" },
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: [reuse(1), reuse(0, "start", "anchor")],
       error: true,
       contains: "outside the result's selection: task.txt line 2",
@@ -3200,7 +3176,7 @@ add(
     },
     {
       tool: "replace",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, text: /^NEW\n?$/u },
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       after: [2],
       reuse: [reuse(1), reuse(0, "start", "anchor")],
     },
@@ -3216,11 +3192,11 @@ add(
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     {
       tool: "replace",
-      args: { start: "last", text: "BAD" },
+      args: { start: "last" },
       reuse: reuse(0),
       error: true,
     },
-    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" } },
+    { tool: "replace", args: { path: "task.txt", start: "last" } },
   ],
   { expected: { "task.txt": "keep\nOLD\nfixed\n" } },
 );
@@ -3231,7 +3207,7 @@ add(
   "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Also read the current file after the replacement and report NEW; this is independent of the rejected old-result Read. Do not try to revive the old result.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "replace", args: { text: "NEW" }, after: [0] },
+    { tool: "replace", after: [0] },
     { tool: "read", error: true, reuse: reuse(0), after: [1] },
     { tool: "read", args: { path: "task.txt" }, contains: "NEW", after: [1] },
   ],
@@ -3484,7 +3460,7 @@ add(
     },
     { tool: "read", reuse: reuse(0), contains: "typescript-language-server:2322" },
     { tool: "search", args: { query: "2322" }, reuse: reuse(0), contains: "2322" },
-    { tool: "replace", args: { start: "broken", text: "changed" }, reuse: reuse(0), error: true },
+    { tool: "replace", args: { start: "broken" }, reuse: reuse(0), error: true },
   ],
   {
     files: {
@@ -3592,7 +3568,6 @@ add(
     },
     {
       tool: "replace",
-      args: { text: "total" },
       reuse: reuse(0, "path", "capture:name"),
       after: [1],
     },
@@ -3633,9 +3608,6 @@ add(
     },
     {
       tool: "replace",
-      args: {
-        text: "clampVec",
-      },
       after: [1],
       reuse: reuse(1, "path", "capture:name"),
     },
