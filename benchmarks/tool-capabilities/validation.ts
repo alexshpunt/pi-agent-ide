@@ -153,7 +153,7 @@ export interface RouteStep {
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
   parentExcludes?: string;
-  /** Require this child in a committed native editor batch with exactly this many calls. */
+  /** Require a committed native batch of this size; share it with a batched sameAssistantWith step. */
   editorBatchSize?: number;
   /** Require each fragment in the completed Codemode parent. */
   parentContains?: string | readonly string[];
@@ -975,6 +975,7 @@ export function validateRoute(
           parent?: string;
           call?: string;
           readIndex?: number;
+          editorBatch?: { applied: boolean; calls: { id: string }[] };
         }
       | undefined
     )[],
@@ -1134,6 +1135,7 @@ export function validateRoute(
           continue;
       }
       if (step.excludes && output.includes(step.excludes)) continue;
+      let editorBatch: { applied: boolean; calls: { id: string }[] } | undefined;
       if (step.editorBatchSize !== undefined) {
         const parent = ends.get(execution.parent ?? "");
         const details = parent?.event.result?.details as
@@ -1141,17 +1143,18 @@ export function validateRoute(
               editorBatches?: { applied: boolean; calls: { id: string }[] }[];
             }
           | undefined;
-        if (
-          !parent ||
-          parent.index <= end.index ||
-          parent.event.isError !== false ||
-          !details?.editorBatches?.some(
-            (batch) =>
-              batch.applied &&
-              batch.calls.length === step.editorBatchSize &&
-              batch.calls.some((call) => call.id === event.toolCallId),
-          )
-        )
+        const peerBatch =
+          step.sameAssistantWith === undefined
+            ? undefined
+            : selected[step.sameAssistantWith]?.editorBatch;
+        editorBatch = details?.editorBatches?.find(
+          (batch) =>
+            batch.applied &&
+            batch.calls.length === step.editorBatchSize &&
+            batch.calls.some((call) => call.id === execution.call) &&
+            (peerBatch === undefined || batch === peerBatch),
+        );
+        if (!parent || parent.index <= end.index || parent.event.isError !== false || !editorBatch)
           continue;
       }
       if (step.parentExcludes || step.parentContains || step.parentStructuredValue) {
@@ -1232,6 +1235,7 @@ export function validateRoute(
             readIndex: start.readIndex,
             parent: execution.parent,
             call: execution.call,
+            editorBatch,
           },
         ])
       )
