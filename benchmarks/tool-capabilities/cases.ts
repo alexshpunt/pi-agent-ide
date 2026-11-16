@@ -823,7 +823,7 @@ const rows = Array.from({ length: 150 }, (_, index) => `row ${String(index + 1)}
 add(
   "search-script-match-ids",
   ["search.script-match-list", "compose.search-match-id"],
-  "In one Codemode call, Search list.txt for regex:^row \\d+$. The value must list all 150 matches and be complete, with the last match on line 150. Replace only that last match with LAST by passing that match or its id as Replace's path, not the whole Search value, the file path or a line anchor. Report the number of matches.",
+  "In one Codemode call, Search list.txt for regex:^row \\d+$. The value must list all 150 matches and be complete, with the last match on line 150. Replace only that last match with LAST by passing that match or its id as Replace's path, not the whole Search value, the file path or a line anchor. Report the number of matches in plain digits.",
   [
     {
       tool: "search",
@@ -930,7 +930,7 @@ for (const mode of both)
 add(
   "read-jq",
   ["read.jq", "read.jq-paging"],
-  "Use read with a jq view to select .status from config.json. Then read with jq:.status, .untouched, offset=2 and limit=1 to select the second transformed value. Report that number. Do not edit anything.",
+  "Use read with a jq view to select .status from config.json. Then read with jq:.status, .untouched, offset=2 and limit=1 to select the second transformed value. Report that number in plain digits. Do not edit anything.",
   [
     { tool: "read", args: { path: "config.json", views: ["jq:.status"] }, contains: "ready" },
     {
@@ -3359,7 +3359,7 @@ add(
     "debug.delete",
     "discovery.debug",
   ],
-  "Discover debug and call it with adapter debugpy and program task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and start the debugger. When stopped, evaluate value with insert evaluate value. Read the stopped session, report value=42, then delete the debugger session. Source must stay unchanged.",
+  "Discover debug and call it with adapter debugpy and program task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and start the debugger. When stopped, evaluate value with insert evaluate value. Read the stopped session, report value in plain digits, then delete the debugger session. Source must stay unchanged.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", reuse: reuse(0, "path", "debug") },
@@ -3398,7 +3398,7 @@ add(
     "compose.debug-breakpoint-delete-read-session",
     "read.breakpoints",
   ],
-  "Discover debug and call it with adapter debugpy and program task.py. Wait for the debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start, then step into the twice function, step over its first assignment, and evaluate result while stopped. Step out, read the stopped session, delete the returned breakpoint resource, read the session to confirm it is still stopped, continue to completion, read the completed session, and delete the session. Read stopped state before each next control action. Report the evaluated result. Do not change source files.",
+  "Discover debug and call it with adapter debugpy and program task.py. Wait for the debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start and read the stopped session. Step into the twice function and read the stopped session. Step over its first assignment and read the stopped session. Evaluate result while stopped, then step out and read the stopped session. Delete the returned breakpoint resource and read the session to confirm it is still stopped. Continue to completion, read the completed session, and delete the session. Report the evaluated result in plain digits. Do not change source files.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
@@ -3441,7 +3441,7 @@ add(
 add(
   "debug-backend-fallback",
   ["debug.backend-vscode-refusal", "debug.backend-native"],
-  "Discover debug and call it with adapter debugpy, program task.py and backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value. Do not change source files.",
+  "Discover debug and call it with adapter debugpy, program task.py and backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value in plain digits. Do not change source files.",
   [
     {
       tool: "debug",
@@ -3480,7 +3480,7 @@ add(
 add(
   "diagnostics-report",
   ["diagnostics.file", "compose.diagnostics-read-search", "diagnostics.readonly-report"],
-  "Call diagnostics for problem.ts. Reuse that exact report as path in Read, then reuse the original report as path in Search with query 2322. Attempt Replace with the original report as path, start broken and text changed; it must refuse, not edit the source. Report diagnostic code 2322. Do not change any files. In Codemode check the diagnostics value has text and id, and reuse that value unchanged.",
+  "Call diagnostics for problem.ts. Reuse that exact report as path in Read, then reuse the original report as path in Search with query 2322. Attempt Replace with the original report as path, start broken and text changed; it must refuse, not edit the source. Report diagnostic code 2322 in plain digits. Do not change any files. In Codemode check the diagnostics value has text and id, and reuse that value unchanged.",
   [
     {
       tool: "diagnostics",
@@ -3532,7 +3532,7 @@ add(
 add(
   "lsp-read",
   ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
-  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search with declaration task.ts#count, then with calls task.ts#count. Call diagnostics with path problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code. Do not change files.",
+  "Use lsp_search with query count on task.ts, then lsp_search again with that returned result as path and references true to find its usage. Use lsp_search with declaration task.ts#count, then with calls task.ts#count. Call diagnostics with path problem.ts and also read problem.ts with the diagnostics view; wait for the actual TypeScript error report, not a pending/unavailable status. Report the declared count value and diagnostic code in plain digits. Do not change files.",
   [
     {
       tool: "lsp_search",
@@ -3676,7 +3676,7 @@ const callGraphSource = [
 add(
   "lsp-calls-script-value",
   ["lsp.script-call-graph", "compose.lsp-caller-id", "lsp.script-line-text"],
-  "In one Codemode call, use lsp_search with calls task.ts#save. Its value lists callers in incoming and callees in outgoing, each as its whole declaration. Check that the callers are submit and retry and the callee is validate. Then delete the caller retry by passing its incoming entry or that entry's id to delete, not a symbol or file path. Report the number of callers.",
+  "In one Codemode call, use lsp_search with calls task.ts#save. Its value lists callers in incoming and callees in outgoing, each as its whole declaration. Check that the callers are submit and retry and the callee is validate. Then delete the caller retry by passing its incoming entry or that entry's id to delete, not a symbol or file path. Report the number of callers in plain digits.",
   [
     {
       tool: "lsp_search",
