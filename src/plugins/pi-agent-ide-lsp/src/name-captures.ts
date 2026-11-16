@@ -18,12 +18,24 @@ export class NameCaptures {
     const id = resultValueId(value) ?? value;
     return typeof id === "string" ? this.#captures.get(id) : undefined;
   }
-  matches(input: unknown): boolean {
-    if (typeof input !== "object" || input === null) return false;
-    const contains = (value: unknown): boolean =>
-      Array.isArray(value) ? value.some(contains) : this.get(value) !== undefined;
+  find(input: unknown): { capture: NameCapture; reference: unknown } | undefined {
+    if (typeof input !== "object" || input === null) return undefined;
+    const find = (value: unknown): ReturnType<NameCaptures["find"]> => {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const selected = find(item);
+          if (selected !== undefined) return selected;
+        }
+        return undefined;
+      }
+      const capture = this.get(value);
+      return capture === undefined ? undefined : { capture, reference: value };
+    };
     const fields = input as Record<string, unknown>;
-    return [fields.path, fields.start, fields.end].some(contains);
+    return find(fields.path) ?? find(fields.start) ?? find(fields.end);
+  }
+  matches(input: unknown): boolean {
+    return this.find(input) !== undefined;
   }
 }
 

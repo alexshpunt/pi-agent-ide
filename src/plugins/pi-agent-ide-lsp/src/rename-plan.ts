@@ -75,30 +75,33 @@ export function prepareSymbolRename(
   resultTargets: ResultTargetStore,
 ): TextPreEditState | undefined {
   const input = state.input as Record<string, unknown>;
-  if (!captures.matches(input)) return undefined;
+  const selected = captures.find(input);
+  if (selected === undefined) return undefined;
   const capture = captures.get(input.path);
-  if (
-    capture === undefined ||
-    typeof input.text !== "string" ||
-    input.text.trim() === "" ||
-    input.start !== undefined ||
-    input.end !== undefined
-  )
-    throw new Error(
-      "Rename needs one declaration name capture in path and a non-empty new name in text, without start/end.",
-    );
-  const request: RenameRequest = {
-    ...capture,
-    newName: input.text,
-  };
   return {
     ...state,
-    planEdit: () =>
-      withLspDocuments(() =>
+    // Planning failures use the resolved file, not the opaque selection, as their source.
+    input: { ...input, path: selected.capture.source },
+    planEdit: async () => {
+      if (
+        capture === undefined ||
+        typeof input.text !== "string" ||
+        input.text.trim() === "" ||
+        input.start !== undefined ||
+        input.end !== undefined
+      )
+        throw new Error(
+          "Rename needs one declaration name capture and a non-empty new name. " +
+            "Omit start/end. Use replace with " +
+            JSON.stringify({ path: selected.reference, text: "newName" }),
+        );
+      const request: RenameRequest = { ...capture, newName: input.text };
+      return withLspDocuments(() =>
         planRename(state, request, managerFor, () =>
           currentNameCapture(resultTargets, input.path, state.cwd, state.signal),
         ),
-      ),
+      );
+    },
     metadata: {
       ...state.metadata,
       semanticEdit: { mode: "lsp-rename", referencesUpdated: true },
