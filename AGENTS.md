@@ -9,6 +9,8 @@ CI may run automatically on `develop`, but it is not a merge requirement. Do not
 
 During feature development, run only relevant unit tests, typecheck/lint, a targeted integration case, or a small live smoke check locally. Full integration suites and other broad, heavy test runs belong only in CI/CD. Do not run them locally, including through an umbrella check command. Keep live tool and TUI verification for changed behavior; it is an internal check, not a separate user acceptance gate.
 
+Do not test prose: tool descriptions, prompts, skills, documentation, or human-readable log, UI, and error wording. Delete any test found to pin that wording immediately; do not weaken its assertion or leave it for later. Machine-parsed protocol and file-format contracts are exempt.
+
 Run one integration file with `npx pi-test run -- vitest run --config vitest.integration.config.mjs <file>`. `pnpm test:integration -- <file>` does not filter: it runs the whole integration suite.
 
 In scripted-provider tests that embed Codemode scripts, use distinct reference-placeholder namespaces for the outer provider and the nested script. The provider also substitutes inside script strings; nested placeholders must survive until their issuing calls run. See `tests/integration/json-structured-arguments.integration.test.ts` for `$issued-uuid:` and `$script-uuid:`.
