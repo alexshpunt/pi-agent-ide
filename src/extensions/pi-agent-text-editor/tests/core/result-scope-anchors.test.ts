@@ -146,6 +146,59 @@ async function fixture(files: Record<string, string>) {
   return { store, run, lines, content };
 }
 
+async function tokenFixture(complete = true) {
+  const original = "red blue\n";
+  const f = await fixture({ "tokens.txt": original });
+  const targets = [0, 4].map((column) => ({
+    source: path.join(cwd, "tokens.txt"),
+    expectedContent: original,
+    ranges: [
+      {
+        start: { lineNumber: 1, column },
+        end: { lineNumber: 1, column: column + (column === 0 ? 3 : 4) },
+      },
+    ],
+  }));
+  const whole = f.store.register(targets, cwd, complete, "Unsafe token union");
+  const matches = targets.map((target, index) => {
+    const reference = `SEARCH#ABCD:${index + 1}:match`;
+    f.store.registerSearchReference(reference, f.store.register([target], cwd), cwd);
+    return reference;
+  });
+  return { ...f, whole, matches, original };
+}
+
+test.each([false, true])(
+  "a guarded token result scopes an individual match (end: %s)",
+  async (paired) => {
+    const f = await tokenFixture();
+    const { result, text } = await f.run(replaceMutationTool, {
+      path: { id: f.whole },
+      start: f.matches[0],
+      ...(paired && { end: f.matches[0] }),
+      text: "RED",
+    });
+    expect(result.details.effect, text).not.toBe("not-applied");
+    expect(await f.content("tokens.txt")).toBe("RED blue\n");
+  },
+);
+
+test.each(["whole", "whole-anchor", "cross-range", "outside", "incomplete"])(
+  "a guarded scope does not authorize %s edits",
+  async (kind) => {
+    const f = await tokenFixture(kind !== "incomplete");
+    const { result } = await f.run(replaceMutationTool, {
+      path: { id: f.whole },
+      ...(kind !== "whole" && {
+        start: kind === "whole-anchor" ? f.whole : kind === "outside" ? "blue\n" : f.matches[0],
+      }),
+      ...(kind === "cross-range" && { end: f.matches[1] }),
+      text: "BAD",
+    });
+    expect(result.details.effect).toBe("not-applied");
+    expect(await f.content("tokens.txt")).toBe(f.original);
+  },
+);
 test.each([insertMutationTool, replaceMutationTool, deleteMutationTool])(
   "$name refuses selectors on multiple result inputs before writing any file",
   async (tool) => {

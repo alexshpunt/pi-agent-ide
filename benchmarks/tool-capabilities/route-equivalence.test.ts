@@ -1208,6 +1208,48 @@ void test("token edit accepts an issued selection in start but rejects fabricate
   }
 });
 
+void test("whole Search scopes preserve individual-match route equivalence", () => {
+  const route: RouteStep[] = [
+    { tool: "search", args: { path: "task.txt", query: "red OR blue" } },
+    { tool: "replace", args: { path: /^SEARCH#ABCD:1:match$/u, text: "RED" } },
+  ];
+  const search: Call = {
+    tool: "search",
+    args: { path: "task.txt", query: "red OR blue" },
+    text: `<uuid>${uuid}</uuid>\nSEARCH#ABCD:1:match\nSEARCH#ABCD:2:match`,
+    value: {
+      id: uuid,
+      complete: true,
+      matches: [
+        {
+          id: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222",
+          path: "task.txt",
+          references: { match: "SEARCH#ABCD:1:match" },
+        },
+        {
+          id: "RESULT#33333333-aaaa-4aaa-8aaa-333333333333",
+          path: "task.txt",
+          references: { match: "SEARCH#ABCD:2:match" },
+        },
+      ],
+    },
+  };
+  for (const mode of ["direct", "codemode"]) {
+    for (const path of [{ id: uuid }, result]) {
+      for (const end of [undefined, "SEARCH#ABCD:1:match"]) {
+        const args = { path, start: "SEARCH#ABCD:1:match", ...(end && { end }), text: "RED" };
+        assert.ok(check(route, [search, { tool: "replace", args }], mode));
+      }
+    }
+    for (const args of [
+      { path: { id: "44444444-aaaa-4aaa-8aaa-444444444444" }, start: "SEARCH#ABCD:1:match" },
+      { path: { id: uuid }, start: "SEARCH#FFFF:1:match" },
+      { path: { id: uuid }, start: "SEARCH#ABCD:1:match", end: "SEARCH#ABCD:2:match" },
+      { path: { id: uuid }, start: "SEARCH#ABCD:1:match", end: "SEARCH#FFFF:1:match" },
+    ])
+      assert.ok(!check(route, [search, { tool: "replace", args: { ...args, text: "RED" } }], mode));
+  }
+});
 void test("multiline replacement must reuse the first search, in path or start", () => {
   const route = steps("search-multiline-between");
   const calls = [
