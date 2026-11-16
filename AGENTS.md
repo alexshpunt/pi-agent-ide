@@ -11,6 +11,8 @@ During feature development, run only relevant unit tests, typecheck/lint, a targ
 
 Run one integration file with `npx pi-test run -- vitest run --config vitest.integration.config.mjs <file>`. `pnpm test:integration -- <file>` does not filter: it runs the whole integration suite.
 
+In scripted-provider tests that embed Codemode scripts, use distinct reference-placeholder namespaces for the outer provider and the nested script. The provider also substitutes inside script strings; nested placeholders must survive until their issuing calls run. See `tests/integration/json-structured-arguments.integration.test.ts` for `$issued-uuid:` and `$script-uuid:`.
+
 To find a slow code path, profile a focused vitest file: `npx vitest run <file> --pool=forks --execArgv=--cpu-prof --execArgv=--cpu-prof-dir=<dir>` writes one `.cpuprofile` per test worker. Keep the profile directory outside the repository or in `.tmp/`.
 
 Before testing native Rust diagnostics against a large workspace, account for rustup/toolchain executable discovery: it can bypass a Cargo interceptor placed only in `PATH`. Set `CARGO` to the interceptor and add an independent `RUSTC_WRAPPER` that records and blocks compilation while allowing toolchain probes. Verify the guards on a small fixture before using a large workspace; see `tests/integration/rust-diagnostics-no-build.integration.test.ts`.
