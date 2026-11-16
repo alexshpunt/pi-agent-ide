@@ -84,7 +84,7 @@ export default async function registerTerminal(
         parameters: {
           path: "shell: — terminal sessions started in this Pi session; shell:<session> — status and output tail.",
           views:
-            "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time, up to 10 s and 20 frames.",
+            "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time. Duration and interval are in seconds (defaults: 2 and 0.5); up to 10 s and 20 frames.",
         },
       },
       search: {

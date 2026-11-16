@@ -3319,9 +3319,9 @@ add(
     },
     {
       tool: "read",
-      args: { views: [/sequence/] },
+      args: { views: [/^sequence(?::|$)/] },
       reuse: reuse(0, "path", "shell"),
-      image: true,
+      image: 2,
       scriptResult: { type: "images" },
     },
   ],
