@@ -81,6 +81,152 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
   });
 });
 
+test("multi-source Read values retain per-file authority through native Codemode edits", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const files = {
+      "source.txt": "head\nmove-me\nend\n",
+      "target.txt": "top\nbottom\n",
+      "last.txt": "First\nLast",
+    };
+    for (const [file, content] of Object.entries(files))
+      await writeFile(path.join(cwd, file), content);
+    const run = await new PiIntegrationTest({
+      testName: "capability-multi-read-source-evidence",
+      transport: "rpc",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["read", "move", "replace", "codemode"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "route",
+              name: "codemode",
+              chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
+              arguments: {
+                code: `const [source, target, last] = await tools.read({path:["source.txt","target.txt","last.txt"],views:["anchors"]});
+const line = (result, text) => result.text.split(/\\r?\\n/).find(value => value.slice(8) === text);
+const start = line(source, "move-me");
+const targetStart = line(target, "top");
+const finalLine = line(last, "Last");
+if (!start || !targetStart || !finalLine) throw Error("Missing issued line");
+text(await tools.move({path:{id:source.id},start:start+"\\n",target:{id:target.id},targetStart:targetStart+"\\n"}));
+text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),text:"Final"}));`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([
+          text("Done", { chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER } }),
+        ]),
+      ],
+    }).run(
+      "Read all three files together, move the complete move-me line after top, and replace the final Last line with Final",
+    );
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("head\nend\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("top\nmove-me\nbottom\n");
+    expect(await readFile(path.join(cwd, "last.txt"), "utf8")).toBe("First\nFinal");
+    const events = run.traceEvents.flatMap((entry) =>
+      "event" in entry && entry.event && typeof entry.event === "object"
+        ? [entry.event as RunEvent]
+        : [],
+    );
+    expect(
+      validateRoute(
+        {
+          files,
+          steps: [
+            { tool: "read" },
+            {
+              tool: "move",
+              args: {
+                path: "source.txt",
+                start: "move-me",
+                target: "target.txt",
+                targetStart: "top",
+              },
+              reuse: { from: 0, field: "path" },
+            },
+            {
+              tool: "replace",
+              args: { path: "last.txt", start: "Last", text: "Final" },
+              reuse: { from: 0, field: "start", kind: "anchor" },
+            },
+          ],
+        },
+        events,
+        "codemode",
+      ),
+    ).toEqual({ passed: true, reasons: [] });
+  });
+});
+
+test("a native Search result supplies Move's implicit source selector", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const files = { "source.txt": "head\nmove-me\nend\n", "target.txt": "top\nbottom\n" };
+    for (const [file, content] of Object.entries(files))
+      await writeFile(path.join(cwd, file), content);
+    const run = await new PiIntegrationTest({
+      testName: "capability-search-implicit-move-selector",
+      transport: "rpc",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["search", "move", "codemode"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "route",
+              name: "codemode",
+              chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
+              arguments: {
+                code: `const source = await tools.search({path:"source.txt",query:"regex:move-me\\\\n",multiline:true});
+text(await tools.move({path:source,target:"target.txt",targetStart:"top"}));`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([
+          text("Done", { chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER } }),
+        ]),
+      ],
+    }).run("Search for the complete move-me line and use its result as Move's source after top");
+    expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("head\nend\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("top\nmove-me\nbottom\n");
+    const events = run.traceEvents.flatMap((entry) =>
+      "event" in entry && entry.event && typeof entry.event === "object"
+        ? [entry.event as RunEvent]
+        : [],
+    );
+    expect(
+      validateRoute(
+        {
+          files,
+          steps: [
+            { tool: "search" },
+            {
+              tool: "move",
+              args: {
+                path: "source.txt",
+                start: /move-me|[A-Z]+#/u,
+                target: "target.txt",
+                targetStart: "top",
+              },
+              reuse: { from: 0, field: ["path", "start"] },
+            },
+          ],
+        },
+        events,
+        "codemode",
+      ),
+    ).toEqual({ passed: true, reasons: [] });
+  });
+});
+
 test.each(["all", "allSettled"] as const)(
   "native Promise.%s children and issued line anchors satisfy route equivalence",
   async (aggregation) => {

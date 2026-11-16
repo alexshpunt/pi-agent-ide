@@ -48,7 +48,247 @@ function search(path: string, text: string, lineText = text, line = 1): Call {
     value: { id, complete: true, matches: [{ id: matchId, path, line, text, lineText }] },
   };
 }
+function multiRead(): Call {
+  return {
+    tool: "read",
+    args: { path: ["source.txt", "target.txt"], views: ["anchors"] },
+    text: "--- source.txt ---\n123ABCD|Last\n--- target.txt ---\n765ABCD|Top\n",
+    value: [
+      { id, text: "123ABCD|Last" },
+      { id: matchId, text: "765ABCD|Top\n" },
+    ],
+  };
+}
 for (const mode of ["direct", "codemode"]) {
+  void test(`a Search result path supplies an implicit issued start selector in ${mode}`, () => {
+    const files = { "source.txt": "head\nmove-me\nend\n", "target.txt": "Top\n" };
+    const route: RouteStep[] = [
+      { tool: "search" },
+      {
+        tool: "move",
+        error: "direct",
+        args: {
+          path: "source.txt",
+          start: /move-me|[A-Z]+#/u,
+          target: "target.txt",
+          targetStart: "Top",
+        },
+        reuse: { from: 0, field: ["path", "start"] },
+      },
+    ];
+    const found = search("source.txt", "move-me", "move-me", 2);
+    const move: Call = {
+      tool: "move",
+      error: true,
+      args: { path: found.value, target: "target.txt", targetStart: "Top" },
+    };
+    assert.ok(passed(files, route, [found, move], mode));
+    const target: Call = {
+      ...search("target.txt", "Top"),
+      value: {
+        id: "RESULT#33333333-aaaa-4aaa-8aaa-333333333333",
+        complete: true,
+        matches: [
+          {
+            id: "RESULT#44444444-aaaa-4aaa-8aaa-444444444444",
+            path: "target.txt",
+            line: 1,
+            text: "Top",
+            lineText: "Top",
+          },
+        ],
+      },
+    };
+    const targetRoute: RouteStep[] = [
+      { tool: "search" },
+      { tool: "search" },
+      {
+        tool: "move",
+        error: "direct",
+        args: {
+          path: "source.txt",
+          start: /move-me|[A-Z]+#/u,
+          target: "target.txt",
+          targetStart: /Top|[A-Z]+#/u,
+        },
+        reuse: [
+          { from: 0, field: "path" },
+          { from: 1, field: "target" },
+        ],
+      },
+    ];
+    assert.ok(
+      passed(
+        files,
+        targetRoute,
+        [found, target, { ...move, args: { path: found.value, target: target.value } }],
+        mode,
+      ),
+    );
+    assert.ok(
+      !passed(
+        files,
+        targetRoute,
+        [found, target, { ...move, args: { path: found.value, target: found.value } }],
+        mode,
+      ),
+    );
+    for (const args of [
+      { ...move.args, start: "Wrong" },
+      { ...move.args, path: { id: "RESULT#55555555-aaaa-4aaa-8aaa-555555555555" } },
+      { ...move.args, target: "wrong.txt" },
+    ])
+      assert.ok(!passed(files, route, [found, { ...move, args }], mode));
+    assert.ok(!passed(files, route, [{ ...found, error: true }, move], mode));
+    assert.ok(
+      !passed(
+        files,
+        route,
+        [
+          {
+            ...found,
+            args: { path: "wrong.txt", query: "move-me" },
+            value: {
+              id,
+              complete: true,
+              matches: [
+                { id: matchId, path: "wrong.txt", line: 2, text: "move-me", lineText: "move-me" },
+              ],
+            },
+          },
+          move,
+        ],
+        mode,
+      ),
+    );
+    assert.ok(!passed(files, route, [move], mode));
+  });
+  void test(`multi-Read element references identify source and destination in ${mode}`, () => {
+    const files = { "source.txt": "Last", "target.txt": "Top\n" };
+    const route: RouteStep[] = [
+      { tool: "read" },
+      {
+        tool: "move",
+        args: { path: "source.txt", start: "Last", target: "target.txt", targetStart: "Top" },
+      },
+    ];
+    const move: Call = {
+      tool: "move",
+      args: {
+        path: { id },
+        start: "123ABCD|Last\n",
+        target: { id: matchId },
+        targetStart: "765ABCD|Top\n",
+      },
+    };
+    assert.ok(passed(files, route, [multiRead(), move], mode));
+    const unissued = "RESULT#55555555-aaaa-4aaa-8aaa-555555555555";
+    const quoted = multiRead();
+    quoted.value = [
+      { id, text: `123ABCD|Last\n111ABCD|${unissued}\n` },
+      { id: matchId, text: "765ABCD|Top\n" },
+    ];
+    assert.ok(
+      !passed(
+        { ...files, "source.txt": `Last\n${unissued}\n` },
+        route,
+        [quoted, { ...move, args: { ...move.args, path: { id: unissued } } }],
+        mode,
+      ),
+    );
+    for (const change of [
+      { path: { id: matchId } },
+      { target: { id } },
+      { start: "765ABCD|Top\n" },
+      { targetStart: "123ABCD|Last\n" },
+      { start: "123ABCD|Wrong\n" },
+    ])
+      assert.ok(
+        !passed(files, route, [multiRead(), { ...move, args: { ...move.args, ...change } }], mode),
+        JSON.stringify(change),
+      );
+    for (const value of [
+      { id },
+      [{ id, text: "123ABCD|Last" }],
+      [
+        { id, text: "123ABCD|Last" },
+        { id, text: "765ABCD|Top\n" },
+      ],
+    ])
+      assert.ok(!passed(files, route, [{ ...multiRead(), value }, move], mode));
+    assert.ok(!passed(files, route, [{ ...multiRead(), error: true }, move], mode));
+    assert.ok(!passed(files, route, [move, multiRead()], mode));
+  });
+  void test(`multi-Read anchors prove exact unterminated lines without borrowing sibling text in ${mode}`, () => {
+    const files = { "source.txt": "First\nLast", "target.txt": "First\nLast" };
+    const read = multiRead();
+    read.text =
+      "--- source.txt ---\n111ABCD|First\n123ABCD|Last\n--- target.txt ---\n111ABCD|First\n765ABCD|Last";
+    read.value = [
+      { id, text: "111ABCD|First\n123ABCD|Last" },
+      { id: matchId, text: "111ABCD|First\n765ABCD|Last" },
+    ];
+    const route: RouteStep[] = [
+      { tool: "read" },
+      {
+        tool: "replace",
+        args: { path: "source.txt", start: "Last", text: "Final" },
+        reuse: { from: 0, field: "start", kind: "anchor" },
+      },
+    ];
+    const replace: Call = {
+      tool: "replace",
+      args: { path: { id }, start: "123ABCD", text: "Final" },
+    };
+    for (const start of ["123ABCD", "123ABCD|Last", "123ABCD|Last\n"])
+      assert.ok(
+        passed(files, route, [read, { ...replace, args: { ...replace.args, start } }], mode),
+      );
+    const single = { ...read, args: { ...read.args, path: ["source.txt"] }, value: { id } };
+    assert.ok(passed(files, route, [single, replace], mode));
+    for (const args of [
+      { path: { id }, text: "Final" },
+      { path: "source.txt", start: { id }, text: "Final" },
+    ])
+      assert.ok(!passed(files, route, [read, { tool: "replace", args }], mode));
+    // Literal paths must also restrict evidence to the selected array element.
+    assert.ok(
+      !passed(
+        files,
+        route,
+        [read, { ...replace, args: { ...replace.args, path: "source.txt", start: "765ABCD" } }],
+        mode,
+      ),
+    );
+    assert.ok(
+      !passed(files, route, [read, { ...replace, args: { ...replace.args, text: "Wrong" } }], mode),
+    );
+    assert.ok(
+      !passed(
+        files,
+        route,
+        [read, { tool: "replace", args: { path: "source.txt", start: "Last", text: "Final" } }],
+        mode,
+      ),
+    );
+    const mutation: Call = {
+      tool: "replace",
+      args: { path: { id }, start: "Last", text: "Changed" },
+    };
+    assert.ok(!passed(files, route, [read, mutation, replace], mode));
+    // Null siblings retain their slot and must not shift a later result onto the wrong path.
+    const partial = { ...read, value: [null, { id: matchId, text: "765ABCD|Last" }] };
+    const targetRoute: RouteStep[] = [
+      { tool: "read" },
+      { tool: "replace", args: { path: "target.txt", start: "Last", text: "Final" } },
+    ];
+    const targetEdit: Call = {
+      tool: "replace",
+      args: { path: { id: matchId }, start: "765ABCD", text: "Final" },
+    };
+    assert.ok(passed(files, targetRoute, [partial, targetEdit], mode));
+    assert.ok(!passed(files, route, [partial, replace], mode));
+  });
   void test(`displayed anchors keep issued provenance and one optional separator in ${mode}`, () => {
     const route: RouteStep[] = [
       { tool: "read" },
