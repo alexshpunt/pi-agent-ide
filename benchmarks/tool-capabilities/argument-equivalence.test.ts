@@ -46,6 +46,112 @@ function passes(id: string, calls: Call[], mode = "direct") {
 }
 
 for (const mode of ["direct", "codemode"]) {
+  void test(`${mode}: debugger programs and working directories match the same fixture location`, () => {
+    const launch = task("debug-controls").steps[0];
+    assert.ok(launch);
+    const route: RouteStep[] = [
+      launch,
+      { tool: "read", reuse: { from: 0, field: "path", kind: "debug" } },
+    ];
+    const read: Call = { tool: "read", args: { path: "debug:session-1" } };
+    const debug = (program: string, cwd?: string): Call => ({
+      tool: "debug",
+      args: { program, adapter: "debugpy", backend: "native", ...(cwd !== undefined && { cwd }) },
+      text: "debug:session-1",
+    });
+    for (const call of [
+      debug("/workspace/fixture/task.py"),
+      debug("./task.py", "/workspace/fixture"),
+      debug("/workspace/fixture/task.py", "/tmp"),
+    ]) {
+      const retained = events([call, read], mode);
+      const original = structuredClone(retained);
+      assert.ok(validateRoute({ steps: route }, retained, mode).passed);
+      assert.deepEqual(retained, original);
+      assert.equal(validateRoute({ steps: route }, events([call], mode), mode).passed, false);
+      assert.equal(validateRoute({ steps: route }, events([read], mode), mode).passed, false);
+      assert.equal(
+        validateRoute(
+          { steps: route },
+          events([call, { ...read, args: { path: "debug:other" } }], mode),
+          mode,
+        ).passed,
+        false,
+      );
+    }
+    for (const call of [debug("other.py"), debug("task.py", "/tmp"), debug("/tmp/task.py")])
+      assert.equal(validateRoute({ steps: route }, events([call, read], mode), mode).passed, false);
+    const cwdRoute: RouteStep[] = [{ tool: "bash", args: { command: "pwd", cwd: "." } }];
+    for (const cwd of [".", "./", "/workspace/fixture", "/workspace/fixture/"])
+      assert.ok(
+        validateRoute(
+          { steps: cwdRoute },
+          events([{ tool: "bash", args: { command: "pwd", cwd } }], mode),
+          mode,
+        ).passed,
+      );
+    assert.equal(
+      validateRoute(
+        { steps: cwdRoute },
+        events([{ tool: "bash", args: { command: "pwd", cwd: "/tmp" } }], mode),
+        mode,
+      ).passed,
+      false,
+    );
+  });
+  void test(`${mode}: an anchored source Read resolves the launched program from its cwd`, () => {
+    const route: RouteStep[] = [
+      { tool: "debug", args: { program: "task.py" } },
+      {
+        tool: "read",
+        args: { path: /^debug:[a-z0-9-]+\/source$/u, views: ["anchors"] },
+        after: [0],
+      },
+    ];
+    const read: Call = {
+      tool: "read",
+      args: { path: "/workspace/fixture/task.py", views: ["anchors"] },
+    };
+    const launch: Call = {
+      tool: "debug",
+      args: { program: "fixture/task.py", cwd: "/workspace" },
+      text: "debug:session-1",
+    };
+    assert.ok(validateRoute({ steps: route }, events([launch, read], mode), mode).passed);
+    for (const path of ["/workspace/task.py", "/workspace/fixture/fixture/task.py"])
+      assert.equal(
+        validateRoute(
+          { steps: route },
+          events([launch, { ...read, args: { ...read.args, path } }], mode),
+          mode,
+        ).passed,
+        false,
+      );
+  });
+  void test(`${mode}: the breakpoints view accepts the launched source file without dropping the view`, () => {
+    const route: RouteStep[] = [
+      { tool: "debug", args: { program: "task.py" } },
+      {
+        tool: "read",
+        args: { path: /^debug:[a-z0-9-]+\/source$/u, views: ["breakpoints"] },
+        after: [0],
+      },
+    ];
+    const launch: Call = { tool: "debug", args: { program: "task.py" }, text: "debug:session-1" };
+    const read: Call = { tool: "read", args: { path: "task.py", views: ["breakpoints"] } };
+    assert.ok(validateRoute({ steps: route }, events([launch, read], mode), mode).passed);
+    for (const args of [
+      { path: "other.py", views: ["breakpoints"] },
+      { path: "task.py" },
+      { path: "task.py", views: ["anchors"] },
+    ])
+      assert.equal(
+        validateRoute({ steps: route }, events([launch, { ...read, args }], mode), mode).passed,
+        false,
+      );
+    assert.equal(validateRoute({ steps: route }, events([read, launch], mode), mode).passed, false);
+    assert.equal(validateRoute({ steps: route }, events([read], mode), mode).passed, false);
+  });
   void test(`${mode}: Pi-coerced numeric arguments match without mutating evidence or structured results`, () => {
     const readStep: RouteStep = { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } };
     const route = [readStep];
