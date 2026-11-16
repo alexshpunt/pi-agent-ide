@@ -142,6 +142,42 @@ for (const mode of ["direct", "codemode"]) {
       await rm(root, { recursive: true, force: true });
     }
   });
+  void test(`literal selectors reject references in each required field (${mode})`, () => {
+    const reference = "RESULT#11111111-aaaa-4aaa-8aaa-111111111111";
+    const selections = [
+      { tool: "replace", fields: ["start", "end"], values: ["START", "END"] },
+      { tool: "copy", fields: ["start", "end"], values: ["COPY_BEGIN", "COPY_END"] },
+      { tool: "copy", fields: ["targetStart", "targetEnd"], values: ["SLOT", "SLOT"] },
+      { tool: "move", fields: ["targetStart", "targetEnd"], values: ["SLOT", "SLOT"] },
+      { tool: "insert", fields: ["anchor"], values: ["α🙂"] },
+      { tool: "insert", fields: ["anchor"], values: ["α\r\nβ"] },
+      { tool: "delete", fields: ["start"], values: ["Last\nBlock"] },
+      { tool: "replace", fields: ["start"], values: ["Last\r\nBlock"] },
+    ];
+    for (const { tool, fields, values } of selections) {
+      const args = {
+        path: "task.txt",
+        ...Object.fromEntries(fields.map((field, index) => [field, values[index]])),
+      };
+      const step: RouteStep = { tool, args: { path: "task.txt" }, exactText: fields };
+      const check = (input: Record<string, unknown>) =>
+        validateRoute({ steps: [step] }, events([{ tool, args: input }], mode), mode).passed;
+      assert.ok(check(args));
+      for (const field of fields) {
+        for (const value of [
+          undefined,
+          reference,
+          { id: reference },
+          "SEARCH#ABCD:1:match",
+          { id: "SEARCH#ABCD:1:match" },
+          "SEARCH#ABCD:1:line",
+          "123ABCD|Last",
+          "regex:Last",
+        ])
+          assert.ok(!check({ ...args, [field]: value }));
+      }
+    }
+  });
   void test(`reuse, refusal and genuine dependencies remain mandatory (${mode})`, () => {
     const steps: RouteStep[] = [
       { tool: "read", args: { path: "task.txt" } },

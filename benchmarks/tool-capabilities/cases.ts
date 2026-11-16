@@ -21,7 +21,7 @@ const cases: CapabilityCase[] = [];
 add(
   "missing-edit-selector-recovery",
   ["edit.missing-selector-recovery"],
-  'First call insert on task.txt with text "added" and no anchor; it must fail without editing. Read task.txt, then retry insert with anchor "OLD" and the same text. Next call copy from task.txt, start "OLD", to target.txt without targetStart; it must fail without editing either file. Read target.txt and retry copy with targetStart "DEST". Keep all existing lines. Do not use whole-file operations or write. In Codemode, keep going after each refused call using the returned null and the failure summary.',
+  'First call insert on task.txt with text "added" and no anchor; it must fail without editing. Read task.txt, then retry insert with anchor "OLD" and the same text. Next call copy from task.txt to target.txt, passing the literal string "OLD" as start and omitting targetStart; it must fail without editing either file. Read target.txt and retry copy with targetStart "DEST". Keep all existing lines. Do not use whole-file operations or write. In Codemode, keep going after each refused call using the returned null and the failure summary.',
   [
     {
       tool: "insert",
@@ -55,7 +55,7 @@ add(
 add(
   "codemode-search-value-batch",
   ["compose.codemode-search-value-batch"],
-  "In native Codemode, Search task.txt for beta and retain the returned value. Then in one script run the three independent edits concurrently with Promise.all, without any other tool between them: Insert added before alpha in task.txt; Replace beta by passing the first Search match value as path, with BETA; Delete gamma using exact text in task.txt. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
+  "In native Codemode, Search task.txt for beta and retain the returned value. Then in one script run the three independent edits concurrently with Promise.all, without any other tool between them: Insert added before alpha in task.txt; Replace beta by passing the first Search match value as path, with BETA; Delete gamma in task.txt by passing the literal string gamma as start. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
   [
     { tool: "search", args: { path: "task.txt", query: "beta" } },
     {
@@ -1860,7 +1860,7 @@ add(
     "edit.copy-source-range",
     "compose.search-range-endpoints",
   ],
-  "First Search target.txt separately for TARGET_BEGIN and TARGET_END. Use the two actual :match references as objects {id: reference} in Copy targetStart and targetEnd (in Codemode, pass the corresponding match values). Perform three transfers: (1) Copy the inline span from start COPY_BEGIN through end COPY_END in source.txt over that inclusive destination span in target.txt. (2) Copy the whole line 段🙂 from whole.txt with a single start and no end over the exact SLOT fragment in inline.txt, using SLOT as both targetStart and targetEnd. Issue transfers (1) and (2) together, direct in the same assistant message or in Codemode with Promise.all. (3) Copy that same whole.txt line after the ANCHOR line in inserted.txt with targetStart ANCHOR and no targetEnd. Preserve the selected source line\u0027s CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
+  "First Search target.txt separately for TARGET_BEGIN and TARGET_END. Use the two actual :match references as objects {id: reference} in Copy targetStart and targetEnd (in Codemode, pass the corresponding match values). Perform three transfers: (1) Copy the inline span in source.txt over that inclusive destination span in target.txt. Pass the literal strings COPY_BEGIN as start and COPY_END as end; do not use Search references or line anchors for these two source fields. (2) Copy the whole line 段🙂 from whole.txt with a single start and no end over the exact SLOT fragment in inline.txt, passing the literal string SLOT as both targetStart and targetEnd. Issue transfers (1) and (2) together, direct in the same assistant message or in Codemode with Promise.all. (3) Copy that same whole.txt line after the ANCHOR line in inserted.txt with targetStart ANCHOR and no targetEnd. Preserve the selected source line\u0027s CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
   [
     { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
     { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
@@ -1921,7 +1921,7 @@ add(
     "edit.move-source-range",
     "compose.search-range-endpoints",
   ],
-  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Search target.txt separately for TARGET_BEGIN and TARGET_END. Prepare two independent Move calls. (1) Move the inline inclusive span from source.txt into target.txt using the destination :match references as objects {id: reference} in targetStart/targetEnd (in Codemode, pass the match values). (2) Move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt, with start equal to 段🙂 followed by CRLF and 尾界, no end, and SLOT as both targetStart and targetEnd. Issue both Move calls together, direct in the same assistant message or in Codemode with Promise.all. Preserve the sentence text, surrounding spaces and CRLF endings in source.txt and target.txt. Preserve the moved block\u0027s internal CRLF in the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Search target.txt separately for TARGET_BEGIN and TARGET_END. Prepare two independent Move calls. (1) Move the inline inclusive span from source.txt into target.txt using the destination :match references as objects {id: reference} in targetStart/targetEnd (in Codemode, pass the match values). (2) Move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt, passing the literal string 段🙂 followed by CRLF and 尾界 as start, no end, and the literal string SLOT as both targetStart and targetEnd. Issue both Move calls together, direct in the same assistant message or in Codemode with Promise.all. Preserve the sentence text, surrounding spaces and CRLF endings in source.txt and target.txt. Preserve the moved block\u0027s internal CRLF in the LF destination. Keep the preceding KEEP line and its CRLF in eof.txt; the unterminated block owns no preceding separator. Do not use a whole-file move.",
   [
     { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
     { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
@@ -2110,7 +2110,7 @@ add(
 add(
   "replace-read-search",
   ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
-  "Use Replace, then use its result for Read and Search. Use replace with the exact OLD fragment in task.txt to change it to NEW. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",
+  "Use Replace, then use its result for Read and Search. Use replace on task.txt, passing the literal string OLD as start and NEW as text. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",
   [
     { tool: "replace", args: { path: "task.txt" }, exactText: ["start"] },
     { tool: "read", reuse: reuse(0), contains: "NEW" },
@@ -2122,7 +2122,7 @@ add(
 add(
   "insert-before",
   ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
-  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, using that fragment as each anchor. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Use anchor equal to α followed by CRLF followed by β for both calls, before true for [ and before false for ]. Pass actual newline characters in multiline anchors; do not paste printed line-anchor prefixes. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
+  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, passing the literal string α🙂 as anchor for both calls. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Pass the literal string α followed by CRLF followed by β as anchor for both calls, before true for [ and before false for ]. Pass actual newline characters in multiline anchors; do not paste printed line-anchor prefixes. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
   [
     {
       tool: "insert",
@@ -2712,7 +2712,7 @@ for (const [name, eol, ending] of [
   add(
     `exact-eof-${name}`,
     ["edit.exact-eof", "edit.delete-empty-replace"],
-    "Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For each block, pass both lines together as one start string and omit the end parameter entirely. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.",
+    `Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For both block edits, pass the literal string ${JSON.stringify(`Last${eol}Block`)} as start and omit the end parameter entirely. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.`,
     [
       { tool: "replace", args: { path: "last.txt", start: "Last" } },
       {
