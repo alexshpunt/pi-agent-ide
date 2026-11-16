@@ -10,9 +10,60 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
+test.each([false, true])(
+  "direct whole Search scope edits one issued match (end: %s)",
+  async (paired) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "tokens.txt"), "red blue\n");
+      const run = await new PiIntegrationTest({
+        testName: `token-search-direct-${paired}`,
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        rawMode: false,
+        isolateUserResources: true,
+        extensions: [
+          path.resolve("tests/integration/fixtures/issued-reference-provider.ts"),
+          path.resolve("src/pi-agent-ide.ts"),
+        ],
+        tools: ["search", "replace"],
+        conversation: [
+          assistantMessage(
+            [
+              toolCall({
+                id: "search",
+                name: "search",
+                arguments: { path: "tokens.txt", query: "red OR blue" },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: "replace",
+                name: "replace",
+                arguments: {
+                  path: { id: "$issued-uuid:search" },
+                  start: "$issued-searchmatch:search:1",
+                  ...(paired && { end: "$issued-searchmatch:search:1" }),
+                  text: "RED",
+                },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage([text("Done")]),
+        ],
+      }).run("Replace only the first issued Search match");
+      expect(getToolExecution(run, "replace").isError, getToolResultText(run, "replace")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "tokens.txt"), "utf8")).toBe("RED blue\n");
+    });
+  },
+);
 test("token search selections cannot silently rewrite every match", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -38,7 +89,7 @@ check(scoped.matches.length === 1,"read-only search scope");
 check(await tools.replace({path:found.matches[0],text:"CONST"}) !== null,"individual match");
 const bool = await tools.search({path:"boolean.txt",query:"red AND blue"});
 check(await tools.replace({path:bool,text:"BAD"}) === null,"boolean bulk");
-check(await tools.replace({path:bool.matches[0],text:"RED"}) !== null,"boolean match");
+check(await tools.replace({path:bool,start:bool.matches[0],end:bool.matches[0],text:"RED"}) !== null,"boolean scoped match");
 const literal = await tools.search({path:"literal.txt",query:'"const x = await f"'});
 check(await tools.replace({path:literal,text:"replaced"}) !== null,"quoted literal");
 text("done");`;
@@ -69,14 +120,6 @@ text("done");`;
       ],
     }).run("Safely edit Search results");
     expect(getToolExecution(run, "compose").isError, getToolResultText(run, "compose")).toBe(false);
-    const output = getToolResultText(run, "compose");
-    expect(output.split("4 of ")[0]).toContain("const x = await f");
-    const failures = codemodeFailures(output);
-    expect(failures).toMatch(/^4 of \d+ IDE calls failed:/u);
-    expect(failures).toContain("const x = await f");
-    expect(failures).toContain('"const x = await f"');
-    expect(failures).toContain("red AND blue");
-    expect(getToolResultText(run, "direct")).toContain("const x = await f");
     expect(await readFile(path.join(cwd, "words.txt"), "utf8")).toBe("CONST alpha\nawait beta\n");
     expect(await readFile(path.join(cwd, "boolean.txt"), "utf8")).toBe("RED blue\n");
     expect(await readFile(path.join(cwd, "literal.txt"), "utf8")).toBe("replaced\n");

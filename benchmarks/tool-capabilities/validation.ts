@@ -8,6 +8,7 @@ import {
   issuedSearchFragment,
   readSourceIssuers,
   searchSources,
+  searchMatchReference,
   wholeSearchSelection,
   type SelectionIssuer,
 } from "./selection-evidence.ts";
@@ -845,6 +846,20 @@ export function validateRoute(
         matches(expected[sourceField], paths[0], sourceField)
       )
         normalized[sourceField] = paths[0];
+    }
+    // A Search result used as a scope adds no selected text. Only its own issued match
+    // (and an omitted or equivalent endpoint) can stand in for that match as path.
+    if (file instanceof RegExp && location !== undefined) {
+      for (const issuer of selectionIssuers(undefined, before)) {
+        if (issuer.tool !== "search" || !wholeSearchSelection(actual.path, issuer.end)) continue;
+        const selected = searchMatchReference(location, issuer.end);
+        if (
+          selected !== undefined &&
+          (actual.end === undefined || searchMatchReference(actual.end, issuer.end) === selected) &&
+          matches(file, selected)
+        )
+          normalized.path = selected;
+      }
     }
     // A complete single-match Search's match and whole-result reference name the same selection.
     const selection = location ?? actual.path;

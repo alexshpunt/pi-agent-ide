@@ -771,7 +771,7 @@ add(
 add(
   "token-search-edit-guard",
   ["compose.token-search-edit-guard"],
-  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN, using its :match reference in direct calls or the match or its id in Codemode. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
+  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN: pass that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
   [
     { tool: "search", args: { path: "split.txt", query: /^alpha beta$/u } },
     {
@@ -1349,7 +1349,7 @@ add(
 add(
   "replace-search-anchor-list-unusable",
   ["edit.search-anchor-list-unusable"],
-  "Search task.txt for OLD. Replace its first match alone with ONE (its :match reference in direct calls, the match or its id in Codemode). Then make ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Then call Replace once with only the second match and TWO. Do not search again and do not retype the file path. Keep every other byte.",
+  "Search task.txt for OLD. Replace its first match alone with ONE: use that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Then make ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Then call Replace once with only the second match and TWO. Do not search again and do not retype the file path. Keep every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
