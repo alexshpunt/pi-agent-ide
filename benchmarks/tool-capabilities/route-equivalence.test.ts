@@ -3,6 +3,219 @@ import test from "node:test";
 import { capabilityCases } from "./cases.ts";
 import { checkCoverage, validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
 
+void test("raw Read defaults to byte zero without relaxing line paging or byte limits", () => {
+  const calls: [Call, Call, Call] = [
+    { tool: "read", args: { path: "." } },
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 }, text: "OLD" },
+    { tool: "read", args: { path: "raw:/workspace/fixture/task.txt", limit: 4 }, text: "keep" },
+  ];
+  const route = steps("read-text");
+  assert.ok(check(route, calls));
+  for (const args of [
+    { path: "raw:task.txt", offset: 1, limit: 4 },
+    { path: "raw:task.txt", limit: 5 },
+    { path: "task.txt", limit: 4 },
+    { path: "raw:other.txt", limit: 4 },
+  ])
+    assert.ok(!check(route, [...calls.slice(0, 2), { ...calls[2], args }]));
+  assert.ok(
+    !check(route, [calls[0], { ...calls[1], args: { path: "task.txt", limit: 1 } }, calls[2]]),
+  );
+});
+
+void test("native value batch accepts the complete gamma line and retains its batch and reuse guards", () => {
+  const calls: [Call, Call, Call, Call] = [
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "beta" },
+      value: { matches: [{ id: result }] },
+    },
+    { tool: "insert", args: { path: "task.txt", anchor: "alpha", before: true, text: "added" } },
+    { tool: "replace", args: { path: { id: result }, text: "BETA" } },
+    { tool: "delete", args: { path: "task.txt", start: "gamma\n" } },
+  ];
+  function batch(input: Call[], size = 3): boolean {
+    const entries = events(input, "codemode");
+    const parentEnd = entries.at(-1);
+    assert.ok(parentEnd);
+    parentEnd.result = {
+      details: {
+        editorBatches: [
+          {
+            applied: true,
+            calls: Array.from({ length: size }, (_, index) => ({
+              id: `codemode-${String(index + 1)}`,
+            })),
+          },
+        ],
+      },
+    };
+    return validateRoute(
+      {
+        steps: steps("codemode-search-value-batch"),
+        files: { "task.txt": "alpha\nbeta\ngamma\nomega\n" },
+      },
+      entries,
+      "codemode",
+    ).passed;
+  }
+  assert.ok(batch(calls));
+  assert.ok(
+    batch([...calls.slice(0, 3), { ...calls[3], args: { path: "task.txt", start: "gamma" } }]),
+  );
+  for (const start of ["gamma\n\n", "omega", "gam", "beta\ngamma\n"])
+    assert.ok(!batch([...calls.slice(0, 3), { ...calls[3], args: { path: "task.txt", start } }]));
+  assert.ok(!batch(calls, 2));
+  assert.ok(
+    !batch([
+      ...calls.slice(0, 2),
+      { ...calls[2], args: { path: "task.txt", start: "beta", text: "BETA" } },
+      calls[3],
+    ]),
+  );
+  assert.ok(!batch([...calls.slice(0, 3), { ...calls[3], error: true }]));
+});
+
+void test("explicit-path scope retry is independent of the failed result-bound edit", () => {
+  const calls: [Call, Call, Call] = [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 }, text: `<uuid>${uuid}</uuid>` },
+    { tool: "replace", args: { path: result, start: "last", text: "BAD" }, error: true },
+    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" } },
+  ];
+  const task = capabilityCases.find((entry) => entry.id === "result-selector-exact-retry");
+  assert.ok(task);
+  const entries = events(calls);
+  assert.ok(
+    validateRoute(
+      task,
+      [...entries.slice(0, 3), ...entries.slice(4), ...entries.slice(3, 4)],
+      "direct",
+    ).passed,
+  );
+  assert.ok(check(task.steps, [calls[0], calls[2], calls[1]]));
+  assert.ok(!check(task.steps, [calls[0], calls[2]]));
+  assert.ok(!check(task.steps, [calls[0], { ...calls[1], error: false }, calls[2]]));
+  assert.ok(
+    !check(task.steps, [
+      calls[0],
+      calls[1],
+      { ...calls[2], args: { path: "other.txt", start: "last", text: "fixed" } },
+    ]),
+  );
+  assert.ok(
+    !check(task.steps, [
+      calls[0],
+      calls[1],
+      // The real tool refuses this selection: last is outside the line-2 window.
+      { ...calls[2], args: { path: result, start: "last", text: "fixed" }, error: true },
+    ]),
+  );
+});
+
+void test("shell roundtrip accepts one multi-source Read without losing any source provenance", () => {
+  const writeId = "22222222-aaaa-4aaa-8aaa-222222222222";
+  const insertId = "33333333-aaaa-4aaa-8aaa-333333333333";
+  const sources = [{ id: writeId }, { id: insertId }, "shell:input-check"];
+  const calls: [Call, Call, Call, Call, Call, Call, Call] = [
+    { tool: "bash", args: { background: true }, text: "shell:input-check" },
+    {
+      tool: "write",
+      args: { path: "shell:input-check", content: "hello" },
+      text: `<uuid>${writeId}</uuid>`,
+    },
+    {
+      tool: "insert",
+      args: { path: "shell:input-check", text: "Enter" },
+      text: `<uuid>${insertId}</uuid>`,
+    },
+    { tool: "read", args: { path: sources }, text: `<uuid>${uuid}</uuid>\nhello` },
+    {
+      tool: "replace",
+      args: { path: result, start: "hello", text: "BAD" },
+      error: true,
+      text: steps("shell-roundtrip").find((step) => step.tool === "replace")?.contains,
+    },
+    { tool: "search", args: { path: "shell:input-check", query: "hello" }, text: "hello" },
+    { tool: "delete", args: { path: "shell:input-check" } },
+  ];
+  const route = steps("shell-roundtrip");
+  assert.ok(check(route, calls));
+  assert.ok(
+    check(route, [
+      ...calls.slice(0, 3),
+      ...sources.map((source) => ({ ...calls[3], args: { path: source } })),
+      ...calls.slice(4),
+    ]),
+  );
+  for (let missing = 0; missing < sources.length; missing++) {
+    assert.ok(
+      !check(route, [
+        ...calls.slice(0, 3),
+        { ...calls[3], args: { path: sources.filter((_, index) => index !== missing) } },
+        ...calls.slice(4),
+      ]),
+    );
+  }
+  for (const path of [
+    [sources[0], sources[0], sources[2]],
+    [sources[0], { id: uuid }, sources[2]],
+    [sources[0], sources[1], "shell:other"],
+  ]) {
+    assert.ok(
+      !check(route, [...calls.slice(0, 3), { ...calls[3], args: { path } }, ...calls.slice(4)]),
+    );
+  }
+  assert.ok(!check(route, [...calls.slice(0, 3), { ...calls[3], error: true }, ...calls.slice(4)]));
+  assert.ok(!check(route, [...calls.slice(0, 2), calls[3], calls[2], ...calls.slice(4)]));
+});
+
+void test("a multi-source Read cannot replace repeated calls or an ordered Read dependency", () => {
+  const route: [RouteStep, RouteStep] = [
+    { tool: "read", args: { path: "a.txt", offset: 2, limit: 1, views: ["anchors"] } },
+    { tool: "read", args: { path: "b.txt", offset: 2, limit: 1, views: ["anchors"] } },
+  ];
+  const calls: [Call] = [
+    { tool: "read", args: { path: ["a.txt", "b.txt"], offset: 2, limit: 1, views: ["anchors"] } },
+  ];
+  assert.ok(check(route, calls));
+  assert.ok(!check([route[0], route[0]], calls));
+  assert.ok(!check([route[0], { ...route[1], after: [0] }], calls));
+  for (const args of [
+    { ...calls[0].args, offset: 1 },
+    { ...calls[0].args, views: [] },
+    { ...calls[0].args, limit: 2 },
+  ])
+    assert.ok(!check(route, [{ ...calls[0], args }]));
+});
+
+void test("native Search insertion requires a leading separator at its match boundary", () => {
+  const calls: [Call, Call] = [
+    {
+      tool: "search",
+      args: { path: "task.txt", query: "OLD" },
+      value: { matches: [{ id: result }] },
+    },
+    { tool: "insert", args: { path: { id: result }, text: "\nNEW" } },
+  ];
+  const route = steps("search-anchor-insert");
+  assert.ok(check(route, calls, "codemode"));
+  for (const text of ["NEW", "\n\nNEW", "\nOTHER"])
+    assert.ok(
+      !check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, text } }], "codemode"),
+    );
+  assert.ok(
+    !check(
+      route,
+      [calls[0], { ...calls[1], args: { path: "task.txt", anchor: "OLD", text: "\nNEW" } }],
+      "codemode",
+    ),
+  );
+  const direct: [Call, Call] = [
+    { tool: "search", args: { path: "task.txt", query: "OLD" }, text: "SEARCH#ABCD:1:line" },
+    { tool: "insert", args: { path: "SEARCH#ABCD:1:line", text: "NEW" } },
+  ];
+  assert.ok(check(route, direct));
+});
 interface Call {
   tool: string;
   args: Record<string, unknown>;
