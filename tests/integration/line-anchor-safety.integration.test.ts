@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -16,7 +17,7 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 type Route = "direct" | "codemode";
-type Step = { id: string; tool: string; args: Record<string, unknown>; error?: boolean };
+type Step = { id: string; tool: string; args: Record<string, unknown>; error?: boolean; code?: string };
 
 async function run(cwd: string, route: Route, name: string, steps: Step[]) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -61,6 +62,12 @@ async function run(cwd: string, route: Route, name: string, steps: Step[]) {
     const output = getToolResultText(result, step.id);
     if (route === "direct") {
       expect(getToolExecution(result, step.id).isError, output).toBe(step.error === true);
+      if (step.code !== undefined) {
+        expect(getToolExecutionDetails(result, step.id)).toMatchObject({
+          effect: "not-applied",
+          results: [{ errors: [{ code: step.code }] }],
+        });
+      }
     } else {
       expect(getToolExecution(result, step.id).isError, output).toBe(false);
       expect(codemodeFailures(output).length > 0, output).toBe(step.error === true);
@@ -112,20 +119,36 @@ test.each(["direct", "codemode"] as const)(
       await writeFile(path.join(cwd, "literal-prefix.txt"), initial);
       await writeFile(path.join(cwd, "other-prefix.txt"), initial);
       steps.push(
-        { id: "literal-prefix", tool: "replace", args: {
-          path: "literal-prefix.txt", start: "OLD", text: `${anchor}|NEW`,
-        } },
-        { id: "other-prefix", tool: "replace", args: {
-          path: "other-prefix.txt", start: anchor, text: "ZZZZZZZ|NEW",
-        } },
+        {
+          id: "literal-prefix",
+          tool: "replace",
+          args: {
+            path: "literal-prefix.txt",
+            start: "OLD",
+            text: `${anchor}|NEW`,
+          },
+        },
+        {
+          id: "other-prefix",
+          tool: "replace",
+          args: {
+            path: "other-prefix.txt",
+            start: anchor,
+            text: "ZZZZZZZ|NEW",
+          },
+        },
       );
       await run(cwd, route, "copied-display-prefix", steps);
       for (const index of [0, 1]) {
         expect(await readFile(path.join(cwd, `refused-${index}.txt`), "utf8")).toBe(initial);
       }
       expect(await readFile(path.join(cwd, "retry.txt"), "utf8")).toBe("keep\nNEW\nlast\n");
-      expect(await readFile(path.join(cwd, "literal-prefix.txt"), "utf8")).toBe(`keep\n${anchor}|NEW\nlast\n`);
-      expect(await readFile(path.join(cwd, "other-prefix.txt"), "utf8")).toBe("keep\nZZZZZZZ|NEW\nlast\n");
+      expect(await readFile(path.join(cwd, "literal-prefix.txt"), "utf8")).toBe(
+        `keep\n${anchor}|NEW\nlast\n`,
+      );
+      expect(await readFile(path.join(cwd, "other-prefix.txt"), "utf8")).toBe(
+        "keep\nZZZZZZZ|NEW\nlast\n",
+      );
     }),
 );
 
