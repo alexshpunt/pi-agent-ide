@@ -12,6 +12,7 @@ import type {
   SearchContext,
 } from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
+import { SearchCaptureGuard } from "#src/search-capture.ts";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
@@ -232,6 +233,8 @@ export class SearchSessionStore {
      */
     searched?: ReadonlyMap<string, string>,
   ): Promise<TextSearchSession> {
+    const capture = new SearchCaptureGuard();
+    for (const match of sourceMatches) capture.addMatch(match);
     // Sessions live as long as their anchors. A copied match keeps only its own text, not the
     // whole file that its line or match text was cut from.
     let matches = structuredClone(sourceMatches)
@@ -250,7 +253,7 @@ export class SearchSessionStore {
         ? undefined
         : new Map([...searched].map(([source, text]) => [canonicalSource(source), text])),
     );
-    matches = withMultilineContext(matches, contentBySource);
+    matches = withMultilineContext(matches, contentBySource, capture);
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
     const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
@@ -809,6 +812,7 @@ export class SearchSessionStore {
 function withMultilineContext(
   matches: readonly TextSearchMatch[],
   contentBySource: ReadonlyMap<string, string>,
+  capture: SearchCaptureGuard,
 ): TextSearchMatch[] {
   // Use the selection's snapshot, not a later file read.
   const documents = new Map<string, ReturnType<typeof createTextDocument>>();
@@ -821,6 +825,9 @@ function withMultilineContext(
       documents.set(match.source, document);
     }
     const lines = document.lines.slice(match.lineNumber - 1, lastContainingLine(match));
+    capture.addText(
+      lines.reduce((size, line) => size + line.content.length + line.lineEnding.length, 0),
+    );
     const linesText = lines
       .map((line, index) => line.content + (index === lines.length - 1 ? "" : line.lineEnding))
       .join("");

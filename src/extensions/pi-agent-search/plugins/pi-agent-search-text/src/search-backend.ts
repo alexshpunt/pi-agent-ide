@@ -14,6 +14,7 @@ import {
 
 import { type SearchCondition, satisfiesSearchCondition } from "#src/search-query.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
+import { SearchCaptureGuard, SearchCaptureLimitError } from "#src/search-capture.ts";
 
 export interface TextSearchRequest {
   readonly query: string;
@@ -116,6 +117,7 @@ export async function searchEachPath(
 ): Promise<TextSearchBackendResult> {
   const matches: TextSearchMatch[] = [];
   const searched = new Set<string>();
+  const capture = new SearchCaptureGuard();
   let complete = true;
   let unreadable: UnreadablePaths | undefined;
   for (const root of paths) {
@@ -129,6 +131,7 @@ export async function searchEachPath(
     for (const match of result.matches) {
       if (searched.has(match.source)) continue;
       found.add(match.source);
+      capture.addMatch(match);
       matches.push(match);
     }
     for (const source of found) searched.add(source);
@@ -171,7 +174,7 @@ export async function ripgrepScope(
     ],
   };
 }
-/** Internal capture bounds for candidate verification; ordinary Search keeps its full capture. */
+/** Candidate verification may stop with incomplete coverage below the hard safety bounds. */
 export interface SearchCaptureBudget {
   readonly matches: number;
   readonly bytes: number;
@@ -381,14 +384,24 @@ function runRipgrep(
     });
     let bytes = 0;
     let limited = false;
-    if (budget !== undefined)
-      child.stdout.on("data", (chunk: Buffer) => {
-        bytes += chunk.length;
-        if (bytes > budget.bytes) {
-          limited = true;
-          child.kill();
-        }
-      });
+    const capture = new SearchCaptureGuard();
+    let captureError: SearchCaptureLimitError | undefined;
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (limited || captureError !== undefined) return;
+      bytes += chunk.length;
+      if (budget !== undefined && bytes > budget.bytes) {
+        limited = true;
+        child.kill();
+        return;
+      }
+      try {
+        capture.addOutput(chunk.length);
+      } catch (error) {
+        captureError = error as SearchCaptureLimitError;
+        output.close();
+        child.kill();
+      }
+    });
     const output = createInterface({ input: child.stdout });
     child.stdin.on("error", () => {
       /* The process close/error event reports failed searches. */
@@ -411,7 +424,7 @@ function runRipgrep(
       stderr.write(chunk);
     });
     output.on("line", (line) => {
-      if (limited || parseError !== undefined || line.length === 0) {
+      if (limited || captureError !== undefined || parseError !== undefined || line.length === 0) {
         return;
       }
 
@@ -425,7 +438,9 @@ function runRipgrep(
         if (onLine !== undefined) {
           const { path: source, line_number: lineNumber } = (event as RipgrepMatchEvent).data;
           if (source.text !== undefined && Number.isSafeInteger(lineNumber)) {
-            onLine(path.resolve(cwd, source.text), lineNumber);
+            const resolved = path.resolve(cwd, source.text);
+            capture.addLine(resolved);
+            onLine(resolved, lineNumber);
           }
           return;
         }
@@ -435,10 +450,12 @@ function runRipgrep(
             child.kill();
             break;
           }
+          capture.addMatch(match);
           matches.push(match);
         }
       } catch (error) {
-        parseError = error;
+        if (error instanceof SearchCaptureLimitError) captureError = error;
+        else parseError = error;
         child.kill();
       }
     });
@@ -456,6 +473,10 @@ function runRipgrep(
         return;
       }
 
+      if (captureError !== undefined) {
+        reject(captureError);
+        return;
+      }
       if (parseError !== undefined) {
         reject(new Error("Unable to parse ripgrep search output.", { cause: parseError }));
         return;
@@ -494,46 +515,64 @@ async function runOwnedRipgrep(
   if (signal?.aborted) abort();
   let bytes = 0;
   const state = { limited: false };
+  const capture = new SearchCaptureGuard();
+  let captureError: Error | undefined;
   let unreadable: UnreadablePaths | undefined;
   try {
     const result = await environment.runLines(
       arguments_,
       cwd,
       (line) => {
-        if (state.limited || !line.length) return;
-        bytes += Buffer.byteLength(line) + 1;
-        if (budget !== undefined && bytes > budget.bytes) {
-          state.limited = true;
-          controller.abort();
-          return;
-        }
-        const event = JSON.parse(line) as
-          | RipgrepMatchEvent
-          | { type: "begin" | "end" | "summary"; data: never };
-        if (event.type !== "match") return;
-        if (onLine !== undefined) {
-          const source = event.data.path.text;
-          if (source !== undefined && Number.isSafeInteger(event.data.line_number))
-            onLine(environment.resolve(cwd, source), event.data.line_number);
-          return;
-        }
-        for (const match of matchesFromEvent(event, cwd, environment)) {
-          if (budget !== undefined && matches.length >= budget.matches) {
+        if (state.limited || captureError !== undefined || !line.length) return;
+        try {
+          bytes += Buffer.byteLength(line) + 1;
+          if (budget !== undefined && bytes > budget.bytes) {
             state.limited = true;
             controller.abort();
-            break;
+            return;
           }
-          matches.push(match);
+          capture.addOutput(Buffer.byteLength(line) + 1);
+          const event = JSON.parse(line) as
+            | RipgrepMatchEvent
+            | { type: "begin" | "end" | "summary"; data: never };
+          if (event.type !== "match") return;
+          if (onLine !== undefined) {
+            const source = event.data.path.text;
+            if (source !== undefined && Number.isSafeInteger(event.data.line_number)) {
+              const resolved = environment.resolve(cwd, source);
+              capture.addLine(resolved);
+              onLine(resolved, event.data.line_number);
+            }
+            return;
+          }
+          for (const match of matchesFromEvent(event, cwd, environment)) {
+            if (budget !== undefined && matches.length >= budget.matches) {
+              state.limited = true;
+              controller.abort();
+              break;
+            }
+            capture.addMatch(match);
+            matches.push(match);
+          }
+        } catch (error) {
+          captureError =
+            error instanceof Error
+              ? error
+              : new Error("Unable to process ripgrep search output.", { cause: error });
+          controller.abort(captureError);
+          throw error;
         }
       },
       controller.signal,
     );
+    if (captureError !== undefined) throw captureError;
     const stderr = new RipgrepStderr((printed) => environment.resolve(cwd, printed));
     stderr.write(result.stderr);
     if (stderr.failed(result.code)) throw new Error(stderr.message || "Ripgrep failed.");
     unreadable = stderr.unreadable(result.code);
   } catch (error) {
     signal?.throwIfAborted();
+    if (captureError !== undefined) throw captureError;
     if (!state.limited) throw error;
   } finally {
     signal?.removeEventListener("abort", abort);
@@ -553,11 +592,11 @@ function isPcre2MatchLimitError(error: unknown): boolean {
   );
 }
 
-function matchesFromEvent(
+function* matchesFromEvent(
   event: RipgrepMatchEvent,
   cwd: string,
   environment?: SearchEnvironment,
-): TextSearchMatch[] {
+): Generator<TextSearchMatch> {
   const source = event.data.path.text;
   const rawLine = event.data.lines.text;
 
@@ -566,7 +605,7 @@ function matchesFromEvent(
     rawLine === undefined ||
     !Number.isSafeInteger(event.data.line_number)
   ) {
-    return [];
+    return;
   }
 
   // Multiline mode reports every line a match touches in one event; offsets count from its start.
@@ -577,8 +616,6 @@ function matchesFromEvent(
     const lineIndex = prefix.split("\n").length - 1;
     return { lineIndex, column: prefix.length - prefix.lastIndexOf("\n") - 1 };
   };
-  const matches: TextSearchMatch[] = [];
-
   for (const submatch of event.data.submatches) {
     if (submatch.start < 0 || submatch.end < submatch.start || submatch.end > lineBuffer.length) {
       continue;
@@ -586,7 +623,7 @@ function matchesFromEvent(
 
     const start = position(submatch.start);
     const end = position(submatch.end);
-    matches.push({
+    yield {
       source: environment?.resolve(cwd, source) ?? path.resolve(cwd, source),
       lineNumber: event.data.line_number + start.lineIndex,
       startColumn: start.column,
@@ -599,10 +636,8 @@ function matchesFromEvent(
           ? (lines[start.lineIndex] ?? "").slice(start.column, end.column)
           : lineBuffer.subarray(submatch.start, submatch.end).toString("utf8"),
       lineText: lines[start.lineIndex] ?? "",
-    });
+    };
   }
-
-  return matches;
 }
 
 function stripFilePrefix(source: string): string {

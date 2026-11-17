@@ -4,6 +4,7 @@ import { searchTextContent } from "#src/search-backend.ts";
 import type { TextSearchBackendResult } from "#src/search-backend.ts";
 import { fallbackNotice, type SearchRecipe, type SearchFallback } from "#src/search-recipe.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
+import { SearchCaptureGuard } from "#src/search-capture.ts";
 
 /**
  * Run each real source range separately; gaps and neighboring text are never searched. The
@@ -32,6 +33,7 @@ export async function runScopedSearch(
   ): Promise<TextSearchBackendResult> => {
     const matches: TextSearchMatch[] = [];
     const seen = new Set<string>();
+    const capture = new SearchCaptureGuard();
     for (const target of scope.targets) {
       signal?.throwIfAborted();
       const document = createTextDocument(target.source, target.expectedContent);
@@ -73,6 +75,7 @@ export async function runScopedSearch(
           ]);
           if (seen.has(key)) continue;
           seen.add(key);
+          capture.addMatch(mapped);
           matches.push(mapped);
         }
       }
