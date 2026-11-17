@@ -2907,7 +2907,7 @@ add(
 add(
   "git-stage-unstage-undo",
   ["git.changes", "git.stage", "git.stage-noop", "git.unstage", "git.undo-change", "discovery.git"],
-  "Replace OLD with NEW in task.txt. After the Replace result returns, Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. For the Codemode route, only discovery may be direct; keep Replace, every Read, Stage, Unstage and Undo inside Codemode. Wait for the Stage result before repeating stage with that anchor to confirm it succeeds as already staged. After the repeated Stage result returns, Read changes again and unstage its current CHANGE anchor. After the Unstage result returns, Read changes once more and undo that current change. Leave source and index at the original clean state.",
+  "Replace OLD with NEW in task.txt. After the Replace result returns, Read changes for task.txt using either its file path or that Replace result, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. For the Codemode route, only discovery may be direct; keep Replace, every Read, Stage, Unstage and Undo inside Codemode. Wait for the Stage result before repeating stage with that anchor to confirm it succeeds as already staged. After the repeated Stage result returns, Read changes again and unstage its current CHANGE anchor. After the Unstage result returns, Read changes once more and undo that current change. Leave source and index at the original clean state.",
   [
     { tool: "replace" },
     { tool: "read", args: { path: "task.txt", views: ["changes"] }, after: [0] },
@@ -3720,8 +3720,8 @@ add(
       reuse: reuse(0),
       contains: "count",
     },
-    { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "3" },
-    { tool: "lsp_search", args: { calls: /^task.ts(?:#.*)?$/ }, contains: "References" },
+    { tool: "lsp_search", args: { declaration: /^task\.ts#.*count$/ }, contains: "3" },
+    { tool: "lsp_search", args: { calls: /^task\.ts(?:#.*)?$/ }, contains: "References" },
     {
       tool: "diagnostics",
       args: { path: "problem.ts" },
@@ -3757,7 +3757,7 @@ add(
   ],
   'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Wait for that refusal result before replacing the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
   [
-    { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
+    { tool: "lsp_search", args: { declaration: /^task\.ts#.*count$/ }, contains: "count" },
     {
       tool: "replace",
       args: {
