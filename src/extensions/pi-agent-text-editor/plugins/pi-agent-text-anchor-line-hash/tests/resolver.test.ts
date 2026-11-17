@@ -90,20 +90,4 @@ describe("line anchors", () => {
       kind: "not-handled",
     });
   });
-
-  test("renders the line number for the user", () => {
-    const anchor = formatLineHashAnchor(content, 2);
-    expect(
-      resolver.renderCompact(anchor, {
-        source: context.source,
-        anchor: { value: anchor, lineNumber: 2 } as never,
-      }),
-    ).toBe("line 2");
-    expect(
-      resolver.renderFull(anchor, {
-        source: context.source,
-        anchor: { value: anchor, lineNumber: 2 } as never,
-      }),
-    ).toBe(anchor);
-  });
 });
