@@ -19,6 +19,7 @@ import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.t
 import { createIdeTextResults } from "#src/composite/text-results.ts";
 import { registerDetachedResults } from "#src/composite/detached-results.ts";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.ts";
+import { explainCodemodeToolNames } from "#src/composite/codemode-tool-names.ts";
 import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
 import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.ts";
 import { readAgentIdeSetting } from "#src/api/settings.ts";
@@ -57,14 +58,19 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     shutDown = true;
   });
   pi.on("before_provider_request", (event, context) => {
-    if (shutDown || context.model?.api !== "openai-responses") return;
+    if (shutDown) return;
+    const api: unknown = context.model?.api;
     const names = new Set(
       pi
         .getAllTools()
-        .filter((tool) => tool.namespace?.name.startsWith("ide_"))
+        .filter((tool) => tool.namespace?.name.startsWith("ide_") && tool.exposure !== "hidden")
         .map((tool) => tool.name),
     );
-    return preserveResponsesToolOmission(event.payload, names);
+    const payload =
+      api === "openai-responses"
+        ? preserveResponsesToolOmission(event.payload, names)
+        : event.payload;
+    return explainCodemodeToolNames(payload, names);
   });
   pi.on("session_start", (event, context) => {
     shutDown = false;

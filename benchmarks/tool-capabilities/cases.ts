@@ -19,6 +19,24 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 
+add(
+  "codemode-tool-names",
+  ["codemode.provider-tool-names"],
+  'Use one native Codemode script to Read task.txt, Replace the literal OLD fragment with NEW, and pass the unchanged returned mutation value as the path argument to Read. Print both Read values. Then Write note.txt with exactly "saved\\n", run Bash with command "printf tool-name-probe", and print its output. Keep every other byte. Report the probe output and the final task.txt content.',
+  [
+    { tool: "read", args: { path: "task.txt" }, contains: "OLD", parentContains: "OLD" },
+    { tool: "replace", args: { path: "task.txt" }, exactText: ["start"], after: [0] },
+    { tool: "read", reuse: reuse(1), contains: "NEW", parentContains: "NEW" },
+    { tool: "write", args: { path: "note.txt" } },
+    { tool: "bash", contains: "tool-name-probe", parentContains: "tool-name-probe" },
+  ],
+  {
+    modes: ["codemode"],
+    expected: { "task.txt": "keep\nNEW\nlast\n", "note.txt": "saved\n" },
+    answer: "tool-name-probe",
+  },
+);
+
 for (const selection of ["numbered", "all"] as const) {
   add(
     `search-compaction-${selection}`,
