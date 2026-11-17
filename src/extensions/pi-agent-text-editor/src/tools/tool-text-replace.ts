@@ -76,7 +76,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
     ) {
       throw new TextMutationInputError(
         "COPIED_LINE_ANCHOR",
-        `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from text and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
+        `Refused metadata ${copiedAnchor}; submit replacement content alone.`,
       );
     }
     const selections = textSelections(starts, "start");
