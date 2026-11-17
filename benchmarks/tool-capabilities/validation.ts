@@ -1,5 +1,9 @@
 import path from "node:path";
-import { executionArguments, toolSemantics } from "./argument-equivalence.ts";
+import {
+  executionArguments,
+  sourceValues as values,
+  toolSemantics,
+} from "./argument-equivalence.ts";
 import { searchCallPolicy } from "#src/extensions/pi-agent-search/src/api/search-call-policy.ts";
 import {
   exactSelection,
@@ -310,14 +314,6 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
   return expected === actual;
 }
 
-function values(value: unknown): string[] {
-  if (Array.isArray(value)) return (value as unknown[]).flatMap(values);
-  // A Codemode value passed as a source counts by its id.
-  if (value !== null && typeof value === "object" && "id" in value)
-    return typeof value.id === "string" ? [value.id] : [];
-  return typeof value === "string" ? [value] : [];
-}
-
 function isResultSource(value: unknown): boolean {
   const sources = values(value);
   return (
@@ -594,6 +590,41 @@ export function validateRoute(
           return [];
         return [{ ...issuer, start: prior.index }];
       });
+    });
+  }
+  /** Write through a result needs the whole source, not merely a selection in the same file. */
+  function wholeReadPaths(value: unknown, before: number): string[] {
+    const references = values(value);
+    if (references.length !== 1) {
+      const paths = references.map((reference) => wholeReadPaths(reference, before));
+      return paths.every((sources) => sources.length > 0) ? paths.flat() : [];
+    }
+    return selectionIssuers(undefined, before).flatMap((issuer) => {
+      if (
+        toolSemantics(issuer.tool) !== "read" ||
+        !reuses(
+          value,
+          /<uuid>[a-f0-9-]+<\/uuid>/iu.exec(resultText(issuer.end))?.[0] ?? "",
+          "result",
+          valueIds(issuer.end.result?.structuredContent),
+        )
+      )
+        return [];
+      const { path: source, views, offset = 1, limit } = issuer.args;
+      if (Array.isArray(views) && views.some((view) => view !== "anchors")) return [];
+      const details = issuer.end.result?.details as
+        | { startLine?: number; endLine?: number; totalLines?: number }
+        | undefined;
+      const wholeWindow =
+        details?.startLine === 1 &&
+        typeof details.totalLines === "number" &&
+        details.totalLines > 0 &&
+        details.endLine === details.totalLines;
+      if (!wholeWindow && (offset !== 1 || limit !== undefined)) return [];
+      // An unbounded reread of a bounded result retains the original scope.
+      return typeof source === "string" && !isResultSource(source)
+        ? [source]
+        : wholeReadPaths(source, issuer.start);
     });
   }
   /** A literal file beside a reference must be the reference issuer's source, not a different file. */
@@ -881,6 +912,13 @@ export function validateRoute(
         ];
         if (files.length === 1) normalized.file = files[0];
       }
+      return matches(expected, normalized);
+    }
+    if (tool === "write") {
+      const paths = [
+        ...new Set(wholeReadPaths(actual.path, before).map((path) => fixturePath(path))),
+      ];
+      if (paths.length === 1) normalized.path = paths[0];
       return matches(expected, normalized);
     }
     if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
