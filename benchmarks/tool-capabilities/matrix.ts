@@ -9,6 +9,7 @@ import type { Capability } from "./validation.ts";
 // and Codemode execution, where reaching session tools needs no discovery.
 // discovery.undo permits the inferred file; restored fixture bytes establish the target.
 const groups: [string[], string[]][] = [
+  [["codemode.provider-tool-names"], ["codemode-tool-names"]],
   [
     ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
     ["deferred-navigation-recovery"],
