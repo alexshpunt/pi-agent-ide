@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionResult,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -72,11 +73,14 @@ test("Read failures name the issued mutation result, not its private target", as
     }).run("Observe the failed Move result without retrying it.");
 
     expect(getToolExecution(run, "move").isError).toBe(true);
-    expect(getToolExecution(run, "reread").isError).toBe(true);
+    expect(getToolExecutionResult(run, "reread")).toMatchObject({
+      details: { calls: [{ status: "error" }, { status: "error" }, { status: "error" }] },
+    });
     const moveId = /\{"moveId":"([^"]+)"\}/u.exec(getToolResultText(run, "move"))?.[1];
     expect(moveId).toMatch(/^RESULT#[a-f\d-]{36}$/u);
     const reread = getToolResultText(run, "reread");
-    expect(reread.match(/\{"value":null\}/gu)).toHaveLength(3);
+    expect(reread.match(/\{"value":null\}/gu)).toHaveLength(2);
+    expect(reread.match(/\{"value":\[null\]\}/gu)).toHaveLength(1);
     const references = reread.match(/RESULT#[a-f\d-]{36}/gu) ?? [];
     expect(references.length).toBeGreaterThanOrEqual(3);
     expect(new Set(references)).toEqual(new Set([moveId]));
