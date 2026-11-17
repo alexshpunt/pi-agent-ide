@@ -13,7 +13,7 @@ pnpm validate:tools:models --list
 
 The coverage gate is part of `pnpm check`. It loads the current IDE without a prompt or model call, compares structural tool contracts, and checks links between the declared capabilities and executable cases. It includes deferred tools, not just initially active tools. Descriptions and other prompt wording are not snapshot-tested.
 
-The free regression tests cover route provenance and sandbox timeout/reset/cleanup. One scripted real-Pi integration test proves that nested Codemode events are read correctly. These tests do not use paid models.
+The free regression tests cover route provenance and sandbox timeout/reset/cleanup. Scripted real-Pi integration tests prove that nested Codemode events are read correctly and check the actual provider declarations before and after discovery, nested Bash and deferred-tool execution, and the unchanged direct loadout. These tests do not use paid models.
 
 The Codemode-only `codemode-search-anchor-batch` and `codemode-search-value-batch` cases check local Search selections mixed with Insert, Replace and Delete in one committed batch. The anchor case retains readable Search output under `.pi/issued-search.txt`; the value case reuses native match values. Both validators check child membership in the native batch metadata. Focused real-Pi cases cover scoped selectors, source and target inference, concurrent writers, vanished selections and multi-file boundaries; the paid cases do not verify those additional paths. The native-value paid route remains unverified until paid execution.
 
@@ -64,7 +64,7 @@ Use `--concurrency N` to run up to N attempts at once (default 1). Reports are u
 
 Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 low was added by explicit task approval. New models belong in `models.json`, not in case definitions. Use the same tasks and validators for each model.
 
-Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
+Most cases have direct and Codemode routes. Use `--mode direct` or `--mode codemode` to select one route without running the other. The direct route keeps its existing tool setup and excludes Codemode. The Codemode route sets native `codemode.mode: only`: IDE tools, including Bash, disappear from model declarations but remain callable through `tools` in scripts. Native `tool_search` is model-only: with Pi 1.5.2 it stays declared under `only`, and a direct discovery adds the loaded tool to model declarations. The runner therefore excludes it from the Codemode route, leaving only `codemode` declared. Scripts can use `searchTools` and `describeTool` without adding direct declarations, not `tools.tool_search`. Deferred session tools are callable without discovery. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
 The `semantic-code-search` and `semantic-code-search-vera` cases select ColGREP and Vera respectively and initialize a small project index as their prerequisite. They check grouped project-wide files, a directory search with include and exclude filters, and a file-scoped range before reading the source. `semantic-vera-refresh` writes a new file and searches without a separate update command. The Vera scope case permits its documented best-effort scoped retrieval; it does not prove scoped-result completeness. Each case requires its engine and local model in the sandbox. If setup cannot complete within the prerequisite timeout, the route is unavailable rather than passed. Direct and Codemode routes for each engine remain unverified without a paid run.
 Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases, and Windows targets by an opt-in integration case that needs a real Windows host (`PI_AGENT_IDE_WINDOWS_SSH_TARGETS`); these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
 
@@ -204,6 +204,8 @@ Each invocation creates a new directory under `.tmp/capability-results/`, or a n
 - `manifest.json`: live inventory, selected profiles/cases, base revision, source digest, timeout.
 - `attempts.json`: all attempts, including failures.
 - Per attempt: prompt, JSONL events, stderr, actual model/thinking and system prompt, initial/final fixture bytes (`files.json`, Base64), result, and tool errors when execution reached validation.
+
+`runtime.json` records the complete registered tool inventory, not the declarations visible to the model. Hidden IDE tools still appear there in Codemode-only mode; use the focused provider-request integration test to verify visibility.
 
 `pass` means the required route and outcome were observed. `route_failed`, `outcome_failed`, `model_error`, `infra_error`, `timed_out`, `cancelled`, and `unavailable` remain distinct. Not run is not a pass. A later success does not erase earlier failures. An observed pass proves executability once, not consistency across runs.
 
