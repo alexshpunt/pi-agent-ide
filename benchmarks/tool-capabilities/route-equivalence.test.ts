@@ -281,6 +281,25 @@ void test("explicit-path scope retry is independent of the failed result-bound e
   );
 });
 
+for (const mode of ["direct", "codemode"]) {
+  void test(`undo-last accepts an inferred file and requires restoration in ${mode}`, () => {
+    const task = capabilityCases.find((entry) => entry.id === "undo-last");
+    assert.ok(task);
+    const calls: [Call, Call, Call] = [
+      { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+      { tool: "undo", args: { change: "last" } },
+      { tool: "read", args: { path: "task.txt" }, text: task.files?.["task.txt"] },
+    ];
+    for (const args of [{ change: "last" }, { file: "task.txt", change: "last" }])
+      assert.ok(check(task.steps, [calls[0], { ...calls[1], args }, calls[2]], mode));
+    for (const args of [{}, { change: "CHANGE#ABCD" }])
+      assert.ok(!check(task.steps, [calls[0], { ...calls[1], args }, calls[2]], mode));
+    assert.ok(!check(task.steps, [calls[0], { ...calls[1], error: true }, calls[2]], mode));
+    assert.ok(!check(task.steps, [calls[1], calls[0], calls[2]], mode));
+    assert.ok(!check(task.steps, [calls[0], calls[2], calls[1]], mode));
+    assert.ok(!check(task.steps, [calls[0], calls[1], { ...calls[2], text: "NEW" }], mode));
+  });
+}
 void test("shell roundtrip accepts one multi-source Read without losing any source provenance", () => {
   const writeId = "22222222-aaaa-4aaa-8aaa-222222222222";
   const insertId = "33333333-aaaa-4aaa-8aaa-333333333333";
@@ -300,11 +319,9 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
     {
       tool: "read",
       args: { path: sources },
-      text: `<uuid>${uuid}</uuid>\nhello`,
-      value: sources.map((_, index) => ({
-        id: `RESULT#44444444-aaaa-4aaa-8aaa-44444444444${index}`,
-        text: "hello",
-      })),
+      text: `<system-result><uuid>${uuid}</uuid></system-result>\n${sources
+        .map(() => "--- shell:input-check ---\nhello")
+        .join("\n")}`,
     },
     {
       tool: "replace",
@@ -346,6 +363,51 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
   assert.ok(!check(route, [...calls.slice(0, 2), calls[3], calls[2], ...calls.slice(4)]));
 });
 
+void test("direct array Read headers resolve only completed successful source references", () => {
+  const a = "22222222-aaaa-4aaa-8aaa-222222222222";
+  const b = "33333333-aaaa-4aaa-8aaa-333333333333";
+  const route: RouteStep[] = [
+    { tool: "search", args: { path: "a.txt" } },
+    { tool: "search", args: { path: "b.txt" } },
+    { tool: "read", reuse: { from: 0, field: "path" }, contains: "apple" },
+    { tool: "read", reuse: { from: 1, field: "path" }, contains: "berry" },
+  ];
+  const calls: [Call, Call, Call] = [
+    { tool: "search", args: { path: "a.txt" }, text: `<uuid>${a}</uuid>` },
+    { tool: "search", args: { path: "b.txt" }, text: `<uuid>${b}</uuid>` },
+    {
+      tool: "read",
+      args: { path: [{ id: a }, { id: b }] },
+      text: "--- a.txt ---\napple\n--- b.txt ---\nberry",
+    },
+  ];
+  assert.ok(check(route, calls));
+  for (const text of [
+    "--- b.txt ---\napple\n--- a.txt ---\nberry",
+    "--- a.txt ---\napple\n--- a.txt ---\nberry",
+    "--- a.txt ---\nberry\n--- b.txt ---\napple",
+    "--- a.txt ---\napple berry",
+  ])
+    assert.ok(!check(route, [calls[0], calls[1], { ...calls[2], text }]));
+  for (const index of [0, 1])
+    assert.ok(
+      !check(
+        route,
+        calls.map((call, at) => (at === index ? { ...call, error: true } : call)),
+      ),
+    );
+  assert.ok(!check(route, [calls[0], calls[2], calls[1]]));
+  assert.ok(
+    !check(route, [
+      calls[0],
+      calls[1],
+      {
+        ...calls[2],
+        args: { path: [{ id: a }, { id: uuid }] },
+      },
+    ]),
+  );
+});
 void test("a multi-source Read cannot replace repeated calls or an ordered Read dependency", () => {
   const route: [RouteStep, RouteStep] = [
     { tool: "read", args: { path: "a.txt", offset: 2, limit: 1, views: ["anchors"] } },

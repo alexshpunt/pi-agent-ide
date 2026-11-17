@@ -2623,7 +2623,7 @@ add(
 add(
   "move-empty",
   ["edit.move-empty"],
-  "Search task.txt and dest.txt separately for ABSENT to get two empty results. Pass both unchanged results as Move's source and target. It must succeed without changes. Search the unchanged Move result for source; it must find nothing. Do not edit any file.",
+  'Search task.txt and dest.txt separately with query "ABSENT" to get two empty results. Pass both unchanged results as Move\'s source and target. It must succeed without changes. Search the unchanged Move result with query "source"; it must find nothing. Do not edit any file.',
   [
     { tool: "search", args: { path: "task.txt", query: "ABSENT" } },
     { tool: "search", args: { path: "dest.txt", query: "ABSENT" } },
@@ -2824,10 +2824,10 @@ for (const method of ["all", "allSettled"] as const) {
 add(
   "undo-last",
   ["edit.undo-last", "compose.mutation-undo"],
-  "Change OLD to NEW in task.txt using replace, then undo the last editor transaction using undo. Read the restored file and report its original marker.",
+  'Change OLD to NEW in task.txt using replace, then undo the last editor transaction using undo with change equal to "last" (file is optional). Read the restored file and report its original marker.',
   [
     { tool: "replace", args: { path: "task.txt", start: "OLD" } },
-    { tool: "undo", args: { file: "task.txt", change: "last" }, after: [0] },
+    { tool: "undo", args: { change: "last" }, after: [0] },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [1] },
   ],
   {
@@ -3295,7 +3295,7 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  "Start Bash with command IFS= read -r line; printf '%s\\n' \"$line\" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Report the line printed by the shell. Do not edit files.",
+  'Start Bash with command IFS= read -r line; printf \'%s\\n\' "$line" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. The direct route may read all three sources together in one Read path array; preserve each actual result reference. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell\'s retained output with query "hello", then delete the shell session. Report the line printed by the shell. Do not edit files.',
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
