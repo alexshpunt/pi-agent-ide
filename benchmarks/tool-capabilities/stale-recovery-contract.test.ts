@@ -8,7 +8,14 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
   assert.ok(task);
   const old = "024d21fe-92e8-4fc3-9677-baf1eecaea3c";
   const fresh = "997efc4c-4baf-4f3b-bf19-a8d468bc3a3c";
-  const calls: { tool: string; args: Record<string, unknown>; text?: string; error?: boolean }[] = [
+  const calls: {
+    tool: string;
+    args: Record<string, unknown>;
+    text?: string;
+    error?: boolean;
+    finalText?: string;
+    finalDetails?: unknown;
+  }[] = [
     {
       tool: "read",
       args: { path: "task.txt", views: ["anchors"] },
@@ -23,7 +30,7 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
       tool: "insert",
       args: { path: "task.txt", anchor: "D07BBXQ", text: "BLOCKED" },
       error: true,
-      text: task.steps[2]?.finalContains,
+      text: "D07BBXQ",
     },
     {
       tool: "read",
@@ -58,13 +65,30 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
           role: "toolResult",
           toolCallId: String(index),
           isError: call.error ?? false,
-          content: [{ type: "text", text: call.text ?? "" }],
+          content: [{ type: "text", text: call.finalText ?? call.text ?? "" }],
+          ...(call.error && {
+            details: call.finalDetails ?? { guardId: "stale-anchor", effect: "not-applied" },
+          }),
         },
       }),
     );
     return validateRoute(task, events, "direct").passed;
   };
   assert.ok(check(calls));
+  assert.ok(
+    !check(
+      calls.map((call, index) =>
+        index === 3 ? { ...call, finalText: "different-outcome" } : call,
+      ),
+    ),
+  );
+  assert.ok(
+    !check(
+      calls.map((call, index) =>
+        index === 3 ? { ...call, finalDetails: { guardId: "other", effect: "not-applied" } } : call,
+      ),
+    ),
+  );
   assert.ok(!check(calls.filter(({ tool }) => tool !== "replace")));
   assert.ok(!check(calls.filter((_, index) => index !== 3)));
   assert.ok(!check(calls.filter((_, index) => index !== 4)));

@@ -122,6 +122,7 @@ import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception"
 import type { Static, TSchema } from "typebox";
 import { executeWholeFileTool, isWholeFileInvocation } from "#src/core/file-operation-tools.ts";
 import { writeAgentResult } from "./write-agent-result.ts";
+import { assertToolCallArgumentsNotBlocked } from "./tool-call-interceptor/coordinator.ts";
 import { mutationResultSchema, structuredMutation } from "./structured-result.ts";
 import type { ResultImageStore, ResultTargetStore } from "pi-agent-resource";
 
@@ -160,16 +161,18 @@ export function createTextTool<TParameters extends TSchema>(
       description: definition.description,
       parameters: definition.parameters,
       outputSchema: mutationResultSchema(definition.name),
-      // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
-      prepareArguments: (arguments_) =>
-        prepareGuardedArguments(
+      prepareArguments: (arguments_) => {
+        assertToolCallArgumentsNotBlocked(events, arguments_);
+        // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
+        return prepareGuardedArguments(
           definition.parameters,
           arguments_,
           definition.source.inherited ? definition.source.field : undefined,
           getLastResolvedSource(),
           definition.anchors ?? [],
           definition.wholeFileOperation !== undefined,
-        ),
+        );
+      },
       ...(renderer?.renderShell !== undefined && { renderShell: renderer.renderShell }),
       ...(initialRenderCall !== undefined && {
         renderCall: (...arguments_: Parameters<typeof initialRenderCall>) =>

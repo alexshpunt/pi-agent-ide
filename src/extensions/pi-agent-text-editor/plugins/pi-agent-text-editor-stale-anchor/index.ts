@@ -343,18 +343,16 @@ async function inspectAnchors(
   }
 
   const anchorIndex = result.anchorIndex;
-  const readResult =
-    result.contextRange === undefined
-      ? undefined
-      : await readApi.read(
-          // The blocked message teaches a fresh anchor, so context must carry anchors.
-          { path: source, views: ["anchors"], ...result.contextRange },
-          {
-            cwd: context.cwd,
-            ...(context.signal !== undefined && { signal: context.signal }),
-          },
-        );
-  const readContext = readResult?.content
+  // A missing hash has no recoverable line position. Offer a bounded current excerpt;
+  // the message requires checking its lines before choosing a replacement anchor.
+  const readResult = await readApi.read(
+    { path: source, views: ["anchors"], ...(result.contextRange ?? { offset: 1, limit: 20 }) },
+    {
+      cwd: context.cwd,
+      ...(context.signal !== undefined && { signal: context.signal }),
+    },
+  );
+  const readContext = readResult.content
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("\n");
@@ -365,7 +363,7 @@ async function inspectAnchors(
     field,
     path: source,
     anchor: requiredValue(anchors[anchorIndex]),
-    ...(!(readContext === undefined || readContext.length === 0) && { context: readContext }),
+    ...(readContext.length > 0 && { context: readContext }),
   };
 
   const block = makeBlockResult(details, result.reason);
