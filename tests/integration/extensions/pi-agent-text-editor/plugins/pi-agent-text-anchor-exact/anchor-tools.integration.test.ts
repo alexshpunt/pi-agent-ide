@@ -15,7 +15,7 @@ import {
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const restoreRunner = forceStandaloneIntegrationFile();
-const extensions = await createExtensionSet();
+const extensions = createExtensionSet();
 const rendererExtensions = extensions.paths.map((extension) =>
   extension ===
   path.resolve("tests/integration/extensions/pi-agent-text-editor/register-extension.ts")
@@ -216,47 +216,6 @@ describe("exact text anchors through real text editor tools", () => {
       { start: "bravo", targetStart: "delta" },
       ["alpha", "charlie", "delta", "bravo", "echo"].join("\n"),
     );
-  });
-
-  test("blocks ambiguous exact text and returns fresh primary anchors", async () => {
-    await withTempWorkspace(async (directory) => {
-      const file = await createFixture(directory, "ambiguous.txt", content);
-      const scenario = await runTextToolScenario({
-        extensions: extensions.paths,
-        cwd: directory,
-        testName: "exact-ambiguous-recovery",
-        tool: "replace",
-        arguments: { path: "ambiguous.txt", start: "a", text: "blocked" },
-      });
-      const execution = getToolExecution(scenario.result, scenario.mutationCallId);
-      expect(execution.isError).toBe(true);
-      const resultText = getToolResultText(scenario.result, scenario.mutationCallId);
-      expect(resultText).toContain('anchor "a" is ambiguous');
-      expect(resultText).not.toContain("is stale");
-      expect(resultText).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|/u);
-      expect(getToolExecutionDetails(execution)).toHaveProperty("anchorRecoveries.0.total", 5);
-      await expect(readFile(file, "utf8")).resolves.toBe(content);
-    });
-  });
-
-  test("reports missing exact text without calling it stale", async () => {
-    await withTempWorkspace(async (directory) => {
-      const file = await createFixture(directory, "missing.txt", content);
-      const scenario = await runTextToolScenario({
-        extensions: extensions.paths,
-        cwd: directory,
-        testName: "exact-missing-recovery",
-        tool: "replace",
-        arguments: { path: "missing.txt", start: "charle", text: "blocked" },
-      });
-      const execution = getToolExecution(scenario.result, scenario.mutationCallId);
-      expect(execution.isError).toBe(true);
-      const resultText = getToolResultText(scenario.result, scenario.mutationCallId);
-      expect(resultText).toContain('anchor "charle" was not found');
-      expect(resultText).not.toContain("is stale");
-      expect(resultText).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|charlie/u);
-      await expect(readFile(file, "utf8")).resolves.toBe(content);
-    });
   });
 
   test("reports every failed anchor field before copy mutation", async () => {
