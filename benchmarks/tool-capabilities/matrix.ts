@@ -7,6 +7,7 @@ import type { Capability } from "./validation.ts";
 // selectors or insertion direction; early authority guards may stop before these fields arrive.
 // Active-loadout selection is lifecycle behavior; discovery.* checks fresh-session direct discovery
 // and Codemode execution, where reaching session tools needs no discovery.
+// discovery.undo permits the inferred file; restored fixture bytes establish the target.
 const groups: [string[], string[]][] = [
   [
     ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
