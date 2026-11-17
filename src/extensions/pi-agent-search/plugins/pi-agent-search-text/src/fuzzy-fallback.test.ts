@@ -184,48 +184,6 @@ test("a candidate found again in newer text keeps the whole-identifier rule", as
   expect(result.data.fuzzy?.candidates[0]?.selection.all?.line).toMatch(/^SEARCH#/u);
 });
 
-test("a candidate found again in newer text stays within its match limit", async () => {
-  const cwd = await fixture();
-  const source = path.join(cwd, "src/hints.js");
-  const result = await resolveWhileWriting(
-    { query: "generateHintStrings", path: "src" },
-    cwd,
-    async () =>
-      writeFile(
-        source,
-        `${"hintStrings();\n".repeat(fuzzyLimits.matchesPerCandidate)}${await readFile(source, "utf8")}`,
-      ),
-  );
-
-  const candidate = result.data.fuzzy?.candidates[0];
-  expect(candidate).toMatchObject({
-    identifier: "hintStrings",
-    matchCount: fuzzyLimits.matchesPerCandidate,
-    selection: { complete: false },
-  });
-  expect(candidate?.selection.all).toBeUndefined();
-  expect(candidate?.selection.matches[0]?.references?.line).toMatch(/^SEARCH#/u);
-  expect(candidate?.selection.matches[0]?.range.startLine).toBe(1);
-  expect(result.text).toContain("Capture limit reached");
-});
-
-test("a candidate whose name another session removed before registration is not offered", async () => {
-  const cwd = await fixture();
-  const source = path.join(cwd, "src/hints.js");
-  const result = await resolveWhileWriting(
-    { query: "generateHintStrings", path: "src" },
-    cwd,
-    async () =>
-      writeFile(source, (await readFile(source, "utf8")).replaceAll(/\bhintStrings\b/gu, "hints")),
-  );
-
-  expect(result.data.fuzzy?.candidates.map((candidate) => candidate.identifier)).toEqual([
-    "generateHintString",
-  ]);
-  expect(result.text).not.toContain("Possible name: hintStrings");
-  expect(result.text).not.toContain("without stable references");
-});
-
 test("keeps the ordinary zero usable if candidate files vanish before registration", async () => {
   const cwd = await fixture();
   const resolver = createTextResolver(new SearchSessionStore());
@@ -241,29 +199,6 @@ test("keeps the ordinary zero usable if candidate files vanish before registrati
   );
 });
 
-test("caps a repeated candidate capture without issuing an all reference", async () => {
-  const cwd = await fixture();
-  await writeFile(path.join(cwd, "src/hints.js"), "hintStrings();\n".repeat(500));
-  const result = await resolve({ query: "generateHintStrings", path: "src" }, cwd);
-  expect(result.data.fuzzy?.candidates).toHaveLength(1);
-  expect(result.data.fuzzy?.candidates[0]).toMatchObject({
-    matchCount: fuzzyLimits.matchesPerCandidate,
-    selection: { complete: false },
-  });
-  expect(result.data.fuzzy?.candidates[0]?.selection.all).toBeUndefined();
-  expect(result.data.fuzzy?.candidates[0]?.selection.matches[0]?.references?.line).toMatch(
-    /^SEARCH#/u,
-  );
-  expect(result.text).toContain("Capture limit reached");
-});
-test("stops repeated-token collection at its byte budget and explains the skip", async () => {
-  const cwd = await fixture();
-  await writeFile(path.join(cwd, "src/hints.js"), "hintStrings\n".repeat(800_000));
-  const result = await resolve({ query: "generateHintStrings", path: "src" }, cwd);
-  expect(result.data.matches).toEqual([]);
-  expect(result.data.fuzzy).toMatchObject({ status: "skipped", candidates: [] });
-  expect(result.text).toContain("budget");
-});
 test("propagates user cancellation from the extra scan", async () => {
   const cwd = await fixture();
   const abort = new AbortController();

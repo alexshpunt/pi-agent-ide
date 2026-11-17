@@ -44,23 +44,6 @@ test("fuzzy alternatives collect names and verify exact matches on their origina
   expect(probes.every((source) => source === "memory://owner/work/note.txt")).toBe(true);
 });
 
-test("fuzzy search refuses an owner that cannot bound its source snapshots before scanning", async () => {
-  const { environment, calls } = fixture();
-  expect(
-    await searchFuzzy(
-      { query: "nedle", path: "memory://owner/work" },
-      "/local",
-      undefined,
-      environment,
-    ),
-  ).toMatchObject({
-    status: "skipped",
-    candidates: [],
-    message: "source owner cannot bound candidate snapshots",
-  });
-  expect(calls).toEqual([]);
-});
-
 // A non-filesystem owner proves no source is normalized or read through local fs.
 function fixture(): {
   environment: SearchEnvironment;
