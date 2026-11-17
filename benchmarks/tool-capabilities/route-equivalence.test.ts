@@ -613,6 +613,192 @@ for (const mode of ["direct", "codemode"]) {
     );
   });
 }
+for (const mode of ["direct", "codemode"]) {
+  void test(`undo recipes accept Search-match edits without prescribing a selector (${mode})`, () => {
+    for (const id of ["undo-last", "deferred-navigation-recovery"]) {
+      const task = recipe(id);
+      const firstEdit = task.steps.findIndex((step) => step.tool === "replace");
+      const route = task.steps.slice(firstEdit).map((step) => ({
+        ...step,
+        after: step.after?.map((index) => index - firstEdit),
+      }));
+      const calls = [
+        { tool: "search", args: { path: "task.txt", query: "OLD" }, text: "SEARCH#ABCD:1:match" },
+        { tool: "replace", args: { path: "task.txt", start: "SEARCH#ABCD:1:match", text: "NEW" } },
+        { tool: "undo", args: { change: "last" } },
+        { tool: "read", args: { path: "task.txt" }, text: "OLD" },
+      ] as const satisfies readonly Call[];
+      const validate = (input: readonly Call[]) =>
+        validateRoute({ ...task, steps: route }, events(input, mode), mode).passed;
+      assert.ok(validate(calls), id);
+      assert.ok(!validate([calls[0], { ...calls[1], error: true }, ...calls.slice(2)]), id);
+      assert.ok(
+        !validate([
+          calls[0],
+          { ...calls[1], args: { ...calls[1].args, text: "OLD" } },
+          ...calls.slice(2),
+        ]),
+        id,
+      );
+      assert.ok(!validate(calls.filter((call) => call.tool !== "undo")), id);
+    }
+  });
+
+  for (const ending of ["lf", "crlf"]) {
+    void test(`heading boundary requires literal selection and an omitted end (${ending}, ${mode})`, () => {
+      const route = steps(`replace-line-boundary-${ending}`);
+      const call: Call = {
+        tool: "replace",
+        args: { path: "heading.txt", start: "## OLD", text: "## NEW" },
+      };
+      assert.ok(check(route, [call], mode));
+      assert.ok(!check(route, [{ ...call, args: { ...call.args, end: "## OLD" } }], mode));
+      const search = selectionWitness("heading.txt", 1, "## OLD");
+      assert.ok(
+        !check(
+          route,
+          [search, { ...call, args: { ...call.args, start: "SEARCH#ABCD:1:line" } }],
+          mode,
+        ),
+      );
+    });
+  }
+
+  for (const ending of ["lf", "crlf", "unterminated"]) {
+    void test(`EOF recipes distinguish literal replacement from issued-line deletion (${ending}, ${mode})`, () => {
+      const task = recipe(`exact-eof-${ending}`);
+      const [replace, , , readStep, deleteStep] = task.steps;
+      assert.ok(replace && readStep && deleteStep);
+      const first: Call = {
+        tool: "replace",
+        args: { path: "last.txt", start: "Last", text: "Final" },
+      };
+      const replaceRoute = { ...task, steps: [replace] };
+      assert.ok(validateRoute(replaceRoute, events([first], mode), mode).passed);
+      assert.ok(
+        !validateRoute(
+          replaceRoute,
+          events([{ ...first, args: { ...first.args, end: "Last" } }], mode),
+          mode,
+        ).passed,
+      );
+      const search = selectionWitness("last.txt", 2, "Last");
+      assert.ok(
+        !validateRoute(
+          replaceRoute,
+          events(
+            [search, { ...first, args: { ...first.args, start: "SEARCH#ABCD:1:line" } }],
+            mode,
+          ),
+          mode,
+        ).passed,
+      );
+      const deleteRoute = {
+        ...task,
+        prompt: "",
+        steps: [
+          readStep,
+          {
+            ...deleteStep,
+            reuse: { from: 0, field: ["path", "start"], kind: "anchor" as const },
+          },
+        ],
+      };
+      const read: Call = {
+        tool: "read",
+        args: { path: "line.txt", views: ["anchors"] },
+        text: "A1B2C3D|First\nE4F5G6H|Last",
+      };
+      assert.ok(
+        validateRoute(
+          deleteRoute,
+          events([read, { tool: "delete", args: { path: "line.txt", start: "E4F5G6H" } }], mode),
+          mode,
+        ).passed,
+      );
+      assert.ok(
+        !validateRoute(
+          deleteRoute,
+          events([read, { tool: "delete", args: { path: "line.txt", start: "Last" } }], mode),
+          mode,
+        ).passed,
+      );
+    });
+  }
+}
+
+void test("incidental Inserts do not prescribe a selector spelling", () => {
+  for (const id of [
+    "codemode-search-value-batch",
+    "codemode-search-anchor-batch",
+    "repeated-line-anchor-after-shift",
+  ]) {
+    const task = recipe(id);
+    const insert = task.steps.find((step) => step.tool === "insert");
+    assert.ok(insert);
+    const route = [{ ...insert, after: undefined, editorBatchSize: undefined }];
+    const search: Call = {
+      tool: "search",
+      args: { path: "task.txt", query: "alpha" },
+      text: "SEARCH#ABCD:1:match",
+    };
+    assert.ok(
+      validateRoute(
+        { ...task, steps: route },
+        events([
+          search,
+          {
+            tool: "insert",
+            args: { path: "task.txt", anchor: "SEARCH#ABCD:1:match", before: true, text: "top\n" },
+          },
+        ]),
+        "direct",
+      ).passed,
+      id,
+    );
+    assert.ok(
+      !validateRoute(
+        { ...task, steps: route },
+        events([
+          {
+            tool: "insert",
+            args: { path: "task.txt", anchor: "alpha", before: false, text: "top\n" },
+          },
+        ]),
+        "direct",
+      ).passed,
+      id,
+    );
+  }
+});
+function selectionWitness(source: string, line: number, text: string): Call {
+  return {
+    tool: "search",
+    args: { path: source, query: text },
+    text: "SEARCH#ABCD:1:line SEARCH#ABCD:1:match",
+    value: {
+      id: result,
+      data: {
+        complete: true,
+        matches: [
+          {
+            target: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222",
+            source,
+            range: { startLine: line, startColumn: 0, endLine: line, endColumn: text.length },
+            matchedText: text,
+            lineText: text,
+            references: { line: "SEARCH#ABCD:1:line", match: "SEARCH#ABCD:1:match" },
+          },
+        ],
+      },
+    },
+  };
+}
+function recipe(id: string) {
+  const task = capabilityCases.find((entry) => entry.id === id);
+  assert.ok(task);
+  return { ...task, prompt: "" };
+}
 interface Call {
   tool: string;
   args: Record<string, unknown>;
@@ -1463,11 +1649,20 @@ void test("shifted repeated-line route checks issued anchors and final line sepa
     await outputPasses("repeated-line-anchor-after-shift", expected.replace("top\n", "top\n\n")),
     false,
   );
-  for (const anchor of ["HJKMNPQ", "7654321"]) {
-    assert.ok(
-      !check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, anchor } }, calls[2]]),
-    );
-  }
+  assert.equal(
+    await outputPasses(
+      "repeated-line-anchor-after-shift",
+      expected.replace("top\nalpha", "alpha\ntop"),
+    ),
+    false,
+  );
+  assert.ok(
+    !check(route, [
+      calls[0],
+      calls[1],
+      { ...calls[2], args: { ...calls[2].args, start: "7654321" } },
+    ]),
+  );
   assert.ok(
     !check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, before: false } }, calls[2]]),
   );
