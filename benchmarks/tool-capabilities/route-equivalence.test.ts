@@ -1649,11 +1649,20 @@ void test("shifted repeated-line route checks issued anchors and final line sepa
     await outputPasses("repeated-line-anchor-after-shift", expected.replace("top\n", "top\n\n")),
     false,
   );
-  for (const anchor of ["HJKMNPQ", "7654321"]) {
-    assert.ok(
-      !check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, anchor } }, calls[2]]),
-    );
-  }
+  assert.equal(
+    await outputPasses(
+      "repeated-line-anchor-after-shift",
+      expected.replace("top\nalpha", "alpha\ntop"),
+    ),
+    false,
+  );
+  assert.ok(
+    !check(route, [
+      calls[0],
+      calls[1],
+      { ...calls[2], args: { ...calls[2].args, start: "7654321" } },
+    ]),
+  );
   assert.ok(
     !check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, before: false } }, calls[2]]),
   );
