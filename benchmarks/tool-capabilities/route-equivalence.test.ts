@@ -363,6 +363,51 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
   assert.ok(!check(route, [...calls.slice(0, 2), calls[3], calls[2], ...calls.slice(4)]));
 });
 
+void test("direct array Read headers resolve only completed successful source references", () => {
+  const a = "22222222-aaaa-4aaa-8aaa-222222222222";
+  const b = "33333333-aaaa-4aaa-8aaa-333333333333";
+  const route: RouteStep[] = [
+    { tool: "search", args: { path: "a.txt" } },
+    { tool: "search", args: { path: "b.txt" } },
+    { tool: "read", reuse: { from: 0, field: "path" }, contains: "apple" },
+    { tool: "read", reuse: { from: 1, field: "path" }, contains: "berry" },
+  ];
+  const calls: [Call, Call, Call] = [
+    { tool: "search", args: { path: "a.txt" }, text: `<uuid>${a}</uuid>` },
+    { tool: "search", args: { path: "b.txt" }, text: `<uuid>${b}</uuid>` },
+    {
+      tool: "read",
+      args: { path: [{ id: a }, { id: b }] },
+      text: "--- a.txt ---\napple\n--- b.txt ---\nberry",
+    },
+  ];
+  assert.ok(check(route, calls));
+  for (const text of [
+    "--- b.txt ---\napple\n--- a.txt ---\nberry",
+    "--- a.txt ---\napple\n--- a.txt ---\nberry",
+    "--- a.txt ---\nberry\n--- b.txt ---\napple",
+    "--- a.txt ---\napple berry",
+  ])
+    assert.ok(!check(route, [calls[0], calls[1], { ...calls[2], text }]));
+  for (const index of [0, 1])
+    assert.ok(
+      !check(
+        route,
+        calls.map((call, at) => (at === index ? { ...call, error: true } : call)),
+      ),
+    );
+  assert.ok(!check(route, [calls[0], calls[2], calls[1]]));
+  assert.ok(
+    !check(route, [
+      calls[0],
+      calls[1],
+      {
+        ...calls[2],
+        args: { path: [{ id: a }, { id: uuid }] },
+      },
+    ]),
+  );
+});
 void test("a multi-source Read cannot replace repeated calls or an ordered Read dependency", () => {
   const route: [RouteStep, RouteStep] = [
     { tool: "read", args: { path: "a.txt", offset: 2, limit: 1, views: ["anchors"] } },

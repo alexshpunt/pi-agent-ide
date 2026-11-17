@@ -507,7 +507,10 @@ export function validateRoute(
       if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
       const tool = aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "";
       if (toolSemantics(tool) === "read" && Array.isArray(prior.event.args?.path)) {
-        const sources = readSourceIssuers({ tool, args: prior.event.args, end: end.event });
+        const sources = readSourceIssuers(
+          { tool, args: prior.event.args, end: end.event },
+          (source, header) => source === header || sameSource(header, source, prior.index),
+        );
         const paths = sources.flatMap((issuer) => {
           // Text can quote a foreign RESULT id. Only this item's own id or line anchors count.
           const output = "";
@@ -556,11 +559,14 @@ export function validateRoute(
     return starts.flatMap((prior) => {
       const end = ends.get(prior.event.toolCallId ?? "");
       if (prior.index >= before || !end || end.index >= before || end.event.isError) return [];
-      return readSourceIssuers({
-        tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
-        args: prior.event.args ?? {},
-        end: end.event,
-      }).flatMap((issuer) => {
+      return readSourceIssuers(
+        {
+          tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
+          args: prior.event.args ?? {},
+          end: end.event,
+        },
+        (source, header) => source === header || sameSource(header, source, prior.index),
+      ).flatMap((issuer) => {
         const source = issuer.args.path;
         const paths = [...values(source), ...reusedPaths(source, prior.index)];
         if (file !== undefined && !paths.some((path) => matches({ path: file }, { path })))
@@ -1077,11 +1083,14 @@ export function validateRoute(
       const item =
         start.readIndex === undefined || !completed
           ? undefined
-          : readSourceIssuers({
-              tool: step.tool,
-              args: startsById.get(event.toolCallId)?.event.args ?? {},
-              end: completed.event,
-            })[start.readIndex];
+          : readSourceIssuers(
+              {
+                tool: step.tool,
+                args: startsById.get(event.toolCallId)?.event.args ?? {},
+                end: completed.event,
+              },
+              (source, header) => source === header || sameSource(header, source, start.index),
+            )[start.readIndex];
       const end = completed && {
         ...completed,
         event:
