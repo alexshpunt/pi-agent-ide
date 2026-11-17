@@ -21,11 +21,12 @@ describe("source result targets", () => {
   const forms = {
     prefixed: (id: string) => id,
     uuid: (id: string) => id.slice("RESULT#".length),
-    value: (id: string) => ({ id, path: "/workspace/wrong.txt", ranges: [] }),
+    value: (id: string) => ({ id, path: "/workspace/wrong.txt", line: 1, text: "preview" }),
     uuidValue: (id: string) => ({
       id: id.slice("RESULT#".length),
       path: "/workspace/wrong.txt",
-      ranges: [],
+      line: 1,
+      text: "preview",
     }),
   };
 
@@ -89,7 +90,7 @@ describe("source result targets", () => {
     const store = new ResultTargetStore();
     for (const selector of ["all:line", "all:match", "1:line", "1:match"]) {
       const id = `SEARCH#ABCD:${selector}`;
-      const value = { id, path: "/workspace/wrong.txt", ranges: [] };
+      const value = { id, path: "/workspace/wrong.txt", line: 1, text: "preview" };
       expect(store.source(value, "/workspace")).toBe(id);
       expect(store.source([value, id], "/workspace")).toEqual([id, id]);
       expect(resultValueReference(store, value, "/workspace")).toBe(id);
@@ -219,23 +220,24 @@ describe("source result targets", () => {
     expect(store.source({ id: "SEARCH#ABCD:1:match" }, "/workspace")).toBe(selected);
   });
 
-  test("an id takes precedence over every other source and selector field", () => {
+  test("unsupported value fields cannot override or bypass registered selection authority", () => {
     const store = new ResultTargetStore();
     const id = store.register([target], "/workspace", false);
     const other = store.register([{ ...target, source: "/workspace/other.txt" }], "/workspace");
     const value = {
       id,
-      status: "error",
       target: other,
-      data: { target: other },
       path: "/workspace/other.txt",
       complete: true,
       matches: [{ id: other }],
     };
-    expect(store.resolve(value, "/workspace")).toEqual(store.resolve(id, "/workspace"));
-    expect(store.resolve([value], "/workspace")).toEqual(store.resolve([id], "/workspace"));
-    expect(resultValueReference(store, value, "/workspace")).toBe(id);
-    expect(() => store.source({ ...value, id: "RESULT#missing" }, "/workspace")).toThrow(Error);
+    for (const resolve of [
+      () => store.resolve(value, "/workspace"),
+      () => store.resolve([value], "/workspace"),
+      () => resultValueReference(store, value, "/workspace"),
+    ])
+      expect(resolve).toThrow(expect.objectContaining({ code: "INVALID_RESULT_VALUE" }));
+    expect(store.resolve(id, "/workspace")).toEqual({ targets: [target], complete: false });
   });
   test("a script value with an id the store did not issue fails like an unknown reference", () => {
     const store = new ResultTargetStore();
@@ -352,7 +354,6 @@ describe("selections of a local file edited elsewhere", () => {
     edit(`zero\n${original}`);
     await expect(store.verify(store.resolve(reference, directory))).resolves.toBeUndefined();
   });
-
 });
 
 describe("selections registered from a text the file no longer has", () => {

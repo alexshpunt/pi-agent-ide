@@ -7,6 +7,7 @@ import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLineMap, describeLostRange, moveRange, type LineMap } from "./line-map.ts";
 import { isRacyTimestamp } from "./unchanged-read.ts";
+import { ResourceError } from "./resource-error.ts";
 
 /** Serializable source coordinates. Lines are one-based; columns are UTF-16 offsets. */
 export interface ResultRange {
@@ -38,7 +39,7 @@ export interface ResolvedResultTargets {
 
 /**
  * A value that a tool returned to a Codemode script, such as a Read or Search value. Its `id` is the
- * issued result UUID, `RESULT#` reference, or `SEARCH#` selector; other fields are ignored.
+ * issued result UUID, `RESULT#` reference, or `SEARCH#` selector. Preview fields never select text.
  */
 export const resultValueSchema = Type.Object({ id: Type.String() });
 
@@ -49,6 +50,25 @@ export const resultSourceSchema = Type.Union([Type.String(), resultValueSchema])
 export const resultInputSchema = Type.Union([
   ...resultSourceSchema.anyOf,
   Type.Array(resultSourceSchema),
+]);
+
+// Metadata carried by public Codemode Read, Search, AST, LSP and edit values. Reject other
+// keys rather than silently discarding a selector that the caller expected to apply.
+const resultValueFields = new Set([
+  "id",
+  "text",
+  "path",
+  "line",
+  "lineText",
+  "complete",
+  "matches",
+  "captures",
+  "incoming",
+  "outgoing",
+  "mode",
+  "fallback",
+  "notices",
+  "editWarning",
 ]);
 
 const prefix = "RESULT#";
@@ -90,7 +110,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 8;
+export const RESULT_TARGET_STORE_VERSION = 9;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -398,6 +418,13 @@ export class ResultTargetStore {
     if (Array.isArray(input)) return input.map((item) => this.source(item, cwd, allowResource));
     const valueId = resultValueId(input);
     if (valueId !== undefined) {
+      const unsupported = Object.keys(input as object).filter((key) => !resultValueFields.has(key));
+      if (unsupported.length > 0)
+        throw new ResourceError(
+          "INVALID_RESULT_VALUE",
+          `Unsupported result value fields: ${unsupported.join(", ")}. Pass an unchanged issued value or its id; put edit selectors in the tool arguments.`,
+          "not-applied",
+        );
       // Search owns its selectors; normalize the value exactly as its string form.
       // An id is never an arbitrary path, even if the value includes preview source fields.
       const uuid = valueId.startsWith(prefix) ? valueId.slice(prefix.length) : valueId;

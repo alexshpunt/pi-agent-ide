@@ -92,23 +92,35 @@ function createHandler(
         return;
       }
 
-      const arguments_ = normalizeStructuredArguments(
-        context.partialArgs ?? context.args,
-        schema.parameters,
-      );
-      // Issued selections belong to the result-input pipeline, not filename anchor inspection.
-      // This also leaves unsupported selector combinations and expired IDs to their owner.
+      // Inspection may use a selection's owning resource, but must never replace the caller's
+      // selection with that whole resource in the arguments that eventually authorize the edit.
+      const arguments_ = {
+        ...normalizeStructuredArguments(context.partialArgs ?? context.args, schema.parameters),
+      };
       try {
         for (const field of [
           schema.source.field,
           ...(schema.source.targets ?? []).map((target) => target.field),
         ]) {
           const original = arguments_[field];
+          if (original === undefined) continue;
           const source = resultTargets.source(original, context.cwd);
-          if (source !== original || (typeof source === "string" && source.startsWith("RESULT#")))
-            return;
+          if (typeof source === "string" && !source.startsWith("RESULT#")) {
+            // Unregistered Search selectors still belong to their own resolver.
+            if (source.startsWith("SEARCH#")) return;
+            arguments_[field] = source;
+            continue;
+          }
+          const selected = resultTargets.resolve(source, context.cwd, {
+            forScope: true,
+            allowAdjusted: true,
+          });
+          if (!selected.complete || selected.targets.length !== 1) return;
+          arguments_[field] = selected.targets[0]?.source;
         }
       } catch {
+        // Unsupported values, expired IDs and selections without a unique owning source are
+        // refused by the result-input pipeline, not by filename anchor inspection.
         return;
       }
       const source = resolveSource(
