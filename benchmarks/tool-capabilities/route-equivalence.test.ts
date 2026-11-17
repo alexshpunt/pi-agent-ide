@@ -616,20 +616,20 @@ for (const mode of ["direct", "codemode"]) {
 for (const mode of ["direct", "codemode"]) {
   void test(`undo recipes accept Search-match edits without prescribing a selector (${mode})`, () => {
     for (const id of ["undo-last", "deferred-navigation-recovery"]) {
-      const task = capabilityCases.find((entry) => entry.id === id)!;
+      const task = recipe(id);
       const firstEdit = task.steps.findIndex((step) => step.tool === "replace");
       const route = task.steps.slice(firstEdit).map((step) => ({
         ...step,
         after: step.after?.map((index) => index - firstEdit),
       }));
-      const calls: Call[] = [
+      const calls = [
         { tool: "search", args: { path: "task.txt", query: "OLD" }, text: "SEARCH#ABCD:1:match" },
         { tool: "replace", args: { path: "task.txt", start: "SEARCH#ABCD:1:match", text: "NEW" } },
         { tool: "undo", args: { change: "last" } },
         { tool: "read", args: { path: "task.txt" }, text: "OLD" },
-      ];
-      const validate = (input: Call[]) =>
-        validateRoute({ ...task, prompt: "", steps: route }, events(input, mode), mode).passed;
+      ] as const satisfies readonly Call[];
+      const validate = (input: readonly Call[]) =>
+        validateRoute({ ...task, steps: route }, events(input, mode), mode).passed;
       assert.ok(validate(calls), id);
       assert.ok(!validate([calls[0], { ...calls[1], error: true }, ...calls.slice(2)]), id);
       assert.ok(
@@ -670,12 +670,14 @@ for (const mode of ["direct", "codemode"]) {
 
   for (const ending of ["lf", "crlf", "unterminated"]) {
     void test(`EOF recipes distinguish literal replacement from issued-line deletion (${ending}, ${mode})`, () => {
-      const task = capabilityCases.find((entry) => entry.id === `exact-eof-${ending}`)!;
+      const task = recipe(`exact-eof-${ending}`);
+      const [replace, , , readStep, deleteStep] = task.steps;
+      assert.ok(replace && readStep && deleteStep);
       const first: Call = {
         tool: "replace",
         args: { path: "last.txt", start: "Last", text: "Final" },
       };
-      const replaceRoute = { ...task, prompt: "", steps: [task.steps[0]] };
+      const replaceRoute = { ...task, steps: [replace] };
       assert.ok(validateRoute(replaceRoute, events([first], mode), mode).passed);
       const search: Call = {
         tool: "search",
@@ -696,9 +698,9 @@ for (const mode of ["direct", "codemode"]) {
         ...task,
         prompt: "",
         steps: [
-          task.steps[3],
+          readStep,
           {
-            ...task.steps[4],
+            ...deleteStep,
             reuse: { from: 0, field: ["path", "start"], kind: "anchor" as const },
           },
         ],
@@ -732,8 +734,9 @@ void test("incidental Inserts do not prescribe a selector spelling", () => {
     "codemode-search-anchor-batch",
     "repeated-line-anchor-after-shift",
   ]) {
-    const task = capabilityCases.find((entry) => entry.id === id)!;
-    const insert = task.steps.find((step) => step.tool === "insert")!;
+    const task = recipe(id);
+    const insert = task.steps.find((step) => step.tool === "insert");
+    assert.ok(insert);
     const route = [{ ...insert, after: undefined, editorBatchSize: undefined }];
     const search: Call = {
       tool: "search",
@@ -742,7 +745,7 @@ void test("incidental Inserts do not prescribe a selector spelling", () => {
     };
     assert.ok(
       validateRoute(
-        { ...task, prompt: "", steps: route },
+        { ...task, steps: route },
         events([
           search,
           {
@@ -756,7 +759,7 @@ void test("incidental Inserts do not prescribe a selector spelling", () => {
     );
     assert.ok(
       !validateRoute(
-        { ...task, prompt: "", steps: route },
+        { ...task, steps: route },
         events([
           {
             tool: "insert",
@@ -769,6 +772,11 @@ void test("incidental Inserts do not prescribe a selector spelling", () => {
     );
   }
 });
+function recipe(id: string) {
+  const task = capabilityCases.find((entry) => entry.id === id);
+  assert.ok(task);
+  return { ...task, prompt: "" };
+}
 interface Call {
   tool: string;
   args: Record<string, unknown>;
