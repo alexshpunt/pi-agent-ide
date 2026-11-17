@@ -335,7 +335,17 @@ class InterceptorImpl implements ToolCallInterceptor {
           mutationDataSchema(event.toolName),
           {
             status: "error",
-            errors: [resultError(message, "INTERCEPTED")],
+            errors: [
+              resultError(
+                message,
+                typeof details === "object" &&
+                  details !== null &&
+                  "code" in details &&
+                  typeof details.code === "string"
+                  ? details.code
+                  : "INTERCEPTED",
+              ),
+            ],
             data: { operation: event.toolName, operationId: event.toolCallId, effect, files: [] },
           },
         );

@@ -110,7 +110,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 9;
+export const RESULT_TARGET_STORE_VERSION = 10;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -145,6 +145,8 @@ export class ResultTargetStore {
   readonly #entries = new Map<string, ResultEntry>();
   readonly #matchReferences = new Map<string, string>();
   readonly #editWarnings = new Map<string, string>();
+  /** Provider-owned source prohibitions also apply to newly registered Read/Search selections. */
+  readonly #readOnlySources = new Map<string, string>();
   readonly #referenceNames = new Map<string, string>();
   readonly #snapshots = new Map<string, FileSnapshot>();
   readonly #results = new Map<
@@ -165,6 +167,7 @@ export class ResultTargetStore {
     this.#entries.clear();
     this.#matchReferences.clear();
     this.#editWarnings.clear();
+    this.#readOnlySources.clear();
     this.#referenceNames.clear();
     this.#snapshots.clear();
     this.#results.clear();
@@ -177,8 +180,16 @@ export class ResultTargetStore {
     cwd: string,
     complete = true,
     editWarning?: string,
+    readOnlyReason?: string,
   ): string {
-    for (const target of targets) this.refresh(target.source, cwd);
+    for (const target of targets) {
+      this.refresh(target.source, cwd);
+      if (readOnlyReason !== undefined)
+        this.#readOnlySources.set(
+          JSON.stringify([path.resolve(cwd), sourcePath(target.source, cwd)]),
+          readOnlyReason,
+        );
+    }
     const reference = `${prefix}${randomUUID()}`;
     const aligned = this.#align(targets, cwd);
     this.#entries.set(
@@ -243,13 +254,6 @@ export class ResultTargetStore {
   ): ResolvedResultTargets {
     input = this.source(input, cwd);
     const references = this.#references(input);
-    if (options.forEdit === true) {
-      for (const reference of references) {
-        const warning = this.#editWarnings.get(reference);
-        if (warning !== undefined)
-          throw Object.assign(new Error(warning), { code: "UNSAFE_TOKEN_SELECTION" });
-      }
-    }
     this.#refreshEntries(references, cwd);
     const targets: ResultSourceTarget[] = [];
     let complete = true;
@@ -261,6 +265,22 @@ export class ResultTargetStore {
       );
       complete &&= current.complete;
       targets.push(...current.targets);
+    }
+    if (options.forEdit === true || options.forScope === true) {
+      for (const target of targets) {
+        const reason = this.#readOnlySources.get(
+          JSON.stringify([path.resolve(cwd), sourcePath(target.source, cwd)]),
+        );
+        if (reason !== undefined)
+          throw new ResourceError("NO_EDITABLE_TEXT", reason, "not-applied");
+      }
+    }
+    if (options.forEdit === true) {
+      for (const reference of references) {
+        const warning = this.#editWarnings.get(reference);
+        if (warning !== undefined)
+          throw Object.assign(new Error(warning), { code: "UNSAFE_TOKEN_SELECTION" });
+      }
     }
     return { targets: combineTargets(targets), complete };
   }

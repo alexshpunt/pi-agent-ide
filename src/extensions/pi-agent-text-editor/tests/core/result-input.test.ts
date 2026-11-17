@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { expect, test, vi } from "vitest";
-import { ResultTargetStore } from "pi-agent-resource";
+import { ResourceError, ResultTargetStore } from "pi-agent-resource";
 import { TEXT_EDITOR_API_VERSION, TEXT_EDITOR_PROTOCOL } from "#src/api/plugin-protocol.ts";
 import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 import { createResultTargetAnchors } from "#src/core/result-target-anchors.ts";
@@ -87,9 +87,9 @@ for (const complete of [true, false]) {
         expect(result.details.effect).not.toBe("not-applied");
       } else {
         expect(result.details.effect).toBe("not-applied");
-        expect(
-          result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n"),
-        ).toContain("Incomplete result targets");
+        expect(result.details.results?.[0]?.errors).toMatchObject([
+          { code: "RESULT_INPUT_REJECTED" },
+        ]);
         expect(await readFile(file, "utf8")).toBe(content);
       }
       const empty = await tool.execute(
@@ -113,6 +113,10 @@ test.each([
   [42, "RESULT_INPUT_REJECTED"],
   ["failure", "RESULT_INPUT_REJECTED"],
   [{ code: "UNSAFE_TOKEN_SELECTION" }, "UNSAFE_TOKEN_SELECTION"],
+  [
+    new ResourceError("NO_EDITABLE_TEXT", "Read the source file.", "not-applied"),
+    "NO_EDITABLE_TEXT",
+  ],
 ])("result input rejects a thrown value safely: %s", async (thrown, code) => {
   for (const operation of ["replace", "copy"] as const) {
     const store = new ResultTargetStore();

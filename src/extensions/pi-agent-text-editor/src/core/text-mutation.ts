@@ -296,10 +296,7 @@ export function createTextTool<TParameters extends TSchema>(
                     signal?.throwIfAborted();
                     return failureToolResult(
                       "",
-                      (error as { code?: unknown } | null | undefined)?.code ===
-                        "UNSAFE_TOKEN_SELECTION"
-                        ? "UNSAFE_TOKEN_SELECTION"
-                        : "RESULT_INPUT_REJECTED",
+                      resultInputFailureCode(error),
                       errorMessage(error),
                       "not-applied",
                     );
@@ -380,10 +377,7 @@ export function createTextTool<TParameters extends TSchema>(
                     signal?.throwIfAborted();
                     return failureToolResult(
                       "",
-                      (error as { code?: unknown } | null | undefined)?.code ===
-                        "UNSAFE_TOKEN_SELECTION"
-                        ? "UNSAFE_TOKEN_SELECTION"
-                        : "RESULT_INPUT_REJECTED",
+                      resultInputFailureCode(error),
                       errorMessage(error),
                       "not-applied",
                     );
@@ -2447,6 +2441,13 @@ function isResourcesEditOutcome(value: unknown): value is TextResourcesEditOutco
 function asMutationParameters<TParameters extends TSchema>(value: unknown): Static<TParameters> {
   // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
   return value as Static<TParameters>;
+}
+
+function resultInputFailureCode(error: unknown): string {
+  if (error instanceof ResourceError && error.code === "NO_EDITABLE_TEXT") return error.code;
+  return (error as { code?: unknown } | null | undefined)?.code === "UNSAFE_TOKEN_SELECTION"
+    ? "UNSAFE_TOKEN_SELECTION"
+    : "RESULT_INPUT_REJECTED";
 }
 
 function errorMessage(error: unknown): string {

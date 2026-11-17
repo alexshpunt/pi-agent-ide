@@ -34,6 +34,7 @@ import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-r
 import { writeProblemNotices } from "./write-agent-result.ts";
 import {
   ResourceScheduler,
+  ResourceError,
   resourceAccesses,
   connectResultTargets,
   resultError,
@@ -60,6 +61,17 @@ import {
 } from "#src/api/native-edit-batch-event.ts";
 import { mutationOutcome, type MutationData, type BatchMutationData } from "./structured-result.ts";
 
+/** Read-only selections stay tool boundaries; preflight must not verify or retire them. */
+function isReadOnlyResult(store: ResultTargetStore, value: string, cwd: string): boolean {
+  if (!value.startsWith("RESULT#")) return false;
+  try {
+    store.resolve(value, cwd, { forScope: true });
+    return false;
+  } catch (error) {
+    // Other failures still go through the ordinary resolver and its error handling.
+    return error instanceof ResourceError && error.code === "NO_EDITABLE_TEXT";
+  }
+}
 /** A confirmed whole-file write can finish formatting after its child tool has returned. */
 function appliedFileAction(
   result: AgentToolResult<FileMutationBatchResult>,
@@ -371,6 +383,10 @@ class NativeTextEditBatchCoordinator {
               ownsSource = true;
               continue;
             }
+            if (isReadOnlyResult(this.resultTargets, value, context.cwd)) {
+              ownsSource = true;
+              continue;
+            }
             const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
             if (result.kind === "not-handled") continue;
             const source =
@@ -420,6 +436,10 @@ class NativeTextEditBatchCoordinator {
               !this.snapshotResults.has(value) &&
               !this.resultTargets.referenceName(value).startsWith("SEARCH#")
             ) {
+              ownsSource = true;
+              continue;
+            }
+            if (isReadOnlyResult(this.resultTargets, value, context.cwd)) {
               ownsSource = true;
               continue;
             }

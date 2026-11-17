@@ -1,5 +1,9 @@
 import { requiredValue } from "pi-agent-invariant";
-import { connectResultTargets, normalizeStructuredArguments } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  normalizeStructuredArguments,
+  ResourceError,
+} from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -118,7 +122,14 @@ function createHandler(
           if (!selected.complete || selected.targets.length !== 1) return;
           arguments_[field] = selected.targets[0]?.source;
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ResourceError && error.code === "NO_EDITABLE_TEXT")
+          return makeResolverBlockResult(
+            context.toolCall.name,
+            schema.source.field,
+            error.source,
+            error.code,
+          );
         // Unsupported values, expired IDs and selections without a unique owning source are
         // refused by the result-input pipeline, not by filename anchor inspection.
         return;
@@ -345,7 +356,12 @@ async function inspectAnchors(
   }
 
   if (result.kind === "failed") {
-    return makeResolverBlockResult(context.toolCall.name, source, result.reason);
+    return makeResolverBlockResult(
+      context.toolCall.name,
+      source,
+      result.reason,
+      result.cause instanceof ResourceError ? result.cause.code : undefined,
+    );
   }
 
   // This interceptor owns stale snapshot failures only. Missing, ambiguous, and
@@ -390,6 +406,7 @@ function makeResolverBlockResult(
   toolName: string,
   source: string,
   reason: string,
+  code?: string,
 ): InterceptResult {
   return {
     annotation: { kind: "blocked", reason },
@@ -400,6 +417,7 @@ function makeResolverBlockResult(
       details: {
         guardId: "resolver",
         effect: "not-applied",
+        ...(code === undefined ? {} : { code }),
         toolName,
         source,
         reason,
