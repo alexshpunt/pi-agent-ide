@@ -653,11 +653,7 @@ for (const mode of ["direct", "codemode"]) {
       };
       assert.ok(check(route, [call], mode));
       assert.ok(!check(route, [{ ...call, args: { ...call.args, end: "## OLD" } }], mode));
-      const search: Call = {
-        tool: "search",
-        args: { path: "heading.txt", query: "## OLD" },
-        text: "SEARCH#ABCD:1:line",
-      };
+      const search = selectionWitness("heading.txt", 1, "## OLD");
       assert.ok(
         !check(
           route,
@@ -679,11 +675,8 @@ for (const mode of ["direct", "codemode"]) {
       };
       const replaceRoute = { ...task, steps: [replace] };
       assert.ok(validateRoute(replaceRoute, events([first], mode), mode).passed);
-      const search: Call = {
-        tool: "search",
-        args: { path: "last.txt", query: "Last" },
-        text: "SEARCH#ABCD:1:line",
-      };
+      assert.ok(!validateRoute(replaceRoute, events([{ ...first, args: { ...first.args, end: "Last" } }], mode), mode).passed);
+      const search = selectionWitness("last.txt", 2, "Last");
       assert.ok(
         !validateRoute(
           replaceRoute,
@@ -772,6 +765,27 @@ void test("incidental Inserts do not prescribe a selector spelling", () => {
     );
   }
 });
+function selectionWitness(source: string, line: number, text: string): Call {
+  return {
+    tool: "search",
+    args: { path: source, query: text },
+    text: "SEARCH#ABCD:1:line SEARCH#ABCD:1:match",
+    value: {
+      id: result,
+      data: {
+        complete: true,
+        matches: [{
+          target: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222",
+          source,
+          range: { startLine: line, startColumn: 0, endLine: line, endColumn: text.length },
+          matchedText: text,
+          lineText: text,
+          references: { line: "SEARCH#ABCD:1:line", match: "SEARCH#ABCD:1:match" },
+        }],
+      },
+    },
+  };
+}
 function recipe(id: string) {
   const task = capabilityCases.find((entry) => entry.id === id);
   assert.ok(task);
