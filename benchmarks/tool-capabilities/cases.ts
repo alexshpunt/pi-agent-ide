@@ -3178,6 +3178,59 @@ add(
 );
 
 add(
+  "copied-line-prefix-recovery",
+  ["edit.copied-line-prefix-refusal"],
+  "Read task.txt with anchors and wait for its result. Attempt Replace of line 2 using its issued line anchor as start and text consisting of that same 7-character anchor followed by |NEW. This deliberately copied display prefix must be refused without writes. Wait for the refusal, then retry Replace with the same start anchor and text NEW only. Keep keep and last unchanged. In Codemode, continue after the refused call and keep its failure visible.",
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "replace",
+      args: { path: "task.txt", text: /^[0-9A-HJKMNP-TV-Z]{7}\|NEW$/u },
+      reuse: reuse(0, "start", "anchor"),
+      error: true,
+      after: [0],
+    },
+    {
+      tool: "replace",
+      args: { path: "task.txt" },
+      reuse: reuse(0, "start", "anchor"),
+      after: [1],
+    },
+  ],
+  { expected: { "task.txt": "keep\nNEW\nlast\n" } },
+);
+
+add(
+  "stale-line-anchor-literal-collision",
+  ["edit.stale-line-anchor-literal-collision", "edit.anchor-shaped-literal-search"],
+  "Read task.txt with anchors and wait for its result. Replace OLD with NEW using the issued line-2 anchor. Wait for success, then Insert BLOCKED using that old line-2 anchor; it must fail as stale even though its bytes occur literally elsewhere. After that refusal, attempt Replace with that same stale anchor as start and text BLOCKED; it must also fail without writes. Then Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. This Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "replace", args: { path: "task.txt" }, reuse: reuse(0, "start", "anchor") },
+    {
+      tool: "insert",
+      args: { path: "task.txt" },
+      reuse: reuse(0, "anchor", "anchor"),
+      error: true,
+      after: [1],
+    },
+    {
+      tool: "replace",
+      args: { path: "task.txt" },
+      reuse: reuse(0, "start", "anchor"),
+      error: true,
+      after: [2],
+    },
+    { tool: "search", args: { path: "task.txt", query: "D07BBXQ" }, after: [3] },
+    { tool: "replace", reuse: reuse(4) },
+  ],
+  {
+    files: { "task.txt": "keep\nOLD\nliteral D07BBXQ|payload\nlast\n" },
+    expected: { "task.txt": "keep\nNEW\nliteral TOKEN|payload\nlast\n" },
+  },
+);
+
+add(
   "stale-insert-recovery",
   ["edit.stale-insert-feedback", "edit.bounded-stale-feedback"],
   "Read task.txt with anchors and wait for its result to capture the original anchors. Replace OLD with NEW. Wait for the Replace result before attempting Insert with the OLD Read's line-2 anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. After that refusal returns, Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",

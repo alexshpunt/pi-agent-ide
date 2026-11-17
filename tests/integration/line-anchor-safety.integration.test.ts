@@ -11,6 +11,7 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { textLineAnchors } from "pi-agent-text";
+import { requiredValue } from "pi-agent-invariant";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
@@ -73,7 +74,7 @@ test.each(["direct", "codemode"] as const)(
   async (route) =>
     withTempWorkspace(async (cwd) => {
       const initial = "keep\nOLD\nlast\n";
-      const anchor = textLineAnchors("task.txt", initial)[1]!;
+      const anchor = requiredValue(textLineAnchors("task.txt", initial)[1]);
       const steps: Step[] = [];
       for (const [index, prefix] of ["", "  "].entries()) {
         const file = `refused-${index}.txt`;
@@ -108,11 +109,23 @@ test.each(["direct", "codemode"] as const)(
         },
         { id: "retry", tool: "replace", args: { path: "retry.txt", start: anchor, text: "NEW" } },
       );
+      await writeFile(path.join(cwd, "literal-prefix.txt"), initial);
+      await writeFile(path.join(cwd, "other-prefix.txt"), initial);
+      steps.push(
+        { id: "literal-prefix", tool: "replace", args: {
+          path: "literal-prefix.txt", start: "OLD", text: `${anchor}|NEW`,
+        } },
+        { id: "other-prefix", tool: "replace", args: {
+          path: "other-prefix.txt", start: anchor, text: "ZZZZZZZ|NEW",
+        } },
+      );
       await run(cwd, route, "copied-display-prefix", steps);
       for (const index of [0, 1]) {
         expect(await readFile(path.join(cwd, `refused-${index}.txt`), "utf8")).toBe(initial);
       }
       expect(await readFile(path.join(cwd, "retry.txt"), "utf8")).toBe("keep\nNEW\nlast\n");
+      expect(await readFile(path.join(cwd, "literal-prefix.txt"), "utf8")).toBe(`keep\n${anchor}|NEW\nlast\n`);
+      expect(await readFile(path.join(cwd, "other-prefix.txt"), "utf8")).toBe("keep\nZZZZZZZ|NEW\nlast\n");
     }),
 );
 
@@ -120,7 +133,7 @@ test.each(["direct", "codemode"] as const)(
   "does not reinterpret stale anchors as literal selectors through %s",
   async (route) =>
     withTempWorkspace(async (cwd) => {
-      const anchor = textLineAnchors("task.txt", "OLD\n")[0]!;
+      const anchor = requiredValue(textLineAnchors("task.txt", "OLD\n")[0]);
       const initial = `keep\nOLD\nliteral ${anchor}|payload\nlast\n`;
       const steps: Step[] = [];
       for (const tool of ["insert", "replace"] as const) {
