@@ -52,6 +52,30 @@ function check(
 }
 
 for (const mode of ["direct", "codemode"]) {
+  void test(`stale collision refusals and literal Search have only data dependencies (${mode})`, () => {
+    const fixture = task("stale-line-anchor-literal-collision");
+    const searchId = "RESULT#22222222-bbbb-4bbb-8bbb-222222222222";
+    const args = [
+      { path: "task.txt", views: ["anchors"] },
+      { path: "task.txt", start: "D07BBXQ", text: "NEW" },
+      { path: "task.txt", anchor: "D07BBXQ" },
+      { path: "task.txt", start: "D07BBXQ" },
+      { path: "task.txt", query: "D07BBXQ" },
+      { path: { id: searchId }, text: "TOKEN" },
+    ];
+    const receipts = { 0: "D07BBXQ|OLD", 4: `<uuid>${searchId.slice(7)}</uuid>` };
+    // Search may overlap the second refusal, both refusals, or precede the edit.
+    assert.ok(check(fixture, args, [[0], [1], [2], [3, 4], [5]], mode, receipts));
+    assert.ok(check(fixture, args, [[0], [1], [2, 3, 4], [5]], mode, receipts));
+    assert.ok(check(fixture, args, [[4], [0], [1], [3], [2], [5]], mode, receipts));
+    // Both stale calls must wait for the successful change; selection reuse must wait too.
+    assert.ok(!check(fixture, args, [[0], [1, 2], [3, 4], [5]], mode, receipts));
+    assert.ok(!check(fixture, args, [[0], [1, 3], [2, 4], [5]], mode, receipts));
+    assert.ok(!check(fixture, args, [[0], [1], [2, 3], [4, 5]], mode, receipts));
+    assert.ok(!check(fixture, args, [[0], [1], [2, 4], [5]], mode, receipts));
+    assert.ok(!check(fixture, args, [[0], [1], [3, 4], [5]], mode, receipts));
+    assert.ok(!check(fixture, args, [[0], [1], [2, 3], [5]], mode, receipts));
+  });
   void test(`independent Insert and Copy recoveries may overlap (${mode})`, () => {
     const fixture = task("missing-edit-selector-recovery");
     const args = [

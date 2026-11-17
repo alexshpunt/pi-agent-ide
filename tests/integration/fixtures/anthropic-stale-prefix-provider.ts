@@ -49,7 +49,7 @@ export default async function anthropicStalePrefixProvider(pi: ExtensionAPI): Pr
         delta: { type: "text_delta", text: "fixture" },
       });
       send(response, { type: "content_block_stop", index: 0 });
-      if (turn === 6) {
+      if (turn === 7) {
         send(response, {
           type: "message_delta",
           delta: { stop_reason: "end_turn", stop_sequence: null },
@@ -59,20 +59,24 @@ export default async function anthropicStalePrefixProvider(pi: ExtensionAPI): Pr
         response.end();
         return;
       }
-      const stale = turn === 2 || turn === 3;
-      const id = stale
+      const prefix = turn === 2 || turn === 3;
+      const stale = prefix || turn === 4;
+      const id = prefix
         ? `stale-${turn}`
-        : turn === 1
-          ? "replace"
-          : turn === 4
-            ? "malformed"
-            : "recovered";
+        : turn === 4
+          ? "complete-stale"
+          : turn === 1
+            ? "replace"
+            : turn === 5
+              ? "malformed"
+              : "recovered";
       const args = turn === 1
         ? { path: "note.txt", start: "OLD", text: "NEW" }
         : {
             path: "note.txt",
             anchor: formatLineHashAnchor(stale ? original : updated, 2),
-            ...(turn === 5 && { text: "RECOVERED" }),
+            ...(turn === 4 && { text: "BLOCKED" }),
+            ...(turn === 6 && { text: "RECOVERED" }),
           };
       send(response, {
         type: "content_block_start",
@@ -94,7 +98,7 @@ export default async function anthropicStalePrefixProvider(pi: ExtensionAPI): Pr
         send(response, { type: "message_stop" });
         response.end();
       };
-      if (!stale) {
+      if (!prefix) {
         delta(JSON.stringify(args));
         finish();
         return;
