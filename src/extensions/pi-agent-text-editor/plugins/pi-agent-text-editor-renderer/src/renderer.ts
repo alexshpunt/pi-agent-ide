@@ -1017,7 +1017,7 @@ function wholeFileFailureCause(code: string): string {
       return "anchor is stale";
     }
     case "COPIED_LINE_ANCHOR": {
-      return "copied metadata refused; use content alone";
+      return "replacement contains a copied line prefix; remove it and retry";
     }
     case "INVALID_REQUEST": {
       return "the request was invalid";
