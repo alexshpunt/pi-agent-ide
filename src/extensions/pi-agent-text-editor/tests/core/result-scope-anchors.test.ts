@@ -225,8 +225,8 @@ test.each(["ONE", "ONE\nextra"])(
     expect(await f.content("tokens.txt")).toBe(intermediate);
 
     // A surviving range is scope authority only, never a silently shortened whole selection.
-    expect(() => f.store.resolve(whole, cwd)).toThrow();
-    await expect(f.store.resolveCurrent(whole, cwd)).rejects.toThrow();
+    expect(() => f.store.resolve(whole, cwd)).toThrow(Error);
+    await expect(f.store.resolveCurrent(whole, cwd)).rejects.toThrow(Error);
     for (const input of [
       { path: { id: whole } },
       { path: matches },

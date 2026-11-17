@@ -1396,6 +1396,36 @@ add(
   },
 );
 add(
+  "replace-surviving-scoped-match",
+  ["edit.surviving-scoped-match"],
+  "Search task.txt for OLD once and retain the whole returned result. Replace its first match with ONE, passing that whole Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first match as start (the issued :match reference in direct calls, the first match value in Codemode). Omit end or repeat the same match. Then make one Replace call with path as an array of the first and second matches and text TWO; the stale first match must make it fail without writing. Finally replace only the second match with TWO, using the SAME WHOLE Search result as path and its second match as start. Do not pass the second match as path, retype the file path, search again or use other edits. Preserve every other byte.",
+  [
+    { tool: "search", args: { path: "task.txt", query: "OLD" } },
+    {
+      tool: "replace",
+      args: { start: matchReference(1), text: "ONE" },
+      reuse: [reuse(0, "path", "whole-result"), reuse(0, "start")],
+    },
+    {
+      tool: "replace",
+      args: { path: [matchReference(1), matchReference(2)], text: "TWO" },
+      error: true,
+      after: [1],
+      reuse: [reuse(0), reuse(0)],
+    },
+    {
+      tool: "replace",
+      args: { start: matchReference(2), text: "TWO" },
+      after: [2],
+      reuse: [reuse(0, "path", "whole-result"), reuse(0, "start")],
+    },
+  ],
+  {
+    files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\n" },
+    expected: { "task.txt": "keep1\nONE\nkeep2\nTWO\nkeep3\n" },
+  },
+);
+add(
   "replace-search-anchor-list-unusable",
   ["edit.search-anchor-list-unusable"],
   "Search task.txt for OLD. Replace its first match alone with ONE: use that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Then make ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Then call Replace once with only the second match and TWO. Do not search again and do not retype the file path. Keep every other byte.",

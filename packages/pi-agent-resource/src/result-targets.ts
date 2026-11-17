@@ -90,7 +90,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 7;
+export const RESULT_TARGET_STORE_VERSION = 8;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -113,7 +113,7 @@ interface FileSnapshot {
   older?: { readonly text: string; readonly map: LineMap | undefined };
 }
 type ResultEntry = { readonly cwd: string } & (
-  | (ResolvedResultTargets & { readonly state: "ready" })
+  | (ResolvedResultTargets & { readonly state: "ready"; readonly lost?: readonly string[] })
   | { readonly state: "pending" }
   | { readonly state: "rejected"; readonly reason: string }
 );
@@ -214,7 +214,12 @@ export class ResultTargetStore {
   public resolve(
     input: unknown,
     cwd: string,
-    options: { readonly allowAdjusted?: boolean; readonly forEdit?: boolean } = {},
+    options: {
+      readonly allowAdjusted?: boolean;
+      readonly forEdit?: boolean;
+      /** Only bounds independently checked selectors; lost ranges grant no scope authority. */
+      readonly forScope?: boolean;
+    } = {},
   ): ResolvedResultTargets {
     input = this.source(input, cwd);
     const references = this.#references(input);
@@ -229,7 +234,11 @@ export class ResultTargetStore {
     const targets: ResultSourceTarget[] = [];
     let complete = true;
     for (const reference of references) {
-      const current = this.#current(reference, options.allowAdjusted === true);
+      const current = this.#current(
+        reference,
+        options.allowAdjusted === true,
+        options.forScope === true,
+      );
       complete &&= current.complete;
       targets.push(...current.targets);
     }
@@ -512,12 +521,11 @@ export class ResultTargetStore {
     const maps = new Map<string, LineMap | undefined>();
     let lines: readonly string[] | undefined;
     const newLines = () => (lines ??= next.split("\n"));
-    const removed = new Set<string>();
     const rebased = new Set<string>();
     for (const [reference, entry] of this.#entries) {
       if (entry.state !== "ready") continue;
       let touches = false;
-      const lost: string[] = [];
+      const lost: string[] = [...(entry.lost ?? [])];
       const targets: ResultSourceTarget[] = [];
       for (const target of entry.targets) {
         if (sourcePath(target.source, entry.cwd) !== identity) {
@@ -541,18 +549,14 @@ export class ResultTargetStore {
         targets.push({ ...target, expectedContent: next, ranges });
       }
       if (!touches) continue;
-      if (lost.length === 0) {
-        this.#entries.set(reference, { ...entry, targets: combineTargets(targets) });
-        rebased.add(reference);
-      } else {
-        // Keep a marker: the next use reports what changed instead of "expired or unknown".
-        this.#entries.set(reference, {
-          state: "rejected",
-          cwd: entry.cwd,
-          reason: retiredReason(lost),
-        });
-        removed.add(reference);
-      }
+      // Keep surviving ranges for explicit selector scopes, but never revive lost ranges or
+      // silently shorten a whole-result selection.
+      this.#entries.set(reference, {
+        ...entry,
+        targets: combineTargets(targets),
+        ...(lost.length > 0 ? { lost } : {}),
+      });
+      rebased.add(reference);
     }
     for (const [key, shared] of this.#contents)
       if (shared.identity === identity) this.#contents.set(key, { identity, content: next });
@@ -561,7 +565,7 @@ export class ResultTargetStore {
       // reports exactly what changed.
       if (
         result.resources.some((resource) => sourcePath(resource, result.cwd) === identity) &&
-        !result.references.some((reference) => rebased.has(reference) || removed.has(reference))
+        !result.references.some((reference) => rebased.has(reference))
       )
         this.#results.delete(id);
     return next;
@@ -631,16 +635,26 @@ export class ResultTargetStore {
   }
 
   /** A refreshed entry; a changed file has moved its selections or retired it. */
-  #current(reference: string, allowAdjusted: boolean): ResolvedResultTargets {
+  #current(reference: string, allowAdjusted: boolean, forScope = false): ResolvedResultTargets {
     const current = this.#entries.get(reference);
     if (current?.state === "rejected") throw new Error(current.reason);
     if (current?.state !== "ready")
       throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
+    if (current.lost !== undefined && current.lost.length > 0) {
+      const surviving = current.targets.filter((target) => target.ranges.length > 0);
+      if (!forScope || surviving.length === 0) throw new Error(retiredReason(current.lost));
+    }
     if (!allowAdjusted) {
       const adjusted = adjustedRegions(current.targets);
       if (adjusted.length > 0) throw new Error(retiredReason(adjusted));
     }
-    return current;
+    // Empty ranges must not be interpreted by a consumer as a whole-resource scope.
+    return forScope
+      ? {
+          targets: current.targets.filter((target) => target.ranges.length > 0),
+          complete: current.complete,
+        }
+      : current;
   }
 
   /** Replace equal snapshot text with the copy already retained, so repeated results add no copy. */
