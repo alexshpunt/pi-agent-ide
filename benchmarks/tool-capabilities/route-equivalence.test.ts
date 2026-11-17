@@ -675,7 +675,13 @@ for (const mode of ["direct", "codemode"]) {
       };
       const replaceRoute = { ...task, steps: [replace] };
       assert.ok(validateRoute(replaceRoute, events([first], mode), mode).passed);
-      assert.ok(!validateRoute(replaceRoute, events([{ ...first, args: { ...first.args, end: "Last" } }], mode), mode).passed);
+      assert.ok(
+        !validateRoute(
+          replaceRoute,
+          events([{ ...first, args: { ...first.args, end: "Last" } }], mode),
+          mode,
+        ).passed,
+      );
       const search = selectionWitness("last.txt", 2, "Last");
       assert.ok(
         !validateRoute(
@@ -774,14 +780,16 @@ function selectionWitness(source: string, line: number, text: string): Call {
       id: result,
       data: {
         complete: true,
-        matches: [{
-          target: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222",
-          source,
-          range: { startLine: line, startColumn: 0, endLine: line, endColumn: text.length },
-          matchedText: text,
-          lineText: text,
-          references: { line: "SEARCH#ABCD:1:line", match: "SEARCH#ABCD:1:match" },
-        }],
+        matches: [
+          {
+            target: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222",
+            source,
+            range: { startLine: line, startColumn: 0, endLine: line, endColumn: text.length },
+            matchedText: text,
+            lineText: text,
+            references: { line: "SEARCH#ABCD:1:line", match: "SEARCH#ABCD:1:match" },
+          },
+        ],
       },
     },
   };

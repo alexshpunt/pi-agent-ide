@@ -7,7 +7,9 @@ import type { Capability } from "./validation.ts";
 // selectors or insertion direction; early authority guards may stop before these fields arrive.
 // Active-loadout selection is lifecycle behavior; discovery.* checks fresh-session direct discovery
 // and Codemode execution, where reaching session tools needs no discovery.
-// discovery.undo permits the inferred file; restored fixture bytes establish the target.
+// Undo recipes permit any supported selector for the preceding mutation and an inferred file.
+// Literal boundary/EOF edits use exactText; their line-anchor deletion remains an issued selector.
+// Batch/line-shift setup Inserts leave selector spelling free; outcomes establish their placement.
 const groups: [string[], string[]][] = [
   [["codemode.provider-tool-names"], ["codemode-tool-names"]],
   [
@@ -270,6 +272,7 @@ const groups: [string[], string[]][] = [
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["read.diff-omission"], ["diff-omission"]],
   [["codemode.diff-complete"], ["diff-script-complete"]],
+  // These recipes explicitly require literal text and an omitted end, across LF/CRLF/EOF.
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
   [
     ["edit.exact-eof", "edit.delete-empty-replace"],

@@ -111,7 +111,7 @@ add(
     { tool: "search", args: { path: "task.txt", query: "beta" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true },
+      args: { path: "task.txt", before: true },
       editorBatchSize: 3,
     },
     {
@@ -143,7 +143,7 @@ add(
     { tool: "read", args: { path: ".pi/issued-search.txt" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true },
+      args: { path: "task.txt", before: true },
       editorBatchSize: 3,
     },
     {
@@ -181,7 +181,7 @@ add(
     { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, contains: "probe(1)" },
     { tool: "lsp_search", args: { query: "probe" }, contains: "task.ts#probe" },
     { tool: "diff", args: { before: "task.ts", after: "task.ts" }, scriptResult: "" },
-    { tool: "replace", args: { path: "task.txt", start: "OLD" } },
+    { tool: "replace", args: { path: "task.txt", text: "NEW" } },
     { tool: "undo", args: { change: "last" }, after: [4] },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [5] },
   ],
@@ -2074,7 +2074,7 @@ add(
 add(
   "mixed-range-replace",
   ["edit.mixed-range-endpoints"],
-  "Read line-start.txt with anchors; each line is shown after its 7-character anchor and a |. Replace from the anchor shown before line 1 through the exact END fragment on line 2 with NEW, preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference with NEW followed by a newline. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
+  "Read line-start.txt with anchors; each line is shown after its 7-character anchor and a |. Replace from the anchor shown before line 1 through the exact END fragment on line 2 with NEW, passing the literal string END as end and preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference with NEW followed by a newline, passing the literal string START as start. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
   [
     { tool: "read", args: { path: "line-start.txt", views: ["anchors"] } },
     {
@@ -2797,8 +2797,14 @@ for (const [name, eol] of [
   add(
     `replace-line-boundary-${name}`,
     ["edit.replace-line-endings"],
-    "Replace the exact heading ## OLD with ## NEW in heading.txt, without an end anchor or a newline in the replacement. Preserve the existing line endings and blank line before Body.",
-    [{ tool: "replace", args: { path: "heading.txt", start: "## OLD", text: "## NEW" } }],
+    "In heading.txt, use Replace with the literal string ## OLD as start and ## NEW as text. Omit end entirely and do not include a newline in text. Do not use an issued reference or line anchor for start. Preserve the existing line endings and blank line before Body.",
+    [
+      {
+        tool: "replace",
+        args: { path: "heading.txt", text: "## NEW", end: undefined },
+        exactText: ["start"],
+      },
+    ],
     {
       files: { "heading.txt": `## OLD${eol}${eol}Body${eol}` },
       expected: { "heading.txt": `## NEW${eol}${eol}Body${eol}` },
@@ -2813,9 +2819,13 @@ for (const [name, eol, ending] of [
   add(
     `exact-eof-${name}`,
     ["edit.exact-eof", "edit.delete-empty-replace"],
-    `Replace the exact final line Last with Final in last.txt. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For both block edits, pass the literal string ${JSON.stringify(`Last${eol}Block`)} as start and omit the end parameter entirely. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.`,
+    `In last.txt, use Replace with the literal string Last as start and Final as text, omitting end entirely. Do not use an issued reference or line anchor for this replacement. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For both block edits, pass the literal string ${JSON.stringify(`Last${eol}Block`)} as start and omit the end parameter entirely. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.`,
     [
-      { tool: "replace", args: { path: "last.txt", start: "Last" } },
+      {
+        tool: "replace",
+        args: { path: "last.txt", text: "Final", end: undefined },
+        exactText: ["start"],
+      },
       {
         tool: "delete",
         args: { path: "block.txt", end: undefined },
@@ -2829,7 +2839,7 @@ for (const [name, eol, ending] of [
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
         tool: "delete",
-        args: { path: "line.txt", start: "Last" },
+        args: { path: "line.txt" },
         reuse: reuse(3, ["path", "start"], "anchor"),
       },
     ],
@@ -2893,7 +2903,7 @@ add(
   ["edit.undo-last", "compose.mutation-undo"],
   'Change OLD to NEW in task.txt using replace. Wait for the Replace result before undoing the last editor transaction using undo with change equal to "last" (file is optional). After the Undo result returns, Read the restored file and report its original marker.',
   [
-    { tool: "replace", args: { path: "task.txt", start: "OLD" } },
+    { tool: "replace", args: { path: "task.txt", text: "NEW" } },
     { tool: "undo", args: { change: "last" }, after: [0] },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [1] },
   ],
@@ -3285,7 +3295,7 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "alpha", before: true },
+      args: { path: "task.txt", before: true },
       after: [0],
     },
     {
