@@ -940,6 +940,23 @@ void test("deferred navigation in Codemode needs only the actual calls, without 
 });
 
 for (const mode of ["direct", "codemode"]) {
+  void test(`deferred navigation accepts Undo's inferred file in ${mode}`, () => {
+    const route = steps("deferred-navigation-recovery");
+    const prefix = mode === "direct" ? [discoveryCall] : [];
+    const withUndo = (args: Record<string, unknown>) =>
+      check(
+        route,
+        [
+          ...prefix,
+          ...deferredCalls.map((call) => (call.tool === "undo" ? { ...call, args } : call)),
+        ],
+        mode,
+      );
+    assert.ok(withUndo({ change: "last" }));
+    assert.ok(withUndo({ file: "task.txt", change: "last" }));
+    assert.ok(!withUndo({}));
+    assert.ok(!withUndo({ change: "CHANGE#ABCD" }));
+  });
   void test(`deferred navigation still requires every successful operation in ${mode}`, () => {
     const route = steps("deferred-navigation-recovery");
     const prefix = mode === "direct" ? [discoveryCall] : [];
