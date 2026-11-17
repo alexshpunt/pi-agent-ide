@@ -77,6 +77,29 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
     return validateRoute(task, events, "direct").passed;
   };
   assert.ok(check(calls));
+  for (const path of [
+    old,
+    `RESULT#${old}`,
+    { id: old },
+    JSON.stringify({ id: old }),
+    JSON.stringify({ id: `RESULT#${old}` }),
+  ]) {
+    // The stream guard may finish before the payload is emitted or schema validation runs.
+    const cut = calls.map((call, index) =>
+      index === 3 ? { ...call, args: { path, anchor: "D07BBXQ" } } : call,
+    );
+    assert.ok(check(cut), JSON.stringify(path));
+    for (const unissued of ["RESULT#aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", '{"id":']) {
+      assert.equal(
+        check(
+          cut.map((call, index) =>
+            index === 3 ? { ...call, args: { ...call.args, path: unissued } } : call,
+          ),
+        ),
+        false,
+      );
+    }
+  }
   assert.ok(
     !check(
       calls.map((call, index) =>
