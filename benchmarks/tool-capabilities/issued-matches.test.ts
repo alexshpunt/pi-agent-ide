@@ -118,6 +118,27 @@ for (const mode of ["direct", "codemode"]) {
     }
   });
 
+  void test(`${mode}: issued match sets ignore ordering without losing multiplicity`, () => {
+    const wanted = [
+      { path: "task.ts", text: "return 9" },
+      { path: "other.ts", text: "return 7" },
+    ];
+    const value = result(mode, 0, "return 9");
+    const one = required((data(value).matches as unknown[])[0]);
+    const two = required((data(result(mode, 1, "return 7", "other.ts")).matches as unknown[])[0]);
+    const task = { steps: [{ tool: "search", issuedMatches: wanted }] };
+    const checkSet = (matches: unknown[]) => {
+      data(value).matches = matches;
+      return validateRoute(
+        task,
+        events([{ tool: "search", args: { path: "." }, value }], mode),
+        mode,
+      ).passed;
+    };
+    assert.ok(checkSet([two, one]));
+    assert.equal(checkSet([one, one]), false);
+    assert.equal(checkSet([two, two]), false);
+  });
   void test(`${mode}: enclosing composition checks the complete issued match list`, () => {
     for (const index of [0, 1]) {
       const valid = chain(mode, "task.ts");
