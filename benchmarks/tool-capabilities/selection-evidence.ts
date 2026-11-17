@@ -1,5 +1,5 @@
 import { wholeLineSelection, type LineSelection } from "./edit-equivalence.ts";
-import { toolSemantics } from "./argument-equivalence.ts";
+import { sourceValues as ids, toolSemantics } from "./argument-equivalence.ts";
 import { resultText, type RunEvent } from "./validation.ts";
 
 /** A displayed line may include its text and one terminal separator, but must have been issued. */
@@ -10,19 +10,12 @@ export function issuedAnchor(value: unknown, output: string): string | undefined
   const hash = match[1];
   return output
     .split(/\r?\n/u)
-    .some((line) =>
-      match[2] === undefined ? line.startsWith(`${hash}|`) : line === `${hash}|${match[2]}`,
-    )
+    .some((line) => (!match[2] ? line.startsWith(`${hash}|`) : line === `${hash}|${match[2]}`))
     ? hash
     : undefined;
 }
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-function ids(value: unknown): string[] {
-  if (typeof value === "string") return [value];
-  const id = record(value).id;
-  return typeof id === "string" ? [id] : [];
 }
 function names(value: unknown, expected: unknown): boolean {
   return ids(value).some((id) =>
