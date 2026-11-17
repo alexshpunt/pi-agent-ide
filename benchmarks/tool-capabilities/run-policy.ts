@@ -18,6 +18,18 @@ export const CAPABILITY_DEFAULT_TOOLS = [
   "tool_search",
 ] as const;
 
+/** Prevent direct discovery from reopening IDE declarations in Codemode-only attempts. */
+export function capabilityExcludedTools(mode: string): string[] {
+  return ["edit", "grep", "find", "ls", mode === "direct" ? "codemode" : "tool_search"];
+}
+/** Native Pi settings shared by paid attempts and declaration regression tests. */
+export function capabilitySettings(mode: string, additionalTools: string[] = []) {
+  return {
+    codemode: { mode: mode === "codemode" ? "only" : "on" },
+    defaultTools: [...CAPABILITY_DEFAULT_TOOLS, ...additionalTools],
+    retry: { enabled: false, maxRetries: 0 },
+  };
+}
 /** Stop a paid batch after an account failure without reclassifying the failed attempt. */
 export function accountStopReason(attempt: {
   status: string;
