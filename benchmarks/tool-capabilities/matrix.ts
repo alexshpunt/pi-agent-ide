@@ -275,6 +275,8 @@ const groups: [string[], string[]][] = [
     ["git-stage-unstage-undo"],
   ],
   [["compose.search-narrow-result"], ["read-search-narrow"]],
+  [["search.compaction-numbered"], ["search-compaction-numbered"]],
+  [["search.compaction-all"], ["search-compaction-all"]],
   // Result-input paths accept the same file as a scalar or an array; both keep real reuse checks.
   [["outline.file"], ["ast-capture-rename", "outline-search-edit"]],
   [["search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],

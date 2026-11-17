@@ -18,6 +18,40 @@ const matchReference = (index: number) =>
 const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
+
+for (const selection of ["numbered", "all"] as const) {
+  add(
+    `search-compaction-${selection}`,
+    [`search.compaction-${selection}`],
+    selection === "numbered"
+      ? "Search task.txt for OLD with limit 1. The three identical lines are compacted. Repeat the same Search on task.txt with limit 3 to obtain all three individual references. Then Insert ADDED before each of those three lines using its own actual issued numbered SEARCH :line reference as path (before: true). Keep every other byte. Do not reuse the first reference for the other occurrences."
+      : "Search task.txt for OLD with limit 1. The three identical lines are compacted. Use that completed Search's actual issued :all:line reference as path in one Insert call with text ADDED and before: true. Insert once before each OLD line and keep every other byte. Do not use the compact group's first numbered reference.",
+    [
+      { tool: "search", args: { path: "task.txt", query: "OLD", limit: 1 } },
+      ...(selection === "numbered"
+        ? [
+            { tool: "search", args: { path: "task.txt", query: "OLD", limit: 3 }, after: [0] },
+            ...[1, 2, 3].map((index): RouteStep => ({
+              tool: "insert",
+              args: { path: new RegExp(`^SEARCH#[A-F0-9]+:${index}:line$`, "u"), before: true },
+              reuse: reuse(1),
+            })),
+          ]
+        : [
+            {
+              tool: "insert",
+              args: { path: /^SEARCH#[A-F0-9]+:all:line$/u, before: true },
+              reuse: reuse(0),
+            },
+          ]),
+    ],
+    {
+      modes: ["direct"],
+      files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nOLD\n" },
+      expected: { "task.txt": "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n" },
+    },
+  );
+}
 add(
   "missing-edit-selector-recovery",
   ["edit.missing-selector-recovery"],
