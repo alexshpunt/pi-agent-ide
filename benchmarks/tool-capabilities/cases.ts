@@ -3121,8 +3121,7 @@ add(
     // A pattern or a rule with a pattern can both capture NAME.
     {
       tool: "ast_search",
-      args: { path: "task.ts" },
-      contains: "capture NAME",
+      issuedMatches: [{ path: "task.ts", text: "function first() { return 7; }" }],
     },
     {
       tool: "replace",
@@ -3143,12 +3142,16 @@ add(
   ["ast_search.rule", "compose.ast-search-enclosing"],
   'Search task.ts with query return 9. Then call ast_search with that unchanged Search result (the Search value in Codemode) as path, relation enclosing, language typescript and rule {kind: "function_declaration"}. Replace the returned whole function with text function second() { return 10; }. Keep the first function unchanged.',
   [
-    { tool: "search", args: { path: "task.ts" }, contains: "return 9" },
+    { tool: "search", issuedMatches: [{ path: "task.ts", text: "return 9" }] },
     {
       tool: "ast_search",
-      args: { relation: "enclosing", language: /^typescript$/i },
+      args: {
+        relation: "enclosing",
+        language: /^typescript$/i,
+        rule: { kind: "function_declaration" },
+      },
       reuse: reuse(0),
-      contains: "function second",
+      issuedMatches: [{ path: "task.ts", text: "function second() { return 9; }" }],
     },
     { tool: "replace", reuse: reuse(1) },
   ],

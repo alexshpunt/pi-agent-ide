@@ -12,6 +12,7 @@ import {
   issuedSearchFragment,
   readSourceIssuers,
   searchSources,
+  searchValue,
   searchMatchReference,
   wholeSearchSelection,
   type SelectionIssuer,
@@ -151,6 +152,8 @@ export interface RouteStep {
   /** Exercise literal text selection without pinning a boundary spelling; outcomes check bytes. */
   exactText?: readonly string[];
   contains?: string;
+  /** Complete Search/AST match set, independent of request scope and readable rendering. */
+  issuedMatches?: readonly { path: string; text: string }[];
   /**
    * Match the public value delivered to a Codemode script, not human-facing text: an object's
    * fields, a string, or a RegExp that a string value must match.
@@ -314,6 +317,31 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
   return expected === actual;
 }
 
+/** Compare complete match multisets; request roots and result order do not define composition. */
+function issuedMatches(expected: NonNullable<RouteStep["issuedMatches"]>, end: RunEvent): boolean {
+  const data = searchValue(end);
+  if (
+    data.complete !== true ||
+    data.truncated === true ||
+    !Array.isArray(data.matches) ||
+    data.matches.length !== expected.length
+  )
+    return false;
+  const remaining = [...(data.matches as unknown[])];
+  return expected.every((wanted) => {
+    const index = remaining.findIndex((entry) => {
+      if (entry === null || typeof entry !== "object") return false;
+      const match = entry as Record<string, unknown>;
+      return (
+        match.textTruncated !== true &&
+        matches(wanted, { path: match.path ?? match.source, text: match.text ?? match.matchedText })
+      );
+    });
+    if (index < 0) return false;
+    remaining.splice(index, 1);
+    return true;
+  });
+}
 function isResultSource(value: unknown): boolean {
   const sources = values(value);
   return (
@@ -1272,6 +1300,7 @@ export function validateRoute(
         })
       )
         continue;
+      if (step.issuedMatches && !issuedMatches(step.issuedMatches, end.event)) continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
       if (step.finalRefusal !== undefined || step.finalMaxBytes !== undefined) {

@@ -14,7 +14,7 @@ interface Call {
   text?: string;
   error?: boolean;
 }
-const ids = [1, 2, 3, 4].map((n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`);
+const ids = [1, 2, 3, 4, 5, 6].map((n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`);
 const first = "function first() { return 7; }";
 const second = "function second() { return 9; }";
 function required<T>(value: T | undefined): T {
@@ -26,14 +26,15 @@ const capture = required(capabilityCases.find(({ id }) => id === "ast-capture-re
 
 function result(mode: string, index: number, text: string, source = "task.ts") {
   const id = `RESULT#${ids[index]}`;
+  const matchId = `RESULT#${ids[index + 4]}`;
   return mode === "codemode"
-    ? { id, complete: true, matches: [{ path: source, line: 2, text, lineText: second, id }] }
+    ? { id, complete: true, matches: [{ path: source, line: 2, text, lineText: second, id: matchId }] }
     : {
         data: {
           kind: "matches",
           target: id,
           complete: true,
-          matches: [{ source, matchedText: text, target: id, range: { startLine: 2, endLine: 2 } }],
+          matches: [{ source, matchedText: text, target: matchId, range: { startLine: 2, endLine: 2 } }],
         },
       };
 }
@@ -100,6 +101,13 @@ for (const mode of ["direct", "codemode"]) {
     required(calls[1]).args.path = required(calls[0]).value;
     required(calls[2]).args.path = required(calls[1]).value;
     assert.ok(check(calls));
+    assert.ok(check([calls[0] as Call, ...calls]));
+    for (const index of [0, 1]) {
+      const absolute = chain(mode);
+      const match = required((data(required(absolute[index]).value).matches as Record<string, unknown>[])[0]);
+      match[mode === "codemode" ? "path" : "source"] = "/workspace/fixture/task.ts";
+      assert.ok(check(absolute));
+    }
   });
 
   void test(`${mode}: enclosing composition checks the complete issued match list`, () => {
@@ -114,6 +122,8 @@ for (const mode of ["direct", "codemode"]) {
         { ...original, truncated: true },
         { ...original, matches: [] },
         { ...original, matches: [match, match] },
+        { ...original, matches: [null] },
+        { ...original, matches: [{ ...match, textTruncated: true }] },
         { ...original, matches: [{ ...match, [pathKey]: "other.ts" }] },
         { ...original, matches: [{ ...match, [textKey]: index === 0 ? "return 7" : first }] },
         {},
