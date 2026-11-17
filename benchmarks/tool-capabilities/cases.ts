@@ -192,7 +192,7 @@ add(
 add(
   "semantic-write-receipts",
   ["edit.semantic-write-receipt"],
-  "Use Write once each, in this listed order, on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode a failed call resolves to null, so the remaining distinct actions still run. Report unknown for the uncertain action; do not call it a failed file save.",
+  "Use Write once each, in this listed order, on fixture:semantic/applied, fixture:semantic/not-applied and fixture:semantic/unknown with content probe. These are synthetic resource actions, not files. Inspect each provider receipt: preserve the applied, not-applied or unknown effect and its attempted prefix. Never replay a refused or uncertain action. In Codemode a failed call resolves to null, so the remaining distinct actions still run. Report the lowercase word unknown for the uncertain action; do not call it a failed file save.",
   [
     {
       tool: "write",
@@ -228,7 +228,7 @@ add(
 add(
   "semantic-script-receipts",
   ["compose.provider-structured-receipt"],
-  'In native Codemode, call Insert once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report unknown for the uncertain action.',
+  'In native Codemode, call Insert once each on fixture:semantic-script/applied, fixture:semantic-script/not-applied and fixture:semantic-script/unknown with the argument text set to exactly "probe" (not "text probe"). These are synthetic actions, not files. Each call must resolve to an object receipt even when the action is refused or unknown. Pass each returned object unchanged to text(receipt), including its unpredictable nonce and attempted prefix. Do not parse the readable summary or invent a receipt. Never replay an action. Report the lowercase word unknown for the uncertain action.',
   ["applied", "not-applied", "unknown"].map((effect) => ({
     tool: "insert",
     args: { path: `fixture:semantic-script/${effect}` },
@@ -1144,7 +1144,7 @@ for (const operation of ["delete", "insert"] as const) {
       ...(operation === "insert" ? ["compose.batch-insert-search"] : []),
     ],
     (api) =>
-      `Search task.txt for OLD. ${parallelCalls(api, 3)} Use the three issued numbered SEARCH :line references as path for the three ${operation} calls. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
+      `Search task.txt for OLD. Use the three issued numbered SEARCH :line references as path for the three ${operation} calls. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED before each selected line."} ${parallelCalls(api, 3)} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
     [
       { tool: "search", args: { path: "task.txt", query: "OLD" } },
       ...[1, 2, 3].map((index): RouteStep => ({
@@ -1193,7 +1193,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
       ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
     ],
     (api) =>
-      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset 2, 4 and 6 respectively, each with limit 1) before editing. ${parallelCalls(api, 3)} Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
+      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset 2, 4 and 6 respectively, each with limit 1) before editing. Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED before each selected line."} ${parallelCalls(api, 3)} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
     [
       ...[2, 4, 6].map((line): RouteStep => ({
         tool: "read",
