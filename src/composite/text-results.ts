@@ -13,12 +13,14 @@ import type {
 import {
   connectResultImages,
   connectResultTargets,
+  ResourceError,
   resultValueId,
   resultValueReference,
   TempResourceStore,
   normalizeStructuredArguments,
 } from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
+import { assertToolCallArgumentsNotBlocked } from "pi-agent-text-editor/api/tool-call-interceptor";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
 import { limitIdeOutput } from "./output-limits.ts";
 import { nullableValueSchema, scriptValueOf } from "./script-values/index.ts";
@@ -184,14 +186,20 @@ export function createIdeTextResults(
         "",
         saveFullOutput,
       );
-      refusals.set(
-        call.toolCallId,
-        limited.text + (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
-      );
+      refusals.set(call.toolCallId, {
+        ...refusals.get(call.toolCallId),
+        reason: limited.text + (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
+      });
       return;
     });
   };
-  const refusals = new Map<string, string>();
+  const refusals = new Map<
+    string,
+    {
+      reason: string;
+      details?: { code: string; effect: "not-applied" | "applied" | "unknown" };
+    }
+  >();
   const labels = new Map<string, string | undefined>();
   const ledger = new CodemodeCallLedger();
   /**
@@ -344,7 +352,13 @@ export function createIdeTextResults(
       }
       Object.assign(event.input, input);
     } catch (error) {
-      return { block: true, reason: error instanceof Error ? error.message : String(error) };
+      const reason = error instanceof Error ? error.message : String(error);
+      if (error instanceof ResourceError)
+        refusals.set(event.toolCallId, {
+          reason,
+          details: { code: error.code, effect: error.effect },
+        });
+      return { block: true, reason };
     }
   });
   const registerTool: ExtensionAPI["registerTool"] = (definition) => {
@@ -354,6 +368,9 @@ export function createIdeTextResults(
     // Pi validates before tool_call hooks. Prepare both direct and nested calls before that
     // boundary, retaining each tool's own compatibility rules and its live schema getter.
     const prepareArguments = (args: unknown): unknown => {
+      // The guard binds the finalized argument object before preparation. JSON decoding can
+      // clone it, so preserve an early refusal before passing a different object to the tool.
+      assertToolCallArgumentsNotBlocked(pi.events, args);
       const normalized = normalizeStructuredArguments(args, definition.parameters);
       return definition.prepareArguments ? definition.prepareArguments(normalized) : normalized;
     };
@@ -375,8 +392,11 @@ export function createIdeTextResults(
       const refusal = refusals.get(args[0]);
       if (refusal !== undefined) {
         refusals.delete(args[0]);
-        // A refusal has no tool details, like a call that Pi blocks.
-        return { content: [{ type: "text", text: refusal }], details: {} as never, isError: true };
+        return {
+          content: [{ type: "text", text: refusal.reason }],
+          details: (refusal.details ?? {}) as never,
+          isError: true,
+        };
       }
       // A Read issued by another tool, such as a Codemode script, returns its whole text there.
       const limitText = !(["read", "outline"].includes(definition.name) && parents.has(args[0]));
