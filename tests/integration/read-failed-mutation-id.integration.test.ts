@@ -49,7 +49,7 @@ test("Read failures name the issued mutation result, not its private target", as
               id: "move",
               name: "codemode",
               arguments: {
-                code: `const moved = await tools.move(${JSON.stringify(parameters)}); store("moved", moved); text(JSON.stringify({moveId:moved.id}));`,
+                code: `const moved = await tools.move(${JSON.stringify(parameters)}); store("moved", moved); text(JSON.stringify({moveId:moved}));`,
               },
             }),
           ],
@@ -61,7 +61,7 @@ test("Read failures name the issued mutation result, not its private target", as
               id: "reread",
               name: "codemode",
               arguments: {
-                code: `const moved = load("moved"); for (const path of [moved, moved.id, [moved]]) { text(JSON.stringify({value:await tools.read({path})})); }`,
+                code: `const moved = load("moved"); for (const path of [{id:moved}, moved, [{id:moved}]]) { text(JSON.stringify({value:await tools.read({path})})); }`,
               },
             }),
           ],
