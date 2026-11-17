@@ -202,8 +202,13 @@ add(
 );
 add(
   "standalone-resource-host",
-  ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
-  "Only standalone resource hosts are loaded; the full IDE is not enabled. In direct mode, discover the demo namespace through tool_search. In Codemode, call the demo tools directly; discovery is optional. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. After the demo_replace result returns, reread memory://demo/note to inspect changed and omega. This reread is independent of the three refused calls. Use demo tools, not the sibling namespace or filesystem tools.",
+  [
+    "standalone.discovery",
+    "standalone.read-search-edit",
+    "standalone.resource-bounds",
+    "standalone.refusal-classification",
+  ],
+  "Only standalone resource hosts are loaded; the full IDE is not enabled. In direct mode, discover the demo namespace through tool_search. In Codemode, call the demo tools directly; discovery is optional. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy with path=memory://demo/note and target=local.txt; all must fail without changing local.txt. After the demo_replace result returns, reread memory://demo/note to inspect changed and omega. This reread is independent of the three refused calls. Use demo tools, not the sibling namespace or filesystem tools.",
   [
     {
       tool: "tool_search",
@@ -216,9 +221,24 @@ add(
     },
     { tool: "demo_search", args: { query: "alpha" }, reuse: reuse(1), contains: "alpha" },
     { tool: "demo_replace", reuse: reuse(2) },
-    { tool: "demo_read", args: { path: "local.txt" }, error: true },
-    { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
-    { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },
+    {
+      tool: "demo_read",
+      args: { path: "local.txt" },
+      error: true,
+      contains: "RESOURCE_HOST_LOCAL_PATH",
+    },
+    {
+      tool: "demo_read",
+      args: { path: "memory://other/note" },
+      error: true,
+      contains: "RESOURCE_HOST_FOREIGN_SOURCE",
+    },
+    {
+      tool: "demo_copy",
+      args: { path: "memory://demo/note", target: "local.txt" },
+      error: true,
+      contains: "RESOURCE_HOST_LOCAL_PATH",
+    },
     {
       tool: "demo_read",
       args: { path: "memory://demo/note" },
@@ -561,7 +581,7 @@ add(
     "edit.approval-headless-move",
     "compose.approval-refusal-read",
   ],
-  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data in its own call to check unchanged KEEP content; new-target must not exist. Report the refusals and leave all fixture bytes unchanged. In Codemode each failure resolves to null and all checks still run.",
+  "Use Copy on source-tree to source-tree/new; it must refuse overlap. Use Copy from source-tree to link; it must refuse a symlink destination. Use Move on tracked to new-target; it must require a host approval dialog and fail closed in this non-interactive runtime. Use Move from source-tree to .git; it must refuse protected Git data. Then Read tracked/data in its own later call to check unchanged KEEP content; new-target must not exist. For the Codemode route, run the Copy and Move calls inside Codemode, inspect their final parent results, then call tools.read in its own later Codemode call. Keep any extra inspection inside Codemode. Each failed child resolves to null, so all checks still run. Report the refusals and leave all fixture bytes unchanged.",
   [
     {
       tool: "copy",
