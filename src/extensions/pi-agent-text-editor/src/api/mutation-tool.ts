@@ -4,6 +4,15 @@ import type { ImageContent } from "pi-agent-resource";
 import type { TextAnchor } from "pi-agent-text";
 import type { Static, TSchema } from "typebox";
 
+/** A rejected mutation input whose stable code is safe to expose to result renderers. */
+export class TextMutationInputError extends Error {
+  public constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 export interface TextMutationEdit {
   readonly changes: readonly TextChange[];
   readonly action: "edited" | "overwritten";

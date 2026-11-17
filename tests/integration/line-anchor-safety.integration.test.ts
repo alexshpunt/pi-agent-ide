@@ -71,7 +71,7 @@ async function run(cwd: string, route: Route, name: string, steps: Step[]) {
       if (step.code !== undefined) {
         expect(getToolExecutionDetails(getToolExecution(result, step.id))).toMatchObject({
           effect: "not-applied",
-          results: [{ errors: [{ code: step.code }] }],
+          results: [{ data: { errors: [{ code: step.code }] } }],
         });
       }
     } else {

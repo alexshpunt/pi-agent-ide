@@ -14,7 +14,10 @@ import {
   textSelections,
 } from "#src/tools/text-selection.ts";
 
-import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
+import {
+  TextMutationInputError,
+  type TextMutationToolRegistration,
+} from "#src/api/mutation-tool.ts";
 
 export const replaceSchema = Type.Object(
   {
@@ -71,11 +74,9 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
           anchor.value === copiedAnchor,
       )
     ) {
-      throw Object.assign(
-        new Error(
-          `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from text and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
-        ),
-        { code: "COPIED_LINE_ANCHOR", effect: "not-applied" },
+      throw new TextMutationInputError(
+        "COPIED_LINE_ANCHOR",
+        `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from text and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
       );
     }
     const selections = textSelections(starts, "start");
