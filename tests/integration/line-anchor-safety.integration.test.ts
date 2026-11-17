@@ -17,7 +17,13 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 type Route = "direct" | "codemode";
-type Step = { id: string; tool: string; args: Record<string, unknown>; error?: boolean; code?: string };
+type Step = {
+  id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  error?: boolean;
+  code?: string;
+};
 
 async function run(cwd: string, route: Route, name: string, steps: Step[]) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -63,7 +69,7 @@ async function run(cwd: string, route: Route, name: string, steps: Step[]) {
     if (route === "direct") {
       expect(getToolExecution(result, step.id).isError, output).toBe(step.error === true);
       if (step.code !== undefined) {
-        expect(getToolExecutionDetails(result, step.id)).toMatchObject({
+        expect(getToolExecutionDetails(getToolExecution(result, step.id))).toMatchObject({
           effect: "not-applied",
           results: [{ errors: [{ code: step.code }] }],
         });
@@ -97,6 +103,7 @@ test.each(["direct", "codemode"] as const)(
               text: `${prefix}${anchor}|NEW`,
             },
             error: true,
+            code: "COPIED_LINE_ANCHOR",
           },
         );
       }
