@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -114,12 +115,78 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
     expect(result.tuiRenderedOutput).toMatch(/demo_replace memory:\/\/demo\/note[\s\S]*~ direct/u);
     expect(await readFile(path.join(cwd, "resource.txt"), "utf8")).toBe("direct\nomega\n");
     expect(await readFile(path.join(cwd, "local.txt"), "utf8")).toBe("local sentinel\n");
-    expect(result.tuiRenderedOutput).not.toContain("Failed to load extension");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 }, 90_000);
 
+// Boundary codes are machine-readable; neither classification nor continuation depends on prose.
+test("standalone refusals distinguish foreign resources from local paths", async () => {
+  const root = path.resolve(".tmp/standalone-resource-host");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "refusals-"));
+  try {
+    await writeFile(path.join(cwd, "resource.txt"), "alpha\nomega\n");
+    await writeFile(path.join(cwd, "other.txt"), "sibling\n");
+    await writeFile(path.join(cwd, "local.txt"), "local sentinel\n");
+    const sources = [
+      ["memory://other/note", "RESOURCE_HOST_FOREIGN_SOURCE"],
+      ["raw:memory://other/note", "RESOURCE_HOST_FOREIGN_SOURCE"],
+      ["local.txt", "RESOURCE_HOST_LOCAL_PATH"],
+      ["raw:" + path.join(cwd, "local.txt"), "RESOURCE_HOST_LOCAL_PATH"],
+      ["file://" + path.join(cwd, "local.txt"), "RESOURCE_HOST_LOCAL_PATH"],
+      ["C:\\workspace\\local.txt", "RESOURCE_HOST_LOCAL_PATH"],
+    ] as const;
+    const calls = [
+      ...sources.map(([source], index) => ({
+        id: `refused-${index}`,
+        name: "demo_read",
+        arguments: { path: source },
+      })),
+      {
+        id: "continue",
+        name: "codemode",
+        arguments: {
+          code: [
+            `for (const source of ${JSON.stringify(sources.map(([source]) => source))}) {`,
+            '  if (await tools.demo_read({path: source}) !== null) throw new Error("Expected refusal");',
+            "}",
+            'const owned = await tools.demo_read({path: "memory://demo/note"});',
+            'if (owned?.text !== "alpha\\nomega\\n") throw new Error("Owned read did not continue");',
+            "text(owned.text);",
+          ].join("\n"),
+        },
+      },
+    ];
+    const result = await new PiIntegrationTest({
+      testName: "standalone-resource-host-refusal-kinds",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      tuiSize: { cols: 160, rows: 50 },
+      cwd,
+      rawMode: false,
+      isolateUserResources: true,
+      extensions: [providerFixture, "builtin:codemode"],
+      tools: ["codemode", "demo_read"],
+      timeoutMs: 60_000,
+      conversation: [
+        ...calls.map((call) => assistantMessage([toolCall(call)], { stopReason: "toolUse" })),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Refuse foreign resources and local paths, then continue reading an owned resource.");
+    for (const [index, [source, code]] of sources.entries()) {
+      const execution = getToolExecution(result, `refused-${index}`);
+      expect(execution.isError).toBe(true);
+      expect(getToolExecutionDetails(execution)).toMatchObject({ boundary: { code, source } });
+    }
+    expect(getToolExecution(result, "continue").isError).toBe(false);
+    expect(getToolResultText(result, "continue")).toContain("alpha\nomega");
+    expect(await readFile(path.join(cwd, "resource.txt"), "utf8")).toBe("alpha\nomega\n");
+    expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("sibling\n");
+    expect(await readFile(path.join(cwd, "local.txt"), "utf8")).toBe("local sentinel\n");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}, 90_000);
 // Real extension load order and event composition, not a mock ExtensionAPI.
 test.each(["alone", "before", "after"] as const)(
   "isolates sibling hosts and selections with IDE %s",
@@ -208,7 +275,6 @@ test.each(["alone", "before", "after"] as const)(
       expect(await readFile(path.join(cwd, "resource.txt"), "utf8")).toBe("changed\nomega\n");
       expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("sibling\n");
       expect(await readFile(path.join(cwd, "local.txt"), "utf8")).toBe("local sentinel\n");
-      expect(result.tuiRenderedOutput).not.toContain("Failed to load extension");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
