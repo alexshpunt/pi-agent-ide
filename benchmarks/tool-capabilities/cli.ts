@@ -32,7 +32,7 @@ import {
   TUI_HISTORY_SESSION,
   reopenTuiHistory,
 } from "./tui.ts";
-import { accountStopReason, CAPABILITY_DEFAULT_TOOLS } from "./run-policy.ts";
+import { accountStopReason, capabilityExcludedTools, capabilitySettings } from "./run-policy.ts";
 import { schedule } from "./scheduler.ts";
 import { assertPreflightInvocation, runConnectorPreflight } from "./preflight.ts";
 import {
@@ -317,17 +317,16 @@ async function attempt(
         askClaude: { enabled: false },
         provider: { strictMcpConfig: true, pathToClaudeCodeExecutable: "/tools/claude" },
       });
-    await json(path.join(prepared.state, "agent/settings.json"), {
-      codemode: { mode: "on" },
-      defaultTools: [
-        ...CAPABILITY_DEFAULT_TOOLS,
-        ...(["semantic-code-search", "semantic-script-files"].includes(task.id) ||
-        task.setup === "semantic-vera"
+    await json(
+      path.join(prepared.state, "agent/settings.json"),
+      capabilitySettings(
+        mode,
+        ["semantic-code-search", "semantic-script-files"].includes(task.id) ||
+          task.setup === "semantic-vera"
           ? ["semantic_search"]
-          : []),
-      ],
-      retry: { enabled: false, maxRetries: 0 },
-    });
+          : [],
+      ),
+    );
     const taskPrompt = capabilityPrompt(task, mode);
     await writeFile(path.join(artifacts, "prompt.txt"), taskPrompt);
     const cli = await piRuntime(command);
@@ -355,7 +354,7 @@ async function attempt(
       "--thinking",
       profile.thinking,
       "--exclude-tools",
-      `edit,grep,find,ls${mode === "direct" ? ",codemode" : ""}`,
+      capabilityExcludedTools(mode).join(","),
       ...(task.setup === "standalone-resource" || task.postProcessing
         ? []
         : ["--pi-agent-ide-no-post-processing", "true"]),

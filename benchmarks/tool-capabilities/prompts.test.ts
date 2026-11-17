@@ -57,17 +57,6 @@ void test("renders only steps required for the selected route", () => {
     assert.equal(prompt.includes("fixture_script_operation"), mode === "codemode");
   }
 });
-void test("discovery is a direct-only route requirement without case-specific modes", () => {
-  for (const step of [
-    { tool: "tool_search" },
-    { tool: "tool_search", discovers: ["fixture_shared_operation"] },
-  ]) {
-    const task = { ...fixture, steps: [step, { tool: "fixture_shared_operation" }] };
-    assert.ok(capabilityPrompt(task, "direct").includes("tool_search"));
-    assert.ok(!capabilityPrompt(task, "codemode").includes("tool_search"));
-    assert.ok(capabilityPrompt(task, "codemode").includes("fixture_shared_operation"));
-  }
-});
 void test("preserves ordinary case prompts on both routes", () => {
   for (const mode of fixture.modes) {
     assert.ok(

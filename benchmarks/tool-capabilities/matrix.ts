@@ -5,8 +5,11 @@ import type { Capability } from "./validation.ts";
 // Native cards and receipt visibility have deterministic real-Pi coverage.
 // Refusal routes retain authority/provenance and invalid argument shape, not incidental payloads,
 // selectors or insertion direction; early authority guards may stop before these fields arrive.
-// Active-loadout selection is lifecycle behavior; discovery.* checks fresh-session direct discovery
-// and Codemode execution, where reaching session tools needs no discovery.
+// Codemode routes use native mode "only": IDE operations, including Bash, are nested.
+// Model-only tool_search is excluded here to prevent discovered direct declarations;
+// discovery.* requires it only in the direct route.
+// Session tools stay callable in scripts without discovery. Actual provider declarations are
+// checked by capability-codemode-only.integration.test.ts, not by the registry inventory.
 // Undo recipes permit any supported selector for the preceding mutation and an inferred file.
 // Literal boundary/EOF edits use exactText; their line-anchor deletion remains an issued selector.
 // Batch/line-shift setup Inserts leave selector spelling free; outcomes establish their placement.
