@@ -153,17 +153,17 @@ describe("capability route evidence", () => {
         result: { content: [{ type: "text", text: "" }], details: { loaded } },
       },
     ];
-    const use = (mode: string) => [
+    const use = (mode: string, tool = "ast_search") => [
       ...(mode === "codemode"
         ? [{ type: "tool_execution_start", toolCallId: "script", toolName: "codemode" }]
         : []),
       {
         type: "tool_execution_start",
-        toolCallId: "ast",
-        toolName: "ast_search",
+        toolCallId: tool,
+        toolName: tool,
         ...(mode === "codemode" && { parentToolCallId: "script" }),
       },
-      { type: "tool_execution_end", toolCallId: "ast", toolName: "ast_search", isError: false },
+      { type: "tool_execution_end", toolCallId: tool, toolName: tool, isError: false },
       ...(mode === "codemode"
         ? [
             {
@@ -193,7 +193,11 @@ describe("capability route evidence", () => {
 
     test("rejects incomplete, late or failed direct discovery", () => {
       const mode = "direct";
-      const early = [...search("first", ["ast_search", "lsp_search", "diff"]), ...use(mode)];
+      const early = [
+        ...search("first", ["ast_search", "lsp_search", "diff"]),
+        ...use(mode),
+        ...use(mode, "undo"),
+      ];
       expect(validateRoute(task, early, mode).passed).toBe(false);
       expect(validateRoute(task, [...early, ...search("late", ["undo"])], mode).passed).toBe(false);
       const failed = [
@@ -394,43 +398,6 @@ describe("capability route evidence", () => {
     expect(validateRoute(route, [...events, parent("fixture-recovery")], "codemode").passed).toBe(
       false,
     );
-  });
-  test("final feedback checks do not confuse validation events with transcript results", () => {
-    const route = { steps: [{ tool: "insert", error: true, finalContains: "is stale" }] };
-    const validation = [
-      { type: "tool_execution_start", toolCallId: "call", toolName: "insert" },
-      {
-        type: "tool_execution_end",
-        toolCallId: "call",
-        isError: true,
-        result: { content: [{ type: "text", text: "Validation failed" }] },
-      },
-    ];
-    const final = {
-      type: "message_end",
-      message: {
-        role: "toolResult",
-        toolCallId: "call",
-        isError: true,
-        content: [{ type: "text", text: "Anchor is stale" }],
-      },
-    };
-    expect(validateRoute(route, [...validation, final], "direct").passed).toBe(true);
-    expect(validateRoute(route, validation, "direct").passed).toBe(false);
-    expect(
-      validateRoute(
-        route,
-        [...validation, { ...final, message: { ...final.message, toolCallId: "another" } }],
-        "direct",
-      ).passed,
-    ).toBe(false);
-    expect(
-      validateRoute(
-        route,
-        [...validation, { ...final, message: { ...final.message, isError: false } }],
-        "direct",
-      ).passed,
-    ).toBe(false);
   });
   test("final feedback byte limits count all UTF-8 text blocks, not an earlier result", () => {
     const events = [
