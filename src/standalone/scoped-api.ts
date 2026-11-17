@@ -6,7 +6,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { toolCallHeader } from "pi-agent-tool-ui";
-import { connectResultTargets } from "pi-agent-resource";
+import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
 import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
 import { getLastResolvedResource } from "#src/extensions/pi-agent-text-editor/src/api/last-resolved-resource.ts";
 import type { StandaloneResourceHostOptions, StandaloneResourceTool } from "./resource-host.ts";
@@ -44,6 +44,21 @@ const shared = (channel: string) =>
   channel.startsWith("pi-agent-ide/operation-approval/") ||
   channel.startsWith("pi-agent-ide/settings/");
 
+/** Keep boundary classification separate from human-readable recovery guidance. */
+class ResourceHostSourceError extends Error {
+  readonly code: "RESOURCE_HOST_LOCAL_PATH" | "RESOURCE_HOST_FOREIGN_SOURCE";
+  constructor(
+    readonly source: string,
+    local: boolean,
+  ) {
+    super(
+      local
+        ? "Local filesystem paths are not supported by this standalone host. Use a provider-owned resource URI."
+        : "This resource URI is not owned by this standalone host. Use a resource owned by this namespace.",
+    );
+    this.code = local ? "RESOURCE_HOST_LOCAL_PATH" : "RESOURCE_HOST_FOREIGN_SOURCE";
+  }
+}
 /** A protocol island and name adapter. It exposes provider resources, never general IDE tools. */
 export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResourceHostOptions) {
   const prefix = options.namespace.name;
@@ -97,6 +112,11 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       options.ownsSource(value)
     );
   }
+  const sourceError = (source: string, mutation: boolean) => {
+    const value = source.startsWith("raw:") && !mutation ? source.slice(4) : source;
+    const local = !/^[a-z][a-z\d+.-]*:/iu.test(value) || /^(?:file:|[a-z]:)/iu.test(value);
+    return new ResourceHostSourceError(source, local);
+  };
   const targets = () => connectResultTargets(api);
   async function checkSource(
     value: unknown,
@@ -116,8 +136,8 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       throw new Error("Use an owned resource URI or an issued source result.");
     if (source.startsWith("RESULT#")) {
       const resolved = targets().resolve(source, context.cwd);
-      if (resolved.targets.some((target) => !owns(target.source, mutation)))
-        throw new Error("Source selection belongs outside this resource host.");
+      const foreign = resolved.targets.find((target) => !owns(target.source, mutation));
+      if (foreign) throw sourceError(foreign.source, mutation);
       await targets().verify(resolved, context.signal);
       return;
     }
@@ -132,10 +152,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       await checkSource(resolved.script.target, context, mutation);
       return;
     }
-    if (!owns(source, mutation))
-      throw new Error(
-        "Use this host only for its provider-owned resource URIs; local paths are not supported.",
-      );
+    if (!owns(source, mutation)) throw sourceError(source, mutation);
   }
   async function validate(name: string, value: unknown, context: ExtensionContext): Promise<void> {
     if (closed) throw new Error("Standalone resource host is closed.");
@@ -170,7 +187,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
     );
   // Run before provider hooks: local fallbacks and foreign references never reach an executor.
   // A refused call fails in execution instead of being blocked, so a Codemode script gets null.
-  const refusals = new Map<string, string>();
+  const refusals = new Map<string, Error>();
   unsubscribes.push(
     subscribe("tool_call", async (event, context) => {
       const name = localName(event.toolName);
@@ -179,7 +196,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
         await validate(name, event.input, context);
       } catch (error) {
         if (typeof event.toolCallId === "string")
-          refusals.set(event.toolCallId, error instanceof Error ? error.message : String(error));
+          refusals.set(event.toolCallId, error instanceof Error ? error : new Error(String(error)));
         else return { block: true, reason: error instanceof Error ? error.message : String(error) };
       }
       return;
@@ -301,7 +318,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
   const registerTool: ExtensionAPI["registerTool"] = (definition) => {
     const name = definition.name;
     if (!selected.has(name as StandaloneResourceTool)) return;
-    const descriptors = Object.getOwnPropertyDescriptors(definition);
+    const descriptors: PropertyDescriptorMap = Object.getOwnPropertyDescriptors(definition);
     descriptors.name = { value: publicName(name), enumerable: true, configurable: true };
     descriptors.label = { value: publicName(name), enumerable: true, configurable: true };
     descriptors.namespace = { value: options.namespace, enumerable: true, configurable: true };
@@ -352,13 +369,15 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       enumerable: true,
       configurable: true,
     };
-    const execute: typeof definition.execute = async (id, args, signal, update, context) => {
+    // Refusals carry boundary metadata rather than the kernel's private details type.
+    const execute: ToolDefinition<typeof definition.parameters>["execute"] = async (
+      id,
+      args,
+      signal,
+      update,
+      context,
+    ) => {
       if (closed) throw new Error("Standalone resource host is closed.");
-      const refusal = refusals.get(id);
-      if (refusal !== undefined) {
-        refusals.delete(id);
-        throw new Error(refusal);
-      }
       const controller = new AbortController();
       let finish: () => void = () => {};
       const completion = new Promise<void>((resolve) => {
@@ -370,10 +389,23 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       );
       const combined = AbortSignal.any(signals);
       try {
+        const refusal = refusals.get(id);
+        refusals.delete(id);
+        if (refusal) throw refusal;
         const scoped = { ...toolContext(context), signal: combined };
         await validate(name, args, scoped);
         combined.throwIfAborted();
         return await definition.execute(id, args, combined, update, scoped);
+      } catch (error) {
+        if (!(error instanceof ResourceHostSourceError)) throw error;
+        return withStructuredResult(
+          {
+            content: [{ type: "text", text: `${error.code}: ${error.message} (${error.source})` }],
+            details: { boundary: { code: error.code, source: error.source } },
+          },
+          Type.Unknown(),
+          { status: "error", errors: [resultError(error, error.code, error.source)] },
+        );
       } finally {
         active.delete(controller);
         finish();
