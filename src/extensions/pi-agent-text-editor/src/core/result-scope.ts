@@ -15,7 +15,7 @@ export function resolveResultScope(
   cwd: string,
 ): ResolvedResultTargets {
   // The scope is not the edit selection; guarded selectors are resolved separately.
-  const selected = store.resolve(input, cwd, { allowAdjusted: true });
+  const selected = store.resolve(input, cwd, { allowAdjusted: true, forScope: true });
   return {
     complete: selected.complete,
     targets: selected.targets.map((target) => ({

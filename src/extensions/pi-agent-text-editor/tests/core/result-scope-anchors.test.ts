@@ -202,6 +202,61 @@ test.each([
   );
 });
 
+test.each(["ONE", "ONE\nextra"])(
+  "a result scopes its surviving match after a sibling was replaced with %j",
+  async (firstText) => {
+    const original = "keep1\nOLD\nkeep2\nOLD\nkeep3\n";
+    const f = await fixture({ "tokens.txt": original });
+    const targets = [2, 4].map((lineNumber) => ({
+      source: path.join(cwd, "tokens.txt"),
+      expectedContent: original,
+      ranges: [{ start: { lineNumber, column: 0 }, end: { lineNumber, column: 3 } }],
+    }));
+    const whole = f.store.register(targets, cwd, true, "Unsafe token union");
+    const matches = targets.map((target) => f.store.register([target], cwd));
+    const outside = await f.lines("tokens.txt", 1, 1);
+    const first = await f.run(replaceMutationTool, {
+      path: { id: whole },
+      start: { id: matches[0] },
+      text: firstText,
+    });
+    expect(first.result.details.effect).not.toBe("not-applied");
+    const intermediate = `keep1\n${firstText}\nkeep2\nOLD\nkeep3\n`;
+    expect(await f.content("tokens.txt")).toBe(intermediate);
+
+    // A surviving range is scope authority only, never a silently shortened whole selection.
+    expect(() => f.store.resolve(whole, cwd)).toThrow(Error);
+    await expect(f.store.resolveCurrent(whole, cwd)).rejects.toThrow(Error);
+    for (const input of [
+      { path: { id: whole } },
+      { path: matches },
+      { path: { id: whole }, start: matches[0] },
+      { path: { id: whole }, start: outside },
+      { path: { id: whole }, start: "keep2" },
+    ]) {
+      const refused = await f.run(replaceMutationTool, { ...input, text: "BAD" });
+      expect(refused.result.details.effect).toBe("not-applied");
+      expect(await f.content("tokens.txt")).toBe(intermediate);
+    }
+    const second = await f.run(replaceMutationTool, {
+      path: { id: whole },
+      start: { id: matches[1] },
+      end: { id: matches[1] },
+      text: "TWO",
+    });
+    expect(second.result.details.effect, second.text).not.toBe("not-applied");
+    const final = `keep1\n${firstText}\nkeep2\nTWO\nkeep3\n`;
+    expect(await f.content("tokens.txt")).toBe(final);
+    // Once every selected range was lost, the result cannot become a whole-file scope.
+    const emptyScope = await f.run(replaceMutationTool, {
+      path: { id: whole },
+      start: "keep2",
+      text: "BAD",
+    });
+    expect(emptyScope.result.details.effect).toBe("not-applied");
+    expect(await f.content("tokens.txt")).toBe(final);
+  },
+);
 test("a scope never rescues its stale individual match", async () => {
   const f = await tokenFixture();
   await f.run(replaceMutationTool, { path: f.matches[0], text: "RED" });

@@ -84,6 +84,7 @@ const groups: [string[], string[]][] = [
     [`${operation}-list-selectors-refused`],
   ]),
   [["edit.search-anchor-list-unusable"], ["replace-search-anchor-list-unusable"]],
+  [["edit.surviving-scoped-match"], ["replace-surviving-scoped-match"]],
   ...["delete", "insert"].map((operation): [string[], string[]] => [
     [`edit.search-line-batch-${operation}`],
     [`search-line-batch-${operation}`],
