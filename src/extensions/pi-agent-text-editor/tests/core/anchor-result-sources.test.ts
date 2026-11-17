@@ -61,11 +61,13 @@ async function fixture(cwd = "/fixture", source = "/fixture/note.txt") {
   });
   // Text a check of the selection reads; another session may write the file just before that.
   let current: string | undefined;
-  const issue = (owner = cwd, complete = true) => {
+  const issue = (owner = cwd, complete = true, readOnlyReason?: string) => {
     const target = store.register(
       [{ source, expectedContent: content, ranges, readCurrent: async () => current ?? content }],
       owner,
       complete,
+      undefined,
+      readOnlyReason,
     );
     const shown = store.publish({ status: "success", data: { target } }, "Selection", owner);
     const id = /<uuid>([^<]+)<\/uuid>/u.exec(shown)?.[1];
@@ -100,6 +102,16 @@ test("anchor inspection resolves a current issued UUID through its actual source
     kind: "valid",
   });
   expect(run.reads).toEqual([run.source]);
+});
+
+test("anchor inspection refuses a read-only result before calling resource resolvers", async () => {
+  const run = await fixture();
+  const reference = run.issue(run.cwd, true, "Read the source file to edit it.");
+  expect(await run.core.inspectTextAnchors(request(reference, run.cwd))).toMatchObject({
+    kind: "failed",
+    cause: { code: "NO_EDITABLE_TEXT", effect: "not-applied" },
+  });
+  expect(run.reads).toEqual([]);
 });
 
 test.each(["stale", "foreign", "invented", "incomplete"] as const)(

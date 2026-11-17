@@ -1022,6 +1022,9 @@ function wholeFileFailureCause(code: string): string {
     case "INVALID_REQUEST": {
       return "the request was invalid";
     }
+    case "NO_EDITABLE_TEXT": {
+      return "this result is read-only; read the source file to edit it";
+    }
     case "UNSAFE_TOKEN_SELECTION": {
       return "search selected separate tokens; choose a match or quote the query";
     }

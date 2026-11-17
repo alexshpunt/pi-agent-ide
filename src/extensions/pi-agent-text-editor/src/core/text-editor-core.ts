@@ -1222,7 +1222,7 @@ async function inspectTextResource(
     try {
       const source = resultTargets.source(request.source, request.cwd);
       if (Array.isArray(source) || (typeof source === "string" && source.startsWith("RESULT#"))) {
-        const selected = resultTargets.resolve(source, request.cwd);
+        const selected = resultTargets.resolve(source, request.cwd, { forScope: true });
         if (!selected.complete)
           return { kind: "failed", reason: "Incomplete result selections cannot authorize edits." };
         // Like the edit itself: selections of a local file follow its changes, and the check under
