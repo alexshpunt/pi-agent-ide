@@ -171,7 +171,11 @@ export interface SelectionIssuer {
   end: RunEvent;
 }
 /** Multi-Read values and direct section headers both preserve request order and source ownership. */
-export function readSourceIssuers(issuer: SelectionIssuer): SelectionIssuer[] {
+export function readSourceIssuers(
+  issuer: SelectionIssuer,
+  sourceMatches: (source: unknown, header: string) => boolean = (source, header) =>
+    source === header,
+): SelectionIssuer[] {
   if (toolSemantics(issuer.tool) !== "read" || !Array.isArray(issuer.args.path)) return [issuer];
   const paths: unknown[] = issuer.args.path;
   const items: unknown = issuer.end.result?.structuredContent;
@@ -199,13 +203,13 @@ export function readSourceIssuers(issuer: SelectionIssuer): SelectionIssuer[] {
     });
   }
   if (paths.length === 1) return [{ ...issuer, args: { ...issuer.args, path: paths[0] } }];
-  if (!paths.length || paths.some((source) => typeof source !== "string")) return [];
+  if (!paths.length) return [];
   const output = resultText(issuer.end);
   const headers = [...output.matchAll(/^--- ([^\r\n]+) ---\r?$/gmu)];
-  // Reject missing, repeated, reordered and ambiguous headers instead of guessing ownership.
+  // Each header must name its input's proven source; several inputs may resolve to one shell.
   if (
     headers.length !== paths.length ||
-    headers.some((header, index) => header[1] !== paths[index])
+    headers.some((header, index) => !sourceMatches(paths[index], header[1] ?? ""))
   )
     return [];
   const prefix = output.slice(0, headers[0]?.index).trim();
