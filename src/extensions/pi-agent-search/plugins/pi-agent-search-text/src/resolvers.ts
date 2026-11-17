@@ -24,7 +24,7 @@ import {
   displaySource,
   unreadableNotice,
 } from "#src/search-result.ts";
-import { planSearchPresentation } from "#src/search-presentation.ts";
+import { planSearchPresentation, searchCompactionHint } from "#src/search-presentation.ts";
 
 import {
   compareMatches,
@@ -537,7 +537,12 @@ function formatSearchSession(
         );
       }
       lines.push(
-        `  Search again with path: ${JSON.stringify(source)} and a narrower query to see individual matches.`,
+        `  ${searchCompactionHint(file.matchCount, `path: ${JSON.stringify(source)}`)} to show individual references. Each group above references only its first occurrence.`,
+        ...(session.complete
+          ? [
+              `  For all results across this search, use SEARCH#${session.id}:all:line (containing lines) or SEARCH#${session.id}:all:match (exact matches).`,
+            ]
+          : []),
       );
       continue;
     }

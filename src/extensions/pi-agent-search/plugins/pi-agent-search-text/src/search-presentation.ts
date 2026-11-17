@@ -25,6 +25,12 @@ export interface SearchPresentation {
   readonly files: readonly SearchPresentationFile[];
 }
 
+/** Recover individual references without trying to distinguish identical line texts. */
+export function searchCompactionHint(matchCount: number, source = "this path"): string {
+  return matchCount <= 1000
+    ? `Search ${source} with limit: ${String(matchCount)}`
+    : `Read a bounded window of ${source}, then Search that result`;
+}
 /** Shares one item budget between complete small files, compact summaries and groups. A summary item includes its first group. */
 export function planSearchPresentation(
   matches: readonly TextSearchMatch[],
