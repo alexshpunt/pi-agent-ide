@@ -68,12 +68,16 @@ describe("line anchors", () => {
     });
   });
 
-  test("leaves a word of the file that has the shape of an anchor to exact text", async () => {
-    const withWord = contextFor("PACKAGE\nsecond\nthird");
-    await expect(resolver.tryResolve("PACKAGE", withWord)).resolves.toEqual({
-      kind: "not-handled",
-    });
-    await expect(resolver.tryResolve("PACKAGE", context)).resolves.toMatchObject({
+  test("rejects anchor-shaped literal words instead of changing selector semantics", async () => {
+    await expect(
+      resolver.tryResolve("PACKAGE", contextFor("PACKAGE\nsecond\nthird")),
+    ).resolves.toMatchObject({ kind: "rejected", rejection: { code: "stale" } });
+  });
+
+  test("rejects a stale anchor even when its bytes remain in literal content", async () => {
+    const anchor = formatLineHashAnchor(content, 4);
+    const edited = contextFor(content.replace("third", `${anchor}|THIRD`));
+    await expect(resolver.tryResolve(anchor, edited)).resolves.toMatchObject({
       kind: "rejected",
       rejection: { code: "stale" },
     });

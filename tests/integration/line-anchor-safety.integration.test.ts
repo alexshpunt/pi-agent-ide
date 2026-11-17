@@ -1,0 +1,168 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import {
+  assistantMessage,
+  getToolExecution,
+  getToolResultText,
+  PiIntegrationTest,
+  testArtifactsDir,
+  text,
+  toolCall,
+} from "pi-coding-agent-test";
+import { expect, test } from "vitest";
+import { textLineAnchors } from "pi-agent-text";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+
+type Route = "direct" | "codemode";
+type Step = { id: string; tool: string; args: Record<string, unknown>; error?: boolean };
+
+async function run(cwd: string, route: Route, name: string, steps: Step[]) {
+  await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+  await writeFile(
+    path.join(cwd, ".pi/settings.json"),
+    JSON.stringify({ codemode: { mode: "on" } }),
+  );
+  await writeFile(
+    path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+    JSON.stringify({ disabled: ["ide.lsp", "ide.lint", "ide.formatter"] }),
+  );
+  const result = await new PiIntegrationTest({
+    cwd,
+    testName: `${name}-${route}`,
+    artifactsDir: testArtifactsDir(import.meta.filename),
+    extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+    tools: ["read", "replace", "insert", "codemode"],
+    rawMode: false,
+    tuiSize: { cols: 160, rows: 180 },
+    conversation: [
+      ...steps.map((step) =>
+        assistantMessage(
+          [
+            toolCall({
+              id: step.id,
+              name: route === "direct" ? step.tool : "codemode",
+              arguments:
+                route === "direct"
+                  ? step.args
+                  : {
+                      code: `text(await tools.${step.tool}(${JSON.stringify(step.args)}));`,
+                    },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+      ),
+      assistantMessage([text("Finished.")]),
+    ],
+  }).run("Execute each requested edit in order.");
+  for (const step of steps) {
+    const output = getToolResultText(result, step.id);
+    if (route === "direct") {
+      expect(getToolExecution(result, step.id).isError, output).toBe(step.error === true);
+    } else {
+      expect(getToolExecution(result, step.id).isError, output).toBe(false);
+      expect(codemodeFailures(output).length > 0, output).toBe(step.error === true);
+    }
+  }
+  return result;
+}
+
+test.each(["direct", "codemode"] as const)(
+  "refuses copied display prefixes without writes and accepts a corrected retry through %s",
+  async (route) =>
+    withTempWorkspace(async (cwd) => {
+      const initial = "keep\nOLD\nlast\n";
+      const anchor = textLineAnchors("task.txt", initial)[1]!;
+      const steps: Step[] = [];
+      for (const [index, prefix] of ["", "  "].entries()) {
+        const file = `refused-${index}.txt`;
+        await writeFile(path.join(cwd, file), initial);
+        steps.push(
+          { id: `read-${index}`, tool: "read", args: { path: file, views: ["anchors"] } },
+          {
+            id: `refuse-${index}`,
+            tool: "replace",
+            args: {
+              path: file,
+              start: `${anchor}|OLD`,
+              text: `${prefix}${anchor}|NEW`,
+            },
+            error: true,
+          },
+        );
+      }
+      await writeFile(path.join(cwd, "retry.txt"), initial);
+      steps.push(
+        { id: "read-retry", tool: "read", args: { path: "retry.txt", views: ["anchors"] } },
+        {
+          id: "retry-refuse",
+          tool: "replace",
+          args: {
+            path: "retry.txt",
+            start: anchor,
+            end: anchor,
+            text: `${anchor}|NEW`,
+          },
+          error: true,
+        },
+        { id: "retry", tool: "replace", args: { path: "retry.txt", start: anchor, text: "NEW" } },
+      );
+      await run(cwd, route, "copied-display-prefix", steps);
+      for (const index of [0, 1]) {
+        expect(await readFile(path.join(cwd, `refused-${index}.txt`), "utf8")).toBe(initial);
+      }
+      expect(await readFile(path.join(cwd, "retry.txt"), "utf8")).toBe("keep\nNEW\nlast\n");
+    }),
+);
+
+test.each(["direct", "codemode"] as const)(
+  "does not reinterpret stale anchors as literal selectors through %s",
+  async (route) =>
+    withTempWorkspace(async (cwd) => {
+      const anchor = textLineAnchors("task.txt", "OLD\n")[0]!;
+      const initial = `keep\nOLD\nliteral ${anchor}|payload\nlast\n`;
+      const steps: Step[] = [];
+      for (const tool of ["insert", "replace"] as const) {
+        const file = `${tool}.txt`;
+        await writeFile(path.join(cwd, file), initial);
+        steps.push(
+          { id: `read-${tool}`, tool: "read", args: { path: file, views: ["anchors"] } },
+          {
+            id: `change-${tool}`,
+            tool: "replace",
+            args: { path: file, start: anchor, text: "NEW" },
+          },
+          {
+            id: `stale-${tool}`,
+            tool,
+            args: {
+              path: file,
+              [tool === "insert" ? "anchor" : "start"]: anchor,
+              text: "BLOCKED",
+            },
+            error: true,
+          },
+        );
+      }
+      await writeFile(path.join(cwd, "literal.txt"), initial);
+      steps.push({
+        id: "literal",
+        tool: "replace",
+        args: {
+          path: "literal.txt",
+          start: `literal ${anchor}|payload`,
+          text: "literal recovered",
+        },
+      });
+      await run(cwd, route, "stale-anchor-collision", steps);
+      for (const tool of ["insert", "replace"]) {
+        expect(await readFile(path.join(cwd, `${tool}.txt`), "utf8")).toBe(
+          initial.replace("OLD", "NEW"),
+        );
+      }
+      expect(await readFile(path.join(cwd, "literal.txt"), "utf8")).toBe(
+        "keep\nOLD\nliteral recovered\nlast\n",
+      );
+    }),
+);
