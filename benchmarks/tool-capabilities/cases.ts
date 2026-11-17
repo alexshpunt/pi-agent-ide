@@ -121,7 +121,7 @@ add(
   // Fresh deferred-tool session; already-active guidance is covered by deterministic tests.
   "deferred-navigation-recovery",
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
-  "In direct mode, discover ast_search, lsp_search, diff and undo through tool_search before using them. In Codemode, call the session tools directly; discovery is optional. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff with the literal path strings before: \"task.ts\" and after: \"task.ts\"; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then undo that last edit. Read task.txt and report its restored marker. Preserve both files.",
+  "In direct mode, discover ast_search, lsp_search, diff and undo through tool_search before using them. In Codemode, call the session tools directly; discovery is optional. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff with the literal path strings before: \"task.ts\" and after: \"task.ts\"; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then use undo with change: \"last\" to revert that edit. Read task.txt and report its restored marker. Preserve both files.",
   [
     {
       tool: "tool_search",
@@ -131,7 +131,7 @@ add(
     { tool: "lsp_search", args: { query: "probe" }, contains: "task.ts#probe" },
     { tool: "diff", args: { before: "task.ts", after: "task.ts" }, scriptResult: "" },
     { tool: "replace", args: { path: "task.txt", start: "OLD" } },
-    { tool: "undo", args: { file: "task.txt", change: "last" }, after: [4] },
+    { tool: "undo", args: { change: "last" }, after: [4] },
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", after: [5] },
   ],
   {
@@ -3261,7 +3261,7 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  "Start Bash with command IFS= read -r line; printf '%s\\n' \"$line\" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Do not edit files.",
+  "Start Bash with command IFS= read -r line; printf '%s\\n' \"$line\" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell's retained output for hello, then delete the shell session. Report the line printed by the shell. Do not edit files.",
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
