@@ -62,7 +62,7 @@ test("Read failures name the issued mutation result, not its private target", as
               id: "reread",
               name: "codemode",
               arguments: {
-                code: `const moved = load("moved"); for (const path of [{id:moved}, moved, [{id:moved}]]) { text(JSON.stringify({value:await tools.read({path})})); }`,
+                code: `const moved = load("moved"); for (const path of [{id:moved}, moved, [{id:moved}], moved.slice(7)]) { text(JSON.stringify({value:await tools.read({path})})); }`,
               },
             }),
           ],
@@ -74,12 +74,14 @@ test("Read failures name the issued mutation result, not its private target", as
 
     expect(getToolExecution(run, "move").isError).toBe(true);
     expect(getToolExecutionResult(run, "reread")).toMatchObject({
-      details: { calls: [{ status: "error" }, { status: "error" }, { status: "error" }] },
+      details: {
+        calls: [{ status: "error" }, { status: "error" }, { status: "error" }, { status: "error" }],
+      },
     });
     const moveId = /\{"moveId":"([^"]+)"\}/u.exec(getToolResultText(run, "move"))?.[1];
     expect(moveId).toMatch(/^RESULT#[a-f\d-]{36}$/u);
     const reread = getToolResultText(run, "reread");
-    expect(reread.match(/\{"value":null\}/gu)).toHaveLength(2);
+    expect(reread.match(/\{"value":null\}/gu)).toHaveLength(3);
     expect(reread.match(/\{"value":\[null\]\}/gu)).toHaveLength(1);
     const references = reread.match(/RESULT#[a-f\d-]{36}/gu) ?? [];
     expect(references.length).toBeGreaterThanOrEqual(3);

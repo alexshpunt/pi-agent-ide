@@ -300,6 +300,19 @@ export function createIdeTextResults(
           // reads each of its sources on its own.
           const readSource = (item: unknown) => {
             const source = store.source(item, context.cwd, true);
+            // Validate the issued value first, but let Read resolve its public ID. Replacing it
+            // with a private mutation target would attribute a later refusal to an unseen ID.
+            if (
+              Array.isArray(source) ||
+              (typeof source === "string" && source.startsWith("RESULT#"))
+            ) {
+              const value = resultValueId(item) ?? item;
+              if (typeof value === "string" && !value.startsWith("SEARCH#"))
+                return (
+                  resultReference(value) ??
+                  (value.startsWith("RESULT#") ? value : `RESULT#${value}`)
+                );
+            }
             if (!Array.isArray(source)) return source;
             const selected = store.resolve(source, context.cwd);
             return store.register(selected.targets, context.cwd, selected.complete);

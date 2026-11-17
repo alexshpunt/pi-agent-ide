@@ -239,6 +239,8 @@ const groups: [string[], string[]][] = [
     ["selection-copy-move"],
   ],
   [
+    // read-failed-mutation-id.integration.test.ts checks caller-ID attribution after rollback.
+    // These paid cases keep the filesystem refusal/recovery route; they do not reuse the rejected ID.
     ["edit.move-rollback"],
     [
       "move-rollback-restored",
