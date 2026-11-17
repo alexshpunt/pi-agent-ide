@@ -96,6 +96,7 @@ const groups: [string[], string[]][] = [
   [["compose.read-window-delete"], ["read-window-delete"]],
   [["compose.read-window-insert"], ["read-window-insert"]],
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
+  // Guard metadata and identical execution/transcript refusals protect early payload truncation.
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [["edit.repeated-line-anchor-shift"], ["repeated-line-anchor-after-shift"]],
   [["edit.repeated-line-anchor-block-recovery"], ["repeated-line-anchor-after-block-delete"]],

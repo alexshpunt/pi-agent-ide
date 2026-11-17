@@ -38,6 +38,7 @@ export interface RunEvent {
     isError?: boolean;
     stopReason?: string;
     errorMessage?: string;
+    details?: unknown;
     content?: { type: string; text?: string; id?: string }[];
     model?: string;
     responseModel?: string;
@@ -161,8 +162,8 @@ export interface RouteStep {
   parentContains?: string | readonly string[];
   /** Require the source object, unchanged by text(receipt), in a completed native Codemode parent. */
   parentStructuredValue?: boolean;
-  /** Check finalized transcript feedback when validation skipped the tool-result hook. */
-  finalContains?: string;
+  /** Match saved guard metadata and require unchanged refusal content in execution and transcript. */
+  finalRefusal?: Record<string, unknown>;
   /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
   finalMaxBytes?: number;
   /** Require image blocks in the completed result; a number sets the minimum frame count. */
@@ -1188,7 +1189,7 @@ export function validateRoute(
         continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
-      if (step.finalContains !== undefined || step.finalMaxBytes !== undefined) {
+      if (step.finalRefusal !== undefined || step.finalMaxBytes !== undefined) {
         const finalized = events.findLast(
           (entry) =>
             entry.type === "message_end" &&
@@ -1199,10 +1200,9 @@ export function validateRoute(
           !finalized ||
           !Array.isArray(finalized.content) ||
           finalized.isError !== end.event.isError ||
-          (step.finalContains !== undefined &&
-            !finalized.content.some(
-              (block) => block.type === "text" && block.text?.includes(step.finalContains ?? ""),
-            )) ||
+          (step.finalRefusal !== undefined &&
+            (!matches(step.finalRefusal, finalized.details) ||
+              !isDeepStrictEqual(finalized.content, end.event.result?.content))) ||
           (step.finalMaxBytes !== undefined &&
             Buffer.byteLength(
               finalized.content

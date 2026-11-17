@@ -3191,7 +3191,7 @@ add(
       reuse: reuse(0, "anchor", "anchor"),
       error: true,
       after: [1],
-      finalContains: "is stale",
+      finalRefusal: { guardId: "stale-anchor", effect: "not-applied" },
       // Allow retention notices above the 50 KiB useful-text budget.
       finalMaxBytes: 64 * 1024,
     },
