@@ -2,10 +2,10 @@ import { strict as assert } from "node:assert";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
-import { capabilityCases } from "./cases.ts";
-import { validateFiles } from "./sandbox.ts";
-import { validateRoute, type RunEvent } from "./validation.ts";
+import { test } from "vitest";
+import { capabilityCases } from "#capabilities/cases.ts";
+import { validateFiles } from "#capabilities/sandbox.ts";
+import { validateRoute, type RunEvent } from "#capabilities/validation.ts";
 
 interface Call {
   tool: string;
@@ -101,7 +101,7 @@ function data(value: unknown): Record<string, unknown> {
 
 for (const mode of ["direct", "codemode"]) {
   const check = (calls: Call[]) => validateRoute(enclosing, events(calls, mode), mode).passed;
-  void test(`${mode}: enclosing composition accepts equivalent issued selections across request scopes`, () => {
+  test(`${mode}: enclosing composition accepts equivalent issued selections across request scopes`, () => {
     for (const scope of ["task.ts", ".", [".", "other"]]) assert.ok(check(chain(mode, scope)));
     const calls = chain(mode);
     required(calls[1]).args.path = required(calls[0]).value;
@@ -118,7 +118,7 @@ for (const mode of ["direct", "codemode"]) {
     }
   });
 
-  void test(`${mode}: issued match sets ignore ordering without losing multiplicity`, () => {
+  test(`${mode}: issued match sets ignore ordering without losing multiplicity`, () => {
     const wanted = [
       { path: "task.ts", text: "return 9" },
       { path: "other.ts", text: "return 7" },
@@ -139,7 +139,7 @@ for (const mode of ["direct", "codemode"]) {
     assert.equal(checkSet([one, one]), false);
     assert.equal(checkSet([two, two]), false);
   });
-  void test(`${mode}: enclosing composition checks the complete issued match list`, () => {
+  test(`${mode}: enclosing composition checks the complete issued match list`, () => {
     for (const index of [0, 1]) {
       const valid = chain(mode, "task.ts");
       const original = data(required(valid[index]).value);
@@ -167,7 +167,7 @@ for (const mode of ["direct", "codemode"]) {
     }
   });
 
-  void test(`${mode}: equivalent selections retain execution order, provenance and AST semantics`, () => {
+  test(`${mode}: equivalent selections retain execution order, provenance and AST semantics`, () => {
     const calls = chain(mode);
     for (const index of [0, 1, 2]) {
       assert.equal(check(calls.filter((_, i) => i !== index)), false);
@@ -192,7 +192,7 @@ for (const mode of ["direct", "codemode"]) {
     }
   });
 
-  void test(`${mode}: AST capture composition accepts directory scope but requires its issued capture`, () => {
+  test(`${mode}: AST capture composition accepts directory scope but requires its issued capture`, () => {
     const value = result(mode, 1, first);
     required((data(value).matches as Record<string, unknown>[])[0]).captures = {
       NAME: [{ id: `RESULT#${ids[2]}`, text: "first" }],
@@ -214,7 +214,7 @@ for (const mode of ["direct", "codemode"]) {
   });
 }
 
-void test("AST composition still validates exact final bytes and untouched files", async () => {
+test("AST composition still validates exact final bytes and untouched files", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "issued-matches-"));
   const initial = Object.fromEntries(
     Object.entries(required(enclosing.files)).map(([name, text]) => [name, Buffer.from(text)]),
