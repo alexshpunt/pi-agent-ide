@@ -282,6 +282,7 @@ const groups: [string[], string[]][] = [
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
   [
     [
+      // Changes may be read by file or issued result; CHANGE anchors retain their provenance.
       "git.changes",
       "git.stage",
       "git.stage-noop",
@@ -376,6 +377,7 @@ const groups: [string[], string[]][] = [
     ],
     ["lsp-rename"],
   ],
+  // Declaration/calls selectors compare fixture-relative file paths, preserving symbol fragments.
   [["lsp.overload-selectors", "compose.symbol-overload-rename"], ["lsp-overload-rename"]],
   [
     ["lsp.script-call-graph", "compose.lsp-caller-id", "lsp.script-line-text"],

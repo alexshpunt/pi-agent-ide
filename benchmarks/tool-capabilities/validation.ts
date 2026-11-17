@@ -245,6 +245,13 @@ function fixturePath(value: string, cwd = "."): string {
   return prefix + path.posix.relative("/workspace/fixture", resolved);
 }
 
+/** Normalize only the file part: overload signatures and symbol fragments remain exact. */
+function fixtureSelector(value: string): string {
+  const fragment = value.indexOf("#");
+  return fragment < 0
+    ? fixturePath(value)
+    : fixturePath(value.slice(0, fragment)) + value.slice(fragment);
+}
 function debugProgram(args: Record<string, unknown>): unknown {
   return typeof args.program === "string"
     ? fixturePath(args.program, typeof args.cwd === "string" ? fixturePath(args.cwd) : ".")
@@ -311,6 +318,15 @@ function values(value: unknown): string[] {
   return typeof value === "string" ? [value] : [];
 }
 
+function isResultSource(value: unknown): boolean {
+  const sources = values(value);
+  return (
+    sources.length === 1 &&
+    /^(?:RESULT|SEARCH)#|^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u.test(
+      sources[0] ?? "",
+    )
+  );
+}
 /** The `id` of a Codemode value and of every value inside it, such as each Search match. */
 function valueIds(value: unknown): string[] {
   if (Array.isArray(value)) return (value as unknown[]).flatMap(valueIds);
@@ -498,6 +514,11 @@ export function validateRoute(
     )
   )
     reasons.push("Required tools were not discovered before use");
+  function sourcePaths(source: unknown, before: number): string[] {
+    return typeof source === "string" && !isResultSource(source)
+      ? [source]
+      : reusedPaths(source, before);
+  }
   /**
    * The paths an earlier completed call read or searched to issue the result that a source value
    * reuses: passing that result names the same file as passing its path.
@@ -517,13 +538,16 @@ export function validateRoute(
           const output = "";
           if (
             !reuses(value, output, "result", valueIds(issuer.end.result?.structuredContent)) &&
+            !(
+              Array.isArray(issuer.args.views) &&
+              issuer.args.views.includes("changes") &&
+              reuses(value, resultText(issuer.end), "change")
+            ) &&
             !issuedAnchor(value, resultText(issuer.end))
           )
             return [];
           const source = issuer.args.path;
-          return typeof source === "string" && !/^(?:RESULT|SEARCH)#/u.test(source)
-            ? [source]
-            : reusedPaths(source, prior.index);
+          return sourcePaths(source, prior.index);
         });
         if (paths.length) return paths;
         continue;
@@ -543,11 +567,7 @@ export function validateRoute(
       const source = prior.event.args?.path ?? prior.event.args?.file;
       if (source === undefined) continue;
       const sources = Array.isArray(source) ? (source as unknown[]) : [source];
-      const paths = sources.flatMap((item) =>
-        typeof item === "string" && !/^(?:RESULT|SEARCH)#/u.test(item)
-          ? [item]
-          : reusedPaths(item, prior.index),
-      );
+      const paths = sources.flatMap((item) => sourcePaths(item, prior.index));
       if (paths.length > 0) return paths;
     }
     return [];
@@ -744,6 +764,14 @@ export function validateRoute(
     tool = toolSemantics(tool);
     // Defaults describe execution semantics; they never rewrite retained call evidence.
     const normalized = { ...actual };
+    if (tool === "lsp_search") {
+      expected = { ...expected };
+      for (const field of ["declaration", "calls"]) {
+        if (typeof expected[field] === "string") expected[field] = fixtureSelector(expected[field]);
+        if (typeof normalized[field] === "string")
+          normalized[field] = fixtureSelector(normalized[field]);
+      }
+    }
     if (tool === "debug" && typeof expected.program === "string") {
       // A relative program is launched from this call's cwd, not necessarily the fixture root.
       expected = { ...expected, program: debugProgram(expected) };
@@ -794,6 +822,24 @@ export function validateRoute(
       normalized.views = expected.views.map((required) =>
         (views as unknown[]).find((view) => matches(required, view)),
       );
+    // The changes view resolves an issued selection back to its one source file.
+    // Ordinary Read windows and searches remain bounded by their original selection.
+    if (
+      tool === "read" &&
+      Array.isArray(expected.views) &&
+      expected.views.includes("changes") &&
+      Array.isArray(views) &&
+      views.includes("changes")
+    ) {
+      const changesSource = (source: unknown): unknown => {
+        if (!isResultSource(source)) return source;
+        const paths = [...new Set(reusedPaths(source, before).map((path) => fixturePath(path)))];
+        return paths.length === 1 ? paths[0] : source;
+      };
+      normalized.path = Array.isArray(normalized.path)
+        ? normalized.path.map(changesSource)
+        : changesSource(normalized.path);
+    }
     if (tool === "diff")
       return Object.entries(expected).every(([field, value]) => {
         if (!["before", "after"].includes(field)) return matches(value, normalized[field], field);
@@ -1012,6 +1058,7 @@ export function validateRoute(
         return (
           (reference.kind === "anchor" &&
             issuedAnchor(candidate, resultText(prior)) !== undefined) ||
+          (reference.kind === "change" && reuses(candidate, resultText(prior), "change")) ||
           reuses(
             candidate,
             reference.kind === undefined || reference.kind === "result" ? receipt : "",
