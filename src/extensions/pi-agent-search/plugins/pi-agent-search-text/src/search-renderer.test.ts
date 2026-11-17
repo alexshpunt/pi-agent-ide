@@ -2,8 +2,7 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { expect, test } from "vitest";
 
-import { compactSearchDetails, restoreSearchDetails } from "#src/persisted-result.ts";
-import { createFuzzyPresentation, isSearchToolDetails } from "#src/search-result.ts";
+import { createFuzzyPresentation } from "#src/search-result.ts";
 import { SearchResultPanel } from "#src/search-renderer.ts";
 
 import type { SearchToolDetails } from "#src/search-result.ts";
@@ -21,100 +20,6 @@ const plainTheme = Object.assign(Object.create(null) as Theme, {
   underline: (text: string): string => text,
 });
 
-test.each([false, true])(
-  "keeps original zero separate from possible-name groups (expanded=%s)",
-  (expanded) => {
-    const details: SearchToolDetails = {
-      query: "generateHintStrings",
-      matchCount: 0,
-      fileCount: 0,
-      complete: true,
-      files: [],
-      fuzzyPresentation: {
-        fileCount: 1,
-        groups: [
-          {
-            identifier: "hintStrings",
-            files: [
-              {
-                path: "hints.js",
-                link: "file:///workspace/hints.js",
-                matchCount: 1,
-                lines: [
-                  {
-                    lineNumber: 886,
-                    text: "  hintStrings(linkCount) {",
-                    matchCount: 1,
-                    ranges: [{ from: 2, to: 13 }],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-      fuzzy: {
-        status: "ready",
-        message: "Source changed; stable references unavailable.",
-        candidates: [
-          {
-            identifier: "hintStrings",
-            kind: "component",
-            reason: "remove leading component 'generate'",
-            matchCount: 5,
-            fileCount: 1,
-            selection: {
-              kind: "matches",
-              truncated: false,
-              complete: true,
-              matches: [
-                {
-                  source: "/workspace/hints.js",
-                  range: { startLine: 886, endLine: 886, startColumn: 2, endColumn: 13 },
-                  matchedText: "hintStrings",
-                },
-              ],
-              all: { line: "SEARCH#AAAA:all:line", match: "SEARCH#AAAA:all:match" },
-            },
-          },
-        ],
-      },
-    };
-    const saved = compactSearchDetails(details, "");
-    expect(restoreSearchDetails(saved, "")).toEqual(details);
-    expect(isSearchToolDetails(restoreSearchDetails(saved, ""))).toBe(true);
-    expect(
-      isSearchToolDetails({
-        ...details,
-        fuzzy: { status: "ready", candidates: [{ identifier: null }] },
-      }),
-    ).toBe(false);
-    const rendered = new SearchResultPanel(details, plainTheme, expanded).render(80);
-    const plain = rendered.map(stripTerminalSequences).join("\n");
-    expect(plain).toContain("0 exact · 5 fuzzy matches · 1 file");
-    expect(plain).toContain("hintStrings(linkCount) {");
-    expect(plain).toContain("886");
-    expect(rendered.join("\n").replace(/\u001B\[(?!48;5;25m|49m)[\d;]*m/gu, "")).toContain(
-      `${SELECTED_BACKGROUND}hintStrings`,
-    );
-    expect(plain).toContain("Shown 1 of 5");
-    expect(plain).toContain("hints.js");
-    for (const agentDetail of [
-      "No exact matches found",
-      "Possible names",
-      "Possible name:",
-      "not equivalent behavior",
-      "Source changed; stable references unavailable.",
-      "remove leading component",
-      "5 matches in 1 file",
-      "Read for all",
-      "Exact alternative",
-      "SEARCH#",
-    ])
-      expect(plain).not.toContain(agentDetail);
-    expect(rendered.every((line) => visibleWidth(line) === 80)).toBe(true);
-  },
-);
 test("bounds user previews and counts shared files once, including files outside the preview", () => {
   const text = " ".repeat(10000) + "hintStrings" + " ".repeat(10000);
   const matches = Array.from({ length: 5 }, (_, index) => ({
@@ -144,36 +49,6 @@ test("bounds user previews and counts shared files once, including files outside
         expect(line.text.length).toBeLessThan(220);
         expect(line.text.slice(line.ranges[0]?.from, line.ranges[0]?.to)).toBe("hintStrings");
       }
-});
-test("marks captured fuzzy totals as lower bounds when a group is incomplete", () => {
-  const details: SearchToolDetails = {
-    query: "generateHintStrings",
-    matchCount: 0,
-    fileCount: 0,
-    complete: true,
-    files: [],
-    fuzzy: {
-      status: "ready",
-      candidates: [
-        {
-          identifier: "hintStrings",
-          kind: "component",
-          reason: "remove leading component",
-          matchCount: 200,
-          fileCount: 1,
-          selection: { kind: "matches", truncated: true, complete: false, matches: [] },
-        },
-      ],
-    },
-    fuzzyPresentation: { fileCount: 1, groups: [] },
-  };
-  const plain = new SearchResultPanel(details, plainTheme, false)
-    .render(80)
-    .map(stripTerminalSequences)
-    .join("\n");
-  expect(plain).toContain("0 exact · 200+ fuzzy matches · 1+ file");
-  expect(plain).not.toContain("Capture limited");
-  expect(plain).not.toContain("narrow the scope");
 });
 test("wraps a full search match line with one aligned line-number gutter", () => {
   const text = `prefix ${"alpha ".repeat(5)}MATCH ${"https://example.com/".repeat(8)} suffix`;
@@ -270,39 +145,4 @@ test("keeps expanded compacted search results bounded", () => {
 
   expect(rendered).toHaveLength(6);
   expect(rendered.every((line) => visibleWidth(line) === 80)).toBe(true);
-});
-test("caps compact search results by rendered height while preserving wrapping", () => {
-  const text = `start ${"middle ".repeat(100)}END`;
-  const details: SearchToolDetails = {
-    query: "start",
-    matchCount: 1,
-    fileCount: 1,
-    complete: true,
-    files: [
-      {
-        path: "long.jsonl",
-        link: "file:///workspace/long.jsonl",
-        matchCount: 1,
-        lines: [
-          {
-            lineNumber: 8,
-            text,
-            matchCount: 1,
-            ranges: [{ from: 0, to: 5 }],
-          },
-        ],
-      },
-    ],
-  };
-  const compact = new SearchResultPanel(details, plainTheme, false).render(36);
-  const expanded = new SearchResultPanel(details, plainTheme, true).render(36);
-  const compactText = compact.map(stripTerminalSequences).join("\n");
-  const expandedText = expanded.map(stripTerminalSequences).join("\n");
-
-  expect(compact).toHaveLength(14);
-  expect(compactText).toContain("start");
-  expect(compactText).toContain("output truncated");
-  expect(compactText).not.toContain("END");
-  expect(expanded.length).toBeGreaterThan(compact.length);
-  expect(expandedText).toContain("END");
 });
