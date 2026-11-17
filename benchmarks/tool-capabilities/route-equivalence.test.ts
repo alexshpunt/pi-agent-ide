@@ -473,6 +473,146 @@ async function outputPasses(id: string, text: string): Promise<boolean> {
     await rm(root, { recursive: true, force: true });
   }
 }
+for (const mode of ["direct", "codemode"]) {
+  void test(`LSP selector file paths are equivalent without changing symbol fragments (${mode})`, () => {
+    const selectors: [string, string, string][] = [
+      ["read-symbol-delete", "declaration", "task.ts#doomed"],
+      ["rust-diagnostics-no-build", "declaration", "src/main.rs#main"],
+      ["lsp-read", "declaration", "task.ts#count"],
+      ["lsp-read", "calls", "task.ts#count"],
+      ["lsp-read", "calls", "task.ts"],
+      ["lsp-rename", "declaration", "task.ts#count"],
+      ["lsp-overload-rename", "declaration", "main.cpp#clamp"],
+      ["lsp-overload-rename", "declaration", "main.cpp#clamp(const Vec&, float, float)"],
+      ["lsp-calls-script-value", "calls", "task.ts#save"],
+    ];
+    for (const [id, field, selector] of selectors) {
+      const matching = steps(id).filter((step) => step.args?.[field] !== undefined);
+      const selected = matching.find((step) => {
+        const expected = step.args?.[field];
+        return expected instanceof RegExp ? expected.test(selector) : expected === selector;
+      });
+      assert.ok(selected, `${id}: ${selector}`);
+      const route = [{ tool: "lsp_search", args: selected.args }];
+      for (const prefix of ["", "./", "/workspace/fixture/", "file:///workspace/fixture/"]) {
+        const args = { [field]: prefix + selector };
+        assert.ok(
+          check(route, [{ tool: "lsp_search", args }], mode),
+          `${id}: ${prefix}${selector}`,
+        );
+        assert.ok(
+          !check(
+            route,
+            [{ tool: "lsp_search", args: { [field]: `/workspace/other/${selector}` } }],
+            mode,
+          ),
+        );
+      }
+      if (!(selected.args?.[field] instanceof RegExp) || selector.includes("(const Vec")) {
+        assert.ok(
+          !check(
+            route,
+            [{ tool: "lsp_search", args: { [field]: selector.replace(/#[\s\S]*/, "#other") } }],
+            mode,
+          ),
+        );
+      }
+    }
+    const overload = steps("lsp-overload-rename")[1];
+    assert.ok(overload);
+    assert.ok(
+      !check(
+        [{ tool: "lsp_search", args: overload.args }],
+        [
+          {
+            tool: "lsp_search",
+            args: { declaration: "/workspace/fixture/main.cpp#clamp(int, int, int)" },
+          },
+        ],
+        mode,
+      ),
+    );
+  });
+
+  void test(`changes Read accepts the issued Replace result and retains Git provenance (${mode})`, () => {
+    const route = steps("git-stage-unstage-undo").map(({ tool, args, reuse, after }) => ({
+      tool,
+      args,
+      reuse,
+      after,
+    }));
+    for (const source of [
+      "task.txt",
+      "/workspace/fixture/task.txt",
+      result,
+      uuid,
+      { id: result },
+      [uuid],
+    ]) {
+      const calls: Call[] = [
+        {
+          tool: "replace",
+          args: { path: "task.txt", start: "OLD", text: "NEW" },
+          text: `<uuid>${uuid}</uuid>`,
+        },
+        { tool: "read", args: { path: source, views: ["changes"] }, text: "CHANGE#ABCD" },
+        { tool: "stage", args: { change: "CHANGE#ABCD" } },
+        { tool: "stage", args: { change: "CHANGE#ABCD" } },
+        { tool: "read", args: { path: "task.txt", views: ["changes"] }, text: "CHANGE#BCDE" },
+        { tool: "unstage", args: { change: "CHANGE#BCDE" } },
+        { tool: "read", args: { path: "task.txt", views: ["changes"] }, text: "CHANGE#CDEF" },
+        { tool: "undo", args: { change: "CHANGE#CDEF" } },
+      ];
+      const validation = validateRoute({ steps: route }, events(calls, mode), mode);
+      assert.ok(validation.passed, `${JSON.stringify(source)}: ${validation.reasons.join("; ")}`);
+      assert.ok(
+        !check(
+          route,
+          calls.map((call, index) =>
+            index === 2 ? { ...call, args: { change: "CHANGE#FFFF" } } : call,
+          ),
+          mode,
+        ),
+      );
+    }
+  });
+
+  void test(`changes Read equivalence rejects missing, failed, late and ambiguous issuers (${mode})`, () => {
+    const route: RouteStep[] = [{ tool: "read", args: { path: "task.txt", views: ["changes"] } }];
+    const read: Call = { tool: "read", args: { path: uuid, views: ["changes"] } };
+    const issuer: Call = {
+      tool: "replace",
+      args: { path: "task.txt" },
+      text: `<uuid>${uuid}</uuid>`,
+    };
+    assert.ok(!check(route, [read], mode));
+    assert.ok(!check(route, [read, issuer], mode));
+    assert.ok(
+      !check(
+        route,
+        [
+          { ...issuer, text: "other.txt" },
+          { ...read, args: { path: "other.txt", views: ["changes"] } },
+        ],
+        mode,
+      ),
+    );
+    assert.ok(!check(route, [{ ...issuer, error: true }, read], mode));
+    for (const path of ["other.txt", ["task.txt", "other.txt"]])
+      assert.ok(!check(route, [{ ...issuer, args: { path } }, read], mode));
+    const unfinished = events([issuer, read], mode).filter(
+      (event) => !(event.type === "tool_execution_end" && event.toolCallId === `${mode}-0`),
+    );
+    assert.ok(!validateRoute({ steps: route }, unfinished, mode).passed);
+    assert.ok(
+      !check(
+        [{ tool: "read", args: { path: "task.txt" } }],
+        [issuer, { ...read, args: { path: uuid } }],
+        mode,
+      ),
+    );
+  });
+}
 interface Call {
   tool: string;
   args: Record<string, unknown>;
