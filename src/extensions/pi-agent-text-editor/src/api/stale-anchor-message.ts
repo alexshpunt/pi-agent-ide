@@ -6,6 +6,8 @@ export interface StaleAnchorMessageDetails {
   readonly path: string;
   readonly anchor: string;
   readonly context?: string;
+  /** The guard interrupted argument streaming before the full call was received. */
+  readonly stoppedEarly?: true;
 }
 
 export function formatStaleAnchorMessage(
@@ -17,8 +19,11 @@ export function formatStaleAnchorMessage(
     details.context === undefined
       ? `Reread only the relevant section of "${details.path}" and use its current anchors.`
       : `If the required line is represented by one of the context lines below, use that anchor. Otherwise, reread only the relevant section of "${details.path}" and regenerate the anchor.`;
+  const earlyStop = details.stoppedEarly
+    ? "The guard intentionally stopped this call during streaming, before the full arguments or payload arrived. Missing text is a consequence of that stop, not a missing-payload mistake. Retrying the same stale selector will be refused again. "
+    : "";
   return (
     `[SYSTEM] ${details.toolName} blocked: ${details.field === "anchor" ? "anchor" : `${details.field} anchor`} "${details.anchor}" is stale. ` +
-    `${guidance} (${reason})${context}`
+    `${earlyStop}${guidance} (${reason})${context}`
   );
 }

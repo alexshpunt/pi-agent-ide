@@ -107,10 +107,10 @@ test("Anthropic stale prefixes report the guard before validation and recover wi
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as Event);
-    expect(state.requests).toHaveLength(6);
+    expect(state.requests).toHaveLength(7);
     expect(state.abortedPrefixes).toEqual(["stale-2", "stale-3"]);
     expect(state.sentPayloads).toEqual([]);
-    for (const id of state.abortedPrefixes) {
+    for (const id of [...state.abortedPrefixes, "complete-stale"]) {
       const execution = events.find(
         (event) => event.type === "tool_execution_end" && event.toolCallId === id,
       );
@@ -127,7 +127,13 @@ test("Anthropic stale prefixes report the guard before validation and recover wi
             : [],
         )
         .find((block) => block.type === "toolCall" && block.id === id);
-      expect(call?.arguments).not.toHaveProperty("text");
+      if (id === "complete-stale") {
+        expect(call?.arguments).toHaveProperty("text", "BLOCKED");
+        expect(final?.details).not.toHaveProperty("stoppedEarly");
+      } else {
+        expect(call?.arguments).not.toHaveProperty("text");
+        expect(final?.details).toMatchObject({ stoppedEarly: true });
+      }
       expect(final).toMatchObject({
         isError: true,
         details: { guardId: "stale-anchor", effect: "not-applied" },
