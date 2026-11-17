@@ -108,16 +108,11 @@ function resolveLineHashAnchor(
   }
 
   if (numbers.length === 0) {
-    // A value that no line produces but the file contains is exact text that happens to have the
-    // shape of an anchor, such as `PACKAGE`; a stale anchor never occurs in the text it was for.
-    if (context.content.includes(value)) {
-      return { kind: "not-handled" };
-    }
     return {
       kind: "rejected",
       rejection: {
         code: "stale",
-        reason: `no line of the current file has anchor "${value}"; its line changed or was removed, so read or search again for current anchors`,
+        reason: `no line of the current file has anchor "${value}"; read or search again for current anchors. To select these bytes literally, use a Search result or longer exact text`,
       },
     };
   }

@@ -1,5 +1,8 @@
 import { Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
+import { PRESENTED_LINE_ANCHOR_PATTERN, isLineAnchor } from "pi-agent-text";
+
+import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
 
 import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.ts";
 
@@ -11,7 +14,10 @@ import {
   textSelections,
 } from "#src/tools/text-selection.ts";
 
-import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
+import {
+  TextMutationInputError,
+  type TextMutationToolRegistration,
+} from "#src/api/mutation-tool.ts";
 
 export const replaceSchema = Type.Object(
   {
@@ -58,6 +64,21 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
   pair: ["start", "end"],
   mutate: async (context, parameters: ReplaceParameters) => {
     const starts = await context.resolveAnchors("start");
+    const copiedAnchor = PRESENTED_LINE_ANCHOR_PATTERN.exec(parameters.text)?.[1];
+    if (
+      copiedAnchor !== undefined &&
+      [...starts.values()].some(
+        (anchor) =>
+          resolvedTextAnchorType(anchor) === "major" &&
+          isLineAnchor(anchor.value) &&
+          anchor.value === copiedAnchor,
+      )
+    ) {
+      throw new TextMutationInputError(
+        "COPIED_LINE_ANCHOR",
+        `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from text and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
+      );
+    }
     const selections = textSelections(starts, "start");
     if (parameters.end === undefined && selections !== undefined) {
       const changes = selectionChanges(context, selections, parameters.text);

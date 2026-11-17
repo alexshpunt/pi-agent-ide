@@ -33,6 +33,7 @@ import {
 } from "#src/api/mutation-result.ts";
 import {
   isMutationAnchorValue,
+  TextMutationInputError,
   mutationSource,
   type TextMutation,
   type TextMutationAnchorField,
@@ -2220,6 +2221,15 @@ export async function buildFailedTextMutationResult(
   context: ExtensionContext,
   effect: "applied" | "not-applied" | "unknown" = "not-applied",
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
+  if (failure.cause instanceof TextMutationInputError) {
+    return failureToolResult(
+      failure.source,
+      failure.cause.code,
+      failure.message,
+      effect,
+      failure.rollback,
+    );
+  }
   if (failure.rollback !== undefined) {
     return failureToolResult(
       failure.source,

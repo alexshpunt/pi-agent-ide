@@ -103,6 +103,11 @@ const groups: [string[], string[]][] = [
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
   // Guard metadata and identical execution/transcript refusals protect early payload truncation.
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
+  [["edit.copied-line-prefix-refusal"], ["copied-line-prefix-recovery"]],
+  [
+    ["edit.stale-line-anchor-literal-collision", "edit.anchor-shaped-literal-search"],
+    ["stale-line-anchor-literal-collision"],
+  ],
   [["edit.repeated-line-anchor-shift"], ["repeated-line-anchor-after-shift"]],
   [["edit.repeated-line-anchor-block-recovery"], ["repeated-line-anchor-after-block-delete"]],
   [
