@@ -41,6 +41,38 @@ test("argument preparation uses the current schema before the tool's own prepara
     { path: ["a.txt", "b.txt"] },
   ]);
 });
+test("a streamed refusal is checked against the original arguments before JSON decoding", () => {
+  let registered: ToolDefinition | undefined;
+  const events = createEventBus();
+  const args = { path: '{"id":"00000000-0000-4000-8000-000000000000"}' };
+  events.on("pi-agent-text-editor/guarded-argument-preparation", (value) => {
+    const request = value as { arguments: unknown; refusal?: unknown };
+    if (request.arguments === args)
+      request.refusal = { content: [{ type: "text", text: "refusal fixture" }], details: {} };
+  });
+  const stub: Partial<ExtensionAPI> = {
+    events,
+    on: () => () => {},
+    registerTool: (definition) => {
+      registered = definition as ToolDefinition;
+    },
+  };
+  const ide = createIdeTextResults(stub as ExtensionAPI);
+  const prepareArguments = vi.fn((input: unknown) => input as { path: string | { id: string } });
+  ide.api.registerTool({
+    name: "fixture",
+    label: "fixture",
+    description: "fixture",
+    parameters: Type.Object({
+      path: Type.Union([Type.String(), Type.Object({ id: Type.String() })]),
+    }),
+    prepareArguments,
+    execute: async () => ({ content: [], details: {} }),
+  });
+  expect(() => registered?.prepareArguments?.(args)).toThrow(Error);
+  expect(prepareArguments).not.toHaveBeenCalled();
+  expect(args.path).toBe('{"id":"00000000-0000-4000-8000-000000000000"}');
+});
 // Display-only batch arguments must not acquire source fields that no call supplied.
 test.each(["insert", "delete", "copy", "move"])(
   "%s display preserves absent source fields",
