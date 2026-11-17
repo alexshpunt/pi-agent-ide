@@ -2179,7 +2179,7 @@ function formatRejectedAnchorMessage(
           : "Exact-text edits are blocked for this file. Use a current anchor below for the intended edit, or get one with Read/Search. Exact text is available again after that edit succeeds."
         : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
-  const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} "${failure.anchor}" ${state} in "${failure.source}"`;
+  const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${JSON.stringify(failure.anchor)} ${state} in "${failure.source}"`;
   // Nothing is shown below a reference without a position; its reason carries the next step.
   if (failure.resolution instanceof TextAnchorResourceResolutionError && context.length === 0)
     return `${subject}: ${reason}`;

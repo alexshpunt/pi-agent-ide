@@ -62,26 +62,46 @@ export function resolveExactTextAnchor(
   const source = normalizeText(stripInitialBom(context.content));
   const query = normalizeText(stripInitialBom(value)).text;
   const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
-  const span = (start: number) => ({
+  const span = (start: number, length = query.length) => ({
     start: bomOffset + source.sourceOffset(start),
-    end: bomOffset + source.sourceOffset(start + query.length),
+    end: bomOffset + source.sourceOffset(start + length),
   });
   const scope = context.scope?.map((range) => scopeOffsets(context.content, range));
   // In a scope, only matches inside it count: text that occurs elsewhere in the file too is
-  // still unique there.
-  const matches =
-    scope === undefined
-      ? overlappingMatches(source.text, query, 2)
-      : overlappingMatches(source.text, query, 2, (start) => {
-          const match = span(start);
-          return scope.some((range) => match.start >= range.from && match.end <= range.to);
-        });
+  // still unique there. Diagnostic candidates must respect the same character boundaries.
+  const matchesFor = (candidate: string, limit: number) =>
+    overlappingMatches(
+      source.text,
+      candidate,
+      limit,
+      scope === undefined
+        ? undefined
+        : (start) => {
+            const match = span(start, candidate.length);
+            return scope.some((range) => match.start >= range.from && match.end <= range.to);
+          },
+    );
+  const matches = matchesFor(query, 2);
 
   if (matches.length === 0) {
+    const outsideScope = scope !== undefined && query.length > 0 && source.text.includes(query);
+    // Interpret only single backslash control escapes, and only to explain a refusal.
+    // Never resolve or edit the decoded candidate, or reinterpret escaped backslashes.
+    const decoded = value.replace(/(?<!\\)\\[nrt]/gu, (escape) =>
+      escape === "\\n" ? "\n" : escape === "\\r" ? "\r" : "\t",
+    );
+    if (
+      !outsideScope &&
+      decoded !== value &&
+      matchesFor(normalizeText(stripInitialBom(decoded)).text, 1).length > 0
+    ) {
+      return rejected(
+        "missing",
+        `Exact-text selector ${JSON.stringify(value)} contains literal backslash escapes; the character form ${JSON.stringify(decoded)} matches text inside the ${scope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
+      );
+    }
     return rejected(
-      scope !== undefined && query.length > 0 && source.text.includes(query)
-        ? "outside-scope"
-        : "missing",
+      outsideScope ? "outside-scope" : "missing",
       scope === undefined
         ? "exact text anchor was not found"
         : "exact text anchor was not found inside the selection",
