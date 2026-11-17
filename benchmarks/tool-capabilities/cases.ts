@@ -22,7 +22,7 @@ const cases: CapabilityCase[] = [];
 add(
   "codemode-tool-names",
   ["codemode.provider-tool-names"],
-  'Use one native Codemode script to Read task.txt, Replace the literal OLD fragment with NEW, and pass the unchanged returned mutation value as the path argument to Read. Print both Read values. Then Write note.txt with exactly "saved\\n", run Bash with command "printf tool-name-probe", and print its output. Keep every other byte. Report the probe output and the final task.txt content.',
+  'Use one native Codemode script to Read task.txt. Wait for that Read result so it captures OLD before any edit. Replace the literal OLD fragment with NEW, and pass the unchanged returned mutation value as the path argument to Read. Print both Read values. Then Write note.txt with exactly "saved\\n", run Bash with command "printf tool-name-probe", and print its output. Keep every other byte. Report the probe output and the final task.txt content.',
   [
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", parentContains: "OLD" },
     { tool: "replace", args: { path: "task.txt" }, exactText: ["start"], after: [0] },
@@ -42,7 +42,7 @@ for (const selection of ["numbered", "all"] as const) {
     `search-compaction-${selection}`,
     [`search.compaction-${selection}`],
     selection === "numbered"
-      ? "Search task.txt for OLD with limit 1. The three identical lines are compacted. Repeat the same Search on task.txt with limit 3 to obtain all three individual references. Then Insert ADDED before each of those three lines using its own actual issued numbered SEARCH :line reference as path (before: true). Keep every other byte. Do not reuse the first reference for the other occurrences."
+      ? "Search task.txt for OLD with limit 1. After that Search returns the compact group of three identical lines, repeat the same Search on task.txt with limit 3 to obtain all three individual references. Then Insert ADDED before each of those three lines using its own actual issued numbered SEARCH :line reference as path (before: true). Keep every other byte. Do not reuse the first reference for the other occurrences."
       : "Search task.txt for OLD with limit 1. The three identical lines are compacted. Use that completed Search's actual issued :all:line reference as path in one Insert call with text ADDED and before: true. Insert once before each OLD line and keep every other byte. Do not use the compact group's first numbered reference.",
     [
       { tool: "search", args: { path: "task.txt", query: "OLD", limit: 1 } },
@@ -73,7 +73,7 @@ for (const selection of ["numbered", "all"] as const) {
 add(
   "missing-edit-selector-recovery",
   ["edit.missing-selector-recovery"],
-  'First call insert on task.txt with text "added" and no anchor; it must fail without editing. Read task.txt, then retry insert with anchor "OLD" and the same text. Next call copy from task.txt to target.txt, passing the literal string "OLD" as start and omitting targetStart; it must fail without editing either file. Read target.txt and retry copy with targetStart "DEST". Keep all existing lines. Do not use whole-file operations or write. In Codemode, keep going after each refused call using the returned null and the failure summary.',
+  'Exercise two independent recovery chains; neither chain needs to wait for the other. In the Insert chain, call insert on task.txt with text "added" and no anchor; it must fail without editing. After that refusal returns, Read task.txt. Wait for that Read result before retrying insert with anchor "OLD" and the same text. In the Copy chain, call copy from task.txt to target.txt, passing the literal string "OLD" as start and omitting targetStart; it must fail without editing either file. After that refusal returns, Read target.txt. Wait for that Read result before retrying copy with targetStart "DEST". Keep all existing lines. Do not use whole-file operations or write. In Codemode, keep going after each refused call using the returned null and the failure summary.',
   [
     {
       tool: "insert",
@@ -89,7 +89,6 @@ add(
       exactText: ["start"],
       error: true,
       contains: "INVALID_REQUEST",
-      after: [2],
     },
     { tool: "read", args: { path: "target.txt" }, after: [3] },
     {
@@ -173,7 +172,7 @@ add(
   // Fresh deferred-tool session; already-active guidance is covered by deterministic tests.
   "deferred-navigation-recovery",
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
-  'In direct mode, discover ast_search, lsp_search, diff and undo through tool_search before using them. In Codemode, call the session tools directly; discovery is optional. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff with the literal path strings before: "task.ts" and after: "task.ts"; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt, then use undo with change: "last" to revert that edit. Read task.txt and report its restored marker. Preserve both files.',
+  'In direct mode, discover ast_search, lsp_search, diff and undo through tool_search before using them. In Codemode, call the session tools directly; discovery is optional. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff with the literal path strings before: "task.ts" and after: "task.ts"; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt. Wait for the Replace result before using undo with change: "last" to revert that edit. After the Undo result returns, Read task.txt and report its restored marker. Preserve both files.',
   [
     {
       tool: "tool_search",
@@ -204,7 +203,7 @@ add(
 add(
   "standalone-resource-host",
   ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
-  "Only standalone resource hosts are loaded; the full IDE is not enabled. In direct mode, discover the demo namespace through tool_search. In Codemode, call the demo tools directly; discovery is optional. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. Finally reread memory://demo/note. Use demo tools, not the sibling namespace or filesystem tools.",
+  "Only standalone resource hosts are loaded; the full IDE is not enabled. In direct mode, discover the demo namespace through tool_search. In Codemode, call the demo tools directly; discovery is optional. Read the first line of memory://demo/note, Search that returned window for alpha, then Replace the returned search selection with changed. Preserve the second line omega. Attempt demo_read on local.txt, demo_read on memory://other/note and demo_copy from memory://demo/note to local.txt; all must fail without changing local.txt. After the demo_replace result returns, reread memory://demo/note to inspect changed and omega. This reread is independent of the three refused calls. Use demo tools, not the sibling namespace or filesystem tools.",
   [
     {
       tool: "tool_search",
@@ -224,7 +223,7 @@ add(
       tool: "demo_read",
       args: { path: "memory://demo/note" },
       contains: "changed\nomega",
-      after: [3, 4, 5, 6],
+      after: [3],
     },
   ],
   {
@@ -1089,7 +1088,7 @@ const streamedReplacement = Array.from(
 add(
   "streamed-replace",
   ["edit.large-replace-payload"],
-  `Use direct replace on task.txt with start OLD and text equal to this complete JSON string: ${JSON.stringify(streamedReplacement)}. Supply the literal text in the tool arguments, not a script, reference, abbreviation or repetition expression. Then read the first two lines of the saved file and report STREAM-PAYLOAD-0001. Keep the surrounding keep and last lines unchanged.`,
+  `Use direct replace on task.txt with start OLD and text equal to this complete JSON string: ${JSON.stringify(streamedReplacement)}. Supply the literal text in the tool arguments, not a script, reference, abbreviation or repetition expression. Wait for the Replace result before reading the first two lines of the saved file and reporting STREAM-PAYLOAD-0001. Keep the surrounding keep and last lines unchanged.`,
   [
     { tool: "replace", args: { path: "task.txt", start: "OLD", text: streamedReplacement } },
     {
@@ -1113,7 +1112,7 @@ add(
     "edit.result-anchor-combination",
     "compose.native-provider-auth",
   ],
-  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Search the file again for NEW. Replace with that fresh Search result or UUID as path, start NEW, and text FINAL. This selector must resolve inside the issued selection, not treat its UUID as a filename. Read the current file and report FINAL. Keep every other byte unchanged.",
+  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Wait for the first Replace result before searching the file again for NEW. Replace with that fresh Search result or UUID as path, start NEW, and text FINAL. This selector must resolve inside the issued selection, not treat its UUID as a filename. Wait for the second Replace result before reading the current file and reporting FINAL. Keep every other byte unchanged.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     { tool: "replace", args: { start: undefined, end: undefined }, reuse: reuse(0) },
@@ -1398,7 +1397,7 @@ add(
 add(
   "replace-surviving-scoped-match",
   ["edit.surviving-scoped-match"],
-  "Search task.txt for OLD once and retain the whole returned result. Replace its first match with ONE, passing that whole Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first match as start (the issued :match reference in direct calls, the first match value in Codemode). Omit end or repeat the same match. Then make one Replace call with path as an array of the first and second matches and text TWO; the stale first match must make it fail without writing. Finally replace only the second match with TWO, using the SAME WHOLE Search result as path and its second match as start. Do not pass the second match as path, retype the file path, search again or use other edits. Preserve every other byte.",
+  "Search task.txt for OLD once and retain the whole returned result. Replace its first match with ONE, passing that whole Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first match as start (the issued :match reference in direct calls, the first match value in Codemode). Omit end or repeat the same match. Wait for the first Replace result so its match is stale before making one Replace call with path as an array of the first and second matches and text TWO; the stale first match must make it fail without writing. Wait for that refusal before replacing only the second match with TWO, using the SAME WHOLE Search result as path and its second match as start. Changing the second match before the refusal would invalidate that reference too. Do not pass the second match as path, retype the file path, search again or use other edits. Preserve every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
@@ -1428,7 +1427,7 @@ add(
 add(
   "replace-search-anchor-list-unusable",
   ["edit.search-anchor-list-unusable"],
-  "Search task.txt for OLD. Replace its first match alone with ONE: use that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Then make ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Then call Replace once with only the second match and TWO. Do not search again and do not retype the file path. Keep every other byte.",
+  "Search task.txt for OLD. Replace its first match alone with ONE: use that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Wait for this first Replace result so its match is stale before making ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Wait for that refusal before calling Replace once with only the second match and TWO; changing it earlier would also invalidate the second reference in the refused call. Do not search again and do not retype the file path. Keep every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
@@ -1524,7 +1523,7 @@ for (const { name, rows, files } of overviewFixtures) {
   add(
     `read-overview-search-${name}`,
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
-    `Read all of large.ts so it returns a compact overview. Search for NEEDLE by passing that unchanged Read result or its UUID, not the file path. Then read large.ts with offset=2 and limit=${rows + 3}, and forward that new overview to Search for NEEDLE and outsideBefore. Report the source line of the body match and whether outsideBefore was found in the window. Do not edit anything.`,
+    `Read all of large.ts so it returns a compact overview. Search for NEEDLE by passing that unchanged Read result or its UUID, not the file path. Then read large.ts with offset=2 and limit=${rows + 3}, and make two separate Search calls, each with that new overview unchanged as path: one with the exact query NEEDLE, the other with the exact query outsideBefore. These two Searches are independent. Report the source line of the body match and whether outsideBefore was found in the window. Do not edit anything.`,
     [
       { tool: "read", args: { path: "large.ts" }, contains: "Some source text is omitted." },
       {
@@ -1560,7 +1559,7 @@ if (storedOverview === undefined) throw new Error("Missing overview fixture");
 add(
   "read-large-store",
   ["compose.large-read-store-load"],
-  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged Read result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. Finally load and search the original saved Read result for NEEDLE again and report whether the edited region still contains it.",
+  "In one Codemode call, read large.ts with offset=2 and limit=2103, and store the unchanged Read result. In a second successful Codemode call, load that result and search it for NEEDLE, then pass the Search result to replace NEEDLE with FOUND. Do not reread the file or retype its path for the dependent calls. After the Replace result returns, load and search the original saved Read result for NEEDLE again and report whether the edited region still contains it.",
   [
     {
       tool: "read",
@@ -2405,7 +2404,7 @@ add(
 add(
   "write-confirmed-readback",
   ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
-  "Write changed plus a newline once to fixture://saved-canonicalized/content. This provider stores uppercase text, so the successful result and a fresh Read must expose CHANGED rather than the submitted text. Then Write updated plus a newline once to fixture://saved-readback/content. This provider acknowledges persistence but cannot read the saved body on that resource instance. Preserve its applied effect, expect the post-write readback error (null in Codemode), and Read the explicit resource freshly to inspect updated. Never replay either write; report saved for the second one, not unknown delivery.",
+  "Write changed plus a newline once to fixture://saved-canonicalized/content. This provider stores uppercase text, so the successful result and a fresh Read must expose CHANGED rather than the submitted text. Wait for that Write result before the fresh Read. Both resources share the same stored body: wait for this Read result before the second Write so it still observes CHANGED. Write updated plus a newline once to fixture://saved-readback/content. This provider acknowledges persistence but cannot read the saved body on that resource instance. Preserve its applied effect, expect the post-write readback error (null in Codemode), and wait for that failed Write result before reading the explicit resource freshly to inspect updated. Never replay either write; report saved for the second one, not unknown delivery.",
   [
     {
       tool: "write",
@@ -2448,7 +2447,7 @@ add(
 add(
   "write-unknown-effects",
   ["edit.write-failure-recovery", "compose.uncertain-write-read"],
-  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, the failed Write resolves to null and the Read still runs. This headless case checks recovery, not the TUI failure panel.",
+  "Write changed plus a newline to fixture://saved-mismatch/content. This isolated provider saves the bytes and then returns PROVIDER_SAVE_VERIFICATION_FAILED with unknown effects. Do not call this an unapplied write and do not replay it. After the failed Write result returns, Read the same explicit resource to inspect saved text, then report that the write effect is unknown. In Codemode, the failed Write resolves to null and the Read still runs. This headless case checks recovery, not the TUI failure panel.",
   [
     {
       tool: "write",
@@ -2474,7 +2473,7 @@ add(
 add(
   "move-unknown-effects",
   ["edit.move-effects"],
-  "Use whole-file move on .tmp/move-effects/unknown-after.txt to .tmp/move-effects/unknown-after-target.txt. This isolated fixture deliberately fails after execution starts. Preserve the unknown effect: do not call it not-applied and do not retry. Read the destination by its ordinary path to inspect the bytes and report that the Move effect is unknown. In Codemode, the failed call resolves to null and the inspection still runs.",
+  "Use whole-file move on .tmp/move-effects/unknown-after.txt to .tmp/move-effects/unknown-after-target.txt. This isolated fixture deliberately fails after execution starts. Preserve the unknown effect: do not call it not-applied and do not retry. After the failed Move result returns, Read the destination by its ordinary path to inspect the bytes and report that the Move effect is unknown. In Codemode, the failed call resolves to null and the inspection still runs.",
   [
     {
       tool: "move",
@@ -2510,7 +2509,7 @@ add(
 add(
   "copy-destination-recovery",
   ["edit.copy-destination-recovery"],
-  "Exercise Copy destination recovery in task.txt. First Copy with path task.txt, start alpha, end beta and targetStart equal to the ambiguous text });, and observe its rejection. Then Read the current file with anchors and copy that same alpha-through-beta block after INSERT_HERE, using its issued destination anchor as targetStart. Keep the source selection unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
+  "Exercise Copy destination recovery in task.txt. First Copy with path task.txt, start alpha, end beta and targetStart equal to the ambiguous text });, and wait for its rejection result before reading the current file with anchors. Copy that same alpha-through-beta block after INSERT_HERE, using its issued destination anchor as targetStart. Keep the source selection unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
   [
     {
       tool: "copy",
@@ -2872,7 +2871,7 @@ for (const method of ["all", "allSettled"] as const) {
 add(
   "undo-last",
   ["edit.undo-last", "compose.mutation-undo"],
-  'Change OLD to NEW in task.txt using replace, then undo the last editor transaction using undo with change equal to "last" (file is optional). Read the restored file and report its original marker.',
+  'Change OLD to NEW in task.txt using replace. Wait for the Replace result before undoing the last editor transaction using undo with change equal to "last" (file is optional). After the Undo result returns, Read the restored file and report its original marker.',
   [
     { tool: "replace", args: { path: "task.txt", start: "OLD" } },
     { tool: "undo", args: { change: "last" }, after: [0] },
@@ -2888,7 +2887,7 @@ add(
 add(
   "git-stage-unstage-undo",
   ["git.changes", "git.stage", "git.stage-noop", "git.unstage", "git.undo-change", "discovery.git"],
-  "Replace OLD with NEW in task.txt. Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Repeat stage with that anchor and confirm it succeeds as already staged. Read changes again and unstage its current CHANGE anchor. Read changes once more and undo that current change. Leave source and index at the original clean state.",
+  "Replace OLD with NEW in task.txt. After the Replace result returns, Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Wait for the Stage result before repeating stage with that anchor to confirm it succeeds as already staged. After the repeated Stage result returns, Read changes again and unstage its current CHANGE anchor. After the Unstage result returns, Read changes once more and undo that current change. Leave source and index at the original clean state.",
   [
     { tool: "replace" },
     { tool: "read", args: { path: "task.txt", views: ["changes"] }, after: [0] },
@@ -3181,7 +3180,7 @@ add(
 add(
   "stale-insert-recovery",
   ["edit.stale-insert-feedback", "edit.bounded-stale-feedback"],
-  "Read task.txt with anchors. Replace OLD with NEW. Attempt Insert with the OLD Read's line-2 anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",
+  "Read task.txt with anchors and wait for its result to capture the original anchors. Replace OLD with NEW. Wait for the Replace result before attempting Insert with the OLD Read's line-2 anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. After that refusal returns, Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", args: { path: "task.txt" }, after: [0] },
@@ -3208,7 +3207,7 @@ add(
 add(
   "repeated-line-anchor-after-shift",
   ["edit.repeated-line-anchor-shift"],
-  "Read task.txt with anchors. Insert the line top before alpha, which shifts every line down. Wait for the Insert result before starting Delete. Then delete the final } line of the file using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
+  "Read task.txt with anchors and wait for its result to capture the original anchors. Insert the line top before alpha, which shifts every line down. Wait for the Insert result before starting Delete. Then delete the final } line of the file using its anchor from the first Read, not a new Read and not exact text. Every other line must stay.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -3233,7 +3232,7 @@ add(
 add(
   "repeated-line-anchor-after-block-delete",
   ["edit.repeated-line-anchor-block-recovery"],
-  "Read task.txt with anchors. Delete the first definition, from its first template line through its first } line, using anchors from that Read. Attempt to delete the remaining template line using its anchor from the first Read; this stale anchor must be rejected. Then read task.txt with anchors again and delete the remaining template line using its fresh anchor. Do not use exact text. Preserve every other byte.",
+  "Read task.txt with anchors. Delete the first definition, from its first template line through its first } line, using anchors from that Read. Wait for that Delete result before attempting to delete the remaining template line using its anchor from the first Read; this stale anchor must be rejected. After that refusal returns, read task.txt with anchors again and delete the remaining template line using its fresh anchor. Do not use exact text. Preserve every other byte.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -3273,7 +3272,7 @@ add(
   // Agent-facing scope refusals are unchanged; native anchor-rejection cards have scripted Pi coverage.
   "result-selector-scope",
   ["compose.result-selector-scope"],
-  "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as start and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Then pass the same line-2 result as path with the anchor the first Read shows before line 2 as start and text NEW followed by a newline. Preserve all other bytes.",
+  "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as start and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Wait for that refusal before passing the same line-2 result as path with the anchor the first Read shows before line 2 as start and text NEW followed by a newline. Changing line 2 before the refusal would make the bounded result stale and hide the scope check. Preserve all other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     // The window may also come from the first Read's result of the same file.
@@ -3316,7 +3315,7 @@ add(
 add(
   "stale-recovery",
   ["compose.stale-recovery", "read.reference-recovery"],
-  "Read task.txt with anchors. Change OLD to NEW using replace. Try to read the old Read result; it must be rejected as stale. Also read the current file after the replacement and report NEW; this is independent of the rejected old-result Read. Do not try to revive the old result.",
+  "Read task.txt with anchors and wait for its result to capture OLD. Change OLD to NEW using replace. After the Replace result returns, try to read the old Read result; it must be rejected as stale. Also read the current file after the replacement and report NEW; this is independent of the rejected old-result Read. Do not try to revive the old result.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", after: [0] },
@@ -3343,7 +3342,7 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  'Start Bash with command IFS= read -r line; printf \'%s\\n\' "$line" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter, insert the Enter key, then read the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. The direct route may read all three sources together in one Read path array; preserve each actual result reference. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell\'s retained output with query "hello", then delete the shell session. Report the line printed by the shell. Do not edit files.',
+  'Start Bash with command IFS= read -r line; printf \'%s\\n\' "$line" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter and wait for the Write result before inserting the Enter key. Wait for the Insert result before reading the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. The direct route may read all three sources together in one Read path array; preserve each actual result reference. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell\'s retained output with query "hello", and wait for the Search result before deleting the shell session. Report the line printed by the shell. Do not edit files.',
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -3441,7 +3440,7 @@ add(
     "debug.delete",
     "discovery.debug",
   ],
-  "Discover debug and call it with adapter debugpy and program task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and start the debugger. When stopped, evaluate value with insert evaluate value. Read the stopped session, report value in plain digits, then delete the debugger session. Source must stay unchanged.",
+  "Discover debug and call it with adapter debugpy and program task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and wait for the breakpoint Insert result before starting the debugger. After the Start result returns, evaluate value with insert evaluate value and Read the stopped session; these two calls are independent. Wait for the evaluation and both session Read results before deleting the debugger session. Report value in plain digits. Source must stay unchanged.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", reuse: reuse(0, "path", "debug") },
@@ -3459,8 +3458,8 @@ add(
       reuse: reuse(0, "path", "debug"),
       contains: "42",
     },
-    { tool: "read", reuse: reuse(0, "path", "debug"), after: [5] },
-    { tool: "delete", reuse: reuse(0, "path", "debug"), after: [6] },
+    { tool: "read", reuse: reuse(0, "path", "debug"), after: [4] },
+    { tool: "delete", reuse: reuse(0, "path", "debug"), after: [1, 5, 6] },
   ],
   {
     files: { "task.py": "value = 42\nprint(value)\n" },
@@ -3480,36 +3479,57 @@ add(
     "compose.debug-breakpoint-delete-read-session",
     "read.breakpoints",
   ],
-  "Discover debug and call it with adapter debugpy and program task.py. Wait for the debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors and place a breakpoint on the answer assignment. Read the source again with the breakpoints view. Start and read the stopped session. Step into the twice function and read the stopped session. Step over its first assignment and read the stopped session. Evaluate result while stopped, then step out and read the stopped session. Delete the returned breakpoint resource and read the session to confirm it is still stopped. Continue to completion, read the completed session, and delete the session. Report the evaluated result in plain digits. Do not change source files.",
+  'Discover debug and create a session with adapter debugpy and program task.py. For the Codemode route, call tools.debug inside Codemode to create this session; only discovery may be direct. Wait for the debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors and place a breakpoint on the answer assignment. After the breakpoint Insert result returns, do two independent operations: Read with path equal to the returned source resource (ending in /source, not the session resource) and views ["breakpoints"] to inspect the annotated source code; Start the debugger session. After the Start result returns, Read the stopped session and wait for that Read result before stepping into the twice function. After Step Into returns, Read the stopped session and wait for that Read result before stepping over its first assignment. After Step Over returns, Read the stopped session and evaluate result; these two calls are independent. Wait for both results before stepping out. After Step Out returns, Read the stopped session. Independently, delete the returned breakpoint resource after both Step Out and the breakpoints-view Read return. After the breakpoint Delete result returns, Read the session to confirm it is still stopped. Wait for both post-Step-Out session Reads before continuing to completion. After Continue returns, Read the completed session. Wait for that Read result before deleting the session. Report the evaluated result in plain digits. Do not change source files.',
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
-    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] } },
+    { tool: "read", args: { path: /debug:.*\/source/, views: ["anchors"] }, after: [0] },
     {
       tool: "insert",
       args: { path: /debug:.*\/source/, text: "breakpoint" },
       reuse: reuse(1, "anchor", "anchor"),
     },
-    { tool: "read", args: { path: /debug:.*\/source/, views: ["breakpoints"] }, contains: "twice" },
-    { tool: "insert", args: { text: "start" }, reuse: reuse(0, "path", "debug") },
-    { tool: "read", reuse: reuse(0, "path", "debug") },
-    { tool: "insert", args: { text: "step into" }, reuse: reuse(0, "path", "debug") },
-    { tool: "read", reuse: reuse(0, "path", "debug") },
-    { tool: "insert", args: { text: "step over" }, reuse: reuse(0, "path", "debug") },
-    { tool: "read", reuse: reuse(0, "path", "debug") },
+    {
+      tool: "read",
+      args: { path: /debug:.*\/source/, views: ["breakpoints"] },
+      contains: "twice",
+      after: [2],
+    },
+    { tool: "insert", args: { text: "start" }, reuse: reuse(0, "path", "debug"), after: [2] },
+    { tool: "read", reuse: reuse(0, "path", "debug"), after: [4] },
+    { tool: "insert", args: { text: "step into" }, reuse: reuse(0, "path", "debug"), after: [5] },
+    { tool: "read", reuse: reuse(0, "path", "debug"), after: [6] },
+    { tool: "insert", args: { text: "step over" }, reuse: reuse(0, "path", "debug"), after: [7] },
+    { tool: "read", reuse: reuse(0, "path", "debug"), after: [8] },
     {
       tool: "insert",
       args: { text: "evaluate result" },
       reuse: reuse(0, "path", "debug"),
       contains: "42",
+      after: [8],
     },
-    { tool: "insert", args: { text: "step out" }, reuse: reuse(0, "path", "debug") },
-    { tool: "read", reuse: reuse(0, "path", "debug") },
-    { tool: "delete", reuse: reuse(2, "path", "breakpoint") },
-    { tool: "read", reuse: reuse(0, "path", "debug"), contains: "Status: stopped" },
-    { tool: "insert", args: { text: "continue" }, reuse: reuse(0, "path", "debug") },
-    { tool: "read", reuse: reuse(0, "path", "debug") },
-    { tool: "delete", reuse: reuse(0, "path", "debug") },
-  ].map((step, index) => ({ ...step, ...(index > 0 && { after: [index - 1] }) })),
+    {
+      tool: "insert",
+      args: { text: "step out" },
+      reuse: reuse(0, "path", "debug"),
+      after: [9, 10],
+    },
+    { tool: "read", reuse: reuse(0, "path", "debug"), after: [11] },
+    { tool: "delete", reuse: reuse(2, "path", "breakpoint"), after: [3, 11] },
+    {
+      tool: "read",
+      reuse: reuse(0, "path", "debug"),
+      contains: "Status: stopped",
+      after: [13],
+    },
+    {
+      tool: "insert",
+      args: { text: "continue" },
+      reuse: reuse(0, "path", "debug"),
+      after: [12, 14],
+    },
+    { tool: "read", reuse: reuse(0, "path", "debug"), after: [15] },
+    { tool: "delete", reuse: reuse(0, "path", "debug"), after: [16] },
+  ],
   {
     files: {
       "task.py":
@@ -3523,7 +3543,7 @@ add(
 add(
   "debug-backend-fallback",
   ["debug.backend-vscode-refusal", "debug.backend-native"],
-  "Discover debug and call it with adapter debugpy, program task.py and backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line, start, evaluate value while stopped, and delete the session. Report value in plain digits. Do not change source files.",
+  "Discover debug and call it with adapter debugpy, program task.py and backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line and wait for its Insert result before starting. After Start returns, evaluate value while stopped. Wait for the evaluation result before deleting the session. Report value in plain digits. Do not change source files.",
   [
     {
       tool: "debug",
@@ -3662,7 +3682,7 @@ add(
     "compose.symbol-read-rename",
     "compose.capture-uuid-source",
   ],
-  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Then replace the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
+  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Wait for that refusal result before replacing the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
   [
     { tool: "lsp_search", args: { declaration: /^task.ts#.*count$/ }, contains: "count" },
     {
