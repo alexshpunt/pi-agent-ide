@@ -363,6 +363,7 @@ async function inspectAnchors(
     field,
     path: source,
     anchor: requiredValue(anchors[anchorIndex]),
+    ...(context.partialArgs !== undefined && { stoppedEarly: true }),
     ...(readContext.length > 0 && { context: readContext }),
   };
 

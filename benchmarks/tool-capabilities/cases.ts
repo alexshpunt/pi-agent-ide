@@ -3223,7 +3223,7 @@ add(
 add(
   "stale-line-anchor-literal-collision",
   ["edit.stale-line-anchor-literal-collision", "edit.anchor-shaped-literal-search"],
-  "Read task.txt with anchors and wait for its result. Replace OLD with NEW using the issued line-2 anchor. Wait for success, then Insert BLOCKED using that old line-2 anchor; it must fail as stale even though its bytes occur literally elsewhere. After that refusal, attempt Replace with that same stale anchor as start and text BLOCKED; it must also fail without writes. Then Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. This Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
+  "Read task.txt with anchors and wait for its result. Replace OLD with NEW using the issued line-2 anchor and wait for success. After that successful change, attempt both Insert BLOCKED using the old line-2 anchor and Replace with that same stale anchor as start and text BLOCKED. Both must fail without writes even though the anchor bytes occur literally elsewhere. The guard may intentionally stop streaming before text arrives; that is the stale refusal, not a missing-payload mistake. Do not retry an already refused call. Independently, Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. The two stale checks and the Search chain need not wait for each other. The Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", args: { path: "task.txt" }, reuse: reuse(0, "start", "anchor") },
@@ -3239,9 +3239,9 @@ add(
       args: { path: "task.txt" },
       reuse: reuse(0, "start", "anchor"),
       error: true,
-      after: [2],
+      after: [1],
     },
-    { tool: "search", args: { path: "task.txt", query: "D07BBXQ" }, after: [3] },
+    { tool: "search", args: { path: "task.txt", query: "D07BBXQ" } },
     { tool: "replace", reuse: reuse(4) },
   ],
   {
