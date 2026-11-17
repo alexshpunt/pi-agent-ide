@@ -28,13 +28,19 @@ function result(mode: string, index: number, text: string, source = "task.ts") {
   const id = `RESULT#${ids[index]}`;
   const matchId = `RESULT#${ids[index + 4]}`;
   return mode === "codemode"
-    ? { id, complete: true, matches: [{ path: source, line: 2, text, lineText: second, id: matchId }] }
+    ? {
+        id,
+        complete: true,
+        matches: [{ path: source, line: 2, text, lineText: second, id: matchId }],
+      }
     : {
         data: {
           kind: "matches",
           target: id,
           complete: true,
-          matches: [{ source, matchedText: text, target: matchId, range: { startLine: 2, endLine: 2 } }],
+          matches: [
+            { source, matchedText: text, target: matchId, range: { startLine: 2, endLine: 2 } },
+          ],
         },
       };
 }
@@ -104,7 +110,9 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(check([calls[0] as Call, ...calls]));
     for (const index of [0, 1]) {
       const absolute = chain(mode);
-      const match = required((data(required(absolute[index]).value).matches as Record<string, unknown>[])[0]);
+      const match = required(
+        (data(required(absolute[index]).value).matches as Record<string, unknown>[])[0],
+      );
       match[mode === "codemode" ? "path" : "source"] = "/workspace/fixture/task.ts";
       assert.ok(check(absolute));
     }
