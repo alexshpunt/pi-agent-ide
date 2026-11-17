@@ -38,6 +38,7 @@ test("Read failures name the issued mutation result, not its private target", as
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [
+        path.resolve("tests/integration/fixtures/issued-reference-provider.ts"),
         path.resolve("src/pi-agent-ide.ts"),
         "builtin:codemode",
         path.resolve("tests/integration/support/move-rollback-resource.ts"),
@@ -68,6 +69,16 @@ test("Read failures name the issued mutation result, not its private target", as
           ],
           { stopReason: "toolUse" },
         ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "direct",
+              name: "read",
+              arguments: { path: { id: "$issued-item:move" } },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
         assistantMessage([text("Finished.")]),
       ],
     }).run("Observe the failed Move result without retrying it.");
@@ -86,6 +97,10 @@ test("Read failures name the issued mutation result, not its private target", as
     const references = reread.match(/RESULT#[a-f\d-]{36}/gu) ?? [];
     expect(references.length).toBeGreaterThanOrEqual(3);
     expect(new Set(references)).toEqual(new Set([moveId]));
+    expect(getToolExecution(run, "direct").isError).toBe(true);
+    expect(new Set(getToolResultText(run, "direct").match(/RESULT#[a-f\d-]{36}/gu))).toEqual(
+      new Set([moveId]),
+    );
     expect(await readFile(path.join(cwd, source), "utf8")).toBe(sourceContent);
     expect(await readFile(path.join(cwd, target), "utf8")).toBe(targetContent);
   });
