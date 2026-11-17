@@ -2623,7 +2623,7 @@ for (const scenario of ["restored", "target-failed", "target-failed-after-restor
   add(
     `move-rollback-${scenario}`,
     ["edit.move-rollback"],
-    `Move from path ${source} with start move-me and target ${target} with targetStart top and no targetEnd. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read the source and the destination in two separate later calls. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
+    `Move from path ${source} with start move-me and target ${target} with targetStart top and no targetEnd. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read the source and the destination in two separate later calls. For the Codemode route, call tools.move inside a script, wait for that script's final parent result, then call tools.read for each file in its own later Codemode call. Keep any extra inspection inside Codemode. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
     [
       {
         tool: "move",
@@ -2650,7 +2650,7 @@ for (const scenario of ["restored", "target-failed", "target-failed-after-restor
 add(
   "paired-copy",
   ["compose.paired-sources-targets"],
-  "Read a.txt and b.txt in separate calls. Also read dest-a.txt and dest-b.txt. Use copy with the a.txt and b.txt Read results as the path array and the dest-a.txt and dest-b.txt Read results as the target array, in those orders, replacing both whole destination files.",
+  "Read a.txt and b.txt in separate calls. Also read dest-a.txt and dest-b.txt. For the Codemode route, make these individual tools.read calls inside Codemode; independent reads may share a script. Call tools.copy inside Codemode too. Use copy with the a.txt and b.txt Read results as the path array and the dest-a.txt and dest-b.txt Read results as the target array, in those orders, replacing both whole destination files.",
   [
     { tool: "read", args: { path: "a.txt" } },
     { tool: "read", args: { path: "b.txt" } },
@@ -2887,7 +2887,7 @@ add(
 add(
   "git-stage-unstage-undo",
   ["git.changes", "git.stage", "git.stage-noop", "git.unstage", "git.undo-change", "discovery.git"],
-  "Replace OLD with NEW in task.txt. After the Replace result returns, Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. Wait for the Stage result before repeating stage with that anchor to confirm it succeeds as already staged. After the repeated Stage result returns, Read changes again and unstage its current CHANGE anchor. After the Unstage result returns, Read changes once more and undo that current change. Leave source and index at the original clean state.",
+  "Replace OLD with NEW in task.txt. After the Replace result returns, Read its changes view, discover stage and unstage using native tool discovery, and stage the returned CHANGE anchor. For the Codemode route, only discovery may be direct; keep Replace, every Read, Stage, Unstage and Undo inside Codemode. Wait for the Stage result before repeating stage with that anchor to confirm it succeeds as already staged. After the repeated Stage result returns, Read changes again and unstage its current CHANGE anchor. After the Unstage result returns, Read changes once more and undo that current change. Leave source and index at the original clean state.",
   [
     { tool: "replace" },
     { tool: "read", args: { path: "task.txt", views: ["changes"] }, after: [0] },
@@ -3440,7 +3440,7 @@ add(
     "debug.delete",
     "discovery.debug",
   ],
-  "Discover debug and call it with adapter debugpy and program task.py. In Codemode, discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and wait for the breakpoint Insert result before starting the debugger. After the Start result returns, evaluate value with insert evaluate value and Read the stopped session; these two calls are independent. Wait for the evaluation and both session Read results before deleting the debugger session. Report value in plain digits. Source must stay unchanged.",
+  "Discover debug and call it with adapter debugpy and program task.py. For the Codemode route, call tools.debug inside a script; only discovery may be direct. Keep every follow-up Read, Insert and Delete inside Codemode. Discovery alone does not activate shared-tool guidance; wait for the debug call to finish before choosing the follow-up arguments. First read the session using the returned debugger resource. Then use the available debugger guidance to read its source with anchors, place a breakpoint on the print line using insert breakpoint, and wait for the breakpoint Insert result before starting the debugger. After the Start result returns, evaluate value with insert evaluate value and Read the stopped session; these two calls are independent. Wait for the evaluation and both session Read results before deleting the debugger session. Report value in plain digits. Source must stay unchanged.",
   [
     { tool: "debug", args: { adapter: "debugpy", program: "task.py" } },
     { tool: "read", reuse: reuse(0, "path", "debug") },
@@ -3543,7 +3543,7 @@ add(
 add(
   "debug-backend-fallback",
   ["debug.backend-vscode-refusal", "debug.backend-native"],
-  "Discover debug and call it with adapter debugpy, program task.py and backend vscode. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line and wait for its Insert result before starting. After Start returns, evaluate value while stopped. Wait for the evaluation result before deleting the session. Report value in plain digits. Do not change source files.",
+  "Discover debug and call it with adapter debugpy, program task.py and backend vscode. For the Codemode route, make both tools.debug attempts and every follow-up Read, Insert and Delete inside Codemode; only discovery may be direct. When it reports that VS Code is unavailable, create a debugpy session with backend native instead. Wait for that debug result before choosing shared-tool arguments from the available debugger guidance. Read its source with anchors, place a breakpoint on the print line and wait for its Insert result before starting. After Start returns, evaluate value while stopped. Wait for the evaluation result before deleting the session. Report value in plain digits. Do not change source files.",
   [
     {
       tool: "debug",
