@@ -139,7 +139,7 @@ test.each(["direct", "codemode"] as const)(
                 name: "replace",
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
-                  start: "$issued-search:scope:1",
+                  start: "$issued-searchmatch:scope:1",
                   text: "ONE",
                 },
               },
@@ -147,7 +147,7 @@ test.each(["direct", "codemode"] as const)(
                 id: "list",
                 name: "replace",
                 arguments: {
-                  path: ["$issued-search:scope:1", "$issued-search:scope:2"],
+                  path: ["$issued-searchmatch:scope:1", "$issued-searchmatch:scope:2"],
                   text: "BAD",
                 },
               },
@@ -156,7 +156,7 @@ test.each(["direct", "codemode"] as const)(
                 name: "replace",
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
-                  start: "$issued-search:scope:1",
+                  start: "$issued-searchmatch:scope:1",
                   text: "BAD",
                 },
               },
@@ -182,7 +182,7 @@ test.each(["direct", "codemode"] as const)(
                 name: "replace",
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
-                  start: "$issued-search:scope:2",
+                  start: "$issued-searchmatch:scope:2",
                   text: "TWO",
                 },
               },
