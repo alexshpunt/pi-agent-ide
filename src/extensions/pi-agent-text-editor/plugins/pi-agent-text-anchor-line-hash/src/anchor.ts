@@ -112,7 +112,7 @@ function resolveLineHashAnchor(
       kind: "rejected",
       rejection: {
         code: "stale",
-        reason: `no line of the current file has anchor "${value}"; read or search again for current anchors. To select these bytes literally, use a Search result or longer exact text`,
+        reason: `Unavailable selector ${value}. Obtain a fresh reference or select a longer literal fragment.`,
       },
     };
   }
