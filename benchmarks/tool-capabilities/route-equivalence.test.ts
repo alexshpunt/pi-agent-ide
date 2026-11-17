@@ -281,6 +281,25 @@ void test("explicit-path scope retry is independent of the failed result-bound e
   );
 });
 
+for (const mode of ["direct", "codemode"]) {
+  void test(`undo-last accepts an inferred file and requires restoration in ${mode}`, () => {
+    const task = capabilityCases.find((entry) => entry.id === "undo-last");
+    assert.ok(task);
+    const calls: [Call, Call, Call] = [
+      { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+      { tool: "undo", args: { change: "last" } },
+      { tool: "read", args: { path: "task.txt" }, text: task.files?.["task.txt"] },
+    ];
+    for (const args of [{ change: "last" }, { file: "task.txt", change: "last" }])
+      assert.ok(check(task.steps, [calls[0], { ...calls[1], args }, calls[2]], mode));
+    for (const args of [{}, { change: "CHANGE#ABCD" }])
+      assert.ok(!check(task.steps, [calls[0], { ...calls[1], args }, calls[2]], mode));
+    assert.ok(!check(task.steps, [calls[0], { ...calls[1], error: true }, calls[2]], mode));
+    assert.ok(!check(task.steps, [calls[1], calls[0], calls[2]], mode));
+    assert.ok(!check(task.steps, [calls[0], calls[2], calls[1]], mode));
+    assert.ok(!check(task.steps, [calls[0], calls[1], { ...calls[2], text: "NEW" }], mode));
+  });
+}
 void test("shell roundtrip accepts one multi-source Read without losing any source provenance", () => {
   const writeId = "22222222-aaaa-4aaa-8aaa-222222222222";
   const insertId = "33333333-aaaa-4aaa-8aaa-333333333333";
@@ -300,11 +319,9 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
     {
       tool: "read",
       args: { path: sources },
-      text: `<uuid>${uuid}</uuid>\nhello`,
-      value: sources.map((_, index) => ({
-        id: `RESULT#44444444-aaaa-4aaa-8aaa-44444444444${index}`,
-        text: "hello",
-      })),
+      text: `<system-result><uuid>${uuid}</uuid></system-result>\n${sources
+        .map(() => "--- shell:input-check ---\nhello")
+        .join("\n")}`,
     },
     {
       tool: "replace",
