@@ -15,7 +15,12 @@ const groups: [string[], string[]][] = [
     ["deferred-navigation-recovery"],
   ],
   [
-    ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
+    [
+      "standalone.discovery",
+      "standalone.read-search-edit",
+      "standalone.resource-bounds",
+      "standalone.refusal-classification",
+    ],
     ["standalone-resource-host"],
   ],
   [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
