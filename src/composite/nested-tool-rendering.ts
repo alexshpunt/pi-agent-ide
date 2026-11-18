@@ -420,14 +420,15 @@ export function createNestedIdeRendering(
       const details = compactMutationDetails(batch.result.details);
       const lastChangedCall = batch.calls.findLast((id) => !batch.unchangedCalls?.includes(id));
       const callIdsByResult: readonly unknown[] =
-        "callIdsByResult" in details && Array.isArray(details.callIdsByResult)
-          ? details.callIdsByResult
+        "callIdsByResult" in batch.result.details &&
+        Array.isArray(batch.result.details.callIdsByResult)
+          ? batch.result.details.callIdsByResult
           : [];
       for (const id of batch.calls) {
         const call = group.calls.find((call) => call.id === id);
         if (!call) continue;
         const postWriteResults =
-          details.results?.filter(
+          batch.result.details.results?.filter(
             (result, index) =>
               (callIdsByResult[index] === id ||
                 (callIdsByResult.length === 0 && batch.calls.length === 1)) &&
@@ -441,7 +442,7 @@ export function createNestedIdeRendering(
           delete call.renderArgs;
           retainResult(group, call, {
             content: batch.result.content,
-            details: { results: postWriteResults, effect: "applied" },
+            details: compactMutationDetails({ results: postWriteResults, effect: "applied" }),
             isError: true,
           });
           continue;
@@ -483,7 +484,8 @@ export function createNestedIdeRendering(
           if (new Set(details.mutationRender?.map((resource) => resource.path)).size > 1)
             call.renderArgs = {};
           call.rollback =
-            details.results?.some((result) => result.data.rollback !== undefined) === true;
+            batch.result.details.results?.some((result) => result.data.rollback !== undefined) ===
+            true;
           const targetUnavailable = (call.result?.details as FileMutationBatchResult | undefined)
             ?.metadata?.targetUnavailable;
           retainResult(group, call, {

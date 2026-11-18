@@ -822,14 +822,10 @@ export async function executeRegisteredTextBatch(
     callIdsByDisplayResult.push(...failureResults.map(() => failure.callId));
   }
 
+  // Progress goes to RPC before tool_result can project the engine's snapshots for display.
   onUpdate?.({
     content: [{ type: "text", text: "post-edit progress" }],
-    details: {
-      results: [...results],
-      callIdsByResult: [...callIdsByResult],
-      displayResults: [...displayResults],
-      callIdsByDisplayResult: [...callIdsByDisplayResult],
-    },
+    details: { results: undefined, callIdsByResult: [] },
   });
   const result = textBatchResult(results, callIdsByResult, displayResults, callIdsByDisplayResult);
   return mutationResults.size === 0

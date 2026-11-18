@@ -96,6 +96,27 @@ function displayPath(source: string, cwd: string): string {
     ? source.slice(root.length)
     : source;
 }
+async function boundEditorBatchReceipts(details: unknown, save: (text: string) => Promise<string>) {
+  if (
+    typeof details !== "object" ||
+    details === null ||
+    !("editorBatches" in details) ||
+    !("editorBatchResults" in details)
+  )
+    return undefined;
+  const { editorBatches, editorBatchResults, ...rest } = details;
+  const receipts = JSON.stringify({ editorBatches, editorBatchResults });
+  if (Buffer.byteLength(receipts) <= 24 * 1024) return undefined;
+  // A disk failure must not change the outcome of already committed edits.
+  const fullOutput = await save(receipts).catch(() => undefined);
+  return {
+    ...rest,
+    editorBatchReceipts: {
+      truncated: true,
+      ...(fullOutput === undefined ? {} : { fullOutput }),
+    },
+  };
+}
 /** Keep tool records private while strings carry registered composition references. */
 export function createIdeTextResults(
   pi: ExtensionAPI,
@@ -511,6 +532,9 @@ export function createIdeTextResults(
           batchOperations(event.details, (source) => displayPath(source, context.cwd)),
         );
         const failures = ledger.take(event.toolCallId);
+        // Nested rendering and failure reporting have consumed the full edit receipts.
+        // Keep small receipts inline and retain larger ones locally instead of repeating them in RPC.
+        const details = await boundEditorBatchReceipts(event.details, saveFullOutput);
         const warnings = searchWarnings.get(event.toolCallId) ?? [];
         searchWarnings.delete(event.toolCallId);
         const confirmations = receipts.get(event.toolCallId) ?? [];
@@ -541,6 +565,7 @@ export function createIdeTextResults(
             ? undefined
             : await limitIdeOutput([{ type: "text", text: failures }], "", saveFullOutput);
         return {
+          ...(details === undefined ? {} : { details }),
           content: [
             ...(limited.textTruncated
               ? [{ type: "text" as const, text: limited.text }]

@@ -17,6 +17,7 @@ import {
   projectTypingResources,
 } from "./mutation-projection.ts";
 import { resolveMutationResultResources } from "./mutation-result.ts";
+import { compactMutationDetails } from "./persisted-result.ts";
 import { TYPING_FRAME_INTERVAL_MS, TypingInterpolation } from "./typing-interpolation.ts";
 
 import type { MutationRenderResource } from "./render-resource.ts";
@@ -141,6 +142,7 @@ function createRenderer(
   return {
     tool,
     fallback: true,
+    persistResult: compactMutationDetails,
     renderCall(arguments_, theme, context) {
       const component = panel(context.lastComponent, theme, false);
       const input = asInput(arguments_);
@@ -267,7 +269,14 @@ function createRenderer(
 
       state.panel?.setBackground(context.isError ? "toolErrorBg" : "toolSuccessBg");
       cancelPreviewWorker(state);
-      const resources = resolveMutationResultResources(result.details, viewports, false);
+      const details = result.details;
+      const truncated =
+        details &&
+        "mutationDetailsTruncated" in details &&
+        details.mutationDetailsTruncated === true
+          ? theme.fg("warning", "Edit display shortened to fit the saved-result limit.")
+          : "";
+      const resources = resolveMutationResultResources(details, viewports, false);
 
       if (!context.isError && resources.length > 0) {
         const typing = state.typing;
@@ -280,7 +289,7 @@ function createRenderer(
           typing.finish(performance.now());
           state.pendingResult = { details: result.details, expanded: options.expanded, theme };
           ensureTypingTimer(state);
-          return new Text("", 0, 0);
+          return new Text(truncated, 0, 0);
         }
 
         applyResultResources(
@@ -293,15 +302,20 @@ function createRenderer(
           theme,
         );
         return new Text(
-          registration.name === "copy" &&
+          [
+            registration.name === "copy" &&
             typeof result.details.metadata?.targetUnavailable === "string"
-            ? theme.fg(
-                "muted",
-                result.details.metadata.targetUnavailable === NO_TEXT_TARGET
-                  ? `No verified text selection. ${NO_TEXT_TARGET}`
-                  : "No verified text selection. Read the destination before further edits.",
-              )
-            : "",
+              ? theme.fg(
+                  "muted",
+                  result.details.metadata.targetUnavailable === NO_TEXT_TARGET
+                    ? `No verified text selection. ${NO_TEXT_TARGET}`
+                    : "No verified text selection. Read the destination before further edits.",
+                )
+              : "",
+            truncated,
+          ]
+            .filter(Boolean)
+            .join("\n"),
           0,
           0,
         );
@@ -348,7 +362,10 @@ function createRenderer(
           [
             theme.fg(summary.color, summary.text + unavailable),
             ...summary.diffStatuses.map((status) => theme.fg(status.tone ?? "muted", status.text)),
-          ].join("\n"),
+            truncated,
+          ]
+            .filter(Boolean)
+            .join("\n"),
           0,
           0,
         );
@@ -374,9 +391,12 @@ function createRenderer(
               : userFacingFailure(output, result.details)
         : output;
       return new Text(
-        displayedOutput.length === 0
-          ? ""
-          : theme.fg(context.isError ? "error" : "toolOutput", displayedOutput),
+        [
+          displayedOutput && theme.fg(context.isError ? "error" : "toolOutput", displayedOutput),
+          truncated,
+        ]
+          .filter(Boolean)
+          .join("\n"),
         0,
         0,
       );

@@ -1,10 +1,13 @@
 import {
-  FileMutationResult,
+  compactMutationReceipt,
+  type CompactMutationReceipt,
   type FileMutationBatchResult,
   type MutationDiffStatus,
 } from "pi-agent-text-editor/api/mutation-result";
 import { resolveMutationResultResources } from "./mutation-result.ts";
-import type { DiffModel } from "./diff-model.ts";
+import type { DiffModel, DiffRow } from "./diff-model.ts";
+
+const WINDOW_BYTES = 16 * 1024;
 
 /** Width- and theme-independent fragments retained in session history. */
 export interface PersistedMutationResource {
@@ -14,40 +17,51 @@ export interface PersistedMutationResource {
 }
 
 /** Completed history owns diff fragments, not the engine's document snapshots. */
-export interface PersistedMutationDetails extends FileMutationBatchResult {
+export interface PersistedMutationDetails extends CompactMutationReceipt {
   readonly mutationRender?: readonly PersistedMutationResource[];
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value));
 }
 
 /** Projects a finished result after its model-facing answer has been prepared. */
 export function compactMutationDetails(details: FileMutationBatchResult): PersistedMutationDetails {
   const resources = resolveMutationResultResources(details, undefined);
-  const { displayResults: _display, ...rest } = details as FileMutationBatchResult & {
-    displayResults?: unknown;
-  };
+  const receipt = compactMutationReceipt(details);
+  // Share one budget across the entire result. Charge for escaped JSON, not string length.
+  const mutationRender: PersistedMutationResource[] = [];
+  let remaining = WINDOW_BYTES;
+  let truncated = receipt.mutationDetailsTruncated === true;
+  for (const { path, model, diffStatuses } of resources) {
+    if (model === undefined) continue;
+    const rows: DiffRow[] = [];
+    const window = {
+      path,
+      model: { ...model, rows },
+      ...(diffStatuses === undefined ? {} : { diffStatuses }),
+    };
+    remaining -= jsonBytes(window) + 1;
+    if (remaining < 0) {
+      truncated = true;
+      break;
+    }
+    for (const row of model.rows) {
+      const size = jsonBytes(row) + 1;
+      if (remaining < size) {
+        truncated = true;
+        break;
+      }
+      remaining -= size;
+      rows.push(row);
+    }
+    // Find the actual focus in the kept prefix, or show the final kept row.
+    window.model.focusRow = Math.max(0, Math.min(model.focusRow, rows.length - 1));
+    mutationRender.push(window);
+  }
   return {
-    ...rest,
-    results: details.results?.map((value) => {
-      const result = FileMutationResult.ensure(value);
-      const {
-        beforeContentMap: _before,
-        afterContent: _after,
-        afterDocument: _document,
-        snapshot: _snapshot,
-        activeEdits: _active,
-        inputEdits: _input,
-        beforeReadText: _read,
-        rawChanges: _changes,
-
-        diffPeerRanges: _peerRanges,
-        diffs: _diffs,
-        ...data
-      } = result.data;
-      return new FileMutationResult(data);
-    }),
-    mutationRender: resources.flatMap(({ path, model, diffStatuses }) =>
-      model === undefined
-        ? []
-        : [{ path, model, ...(diffStatuses === undefined ? {} : { diffStatuses }) }],
-    ),
+    ...receipt,
+    mutationRender,
+    ...(truncated ? { mutationDetailsTruncated: true } : {}),
   };
 }
