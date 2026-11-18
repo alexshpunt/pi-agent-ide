@@ -169,10 +169,10 @@ add(
   },
 );
 add(
-  // Fresh deferred-tool session; already-active guidance is covered by deterministic tests.
+  // Use a fresh session to exercise discovery before direct calls.
   "deferred-navigation-recovery",
   ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
-  'In direct mode, discover ast_search, lsp_search, diff and undo through tool_search before using them. In Codemode, call the session tools directly; discovery is optional. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff with the literal path strings before: "task.ts" and after: "task.ts"; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt. Wait for the Replace result before using undo with change: "last" to revert that edit. After the Undo result returns, Read task.txt and report its restored marker. Preserve both files.',
+  'In direct mode, discover ast_search, lsp_search, diff and undo through tool_search before using them. In Codemode, call the named tools through tools without loading them first. Use ast_search to find probe($ARG) in task.ts and lsp_search to find the symbol probe. Compare task.ts with itself using diff with the literal path strings before: "task.ts" and after: "task.ts"; in Codemode its value must be an empty string. Replace OLD with NEW in task.txt. Wait for the Replace result before using undo with change: "last" to revert that edit. After the Undo result returns, Read task.txt and report its restored marker. Preserve both files.',
   [
     {
       tool: "tool_search",
