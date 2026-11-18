@@ -16,6 +16,142 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 const SOURCE = 'export function greet() { return "greet"; }\n';
 const USAGE = 'import { greet } from "./source";\nexport const answer = greet();\n';
 
+const OVERLOADS = `struct Vec { int x; };
+int normalize(int v) { return v; }
+int normalize(const Vec& v) { return v.x; }
+int main() {
+  auto argument = Vec{2};
+  return normalize(1) + normalize(argument);
+}
+`;
+
+const RAW_LITERAL = `[] { if constexpr (sizeof(R"(\n// x\n)") < 10) return Vec{2}; else return 2; }()`;
+const LITERAL_OVERLOADS = OVERLOADS.replace("Vec{2}", RAW_LITERAL);
+async function renameOverload(cwd: string, mode: "write" | "stall" | "binding" | "literal") {
+  const file = path.join(cwd, "main.cpp");
+  await writeFile(file, mode === "literal" ? LITERAL_OVERLOADS : OVERLOADS);
+  await writeFile(path.join(cwd, "compile_flags.txt"), "-std=c++17\n");
+  await mkdir(path.join(cwd, ".tmp/edit-window"), { recursive: true });
+  await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+  await writeFile(
+    path.join(cwd, ".pi/pi-agent-ide/lsp-servers.json"),
+    JSON.stringify({
+      version: 1,
+      servers: {
+        clangd: {
+          command: [
+            process.execPath,
+            path.resolve("tests/integration/fixtures/clangd-rename-window.mjs"),
+            mode,
+          ],
+          transport: "stdio",
+          rootMarkers: [],
+          languages: { cpp: { extensions: [".cpp"] } },
+          capabilities: ["diagnostics"],
+        },
+      },
+    }),
+  );
+  if (mode === "write")
+    await writeFile(
+      path.join(cwd, ".tmp/edit-window/write.json"),
+      JSON.stringify({ file: "main.cpp", prepend: "// after plan\n", repeat: true }),
+    );
+  const declaration = "main.cpp#normalize(const Vec&)";
+  const rename = (id: string) =>
+    assistantMessage(
+      [
+        toolCall({
+          id,
+          name: "replace",
+          arguments: {
+            path: { id: `fixture:declaration:${declaration}#name` },
+            text: "normalizeVec",
+          },
+        }),
+      ],
+      { stopReason: "toolUse" },
+    );
+  const run = await new PiIntegrationTest(
+    withDeclarationSelections({
+      testName: `lsp-rename-window-clang-${mode}`,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [
+        path.resolve("src/pi-agent-ide.ts"),
+        path.resolve("tests/integration/fixtures/write-in-edit-window.ts"),
+      ],
+      tools: ["replace"],
+      timeoutMs: 45_000,
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "select", name: "lsp_search", arguments: { declaration } })],
+          { stopReason: "toolUse" },
+        ),
+        rename("rename"),
+        ...(mode === "stall" ? [rename("repeat")] : []),
+        assistantMessage([text("Done.")]),
+      ],
+    }),
+  ).run("Rename only the Vec overload while a peer writes the file.");
+  return {
+    run,
+    content: await readFile(file, "utf8"),
+    events: (await readFile(path.join(cwd, ".tmp/rename-requests"), "utf8")).trim().split("\n"),
+  };
+}
+
+test("an exact clangd overload rename survives writes before the server replies and before the edit", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "write");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(["rename"]);
+    expect(content).toBe(
+      "// after plan\n" +
+        OVERLOADS.replace("normalize(const Vec&", "normalizeVec(const Vec&").replace(
+          "normalize(argument)",
+          "normalizeVec(argument)",
+        ) +
+        "// during rename\n",
+    );
+  });
+}, 50_000);
+
+test("a stalled rename refresh and an immediate repeat each cancel without writing", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "stall");
+    expect(getToolExecution(run, "rename").isError).toBe(true);
+    expect(getToolExecution(run, "repeat").isError).toBe(true);
+    expect(events).toEqual(["rename", "rename", "cancel", "rename", "cancel"]);
+    expect(content).toBe(OVERLOADS + "int added() { return normalize(Vec{3}); }\n");
+  });
+}, 50_000);
+
+test("a change to an argument type refreshes the overload binding before renaming", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "binding");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(["rename", "rename"]);
+    expect(content).toBe(
+      OVERLOADS.replace("Vec{2}", "2").replace("normalize(const Vec&", "normalizeVec(const Vec&"),
+    );
+  });
+}, 50_000);
+
+test("a comment-like line in a raw literal does not reuse the old overload binding", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "literal");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(["rename", "rename"]);
+    expect(content).toBe(
+      LITERAL_OVERLOADS.replace("// x", "// a longer raw string").replace(
+        "normalize(const Vec&",
+        "normalizeVec(const Vec&",
+      ),
+    );
+  });
+}, 50_000);
 /**
  * Rename `greet` through the TypeScript language server while another session writes `file`
  * once, after the rename is planned and before it is written.

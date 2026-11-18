@@ -14,6 +14,7 @@ const marker = ".tmp/edit-window/write.json";
 const afterPlanMarker = ".tmp/edit-window/after-plan";
 
 interface WindowWrite {
+  readonly repeat?: boolean;
   readonly file: string;
   /** Text inserted at the start of the file, like another session adding lines above. */
   readonly prepend?: string;
@@ -66,7 +67,7 @@ export default async function writeInEditWindow(pi: ExtensionAPI): Promise<void>
               ...state,
               async planEdit() {
                 const planned = await plan();
-                if (pending) {
+                if (pending || write.repeat === true) {
                   pending = false;
                   await writeFileOnce();
                   await mkdir(path.dirname(path.join(state.cwd, afterPlanMarker)), {

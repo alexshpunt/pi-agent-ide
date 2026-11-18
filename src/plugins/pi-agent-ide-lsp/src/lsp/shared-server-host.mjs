@@ -538,6 +538,15 @@ function openSession(socket, started) {
       uri !== undefined && owned && document && document.text === owned.text
         ? { uri, server: document.version, session: owned.version }
         : undefined;
+    const renameVersions =
+      method === "textDocument/rename"
+        ? new Map(
+            [...session.documents].map(([uri, copy]) => {
+              const active = documents.get(uri);
+              return [uri, active?.text === copy.text ? active.version : undefined];
+            }),
+          )
+        : undefined;
     const cancellation = new CancellationTokenSource();
     const forward = token.onCancellationRequested(() => cancellation.cancel());
     session.requests.add(cancellation);
@@ -553,6 +562,11 @@ function openSession(socket, started) {
         throw new ResponseError(
           SHARED_SOURCE_CHANGED,
           "The language server text changed while listing symbols.",
+        );
+      if (renameVersions && !unversionedRenameMatches(result, renameVersions))
+        throw new ResponseError(
+          SHARED_SOURCE_CHANGED,
+          "The language server text changed during rename.",
         );
       return sessionVersions(session, result, sent);
     } finally {
@@ -714,6 +728,31 @@ function sessionVersions(session, value, sent) {
     mapped.textDocument = { ...identifier, version: current ? owned.version : -1 };
   }
   return mapped;
+}
+
+/**
+ * Unversioned edits for an already-open participant are usable only if the session's text
+ * was active when the request started and that server revision stayed active. Unopened
+ * participants are only discovered here; the planner synchronizes them before using edits.
+ * @param {unknown} result
+ * @param {Map<string, number | undefined>} versions
+ */
+function unversionedRenameMatches(result, versions) {
+  const edit = /** @type {{
+    changes?: Record<string, unknown>;
+    documentChanges?: { textDocument?: { uri: string; version?: number | null } }[];
+  } | null} */ (result);
+  const uris = [
+    ...Object.keys(edit?.changes ?? {}),
+    ...(edit?.documentChanges ?? []).flatMap(({ textDocument }) =>
+      textDocument && textDocument.version == null ? [textDocument.uri] : [],
+    ),
+  ];
+  return uris.every((uri) => {
+    if (!versions.has(uri)) return true;
+    const version = versions.get(uri);
+    return version !== undefined && documents.get(uri)?.version === version;
+  });
 }
 
 /** @param {unknown} parameters */

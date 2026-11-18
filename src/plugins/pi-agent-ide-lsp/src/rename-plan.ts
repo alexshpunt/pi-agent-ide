@@ -1,12 +1,17 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ResultTargetStore } from "pi-agent-resource";
-import { type NameCaptures, currentNameCapture } from "./name-captures.ts";
-import type { TextEditPlan, TextPreEditState } from "pi-agent-text-editor/api/edit-pipeline";
+import { ResourceError, type ResultTargetStore } from "pi-agent-resource";
+import { diffLines } from "diff";
+import { type NameCapture, type NameCaptures, currentNameCapture } from "./name-captures.ts";
+import type {
+  TextEditPlan,
+  TextEditPlanChange,
+  TextPreEditState,
+} from "pi-agent-text-editor/api/edit-pipeline";
 import type { LspManagerProvider } from "./manager-provider.ts";
 import { resolveLspRenameTarget } from "./lsp/code-views.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
-import { sourceChanged } from "./lsp/source-changes.ts";
+import { SOURCE_CHANGED, sourceChanged } from "./lsp/source-changes.ts";
 import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.ts";
 import type { LspClient } from "./lsp/client.ts";
 import type { LspPosition } from "./lsp/types.ts";
@@ -44,30 +49,100 @@ function renameEntries(edit: LspWorkspaceEdit | null, client: LspClient) {
   }
   return entries;
 }
-function offset(content: string, position: LspPosition): number {
-  const lines = content.split("\n");
-  const line = lines[position.line];
-  if (
-    !Number.isInteger(position.line) ||
-    position.line < 0 ||
-    line === undefined ||
-    !Number.isInteger(position.character) ||
-    position.character < 0 ||
-    position.character > line.replace(/\r$/u, "").length
-  )
-    throw new Error("The language server returned an invalid text position.");
-  return (
-    lines.slice(0, position.line).reduce((total, value) => total + value.length + 1, 0) +
-    position.character
-  );
+function offsets(content: string): (position: LspPosition) => number {
+  let start = 0;
+  const lines = content.split("\n").map((line) => {
+    const span = { start, length: line.replace(/\r$/u, "").length };
+    start += line.length + 1;
+    return span;
+  });
+  return ({ line, character }) => {
+    const span = lines[line];
+    if (
+      !Number.isInteger(line) ||
+      line < 0 ||
+      span === undefined ||
+      !Number.isInteger(character) ||
+      character < 0 ||
+      character > span.length
+    )
+      throw new Error("The language server returned an invalid text position.");
+    return span.start + character;
+  };
 }
 
 /**
- * Prepare a server rename for the shared guarded editor, never a textual rename fallback. The
- * editor plans the rename in each attempt of the edit, as it resolves the targets of other edits.
- * When another process writes a participant before the edit writes it, the rename is planned
- * again on the current text, and a symbol that is gone fails as before.
+ * Reuse native identifier edits only across trivia changes. An altered argument type can
+ * change which overload a call binds to without touching any line that names the overload.
  */
+function rebaseRename(
+  before: string,
+  current: string,
+  changes: readonly TextEditPlanChange[],
+  oldName: string,
+  newName: string,
+  languageId: string,
+): readonly TextEditPlanChange[] | undefined {
+  // A line that looks like a comment can be literal text or part of a spliced line.
+  if (
+    !C_LANGUAGES.has(languageId) ||
+    /R"|__LINE__|__builtin_LINE|(?:\\|\?\?\/)[ \t]*\r?\n/u.test(before)
+  )
+    return undefined;
+  const identifier = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
+  if (!identifier.test(oldName) || !identifier.test(newName)) return undefined;
+  if (
+    changes.some(({ from, to, insert }) => insert !== newName || before.slice(from, to) !== oldName)
+  )
+    return undefined;
+  const hunks = diffLines(before, current, { timeout: 500 });
+  if (hunks === undefined) return undefined;
+  const sorted = changes.toSorted((a, b) => a.from - b.from);
+  const remapped: TextEditPlanChange[] = [];
+  let fromOffset = 0;
+  let toOffset = 0;
+  for (const hunk of hunks) {
+    const length = hunk.value.length;
+    if (hunk.added || hunk.removed) {
+      const harmless = hunk.value
+        .split("\n")
+        .every(
+          (line) =>
+            /^[ \t]*\r?$/u.test(line) ||
+            (/^[ \t]*\/\/[^\\@#\r]*\r?$/u.test(line) &&
+              !line.includes("*/") &&
+              !line.includes("??/")),
+        );
+      if (!harmless || hunk.value.includes(oldName) || hunk.value.includes(newName))
+        return undefined;
+    } else {
+      const shift = toOffset - fromOffset;
+      let change = sorted[remapped.length];
+      while (change !== undefined && change.from < fromOffset + length) {
+        if (change.from < fromOffset || change.to > fromOffset + length) return undefined;
+        remapped.push({ ...change, from: change.from + shift, to: change.to + shift });
+        change = sorted[remapped.length];
+      }
+    }
+    if (!hunk.added) fromOffset += length;
+    if (!hunk.removed) toOffset += length;
+  }
+  return remapped.length === changes.length ? remapped : undefined;
+}
+
+const C_LANGUAGES = new Set(["c", "cpp", "objective-c", "objective-cpp"]);
+const REFRESH_BUDGET_MS = 4_000;
+/** An immediate repeat of a contended selection is a refresh too, not another cold request. */
+const contendedCaptures = new WeakSet<NameCapture>();
+
+function sourceMoved(error: unknown): boolean {
+  return (
+    (error instanceof ResourceError && error.code === "RESOURCE_CHANGED") ||
+    (error as { code?: unknown } | null)?.code === SOURCE_CHANGED
+  );
+}
+
+/** Prepare native edits for the guarded editor; never fall back to a textual rename. */
 export function prepareSymbolRename(
   state: TextPreEditState,
   managerFor: LspManagerProvider,
@@ -78,6 +153,9 @@ export function prepareSymbolRename(
   const selected = captures.find(input);
   if (selected === undefined) return undefined;
   const capture = captures.get(input.path);
+  const started = performance.now();
+  let cached: TextEditPlan | undefined;
+  let refreshStarted = false;
   return {
     ...state,
     // Planning failures use the resolved file, not the opaque selection, as their source.
@@ -95,12 +173,50 @@ export function prepareSymbolRename(
             "Omit start/end. Use replace with " +
             JSON.stringify({ path: selected.reference, text: "newName" }),
         );
-      const request: RenameRequest = { ...capture, newName: input.text };
-      return withLspDocuments(() =>
-        planRename(state, request, managerFor, () =>
-          currentNameCapture(resultTargets, input.path, state.cwd, state.signal),
-        ),
-      );
+      state.signal?.throwIfAborted();
+      if (cached !== undefined) return cached;
+      const exhausted = () =>
+        new Error(
+          `The rename could not catch up with newer text after ${((performance.now() - started) / 1000).toFixed(1)} s. Nothing was written. Let the other edit finish, then run lsp_search again and use the new name capture.`,
+        );
+      if (refreshStarted) throw exhausted();
+      const deadline = contendedCaptures.has(capture)
+        ? AbortSignal.timeout(REFRESH_BUDGET_MS)
+        : undefined;
+      refreshStarted = deadline !== undefined;
+      const signal =
+        deadline && state.signal
+          ? AbortSignal.any([deadline, state.signal])
+          : (deadline ?? state.signal);
+      try {
+        const request: RenameRequest = { ...capture, newName: input.text };
+        const plan = await withLspDocuments(() =>
+          planRename(state.cwd, signal, request, managerFor, () =>
+            currentNameCapture(resultTargets, input.path, state.cwd, signal),
+          ),
+        );
+        cached = {
+          files: plan.files.map((file) => ({
+            ...file,
+            rebase(current) {
+              const mapped = file.rebase?.(current);
+              if (mapped === undefined) {
+                cached = undefined;
+                contendedCaptures.add(capture);
+              }
+              return mapped;
+            },
+          })),
+        };
+        return cached;
+      } catch (error) {
+        state.signal?.throwIfAborted();
+        if (deadline?.aborted) throw exhausted();
+        if (!sourceMoved(error)) throw error;
+        contendedCaptures.add(capture);
+        if (refreshStarted) throw exhausted();
+        throw error;
+      }
     },
     metadata: {
       ...state.metadata,
@@ -117,14 +233,18 @@ interface RenameRequest {
 }
 
 async function planRename(
-  state: TextPreEditState,
+  cwd: string,
+  signal: AbortSignal | undefined,
   { source, selector, newName }: RenameRequest,
   managerFor: LspManagerProvider,
   capture: () => ReturnType<typeof currentNameCapture>,
 ): Promise<TextEditPlan> {
-  const manager = await managerFor(state.cwd, source, state.signal);
-  const target = await resolveLspRenameTarget(manager, source, selector, state.cwd, state.signal);
   const selected = await capture();
+  const content = selected.target.expectedContent;
+  if (selected.target.source !== source)
+    throw new Error("The name capture no longer identifies this declaration. Repeat lsp_search.");
+  const manager = await managerFor(cwd, source, signal);
+  const target = await resolveLspRenameTarget(manager, source, selector, cwd, content, signal);
   // A capture from any redeclaration names the same symbol, but never a sibling overload.
   const entry = target.entries.find(
     ({ selectionRange: { start, end } }) =>
@@ -133,75 +253,84 @@ async function planRename(
       selected.range.end.lineNumber === end.line + 1 &&
       selected.range.end.column === end.character,
   );
-  if (
-    entry === undefined ||
-    selected.target.source !== source ||
-    selected.target.expectedContent !== target.content
-  )
+  if (entry === undefined)
     throw new Error("The name capture no longer identifies this declaration. Repeat lsp_search.");
   const position = entry.selectionRange.start;
-  await loadQueryProject(target.client, target.uri, state.signal);
   const fileOf = (uri: string) => (uri.startsWith("ssh://") ? uri : fileURLToPath(uri));
-  const errorsOf = diagnosticErrors(
-    (uri) => manager.openFile(fileOf(uri), state.cwd, "symbols", state.signal),
-    state.signal,
-  );
+  const { client, uri: targetUri } = target;
+  const snapshots = new Map([
+    [targetUri, { file: source, content, version: client.documentVersion(targetUri) }],
+  ]);
+  function checkSnapshots() {
+    signal?.throwIfAborted();
+    for (const [uri, before] of snapshots) {
+      if (
+        client.documentVersion(uri) !== before.version ||
+        client.documentContent(uri) !== before.content
+      )
+        throw sourceChanged(
+          "A rename participant changed on the language server. No edits applied.",
+        );
+    }
+  }
+  const errorsOf = diagnosticErrors((uri) => {
+    const snapshot = snapshots.get(uri);
+    return manager.openFile(
+      fileOf(uri),
+      cwd,
+      "symbols",
+      signal,
+      snapshot === undefined ? undefined : () => Promise.resolve(snapshot.content),
+    );
+  }, signal);
+  await loadQueryProject(client, targetUri, signal);
   const oldNames = [entry.name, identifierAt(target.content, position)];
   // clangd renames unopened files from its index; opened files become participants with edits
   // from a fresh parse.
   const reach = await createClangReach({
     manager,
-    cwd: state.cwd,
+    cwd,
     errorsOf,
-    ...(state.signal && { signal: state.signal }),
+    ...(signal && { signal: signal }),
   })(
     target.client,
     manager.languageId(path.extname(source)),
     // A selector can end with an overload signature; the name at the declaration has none.
     oldNames[1] || oldNames[0] || "",
   );
-  // The first request discovers participants; only the second request can supply applied edits.
-  // Capture and synchronize every participant first, so unopened files have a guarded revision.
-  const preview = renameEntries(
-    await requestRename(target.client, target.uri, position, newName),
-    target.client,
-  );
-  const snapshots = new Map<string, { file: string; content: string; version: string }>();
-  for (const uri of new Set([target.uri, ...preview.keys()])) {
-    state.signal?.throwIfAborted();
-    const canonical = documentUri(uri, target.client.rootUri);
+  // The server answers for these snapshots, not for whatever is on disk when it finishes.
+  // If an indexed file also needs edits, synchronize it before asking for its final ranges.
+  async function renameOnSnapshots() {
+    checkSnapshots();
+    const edit = await requestRename(client, targetUri, position, newName, signal);
+    checkSnapshots();
+    return renameEntries(edit, client);
+  }
+  const preview = await renameOnSnapshots();
+  for (const uri of preview.keys()) {
+    if (uri === targetUri) continue;
+    signal?.throwIfAborted();
+    const canonical = documentUri(uri, client.rootUri);
     if (canonical !== uri)
       throw new Error("Rename returned a non-canonical participant. No edits applied.");
-    const file = canonical.startsWith("ssh://") ? canonical : fileURLToPath(canonical);
-    const snapshot = await manager.readSourceSnapshot(file, state.signal);
-    if (file === source && snapshot.content !== target.content)
-      throw sourceChanged("The rename source changed. Read the symbol again before retrying.");
-    const opened = await manager.openFile(file, state.cwd, "symbols", state.signal);
-    if (opened?.client !== target.client || opened.uri !== uri)
+    const file = fileOf(uri);
+    const { content } = await manager.readSourceSnapshot(file, signal);
+    const opened = await manager.openFile(file, cwd, "symbols", signal, () =>
+      Promise.resolve(content),
+    );
+    if (opened?.client !== client || opened.uri !== uri)
       throw new Error(
         "A rename participant has a different language server owner. No edits applied.",
       );
-    if (target.client.documentContent(uri) !== snapshot.content)
+    if (client.documentContent(uri) !== content)
       throw sourceChanged("A rename participant changed during synchronization. No edits applied.");
-    snapshots.set(uri, { file, ...snapshot });
+    snapshots.set(uri, { file, content, version: client.documentVersion(uri) });
   }
-  const entries = renameEntries(
-    await requestRename(target.client, target.uri, position, newName),
-    target.client,
-  );
-  state.signal?.throwIfAborted();
-  for (const [uri, before] of snapshots) {
-    state.signal?.throwIfAborted();
-    const after = await manager.readSourceSnapshot(before.file, state.signal);
-    if (before.version !== after.version || target.client.documentContent(uri) !== before.content)
-      throw sourceChanged(
-        "A rename participant changed during the server request. No edits applied.",
-      );
-  }
+  const entries = snapshots.size === 1 ? preview : await renameOnSnapshots();
   if (reach !== undefined) {
     const refusal = renameRefusal(
       await clangCoverage(reach, [target.uri, ...entries.keys()], errorsOf, fileOf),
-      (file) => (file.startsWith("ssh://") ? file : path.relative(state.cwd, file)),
+      (file) => (file.startsWith("ssh://") ? file : path.relative(cwd, file)),
     );
     if (refusal !== undefined) throw new Error(refusal);
   }
@@ -222,15 +351,27 @@ async function planRename(
       errorsOf,
     );
     if (edits.length === 0) continue;
+    const offset = offsets(before.content);
+    const changes = edits.map((change) => ({
+      from: offset(change.range.start),
+      to: offset(change.range.end),
+      insert: change.newText,
+    }));
     files.push({
       source: before.file,
       expectedContent: before.content,
-      changes: edits.map((change) => ({
-        from: offset(before.content, change.range.start),
-        to: offset(before.content, change.range.end),
-        insert: change.newText,
-      })),
+      changes,
+      rebase: (current) =>
+        rebaseRename(
+          before.content,
+          current,
+          changes,
+          oldNames[1] ?? "",
+          newName,
+          manager.languageId(path.extname(before.file)),
+        ),
     });
   }
+  checkSnapshots();
   return { files };
 }

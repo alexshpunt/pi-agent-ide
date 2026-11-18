@@ -1489,8 +1489,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
   ): Promise<TextResourcesEditOutcome<TextMutation>> {
     try {
       if (state.planEdit !== undefined) {
-        // Planned in each attempt, like the targets of other edits: when another process wrote a
-        // planned file first, the comparison below fails and the next attempt plans again.
+        // Ask the planner on each attempt. It may reuse its plan if the guarded snapshots still fit.
         const plan = await state.planEdit();
         if (
           plan.files.length === 0 ||
@@ -1505,21 +1504,25 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
             ...(state.signal !== undefined && { signal: state.signal }),
           },
           (texts) => {
-            for (const file of plan.files) {
-              if (texts.get(file.source) !== file.expectedContent)
-                throw Object.assign(
-                  new Error("A planned file changed before the semantic edit wrote it."),
-                  { code: SOURCE_CHANGED },
-                );
-            }
             const edits = new Map(
-              plan.files.map((file) => [
-                file.source,
-                { changes: file.changes, action: "edited" as const },
-              ]),
+              plan.files.map((file) => {
+                const current = texts.get(file.source);
+                const changes =
+                  current === file.expectedContent
+                    ? file.changes
+                    : current === undefined
+                      ? undefined
+                      : file.rebase?.(current);
+                if (changes === undefined)
+                  throw Object.assign(
+                    new Error("A planned file changed before the semantic edit wrote it."),
+                    { code: SOURCE_CHANGED },
+                  );
+                return [file.source, { changes, action: "edited" as const }] as const;
+              }),
             );
             return Promise.resolve({
-              changes: new Map(plan.files.map((file) => [file.source, file.changes])),
+              changes: new Map([...edits].map(([source, edit]) => [source, edit.changes])),
               result: {
                 edits,
                 snapshots: texts,

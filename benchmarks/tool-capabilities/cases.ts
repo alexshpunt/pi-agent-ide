@@ -3901,7 +3901,7 @@ add(
 add(
   "lsp-overload-rename",
   ["lsp.overload-selectors", "compose.symbol-overload-rename"],
-  "In main.cpp, ask lsp_search for the declaration main.cpp#clamp. It has several overloads; take the selector of the overload whose first parameter is a const Vec& from the result, and get that exact declaration, then rename it to clampVec by replacing its issued name capture (displayed capture reference or matches[0].captures.name[0] in Codemode). Both prototypes, the definition and the call with a Vec must change; the int overload and its calls stay unchanged. Do not do an ordinary text replacement.",
+  'In main.cpp, ask lsp_search for the declaration main.cpp#clamp. It has several overloads; take the selector of the overload whose first parameter is a const Vec& from the result, and get that exact declaration, then rename it to clampVec by replacing its issued name capture using path: {id: "<bare UUID>"}. In direct calls remove RESULT# from the displayed name capture reference. In Codemode bind the exact declaration result to result, then pass path: {id: result.matches[0].captures.name[0].id.replace(/^RESULT#/, "")}. The id must contain only the UUID. Both prototypes, the definition and the call with a Vec must change; the int overload and its calls stay unchanged. Do not do an ordinary text replacement.',
   [
     {
       tool: "lsp_search",
@@ -3917,6 +3917,7 @@ add(
     },
     {
       tool: "replace",
+      args: { path: { id: /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u } },
       after: [1],
       reuse: reuse(1, "path", "capture:name"),
     },
