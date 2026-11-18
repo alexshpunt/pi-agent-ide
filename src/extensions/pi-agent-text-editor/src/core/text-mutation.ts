@@ -1481,7 +1481,8 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
     },
     // Another Pi process may write the file between this edit's read and its write. The write
     // is then refused, and the edit runs again on the current text, anchors included.
-    (state) => retryWhenSourceChanged(() => applyTextMutation(state)),
+    (state) =>
+      retryWhenSourceChanged(() => applyTextMutation(state), undefined, state.sourceChangeRetry),
   );
 
   async function applyTextMutation(
