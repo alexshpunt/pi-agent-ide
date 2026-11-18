@@ -3945,7 +3945,7 @@ add(
   },
 );
 
-// Quiet workspace. The scripted lsp-rename-window tests cover automatic retries under concurrent writes.
+// Quiet workspace. Real-Pi lsp-rename-window tests cover retries after a peer changes the file.
 add(
   "lsp-overload-rename",
   ["lsp.overload-selectors", "compose.symbol-overload-rename"],
