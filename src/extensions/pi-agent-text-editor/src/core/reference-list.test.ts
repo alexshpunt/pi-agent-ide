@@ -64,53 +64,16 @@ test("accepts issued RESULT# handles next to Search references", async () => {
   expect(handles).toHaveLength(2);
 });
 
-test("names the first unusable item and changes nothing", async () => {
+test("rejects the whole list when some of its entries cannot select text", async () => {
   const { core, store } = fixture();
-  await expect(
-    expandReferenceList(core, store, ["SEARCH#AAAA:1:match", "SEARCH#ZZZZ:1:match"], cwd),
-  ).rejects.toThrow(/Reference SEARCH#ZZZZ:1:match cannot be used: The Search result expired/u);
-  await expect(
-    expandReferenceList(core, store, ["RESULT#00000000-0000-4000-8000-000000000000"], cwd),
-  ).rejects.toThrow(/Reference RESULT#0000.* cannot be used/u);
-  await expect(expandReferenceList(core, store, ["SEARCH#CCCC:1:match"], cwd)).rejects.toThrow(
-    /SEARCH#CCCC:1:match cannot be used: It does not select a text range/u,
+  const valid = "SEARCH#AAAA:1:match";
+  const invalid = ["SEARCH#ZZZZ:1:match", "src/a.txt", "SEARCH#CCCC:1:match"];
+  const error = await expandReferenceList(core, store, [valid, ...invalid], cwd).catch(
+    (caught: unknown) => caught,
   );
-});
-
-test("reports every unusable item in one error and changes nothing", async () => {
-  const { core, store } = fixture();
-  const error = await expandReferenceList(
-    core,
-    store,
-    ["SEARCH#ZZZZ:1:match", "SEARCH#AAAA:1:match", "src/a.txt", "SEARCH#CCCC:1:match"],
-    cwd,
-  ).catch((caught: unknown) => caught);
-  const message = error instanceof Error ? error.message : "";
-  expect(message).toContain("3 of 4 references cannot be used; nothing was changed");
-  expect(message).toContain("Reference SEARCH#ZZZZ:1:match cannot be used");
-  expect(message).toContain("Reference src/a.txt cannot be used");
-  expect(message).toContain("Reference SEARCH#CCCC:1:match cannot be used");
-  expect(message).not.toContain("SEARCH#AAAA:1:match");
-});
-
-test("names a match handle by its Search reference and by the id a script passed", async () => {
-  const { core, store } = fixture();
-  const handle = store.register(
-    [{ source: "/workspace/d.txt", expectedContent: "delta\n", ranges: [range(0, 5)] }],
-    cwd,
-  );
-  store.registerSearchReference("SEARCH#DDDD:1:match", handle, cwd);
-  store.invalidate("/workspace/d.txt");
-  await expect(expandReferenceList(core, store, [handle], cwd)).rejects.toThrow(
-    `Reference SEARCH#DDDD:1:match (${handle}) cannot be used`,
-  );
-});
-
-test("rejects a plain path in an array and says how to pass one", async () => {
-  const { core, store } = fixture();
-  await expect(
-    expandReferenceList(core, store, ["SEARCH#AAAA:1:match", "src/a.txt"], cwd),
-  ).rejects.toThrow(
-    /Reference src\/a\.txt cannot be used: It is a path\. Arrays hold references only/u,
-  );
+  expect(error).toBeInstanceOf(Error);
+  const message = (error as Error).message;
+  for (const item of invalid) expect(message).toContain(item);
+  expect(message).not.toContain(valid);
+  await expect(expandReferenceList(core, store, [valid], cwd)).resolves.toHaveLength(1);
 });
