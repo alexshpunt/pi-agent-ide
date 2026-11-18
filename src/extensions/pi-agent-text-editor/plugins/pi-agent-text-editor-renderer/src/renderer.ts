@@ -1016,6 +1016,9 @@ function wholeFileFailureCause(code: string): string {
     case "stale": {
       return "anchor is stale";
     }
+    case "STALE_ANCHOR_RANGE": {
+      return "line anchors no longer verify the range; select the full span again";
+    }
     case "COPIED_LINE_ANCHOR": {
       return "replacement contains a copied line prefix; remove it and retry";
     }
