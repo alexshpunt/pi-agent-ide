@@ -211,14 +211,19 @@ function lineText(lines: readonly string[], line: number): string {
   return withoutEnding(lines[line - 1] ?? "");
 }
 
+interface MatchPosition {
+  readonly line: number;
+  readonly column: number;
+}
+
 /** Every start of `text` in the given lines, overlapping starts included, in reading order. */
 function occurrences(
   lines: readonly string[],
   from: number,
   to: number,
   text: string,
-): { line: number; column: number }[] {
-  const found: { line: number; column: number }[] = [];
+): MatchPosition[] {
+  const found: MatchPosition[] = [];
   for (let line = from; line <= to; line += 1) {
     const content = lineText(lines, line);
     for (let at = content.indexOf(text); at !== -1; at = content.indexOf(text, at + 1))
@@ -244,7 +249,7 @@ function relocateInHunk(
   oldLines: readonly string[],
   newLines: readonly string[],
   locate: () => LineHunk | undefined,
-  requireUnique = false,
+  movedHunk = false,
 ): ResultRange | undefined {
   const { start, end } = range;
   if (range.linewise === true || start.lineNumber !== end.lineNumber || start.column >= end.column)
@@ -259,14 +264,12 @@ function relocateInHunk(
   const index = old.findIndex(
     (item) => item.line === start.lineNumber && item.column === start.column,
   );
-  const moved = next[index];
-  if (
-    index === -1 ||
-    moved === undefined ||
-    old.length !== next.length ||
-    (requireUnique && old.length !== 1)
-  )
-    return undefined;
+  if (index === -1 || old.length !== next.length) return undefined;
+  const moved =
+    movedHunk && old.length > 1
+      ? findRepeatedMovedMatch(range, oldLines, newLines, old, next)
+      : next[index];
+  if (moved === undefined) return undefined;
   const target = lineText(newLines, moved.line);
   if (
     content.slice(start.column - 1, start.column) !==
@@ -280,6 +283,61 @@ function relocateInHunk(
     start: { lineNumber: moved.line, column: moved.column },
     end: { lineNumber: moved.line, column: moved.column + matched.length },
   };
+}
+
+/**
+ * A moved hunk has no reliable occurrence order across lines. For repeated matches on
+ * one edited line, use a surviving edge as evidence of identity in both snapshots.
+ */
+function findRepeatedMovedMatch(
+  { start, end }: ResultRange,
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  old: readonly MatchPosition[],
+  next: readonly MatchPosition[],
+): MatchPosition | undefined {
+  const onOldLine = old.filter(({ line }) => line === start.lineNumber);
+  if (onOldLine.length < 2) return undefined;
+  const length = end.column - start.column;
+  const evidence = (
+    at: MatchPosition,
+    lines: readonly string[],
+    candidates: readonly MatchPosition[],
+    otherLines: readonly string[],
+    others: readonly MatchPosition[],
+  ) => {
+    const line = lineText(lines, at.line);
+    const prefix = line.slice(0, at.column + length);
+    const suffix = line.slice(at.column);
+    const fromEdge = (edge: string, prefix: boolean) => {
+      // Punctuation/whitespace alone (e.g. a closing parenthesis) doesn't identify a copy.
+      if (!/[\p{L}\p{N}]/u.test(prefix ? edge.slice(0, -length) : edge.slice(length)))
+        return undefined;
+      const usesEdge = (item: MatchPosition, texts: readonly string[]) => {
+        const text = lineText(texts, item.line);
+        return prefix
+          ? item.column + length === edge.length && text.startsWith(edge)
+          : text.length - item.column === edge.length && text.endsWith(edge);
+      };
+      if (candidates.filter((item) => usesEdge(item, lines)).length !== 1) return undefined;
+      const matches = others.filter((item) => usesEdge(item, otherLines));
+      return matches.length === 1 ? matches[0] : undefined;
+    };
+    const left = fromEdge(prefix, true);
+    const right = fromEdge(suffix, false);
+    return left !== undefined && right !== undefined && left !== right
+      ? undefined
+      : (left ?? right);
+  };
+
+  const ordinal = onOldLine.findIndex(({ column }) => column === start.column);
+  const selected = onOldLine[ordinal];
+  if (selected === undefined) return undefined;
+  const moved = evidence(selected, oldLines, old, newLines, next);
+  if (moved === undefined || evidence(moved, newLines, next, oldLines, old) !== selected)
+    return undefined;
+  const onNewLine = next.filter(({ line }) => line === moved.line);
+  return onNewLine.length === onOldLine.length && onNewLine[ordinal] === moved ? moved : undefined;
 }
 
 /** Rebase a range through unchanged lines, or through a changed line that leaves its text intact. */
