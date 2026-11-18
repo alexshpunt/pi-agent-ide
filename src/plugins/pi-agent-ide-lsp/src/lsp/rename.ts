@@ -1,4 +1,6 @@
+import { ResponseError } from "vscode-jsonrpc/node";
 import type { LspClient } from "./client.ts";
+import { sourceChanged } from "./source-changes.ts";
 import type { LspPosition, LspTextEdit } from "./types.ts";
 
 export interface LspDocumentChange {
@@ -21,15 +23,19 @@ export async function requestRename(
   newName: string,
   signal?: AbortSignal,
 ): Promise<LspWorkspaceEdit | null> {
-  return await client.sendRequest<LspWorkspaceEdit | null>(
-    "textDocument/rename",
-    {
-      textDocument: { uri },
-      position,
-      newName,
-    },
-    signal,
-  );
+  try {
+    return await client.sendRequest<LspWorkspaceEdit | null>(
+      "textDocument/rename",
+      { textDocument: { uri }, position, newName },
+      signal,
+    );
+  } catch (error) {
+    // clangd validates the edits against its current drafts after computing them. It uses
+    // a generic error code, so recognize the refusal by its protocol message.
+    if (error instanceof ResponseError && /^Files? must be saved first: /u.test(error.message))
+      throw sourceChanged("The language server text changed during rename.");
+    throw error;
+  }
 }
 
 /**
