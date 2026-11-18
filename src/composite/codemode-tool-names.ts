@@ -58,12 +58,19 @@ export function codemodeToolNameMappings(
   return [...mappings.values()];
 }
 
-/** Explain wire-only name changes without changing native Codemode member lookup. */
-export function explainCodemodeToolNames(payload: unknown, names: ReadonlySet<string>): unknown {
+/** Clarify script member names and model-only discovery in provider declarations. */
+export function explainCodemodeToolNames(
+  payload: unknown,
+  names: ReadonlySet<string>,
+  directOnlyDiscovery = false,
+): unknown {
   const mappings = codemodeToolNameMappings(payload, names);
-  if (mappings.length === 0) return payload;
+  if (!directOnlyDiscovery && mappings.length === 0) return payload;
   return mapDeclarations(payload, (tool) => {
-    if (tool.name !== "codemode" || typeof tool.description !== "string") return tool;
+    if (typeof tool.description !== "string") return tool;
+    if (directOnlyDiscovery && tool.name === "tool_search")
+      return { ...tool, description: `For direct calls only. ${tool.description}` };
+    if (tool.name !== "codemode" || mappings.length === 0) return tool;
     return {
       ...tool,
       description: `${tool.description}\n\nUse these exact JavaScript members inside Codemode instead of the provider-facing tool names:\n${mappings.map(({ displayed, canonical }) => `${displayed} → tools.${canonical}`).join("\n")}`,
