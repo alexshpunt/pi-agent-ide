@@ -304,6 +304,23 @@ describe("tracking selections after a block move", () => {
     ).toBeUndefined();
   });
 
+  test("reports possible match locations beyond the preview of a changed moved stretch", () => {
+    const edited = block.with(499, "first(old_arg);").with(500, "second(old_arg);");
+    const changed = [
+      ...edited.slice(0, 499),
+      "log_a();",
+      "log_b();",
+      "log_c();",
+      "renamed_second(old_arg);",
+      "renamed_first(old_arg);",
+      ...edited.slice(501),
+    ];
+    const tracker = createRangeTracker(file(edited, middle), file(middle, changed));
+    const range = span(500, 6, 500, 13);
+    expect(tracker.move(range)).toBeUndefined();
+    const locations = tracker.describe(range).match(/\b\d+\b/gu);
+    expect(locations).toEqual(expect.arrayContaining(["1703", "1704"]));
+  });
   test("does not join the pieces of a selection split by a move", () => {
     const before = file(block, middle);
     const after = file(middle, block);

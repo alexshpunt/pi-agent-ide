@@ -460,9 +460,12 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
   const describe: RangeTracker["describe"] = (range) => {
     const line = range.start.lineNumber;
     const token = lineText(old, line);
-    positions ??= candidateLines(next);
-    const candidates = token.trim() === "" ? [] : (positions.get(token) ?? []);
     const hunk = context.reordered ? movedHunk(context, line) : undefined;
+    let candidates = hunk === undefined ? [] : partialCandidateLines(range, token, next, hunk);
+    if (candidates.length === 0 && token.trim() !== "") {
+      positions ??= candidateLines(next);
+      candidates = positions.get(token) ?? [];
+    }
     if (candidates.length === 0 && !context.reordered) {
       const map = getOrdered();
       if (map !== undefined) return describeLostRange(range, map);
@@ -474,6 +477,24 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
     return `${head}: selected text changed, was deleted, or has no unique surrounding context`;
   };
   return { move, describe };
+}
+
+/** Possible locations in a bounded moved stretch, not proof that a copy is the original. */
+function partialCandidateLines(
+  range: ResultRange,
+  token: string,
+  lines: readonly string[],
+  hunk: LineHunk,
+): number[] {
+  const { start, end } = range;
+  if (range.linewise === true || start.lineNumber !== end.lineNumber) return [];
+  const selected = token.slice(start.column, end.column);
+  if (selected.trim() === "" || selected.length !== end.column - start.column) return [];
+  const candidates: number[] = [];
+  for (let line = hunk.newFrom; line <= hunk.newTo && candidates.length < 3; line += 1) {
+    if (lineText(lines, line).includes(selected)) candidates.push(line);
+  }
+  return candidates;
 }
 
 /** Keep only a few locations per line; diagnostics never need the whole file. */
