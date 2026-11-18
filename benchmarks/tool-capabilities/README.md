@@ -25,6 +25,8 @@ The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostic
 
 The `outline-search-edit` case follows a continuation to a second outline page and reuses that page to restrict Search and Replace. A focused scripted real-Pi test checks bounded output and exact edit scope on a large C++ fixture. Direct and Codemode paid routes remain unverified until paid execution.
 
+The `move-destination-recovery` case also requires a refusal for an explicitly empty `start`. Scripted real-Pi tests cover that refusal, bounded diagnostics for oversized selectors, and a Move destination that overlaps a pending Replace. The revised paid routes remain unverified until paid execution.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:

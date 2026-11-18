@@ -30,6 +30,8 @@ A running call becomes `failed-unknown` when an exception crosses the executor w
 
 ## Recovery rules
 
+A required selector passed as an empty string is rejected without candidate lines. Empty optional selectors are treated as omitted. An oversized rejected selector is shown as an excerpt with its original length. If two planned edits overlap, the refusal names the current selector and the earlier tool's range in the shared snapshot. Read the current text before choosing a new selector.
+
 Recovery considers only complete calls that are still pending. It does not retry the call that stopped normal execution. This avoids repeating a deterministic failure and lets independent trailing work continue.
 
 The editor derives affected resources from each mutation registration. The primary source and every target source participate. This covers cross-file copy and move without special tool-name checks. A pending call can run after an uncertain failure only when all of its resources are known and disjoint. If a resource cannot be resolved, recovery stops conservatively.
