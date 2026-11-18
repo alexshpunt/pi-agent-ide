@@ -3929,7 +3929,7 @@ add(
   },
 );
 
-// Quiet workspace: shared-server diagnostics and concurrent writes are covered by free tests.
+// Quiet workspace. The scripted lsp-rename-window tests cover automatic retries under concurrent writes.
 add(
   "lsp-overload-rename",
   ["lsp.overload-selectors", "compose.symbol-overload-rename"],
