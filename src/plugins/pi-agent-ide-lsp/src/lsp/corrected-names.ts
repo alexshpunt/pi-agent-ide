@@ -1,5 +1,6 @@
 import type { LspClient } from "./client.ts";
 import { requestDiagnostics } from "./diagnostics.ts";
+import { isSourceChanged } from "./source-changes.ts";
 import type { LspPosition, LspRange } from "./types.ts";
 
 /** A source position a server reported for a symbol, with the text written there. */
@@ -194,6 +195,7 @@ export function diagnosticErrors(
     } catch (error) {
       // Without diagnostics no place is known to be a guess, so every place is kept.
       signal?.throwIfAborted();
+      if (isSourceChanged(error)) throw error;
       if (error instanceof Error) return undefined;
       throw error;
     }
