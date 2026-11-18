@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import {
   createLineMap,
   createRangeTracker,
-  describeLostRange,
   moveRange,
   rebaseOrRelocateRange,
   rebaseRange,
@@ -188,6 +187,23 @@ describe("matches inside changed lines", () => {
     expect(relocated(code.replace("if (", "call_dot(x); if ("), first)).toBeUndefined();
   });
 
+  test("keeps an identifiable match when an adjacent edited line gains or loses a copy", () => {
+    const before = "start\nalpha(OLD, Before);\nbeta(OLD, Before);\nfinish\n";
+    const after = "start\nalpha(NEW, After);\nbeta(OLD, After);\nfinish\n";
+    const tracker = createRangeTracker(before, after);
+    expect(tracker.move(span(2, 6, 2, 9))).toBeUndefined();
+    expect(tracker.move(span(3, 5, 3, 8))).toEqual(span(3, 5, 3, 8));
+    expect(createRangeTracker(after, before).move(span(3, 5, 3, 8))).toEqual(span(3, 5, 3, 8));
+  });
+
+  test("does not shift references when adjacent edited lines trade copies", () => {
+    const before = "start\nalpha(OLD, Before);\nbeta(OLD, Before);\ngamma(NEW, Before);\nfinish\n";
+    const after = "start\nalpha(NEW, After);\nbeta(OLD, After);\ngamma(OLD, After);\nfinish\n";
+    const tracker = createRangeTracker(before, after);
+    expect(tracker.move(span(2, 6, 2, 9))).toBeUndefined();
+    expect(tracker.move(span(3, 5, 3, 8))).toEqual(span(3, 5, 3, 8));
+  });
+
   test("drops a match when the text next to it changed", () => {
     expect(
       relocated(code.replace("call_dot(pNrm, pIn)", "call_dot2(pNrm, pIn)"), first),
@@ -195,17 +211,8 @@ describe("matches inside changed lines", () => {
     expect(relocated(code.replace("if (call_dot", "if (!call_dot"), first)).toBeUndefined();
   });
 
-  test("drops a match whose line was deleted and reports where it stood", () => {
-    const after = code.replace(/if .*\n/u, "");
-    const map = createLineMap(code, after);
-    expect(map === undefined ? undefined : rebaseOrRelocateRange(first, map)).toBeUndefined();
-    expect(describeLostRange(first, map)).toContain("line 2");
-    expect(describeLostRange(first, map)).toContain("deleted");
-  });
-
-  test("reports the lines that replaced a changed line", () => {
-    const map = createLineMap(code, code.replace("call_dot", "CallDot"));
-    expect(describeLostRange(first, map)).toContain("2| if (CallDot(pNrm, pIn)");
+  test("does not relocate a match whose line was deleted", () => {
+    expect(relocated(code.replace(/if .*\n/u, ""), first)).toBeUndefined();
   });
 
   test("never moves a linewise or a multi-line range by its text", () => {
@@ -315,6 +322,52 @@ describe("tracking selections after a block move", () => {
       );
       expect(rangesInText([first], original, file(middle, extended))).toBeUndefined();
     });
+  });
+
+  test("distinguishes adjacent edited declarations by an identifier that survives near the match", () => {
+    const edited = block
+      .with(499, "using pair<Before, OLD> left(After);")
+      .with(500, "using pair<Before, OLD> right(After);");
+    const changed = edited
+      .with(499, "using pair<NewBefore, OLD> left(NewAfter);")
+      .with(500, "using pair<NewBefore, OLD> right(NewAfter);");
+    // Move an unrelated region; these declarations keep their local order.
+    expect(
+      rangesInText(
+        [span(500, 19, 500, 22), span(501, 19, 501, 22)],
+        file(edited, middle),
+        file(middle, changed),
+      ),
+    ).toEqual([span(1700, 22, 1700, 25), span(1701, 22, 1701, 25)]);
+  });
+
+  test("keeps an identifiable match when another line gains or loses a copy", () => {
+    const edited = block.with(499, "alpha(OLD, Before);").with(500, "beta(OLD, Before);");
+    const changed = edited.with(499, "alpha(NEW, After);").with(500, "beta(OLD, After);");
+    const tracker = createRangeTracker(file(edited, middle), file(middle, changed));
+    expect(tracker.move(span(500, 6, 500, 9))).toBeUndefined();
+    expect(tracker.move(span(501, 5, 501, 8))).toEqual(span(1701, 5, 1701, 8));
+
+    const reversed = createRangeTracker(file(middle, changed), file(edited, middle));
+    expect(reversed.move(span(1701, 5, 1701, 8))).toEqual(span(501, 5, 501, 8));
+  });
+
+  test("does not use shared punctuation or a partial identifier to distinguish adjacent copies", () => {
+    const edited = block.with(499, "prefix<OLD> oldLeft(v);").with(500, "prefix<OLD> oldRight(v);");
+    const changed = edited
+      .with(499, "prefix<OLD> oldLeftUpdated(v);")
+      .with(500, "prefix<OLD> oldLeftElse(v);");
+    const tracker = createRangeTracker(file(edited, middle), file(middle, changed));
+    expect(tracker.move(span(500, 7, 500, 10))).toBeUndefined();
+    expect(tracker.move(span(501, 7, 501, 10))).toBeUndefined();
+  });
+
+  test("does not pick a copy when opposite flanks indicate different destinations", () => {
+    const edited = block.with(499, "alpha(OLD, one, tag);").with(500, "beta(OLD, two, tag);");
+    const changed = edited.with(499, "alpha(OLD, two, flag);").with(500, "beta(OLD, one, flag);");
+    const tracker = createRangeTracker(file(edited, middle), file(middle, changed));
+    expect(tracker.move(span(500, 6, 500, 9))).toBeUndefined();
+    expect(tracker.move(span(501, 5, 501, 8))).toBeUndefined();
   });
 
   test("can read an adjusted region when unrelated lines swapped", () => {
