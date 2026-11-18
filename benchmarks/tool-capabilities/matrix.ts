@@ -307,7 +307,7 @@ const groups: [string[], string[]][] = [
   [["search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
   // Both routes require { id: "<bare capture UUID>" }, stripping RESULT# even in Codemode.
   [["compose.capture-uuid-source"], ["ast-capture-rename", "lsp-rename"]],
-  [["compose.outline-search-edit"], ["outline-search-edit"]],
+  [["outline.page", "compose.outline-search-edit"], ["outline-search-edit"]],
   [["ast_search.rule", "compose.ast-search-enclosing"], ["ast-search-enclosing"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],

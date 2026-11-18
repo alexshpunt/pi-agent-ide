@@ -3177,16 +3177,23 @@ add(
 const syntax = { "task.ts": "function first() { return 7; }\nfunction second() { return 9; }\n" };
 add(
   "outline-search-edit",
-  ["outline.file", "compose.outline-search-edit"],
-  'Call outline for task.ts. Search its unchanged result for "first", passing the outline result itself (or its id) as path. Replace only the matched name with renamed, using the Search match or its displayed match reference. Do not read the whole file or replace a declaration.',
+  ["outline.file", "outline.page", "compose.outline-search-edit"],
+  'Call outline on task.ts with limit 1. Follow the continuation by calling outline on task.ts with offset 2 and limit 1. Search only that second outline result for "second", passing the result itself (or its id) as path. Replace only the matched name with renamed, using the Search match or its displayed match reference. Do not read the whole file or replace a declaration.',
   [
-    { tool: "outline", args: { path: "task.ts" }, contains: "first" },
-    { tool: "search", reuse: reuse(0), contains: "first" },
-    { tool: "replace", reuse: reuse(1) },
+    { tool: "outline", args: { path: "task.ts", limit: 1 }, contains: "first", excludes: "second" },
+    {
+      tool: "outline",
+      args: { path: "task.ts", offset: 2, limit: 1 },
+      contains: "second",
+      excludes: "first",
+      after: [0],
+    },
+    { tool: "search", reuse: reuse(1), contains: "second" },
+    { tool: "replace", reuse: reuse(2) },
   ],
   {
     files: syntax,
-    expected: { "task.ts": "function renamed() { return 7; }\nfunction second() { return 9; }\n" },
+    expected: { "task.ts": "function first() { return 7; }\nfunction renamed() { return 9; }\n" },
   },
 );
 add(

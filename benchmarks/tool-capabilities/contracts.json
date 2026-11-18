@@ -886,6 +886,15 @@
       "parameters": {
         "additionalProperties": false,
         "properties": {
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 1,
+            "type": "integer"
+          },
           "path": {
             "minLength": 1,
             "type": "string"
