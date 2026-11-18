@@ -3894,7 +3894,7 @@ add(
 add(
   "lsp-overload-rename",
   ["lsp.overload-selectors", "compose.symbol-overload-rename"],
-  "In main.cpp, ask lsp_search for the declaration main.cpp#clamp. It has several overloads; take the selector of the overload whose first parameter is a const Vec& from the result, and get that exact declaration, then rename it to clampVec by replacing its issued name capture (displayed capture reference or matches[0].captures.name[0] in Codemode). Its prototype, definition and the call with a Vec must change; the int overload and its calls stay unchanged. Do not do an ordinary text replacement.",
+  "In main.cpp, ask lsp_search for the declaration main.cpp#clamp. It has several overloads; take the selector of the overload whose first parameter is a const Vec& from the result, and get that exact declaration, then rename it to clampVec by replacing its issued name capture (displayed capture reference or matches[0].captures.name[0] in Codemode). Both prototypes, the definition and the call with a Vec must change; the int overload and its calls stay unchanged. Do not do an ordinary text replacement.",
   [
     {
       tool: "lsp_search",
@@ -3905,6 +3905,7 @@ add(
     {
       tool: "lsp_search",
       args: { declaration: /^main\.cpp#clamp\(const Vec ?&, ?float, ?float\)$/ },
+      contains: "return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y};",
       after: [0],
     },
     {
@@ -3916,12 +3917,12 @@ add(
   {
     files: {
       "main.cpp":
-        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clamp(const Vec& v, float lo, float hi);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clamp(const Vec& v, float lo, float hi) { return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y}; }\n\nint main() {\n  Vec v = clamp(Vec{1, 2}, 0.0f, 1.0f);\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
+        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clamp(const Vec& v, float lo, float hi);\ninline Vec clamp(const Vec& point, float lower, float upper);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clamp(const Vec& v, float lo, float hi) {\n  return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y};\n}\n\nint main() {\n  Vec v = clamp(Vec{1, 2}, 0.0f, 1.0f);\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
       "compile_flags.txt": "-std=c++17\n",
     },
     expected: {
       "main.cpp":
-        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clampVec(const Vec& v, float lo, float hi);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clampVec(const Vec& v, float lo, float hi) { return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y}; }\n\nint main() {\n  Vec v = clampVec(Vec{1, 2}, 0.0f, 1.0f);\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
+        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clampVec(const Vec& v, float lo, float hi);\ninline Vec clampVec(const Vec& point, float lower, float upper);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clampVec(const Vec& v, float lo, float hi) {\n  return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y};\n}\n\nint main() {\n  Vec v = clampVec(Vec{1, 2}, 0.0f, 1.0f);\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
     },
     prerequisite: "command -v clangd",
   },
