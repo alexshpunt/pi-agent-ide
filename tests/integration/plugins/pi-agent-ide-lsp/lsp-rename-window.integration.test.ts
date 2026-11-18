@@ -51,6 +51,13 @@ function additionalCalls(indent: string, vecName: string): string {
   ).join("");
 }
 
+function addedCalls(count: number, vecName: string): string {
+  return Array.from({ length: count }, (_, index) => {
+    const i = index + 1;
+    return `int added${i}() { return ${vecName}(Vec{${i}}); }\n`;
+  }).join("");
+}
+
 async function renameOverload(
   cwd: string,
   mode:
@@ -62,6 +69,8 @@ async function renameOverload(
     | "lookup"
     | "literal"
     | "replan"
+    | "auto-repeat"
+    | "stall-once"
     | "exhaust",
 ) {
   const file = path.join(cwd, "main.cpp");
@@ -212,16 +221,31 @@ test("one overload rename includes references added during two consecutive nativ
   });
 }, 50_000);
 
-test("three stale refreshes exhaust the rename and leave the selection usable for an immediate repeat", async () => {
+test("one replace includes references added during seven consecutive native requests", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "auto-repeat");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(Array(8).fill("rename"));
+    expect(content).toBe(RENAMED_OVERLOADS + addedCalls(7, "normalizeVec"));
+  });
+}, 50_000);
+
+test("one replace cancels a stalled refresh and renames on the next attempt", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "stall-once");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(["rename", "rename", "cancel", "rename"]);
+    expect(content).toBe(RENAMED_OVERLOADS + "int added1() { return normalizeVec(Vec{1}); }\n");
+  });
+}, 50_000);
+
+test("continuous source changes exhaust the attempts and leave the selection usable for a repeat", async () => {
   await withTempWorkspace(async (cwd) => {
     const { run, content, events } = await renameOverload(cwd, "exhaust");
     expect(getToolExecution(run, "rename").isError).toBe(true);
     expect(getToolExecution(run, "repeat").isError, getToolResultText(run, "repeat")).toBe(false);
-    expect(events).toEqual(Array(5).fill("rename"));
-    expect(content).toBe(
-      RENAMED_OVERLOADS +
-        [1, 2, 3, 4].map((i) => `int added${i}() { return normalizeVec(Vec{${i}}); }\n`).join(""),
-    );
+    expect(events).toEqual(Array(11).fill("rename"));
+    expect(content).toBe(RENAMED_OVERLOADS + addedCalls(10, "normalizeVec"));
   });
 }, 50_000);
 
@@ -230,11 +254,11 @@ test("rename refreshes share a deadline, and an immediate repeat cancels without
     const { run, content, events } = await renameOverload(cwd, "stall");
     expect(getToolExecution(run, "rename").isError).toBe(true);
     expect(getToolExecution(run, "repeat").isError).toBe(true);
-    expect(events).toEqual(["rename", "rename", "rename", "cancel", "rename", "cancel"]);
-    expect(content).toBe(
-      OVERLOADS +
-        [1, 2, 3].map((i) => `int added${i}() { return normalize(Vec{${i}}); }\n`).join(""),
-    );
+    expect(events).toEqual([
+      "rename",
+      ...Array.from({ length: 6 }, () => ["rename", "cancel"]).flat(),
+    ]);
+    expect(content).toBe(OVERLOADS + addedCalls(1, "normalize"));
   });
 }, 50_000);
 

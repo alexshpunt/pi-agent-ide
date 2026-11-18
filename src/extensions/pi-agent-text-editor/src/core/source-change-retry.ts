@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { setTimeout as sleepUntil } from "node:timers/promises";
 import { ResourceError } from "pi-agent-resource";
 import type { TextEditRun } from "pi-agent-text";
 
+import type { SourceChangeRetryPolicy } from "#src/api/edit-pipeline.ts";
 import type { TextResourcesEditOutcome } from "#src/core/text-editor-core.ts";
 
 /** Error code of a resolved target whose file changed before the edit used it. */
@@ -46,11 +48,10 @@ export class SourceKeptChangingError extends Error {
 export async function retryWhenSourceChanged<Result>(
   apply: () => Promise<TextResourcesEditOutcome<Result>>,
   timing: SourceChangeRetryTiming = {},
+  policy?: SourceChangeRetryPolicy,
 ): Promise<TextResourcesEditOutcome<Result>> {
   const now = timing.now ?? Date.now;
-  const sleep =
-    timing.sleep ??
-    ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const delays = policy?.delaysMs ?? RETRY_DELAYS_MS;
   let started: number | undefined;
   const run: { attempt: number } = { attempt: 0 };
   for (let attempt = 0; ; attempt += 1) {
@@ -58,11 +59,23 @@ export async function retryWhenSourceChanged<Result>(
     const outcome = await editRunScope.run(run, apply);
     if (!changedBeforeWrite(outcome)) return outcome;
     started ??= now();
-    const delay = RETRY_DELAYS_MS[attempt];
+    const delay = delays[attempt];
+    const deadline = policy?.start();
     const elapsed = now() - started;
-    if (delay === undefined || elapsed + delay >= RETRY_BUDGET_MS)
-      return keptChanging(outcome, attempt + 1, elapsed);
-    if (delay > 0) await sleep(delay * (0.5 + Math.random()));
+    if (delay === undefined || (deadline === undefined && elapsed + delay >= RETRY_BUDGET_MS))
+      return keptChanging(outcome, attempt + 1, elapsed, policy);
+    if (delay > 0 && !deadline?.aborted) {
+      const pause = delay * (0.5 + Math.random());
+      if (timing.sleep !== undefined) await timing.sleep(pause);
+      else {
+        try {
+          await sleepUntil(pause, undefined, { signal: deadline });
+        } catch (error) {
+          if (!deadline?.aborted) throw error;
+        }
+      }
+    }
+    if (deadline?.aborted) return keptChanging(outcome, attempt + 1, now() - started, policy);
   }
 }
 
@@ -80,9 +93,12 @@ function keptChanging<Result>(
   outcome: Extract<TextResourcesEditOutcome<Result>, { readonly kind: "failed" }>,
   attempts: number,
   elapsedMs: number,
+  policy?: SourceChangeRetryPolicy,
 ): TextResourcesEditOutcome<Result> {
   const seconds = (elapsedMs / 1000).toFixed(1);
-  const message = `Another process kept writing the file while this edit ran: each of ${String(attempts)} attempts in ${seconds} s found newer text, so nothing was written. Repeat the edit; if it keeps failing, wait until the other writer is done.`;
+  const message =
+    policy?.exhaustedMessage() ??
+    `Another process kept writing the file while this edit ran: each of ${String(attempts)} attempts in ${seconds} s found newer text, so nothing was written. Repeat the edit; if it keeps failing, wait until the other writer is done.`;
   return {
     ...outcome,
     failure: {

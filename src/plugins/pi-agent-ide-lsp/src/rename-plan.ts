@@ -177,8 +177,10 @@ function rebaseRename(
   return remapped;
 }
 
-const REFRESH_BUDGET_MS = 4_000;
-const MAX_REFRESH_ATTEMPTS = 3;
+const REFRESH_BUDGET_MS = 12_000;
+const REFRESH_ATTEMPT_MS = 4_000;
+// One extra attempt per pause, with breathing room for the server to see peer writes.
+const REFRESH_DELAYS_MS = [0, 50, 100, 200, 400, 500, 500, 500, 500];
 /** An immediate repeat of a contended selection is a refresh too, not another cold request. */
 const contendedCaptures = new WeakSet<NameCapture>();
 
@@ -196,14 +198,12 @@ export function prepareSymbolRename(
   captures: NameCaptures,
   resultTargets: ResultTargetStore,
 ): TextPreEditState | undefined {
+  const started = performance.now();
   const input = state.input as Record<string, unknown>;
   const selected = captures.find(input);
   if (selected === undefined) return undefined;
   const capture = captures.get(input.path);
-  const started = performance.now();
   let cached: TextEditPlan | undefined;
-  let attempted = false;
-  let refreshAttempts = 0;
   let refreshDeadline: AbortSignal | undefined;
 
   function startRefresh(capture: NameCapture) {
@@ -211,13 +211,19 @@ export function prepareSymbolRename(
     return (refreshDeadline ??= AbortSignal.timeout(REFRESH_BUDGET_MS));
   }
 
-  function exhausted(reason: string) {
-    return new Error(
-      `The rename could not catch up with newer text after ${((performance.now() - started) / 1_000).toFixed(1)} s: ${reason}. Nothing was written. Repeat the same replace call with the same name capture and new name.`,
-    );
+  function exhaustedMessage() {
+    const elapsed = ((performance.now() - started) / 1_000).toFixed(1);
+    return `The rename could not catch up with newer text after ${elapsed} s. Nothing was written. Repeat the same replace call with the same name capture and new name.`;
   }
   return {
     ...state,
+    ...(capture !== undefined && {
+      sourceChangeRetry: {
+        delaysMs: REFRESH_DELAYS_MS,
+        start: () => startRefresh(capture),
+        exhaustedMessage,
+      },
+    }),
     // Planning failures use the resolved file, not the opaque selection, as their source.
     input: { ...input, path: selected.capture.source },
     planEdit: async () => {
@@ -234,23 +240,14 @@ export function prepareSymbolRename(
             JSON.stringify({ path: selected.reference, text: "newName" }),
         );
       state.signal?.throwIfAborted();
-      // A guarded write conflict can retry even when its LSP plan is still usable.
-      const deadline =
-        attempted || contendedCaptures.has(capture) ? startRefresh(capture) : undefined;
-      const timeLimit = () =>
-        exhausted(`the ${REFRESH_BUDGET_MS / 1_000} s refresh window expired`);
-      if (deadline !== undefined) {
-        if (deadline.aborted) throw timeLimit();
-        if (refreshAttempts >= MAX_REFRESH_ATTEMPTS)
-          throw exhausted(`the limit of ${MAX_REFRESH_ATTEMPTS} refresh attempts was reached`);
-        refreshAttempts++;
-      }
-      attempted = true;
+      const deadline = contendedCaptures.has(capture) ? startRefresh(capture) : undefined;
+      if (deadline?.aborted) throw new Error(exhaustedMessage());
       if (cached !== undefined) return cached;
+      const attempt = deadline === undefined ? undefined : AbortSignal.timeout(REFRESH_ATTEMPT_MS);
       const signal =
-        deadline && state.signal
-          ? AbortSignal.any([deadline, state.signal])
-          : (deadline ?? state.signal);
+        attempt === undefined || deadline === undefined
+          ? state.signal
+          : AbortSignal.any([deadline, attempt, ...(state.signal ? [state.signal] : [])]);
       try {
         const request: RenameRequest = { ...capture, newName: input.text };
         const plan = await withLspDocuments(() =>
@@ -275,7 +272,9 @@ export function prepareSymbolRename(
         return cached;
       } catch (error) {
         state.signal?.throwIfAborted();
-        if (deadline?.aborted) throw timeLimit();
+        if (deadline?.aborted) throw new Error(exhaustedMessage(), { cause: error });
+        if (attempt?.aborted && error === attempt.reason)
+          throw sourceChanged("The language server did not finish the rename refresh in time.");
         if (!sourceMoved(error)) throw error;
         startRefresh(capture);
         throw error;

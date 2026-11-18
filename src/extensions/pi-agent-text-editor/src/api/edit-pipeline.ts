@@ -29,11 +29,23 @@ export interface TextEditPlanChange {
  */
 export type TextEditPlanner = () => Promise<TextEditPlan>;
 
+/** A semantic planner's recovery schedule after an edit is safely refused. */
+export interface SourceChangeRetryPolicy {
+  /** Jittered pauses before each retry. No attempt starts after the list is spent. */
+  readonly delaysMs: readonly number[];
+  /** Start or return the existing recovery signal. Called only after a retryable refusal. */
+  readonly start: () => AbortSignal;
+  /** Explain what the caller can do after the schedule or deadline is exhausted. */
+  readonly exhaustedMessage: () => string;
+}
+
 export interface TextPreEditState<Input = unknown> {
   readonly cwd: string;
   readonly input: Input;
   /** Optional native semantic edits supplied by the owning plugin, not by tool arguments. */
   readonly planEdit?: TextEditPlanner;
+  /** Optional recovery schedule shared by the planner and the editor's guarded retry loop. */
+  readonly sourceChangeRetry?: SourceChangeRetryPolicy;
   readonly signal?: AbortSignal;
   /** A validated diffStatuses contribution is added to each completed file's presentation. */
   readonly metadata?: Readonly<Record<string, unknown>>;

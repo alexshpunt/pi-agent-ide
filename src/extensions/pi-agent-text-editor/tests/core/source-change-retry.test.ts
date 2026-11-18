@@ -51,7 +51,7 @@ test("an edit whose file changed runs again and succeeds once the file holds sti
   expect(attempts).toBe(3);
 });
 
-test("slow attempts stop at the time budget with a reason that names the other writer", async () => {
+test("slow attempts stop at the time budget", async () => {
   const clock = timing(3_000);
   let attempts = 0;
   const outcome = await retryWhenSourceChanged(() => {
@@ -66,9 +66,6 @@ test("slow attempts stop at the time budget with a reason that names the other w
   if (outcome.kind !== "failed") throw new Error("Expected a failure");
   expect(outcome.failure.cause).toBeInstanceOf(SourceKeptChangingError);
   expect(outcome.failure.cause).toMatchObject({ attempts, cause: changed.failure.cause });
-  expect(outcome.failure.message).toContain("Another process kept writing the file");
-  expect(outcome.failure.message).toContain(`each of ${String(attempts)} attempts`);
-  expect(outcome.failure.message).toContain("nothing was written");
 });
 
 test("a first attempt slower than the time budget still runs again once its file changed", async () => {
@@ -85,7 +82,7 @@ test("a first attempt slower than the time budget still runs again once its file
   expect(attempts).toBe(2);
 });
 
-test("fast attempts stop after the last pause with the same reason", async () => {
+test("fast attempts stop after all seven retries", async () => {
   const clock = timing(10);
   let attempts = 0;
   const outcome = await retryWhenSourceChanged(() => {
@@ -94,7 +91,9 @@ test("fast attempts stop after the last pause with the same reason", async () =>
     return Promise.resolve(changed);
   }, clock.timing);
   expect(attempts).toBe(8);
-  expect(outcome.kind === "failed" && outcome.failure.message).toContain("each of 8 attempts");
+  if (outcome.kind !== "failed") throw new Error("Expected a failure");
+  expect(outcome.failure.cause).toBeInstanceOf(SourceKeptChangingError);
+  expect(outcome.failure.cause).toMatchObject({ attempts: 8, cause: changed.failure.cause });
 });
 
 test("other failures return at once and unchanged", async () => {

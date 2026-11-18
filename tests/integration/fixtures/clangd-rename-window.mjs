@@ -7,7 +7,7 @@ const [mode] = process.argv.slice(2);
 const clangd = spawn("clangd", [], { stdio: ["pipe", "pipe", "inherit"] });
 const toPi = new StreamMessageWriter(process.stdout);
 const toClang = new StreamMessageWriter(clangd.stdin);
-const waiting = new Map();
+const waiting = new Set();
 const log = (event) => appendFileSync(".tmp/rename-requests", event + "\n");
 let requests = 0;
 
@@ -15,19 +15,12 @@ new StreamMessageReader(process.stdin).listen((message) => {
   if (Message.isRequest(message) && message.method === "textDocument/rename") {
     log("rename");
     requests++;
-    if (mode === "stall" || mode === "replan" || mode === "exhaust") {
-      const writeCount = mode === "stall" ? 3 : mode === "replan" ? 2 : 4;
+    const writeCount = { stall: 1, replan: 2, exhaust: 10, "auto-repeat": 7, "stall-once": 1 }[mode];
+    if (writeCount !== undefined) {
       if (requests <= writeCount)
         appendFileSync("main.cpp", `int added${requests}() { return normalize(Vec{${requests}}); }\n`);
-      if (mode === "stall" && requests > 1) {
-        // Two replies would take 4.4 s together, though either fits on its own.
-        const timer = requests <= writeCount
-          ? setTimeout(() => {
-              waiting.delete(message.id);
-              void toClang.write(message);
-            }, 2_200)
-          : undefined;
-        waiting.set(message.id, timer);
+      if ((mode === "stall" && requests > 1) || (mode === "stall-once" && requests === 2)) {
+        waiting.add(message.id);
         return;
       }
     } else if (mode === "indent") {
@@ -60,7 +53,6 @@ new StreamMessageReader(process.stdin).listen((message) => {
     message.method === "$/cancelRequest" &&
     waiting.has(message.params?.id)
   ) {
-    clearTimeout(waiting.get(message.params.id));
     waiting.delete(message.params.id);
     log("cancel");
     return;
