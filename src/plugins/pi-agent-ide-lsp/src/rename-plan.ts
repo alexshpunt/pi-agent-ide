@@ -132,6 +132,7 @@ function rebaseRename(
 
 const C_LANGUAGES = new Set(["c", "cpp", "objective-c", "objective-cpp"]);
 const REFRESH_BUDGET_MS = 4_000;
+const MAX_REFRESH_ATTEMPTS = 3;
 /** An immediate repeat of a contended selection is a refresh too, not another cold request. */
 const contendedCaptures = new WeakSet<NameCapture>();
 
@@ -155,7 +156,20 @@ export function prepareSymbolRename(
   const capture = captures.get(input.path);
   const started = performance.now();
   let cached: TextEditPlan | undefined;
-  let refreshStarted = false;
+  let attempted = false;
+  let refreshAttempts = 0;
+  let refreshDeadline: AbortSignal | undefined;
+
+  function startRefresh(capture: NameCapture) {
+    contendedCaptures.add(capture);
+    return (refreshDeadline ??= AbortSignal.timeout(REFRESH_BUDGET_MS));
+  }
+
+  function exhausted(reason: string) {
+    return new Error(
+      `The rename could not catch up with newer text after ${((performance.now() - started) / 1_000).toFixed(1)} s: ${reason}. Nothing was written. Repeat the same replace call with the same name capture and new name.`,
+    );
+  }
   return {
     ...state,
     // Planning failures use the resolved file, not the opaque selection, as their source.
@@ -174,16 +188,19 @@ export function prepareSymbolRename(
             JSON.stringify({ path: selected.reference, text: "newName" }),
         );
       state.signal?.throwIfAborted();
+      // A guarded write conflict can retry even when its LSP plan is still usable.
+      const deadline =
+        attempted || contendedCaptures.has(capture) ? startRefresh(capture) : undefined;
+      const timeLimit = () =>
+        exhausted(`the ${REFRESH_BUDGET_MS / 1_000} s refresh window expired`);
+      if (deadline !== undefined) {
+        if (deadline.aborted) throw timeLimit();
+        if (refreshAttempts >= MAX_REFRESH_ATTEMPTS)
+          throw exhausted(`the limit of ${MAX_REFRESH_ATTEMPTS} refresh attempts was reached`);
+        refreshAttempts++;
+      }
+      attempted = true;
       if (cached !== undefined) return cached;
-      const exhausted = () =>
-        new Error(
-          `The rename could not catch up with newer text after ${((performance.now() - started) / 1000).toFixed(1)} s. Nothing was written. Let the other edit finish, then run lsp_search again and use the new name capture.`,
-        );
-      if (refreshStarted) throw exhausted();
-      const deadline = contendedCaptures.has(capture)
-        ? AbortSignal.timeout(REFRESH_BUDGET_MS)
-        : undefined;
-      refreshStarted = deadline !== undefined;
       const signal =
         deadline && state.signal
           ? AbortSignal.any([deadline, state.signal])
@@ -195,6 +212,7 @@ export function prepareSymbolRename(
             currentNameCapture(resultTargets, input.path, state.cwd, signal),
           ),
         );
+        signal?.throwIfAborted();
         cached = {
           files: plan.files.map((file) => ({
             ...file,
@@ -202,7 +220,7 @@ export function prepareSymbolRename(
               const mapped = file.rebase?.(current);
               if (mapped === undefined) {
                 cached = undefined;
-                contendedCaptures.add(capture);
+                startRefresh(capture);
               }
               return mapped;
             },
@@ -211,10 +229,9 @@ export function prepareSymbolRename(
         return cached;
       } catch (error) {
         state.signal?.throwIfAborted();
-        if (deadline?.aborted) throw exhausted();
+        if (deadline?.aborted) throw timeLimit();
         if (!sourceMoved(error)) throw error;
-        contendedCaptures.add(capture);
-        if (refreshStarted) throw exhausted();
+        startRefresh(capture);
         throw error;
       }
     },
