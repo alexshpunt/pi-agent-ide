@@ -233,10 +233,9 @@ function occurrences(
 }
 
 /**
- * Move a one-line match whose line changed around it. The match keeps its identity only when the
- * changed stretch holds the same number of copies of the matched text, the same copy comes first
- * in the new stretch, and the characters on both sides of it are unchanged. Anything else is
- * ambiguous and has no safe position.
+ * Move a one-line match whose line changed around it. Copies on one line can pair by order
+ * when their count stays the same and the hunk did not move. Other repeated matches need
+ * local context. The characters immediately on both sides of the match must still agree.
  */
 export function relocateInChangedLine(range: ResultRange, map: LineMap): ResultRange | undefined {
   return relocateInHunk(range, map.oldLines, map.newLines, () =>
@@ -264,11 +263,15 @@ function relocateInHunk(
   const index = old.findIndex(
     (item) => item.line === start.lineNumber && item.column === start.column,
   );
-  if (index === -1 || old.length !== next.length) return undefined;
-  const moved =
-    movedHunk && old.length > 1
-      ? findRepeatedMovedMatch(range, oldLines, newLines, old, next)
-      : next[index];
+  if (index === -1 || next.length === 0) return undefined;
+  const spansLines = (matches: readonly MatchPosition[]) =>
+    matches[0]?.line !== matches.at(-1)?.line;
+  const needsContext =
+    old.length !== next.length ||
+    (old.length > 1 && (movedHunk || spansLines(old) || spansLines(next)));
+  const moved = needsContext
+    ? findRepeatedMatch(range, oldLines, newLines, old, next)
+    : next[index];
   if (moved === undefined) return undefined;
   const target = lineText(newLines, moved.line);
   if (
@@ -285,59 +288,104 @@ function relocateInHunk(
   };
 }
 
+// Bound how much of a long line each candidate contributes as context.
+const maxFlankLength = 256;
+
+type Flank = string | readonly string[];
+
+interface MatchContext {
+  readonly position: MatchPosition;
+  readonly left: Flank;
+  readonly right: Flank;
+}
+
+function matchContext(
+  position: MatchPosition,
+  lines: readonly string[],
+  length: number,
+  requireWholeFlank: boolean,
+): MatchContext {
+  const text = lineText(lines, position.line);
+  const { column } = position;
+  const end = column + length;
+  if (requireWholeFlank) return { position, left: text.slice(0, column), right: text.slice(end) };
+  const runs = (flank: string) => flank.match(/[\p{ID_Continue}$]+|[^\p{ID_Continue}$]+/gu) ?? [];
+  const left = runs(text.slice(Math.max(0, column - maxFlankLength), column)).reverse();
+  const right = runs(text.slice(end, end + maxFlankLength));
+  // Do not use a run cut off by the context limit.
+  if (column > maxFlankLength) left.pop();
+  if (text.length - end > maxFlankLength) right.pop();
+  return { position, left, right };
+}
+
+function sharedContext(a: Flank, b: Flank): number {
+  if (typeof a === "string" || typeof b === "string")
+    return typeof a === "string" && a === b && /[\p{L}\p{N}]/u.test(a) ? 1 : 0;
+  let count = 0;
+  let hasWord = false;
+  for (const run of a) {
+    if (run !== b[count]) break;
+    // An identifier run immediately touching the match could be part of the selected word.
+    if (count > 0 && /[\p{L}\p{N}]/u.test(run)) hasWord = true;
+    count += 1;
+  }
+  return hasWord ? count : 0;
+}
+
 /**
- * A moved hunk has no reliable occurrence order across lines. For repeated matches on
- * one edited line, use a surviving edge as evidence of identity in both snapshots.
+ * Use a shared flank only when it identifies a single occurrence in both snapshots.
+ * Left and right are independent witnesses: if they disagree, neither can settle identity.
  */
-function findRepeatedMovedMatch(
+function contextMatch(
+  at: MatchContext,
+  candidates: readonly MatchContext[],
+  others: readonly MatchContext[],
+): MatchContext | undefined {
+  const onSide = (side: "left" | "right") => {
+    const flank = at[side];
+    let score = 0;
+    for (const candidate of candidates) {
+      if (candidate !== at) score = Math.max(score, sharedContext(flank, candidate[side]));
+    }
+    let best: MatchContext | undefined;
+    for (const candidate of others) {
+      const shared = sharedContext(flank, candidate[side]);
+      if (shared > score) {
+        score = shared;
+        best = candidate;
+      } else if (shared === score) best = undefined;
+    }
+    return best;
+  };
+  const left = onSide("left");
+  const right = onSide("right");
+  return left !== undefined && right !== undefined && left !== right ? undefined : (left ?? right);
+}
+
+/** Compare local context when the number or order of occurrences may have changed. */
+function findRepeatedMatch(
   { start, end }: ResultRange,
   oldLines: readonly string[],
   newLines: readonly string[],
   old: readonly MatchPosition[],
   next: readonly MatchPosition[],
 ): MatchPosition | undefined {
-  const onOldLine = old.filter(({ line }) => line === start.lineNumber);
-  if (onOldLine.length < 2) return undefined;
   const length = end.column - start.column;
-  const evidence = (
-    at: MatchPosition,
-    lines: readonly string[],
-    candidates: readonly MatchPosition[],
-    otherLines: readonly string[],
-    others: readonly MatchPosition[],
-  ) => {
-    const line = lineText(lines, at.line);
-    const prefix = line.slice(0, at.column + length);
-    const suffix = line.slice(at.column);
-    const fromEdge = (edge: string, prefix: boolean) => {
-      // Punctuation/whitespace alone (e.g. a closing parenthesis) doesn't identify a copy.
-      if (!/[\p{L}\p{N}]/u.test(prefix ? edge.slice(0, -length) : edge.slice(length)))
-        return undefined;
-      const usesEdge = (item: MatchPosition, texts: readonly string[]) => {
-        const text = lineText(texts, item.line);
-        return prefix
-          ? item.column + length === edge.length && text.startsWith(edge)
-          : text.length - item.column === edge.length && text.endsWith(edge);
-      };
-      if (candidates.filter((item) => usesEdge(item, lines)).length !== 1) return undefined;
-      const matches = others.filter((item) => usesEdge(item, otherLines));
-      return matches.length === 1 ? matches[0] : undefined;
-    };
-    const left = fromEdge(prefix, true);
-    const right = fromEdge(suffix, false);
-    return left !== undefined && right !== undefined && left !== right
-      ? undefined
-      : (left ?? right);
-  };
-
-  const ordinal = onOldLine.findIndex(({ column }) => column === start.column);
+  // Two matches on the same line can share partial flanks even when they swapped.
+  const requireWholeFlank = old.filter(({ line }) => line === start.lineNumber).length > 1;
+  if (requireWholeFlank && old.length !== next.length) return undefined;
+  const before = old.map((position) => matchContext(position, oldLines, length, requireWholeFlank));
+  const after = next.map((position) => matchContext(position, newLines, length, requireWholeFlank));
+  const onOldLine = before.filter(({ position }) => position.line === start.lineNumber);
+  const ordinal = onOldLine.findIndex(({ position }) => position.column === start.column);
   const selected = onOldLine[ordinal];
   if (selected === undefined) return undefined;
-  const moved = evidence(selected, oldLines, old, newLines, next);
-  if (moved === undefined || evidence(moved, newLines, next, oldLines, old) !== selected)
-    return undefined;
-  const onNewLine = next.filter(({ line }) => line === moved.line);
-  return onNewLine.length === onOldLine.length && onNewLine[ordinal] === moved ? moved : undefined;
+  const moved = contextMatch(selected, before, after);
+  if (moved === undefined || contextMatch(moved, after, before) !== selected) return undefined;
+  const onNewLine = after.filter(({ position }) => position.line === moved.position.line);
+  return onNewLine.length === onOldLine.length && onNewLine[ordinal] === moved
+    ? moved.position
+    : undefined;
 }
 
 /** Rebase a range through unchanged lines, or through a changed line that leaves its text intact. */
