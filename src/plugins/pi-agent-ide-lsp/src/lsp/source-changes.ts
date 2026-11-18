@@ -13,6 +13,11 @@ export function sourceChanged(message: string): Error {
   return Object.assign(new Error(message), { code: SOURCE_CHANGED });
 }
 
+/** Whether the caller must refresh its source snapshot before retrying. */
+export function isSourceChanged(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === SOURCE_CHANGED;
+}
+
 /** Retries source changes and any other explicitly retryable failure on the same budget. */
 export async function retryWhileSourceChanges<T>(
   action: () => Promise<T>,
@@ -24,8 +29,11 @@ export async function retryWhileSourceChanges<T>(
       return await action();
     } catch (error) {
       const delay = RETRY_DELAYS_MS[attempt];
-      const changed = (error as { code?: unknown } | null)?.code === SOURCE_CHANGED;
-      if (delay === undefined || signal?.aborted || (!changed && !shouldRetry?.(error)))
+      if (
+        delay === undefined ||
+        signal?.aborted ||
+        (!isSourceChanged(error) && !shouldRetry?.(error))
+      )
         throw error;
       if (delay > 0) await delayWithSignal(delay, signal);
     }

@@ -20,6 +20,7 @@ import {
 import {
   configurationItems,
   LspFileWatchers,
+  SHARED_DIAGNOSTICS_SUPERSEDED,
   SHARED_SERVER_PROTOCOL,
   SHARED_SOURCE_CHANGED,
 } from "./server-request-handlers.mjs";
@@ -41,7 +42,7 @@ import {
  * @typedef {object} SessionDocument
  * @property {number} version Version the session uses for this document.
  * @property {string} text Text the session last synchronized.
- * @property {boolean} published Whether the session received diagnostics for this version.
+ * @property {boolean} waitingForDiagnostics Whether this version still needs a report or rejection.
  * @property {number} syncedAt When the session sent this text, to tell it from later writes to the file.
  */
 
@@ -486,7 +487,7 @@ function openSession(socket, started) {
       session.documents.set(textDocument.uri, {
         version: textDocument.version,
         text: textDocument.text,
-        published: false,
+        waitingForDiagnostics: true,
         syncedAt: Date.now(),
       });
       documents.get(textDocument.uri)?.holders.add(session);
@@ -506,9 +507,10 @@ function openSession(socket, started) {
       // LspClient always sends full text; ranges would make the shared text unknown.
       if (!owned || text === undefined || contentChanges.some((change) => change.range)) return;
       owned.version = textDocument.version;
+      // Retrying diagnostics for the same bytes does not make an old copy newer than disk.
+      if (owned.text !== text) owned.syncedAt = Date.now();
       owned.text = text;
-      owned.published = false;
-      owned.syncedAt = Date.now();
+      owned.waitingForDiagnostics = true;
       align(session, textDocument.uri);
     },
   );
@@ -605,7 +607,10 @@ function align(session, uri) {
     // the file. Putting it back would make the server reparse and cancel the other sessions'
     // requests; that session catches up with its next request or edit. A copy sent after the
     // file's last write, such as an unsaved proposal, still reaches the server.
-    if (olderThanFile(uri, document.text, owned)) return;
+    if (newerFileTime(uri, document.text, owned.syncedAt) !== undefined) {
+      discardDiagnostics(session, uri, owned);
+      return;
+    }
     document.text = owned.text;
     document.version = ++nextVersion;
     document.publication = undefined;
@@ -613,11 +618,12 @@ function align(session, uri) {
       textDocument: { uri, version: document.version },
       contentChanges: [{ text: owned.text }],
     });
+    nextDiagnosticSession(uri, document);
     return;
   }
   const publication = document.publication;
   if (publication?.current !== document.version) return;
-  owned.published = true;
+  owned.waitingForDiagnostics = false;
   notifySession(session, DIAGNOSTICS, {
     uri,
     ...(publication.version !== undefined && { version: owned.version }),
@@ -626,48 +632,58 @@ function align(session, uri) {
 }
 
 /**
- * Whether the server has the text of the document's file and a session's copy predates the
- * file's last write. Documents that are not readable local files are never older.
+ * Return the file's modification time only when it is newer and matches the server text.
  * @param {string} uri
  * @param {string} serverText
- * @param {{ text: string; syncedAt: number }} owned
+ * @param {number} since
  */
-function olderThanFile(uri, serverText, owned) {
-  if (!uri.startsWith("file:")) return false;
+function newerFileTime(uri, serverText, since) {
+  if (!uri.startsWith("file:")) return undefined;
   try {
     const file = fileURLToPath(uri);
-    return (
-      statSync(file).mtimeMs > owned.syncedAt &&
-      owned.text !== serverText &&
-      readFileSync(file, "utf8") === serverText
-    );
+    const { mtimeMs } = statSync(file);
+    if (mtimeMs > since && readFileSync(file, "utf8") === serverText) return mtimeMs;
   } catch {
-    return false;
+    // Documents that are not readable local files are never superseded by a disk write.
   }
+  return undefined;
 }
 
 /**
- * After the server published for its current text, give it the text of another session that
- * still waits for diagnostics. Servers such as clangd publish nothing for a text that a newer
- * one replaced, so without this an earlier session would wait in vain.
+ * @param {Session} session
  * @param {string} uri
+ * @param {SessionDocument} owned
  */
-function serveWaitingSession(uri) {
-  const document = documents.get(uri);
-  if (!document) return;
+function discardDiagnostics(session, uri, owned) {
+  if (!owned.waitingForDiagnostics) return;
+  owned.waitingForDiagnostics = false;
+  notifySession(session, SHARED_DIAGNOSTICS_SUPERSEDED, { uri, version: owned.version });
+}
+
+/**
+ * Reject pending copies that won't be served because the active text is newer disk text.
+ * Return the first remaining waiter whose text still needs to be sent to the server.
+ * @param {string} uri
+ * @param {ServerDocument} document
+ */
+function nextDiagnosticSession(uri, document) {
+  const waiting = [];
+  let oldest = Infinity;
   for (const session of document.holders) {
     const owned = session.documents.get(uri);
-    // A copy older than the file is not served; see align.
-    if (
-      owned &&
-      !owned.published &&
-      owned.text !== document.text &&
-      !olderThanFile(uri, document.text, owned)
-    ) {
-      align(session, uri);
-      return;
-    }
+    if (!owned?.waitingForDiagnostics || owned.text === document.text) continue;
+    waiting.push({ session, owned });
+    oldest = Math.min(oldest, owned.syncedAt);
   }
+  if (!waiting.length) return undefined;
+  const modified = newerFileTime(uri, document.text, oldest);
+  let next;
+  for (const { session, owned } of waiting) {
+    if (modified !== undefined && modified > owned.syncedAt)
+      discardDiagnostics(session, uri, owned);
+    else next ??= session;
+  }
+  return next;
 }
 
 /**
@@ -704,13 +720,17 @@ function publishToSessions(method, parameters) {
   for (const session of document.holders) {
     const owned = session.documents.get(/** @type {string} */ (publication.uri));
     if (owned?.text !== document.text) continue;
-    owned.published = true;
+    owned.waitingForDiagnostics = false;
     notifySession(session, DIAGNOSTICS, {
       ...publication,
       ...(version !== undefined && { version: owned.version }),
     });
   }
-  serveWaitingSession(/** @type {string} */ (publication.uri));
+  // The server may never publish for a version it did not finish analyzing. Give it
+  // the next pending copy, unless that copy was superseded by a disk write.
+  const uri = /** @type {string} */ (publication.uri);
+  const next = nextDiagnosticSession(uri, document);
+  if (next) align(next, uri);
 }
 
 /**

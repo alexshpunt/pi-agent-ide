@@ -197,8 +197,10 @@ test("a document reopened at once stays open on the server", async () => {
   client.closeDocument(uri);
   client.openDocument(uri, "first\n", "fixture", 1);
 
-  // The report the server published for the same text answers the reopened document.
-  await until(() => client.diagnosticPublication(uri)?.version === 1);
+  // The cached server report answers the new session version without another didOpen.
+  const reopened = client.documentVersion(uri);
+  expect(reopened).toBeGreaterThan(1);
+  await until(() => client.diagnosticPublication(uri)?.version === reopened);
   expect((await status(client)).events).toEqual([["open", uri]]);
 });
 
