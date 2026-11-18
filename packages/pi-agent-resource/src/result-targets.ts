@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createLineMap, describeLostRange, moveRange, type LineMap } from "./line-map.ts";
+import { createRangeTracker, type RangeTracker } from "./line-map.ts";
 import { isRacyTimestamp } from "./unchanged-read.ts";
 import { ResourceError } from "./resource-error.ts";
 
@@ -110,7 +110,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 10;
+export const RESULT_TARGET_STORE_VERSION = 11;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -130,7 +130,7 @@ interface FileSnapshot {
   /** Another string object with the same text as `content`, so repeated comparisons stay cheap. */
   alias?: string;
   /** The last older text a new selection came from, with its map onto `content`. */
-  older?: { readonly text: string; readonly map: LineMap | undefined };
+  older?: { readonly text: string; readonly tracker: RangeTracker };
 }
 type ResultEntry = { readonly cwd: string } & (
   | (ResolvedResultTargets & { readonly state: "ready"; readonly lost?: readonly string[] })
@@ -351,9 +351,11 @@ export class ResultTargetStore {
   public registerSearchReference(reference: string, target: string, cwd: string): void {
     if (!/^SEARCH#[A-F\d]{4,64}:[1-9]\d*:(line|match)$/u.test(reference))
       throw new Error("Only numbered Search references can alias a snapshot.");
-    if (!this.#entries.has(target))
-      throw new Error("A Search reference needs a registered result target.");
-    this.resolve(target, cwd);
+    const entry = this.#entries.get(target);
+    if (entry?.state !== "ready" || entry.cwd !== path.resolve(cwd))
+      throw new Error("A Search reference needs a registered result target from this worktree.");
+    // A writer can change one match before publication. Bind its original target so use of this
+    // selector reports the loss without failing the search or hiding its other matches.
     this.#matchReferences.set(reference, target);
     this.#referenceNames.set(target, reference);
   }
@@ -565,9 +567,7 @@ export class ResultTargetStore {
       this.invalidate(identity);
       return undefined;
     }
-    const maps = new Map<string, LineMap | undefined>();
-    let lines: readonly string[] | undefined;
-    const newLines = () => (lines ??= next.split("\n"));
+    const trackers = new Map<string, RangeTracker>();
     const rebased = new Set<string>();
     for (const [reference, entry] of this.#entries) {
       if (entry.state !== "ready") continue;
@@ -584,13 +584,15 @@ export class ResultTargetStore {
           targets.push(target);
           continue;
         }
-        if (!maps.has(target.expectedContent))
-          maps.set(target.expectedContent, createLineMap(target.expectedContent, next));
-        const map = maps.get(target.expectedContent);
+        let tracker = trackers.get(target.expectedContent);
+        if (tracker === undefined) {
+          tracker = createRangeTracker(target.expectedContent, next);
+          trackers.set(target.expectedContent, tracker);
+        }
         const ranges: ResultRange[] = [];
         for (const range of target.ranges) {
-          const moved = map === undefined ? undefined : moveRange(range, map, newLines);
-          if (moved === undefined) lost.push(describeLostRange(range, map));
+          const moved = tracker.move(range, true);
+          if (moved === undefined) lost.push(tracker.describe(range));
           else ranges.push(moved);
         }
         targets.push({ ...target, expectedContent: next, ranges });
@@ -644,17 +646,13 @@ export class ResultTargetStore {
       if (snapshot.older?.text !== target.expectedContent)
         snapshot.older = {
           text: target.expectedContent,
-          map: createLineMap(target.expectedContent, current),
+          tracker: createRangeTracker(target.expectedContent, current),
         };
-      const map = snapshot.older.map;
-      let lines: readonly string[] | undefined;
+      const tracker = snapshot.older.tracker;
       const ranges: ResultRange[] = [];
       for (const range of target.ranges) {
-        const moved =
-          map === undefined
-            ? undefined
-            : moveRange(range, map, () => (lines ??= current.split("\n")));
-        if (moved === undefined) lost.push(describeLostRange(range, map));
+        const moved = tracker.move(range, true);
+        if (moved === undefined) lost.push(tracker.describe(range));
         else ranges.push(moved);
       }
       return { ...target, expectedContent: current, ranges };
@@ -885,19 +883,19 @@ export function resultTargetsInText(
       targets.push(target);
       continue;
     }
-    const map = createLineMap(target.expectedContent, current);
-    let lines: readonly string[] | undefined;
-    const ranges = target.ranges.map((range) =>
-      map === undefined ? undefined : moveRange(range, map, () => (lines ??= current.split("\n"))),
-    );
-    if (ranges.some((range) => range === undefined))
-      throw new Error(
-        `The region this result selected can no longer be found in ${target.source}; repeat Read/Search.`,
-      );
+    const tracker = createRangeTracker(target.expectedContent, current);
+    const ranges = target.ranges.map((range) => {
+      const moved = tracker.move(range, true);
+      if (moved === undefined)
+        throw new Error(
+          `The region this result selected can no longer be found in ${target.source}: ${tracker.describe(range)}. Repeat Read/Search.`,
+        );
+      return moved;
+    });
     targets.push({
       ...target,
       expectedContent: current,
-      ranges: ranges.filter((range) => range !== undefined),
+      ranges,
     });
   }
   return { targets: combineTargets(targets), complete: result.complete };

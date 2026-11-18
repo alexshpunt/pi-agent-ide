@@ -35,7 +35,10 @@ function lineTokens(content: string): string[] | undefined {
 export function createLineMap(before: string, after: string): LineMap | undefined {
   const old = lineTokens(before);
   const next = lineTokens(after);
-  if (old === undefined || next === undefined) return undefined;
+  return old === undefined || next === undefined ? undefined : orderedMap(old, next);
+}
+
+function orderedMap(old: readonly string[], next: readonly string[]): LineMap | undefined {
   const table = new Int32Array(old.length + 1);
   let prefix = 0;
   const shortest = Math.min(old.length, next.length);
@@ -83,7 +86,10 @@ export function createLineMap(before: string, after: string): LineMap | undefine
  * Move a range to the new text. Every line it touches must be unchanged and still adjacent;
  * otherwise the selected text changed, and the range has no safe position.
  */
-export function rebaseRange(range: ResultRange, map: LineMap): ResultRange | undefined {
+export function rebaseRange(
+  range: ResultRange,
+  map: Pick<LineMap, "newLine">,
+): ResultRange | undefined {
   const { start, end } = range;
   // A range that ends at column 0 of a later line stops after the previous line's ending.
   const endsAfterLine = end.column === 0 && end.lineNumber > start.lineNumber;
@@ -171,18 +177,15 @@ export function moveRange(
 /** A changed stretch larger than this is not searched for a moved match; it counts as ambiguous. */
 const maxHunkLines = 200;
 
+interface LineHunk {
+  readonly oldFrom: number;
+  readonly oldTo: number;
+  readonly newFrom: number;
+  readonly newTo: number;
+}
+
 /** The changed stretch around an old line: its lines in both texts, one-based and inclusive. */
-function hunkAround(
-  map: LineMap,
-  line: number,
-):
-  | {
-      readonly oldFrom: number;
-      readonly oldTo: number;
-      readonly newFrom: number;
-      readonly newTo: number;
-    }
-  | undefined {
+function hunkAround(map: LineMap, line: number): LineHunk | undefined {
   const count = map.oldLines.length;
   let before = line - 1;
   while (before >= 1 && map.newLine(before) === undefined) before -= 1;
@@ -222,21 +225,33 @@ function occurrences(
  * ambiguous and has no safe position.
  */
 export function relocateInChangedLine(range: ResultRange, map: LineMap): ResultRange | undefined {
+  return relocateInHunk(range, map.oldLines, map.newLines, () =>
+    hunkAround(map, range.start.lineNumber),
+  );
+}
+
+function relocateInHunk(
+  range: ResultRange,
+  oldLines: readonly string[],
+  newLines: readonly string[],
+  locate: () => LineHunk | undefined,
+): ResultRange | undefined {
   const { start, end } = range;
   if (range.linewise === true || start.lineNumber !== end.lineNumber || start.column >= end.column)
     return undefined;
-  const hunk = hunkAround(map, start.lineNumber);
+  const hunk = locate();
   if (hunk === undefined || hunk.newTo < hunk.newFrom) return undefined;
-  const content = lineText(map.oldLines, start.lineNumber);
+  const content = lineText(oldLines, start.lineNumber);
   const matched = content.slice(start.column, end.column);
-  const old = occurrences(map.oldLines, hunk.oldFrom, hunk.oldTo, matched);
-  const next = occurrences(map.newLines, hunk.newFrom, hunk.newTo, matched);
+  if (matched.length !== end.column - start.column) return undefined;
+  const old = occurrences(oldLines, hunk.oldFrom, hunk.oldTo, matched);
+  const next = occurrences(newLines, hunk.newFrom, hunk.newTo, matched);
   const index = old.findIndex(
     (item) => item.line === start.lineNumber && item.column === start.column,
   );
   const moved = next[index];
   if (index === -1 || moved === undefined || old.length !== next.length) return undefined;
-  const target = lineText(map.newLines, moved.line);
+  const target = lineText(newLines, moved.line);
   if (
     content.slice(start.column - 1, start.column) !==
       target.slice(moved.column - 1, moved.column) ||
@@ -256,6 +271,190 @@ export function rebaseOrRelocateRange(range: ResultRange, map: LineMap): ResultR
   return rebaseRange(range, map) ?? relocateInChangedLine(range, map);
 }
 
+/** One-based positions; a zero entry means the token occurs more than once. */
+function uniqueLines(lines: readonly string[]): Map<string, number> {
+  const positions = new Map<string, number>();
+  for (const [index, line] of lines.entries())
+    positions.set(line, positions.has(line) ? 0 : index + 1);
+  return positions;
+}
+
+interface ContextMap extends LineMap {
+  readonly reordered: boolean;
+  readonly conflicts: Int32Array;
+  readonly newClaims: Int32Array;
+  readonly duplicated: ReadonlySet<string>;
+}
+
+function contextualMap(oldLines: readonly string[], newLines: readonly string[]): ContextMap {
+  const oldPositions = uniqueLines(oldLines);
+  const newPositions = uniqueLines(newLines);
+  const duplicated = new Set<string>();
+  for (const [token, old] of oldPositions) {
+    const next = newPositions.get(token);
+    if (next !== undefined && (old === 0) !== (next === 0)) duplicated.add(token);
+  }
+  const table = new Int32Array(oldLines.length + 1);
+  const conflicts = new Int32Array(table.length);
+  const reverse = new Int32Array(newLines.length + 1);
+  let last = 0;
+  let reordered = false;
+  for (const [token, old] of oldPositions) {
+    const next = newPositions.get(token) ?? 0;
+    if (old === 0 || next === 0 || token === "") continue;
+    table[old] = next;
+    reordered ||= next < last;
+    last = next;
+  }
+
+  // Extend each unique anchor through neighboring identical lines. Both directions are needed:
+  // a repeated line may have context on only one side. Never choose between competing contexts.
+  const claim = (old: number, next: number) => {
+    const previous = table[old];
+    if (previous !== 0 && previous !== next) conflicts[old] = 1;
+    else table[old] = next;
+    const owner = reverse[next] ?? 0;
+    if (owner !== 0 && owner !== old) {
+      conflicts[old] = 1;
+      conflicts[owner] = 1;
+    } else reverse[next] = old;
+  };
+  const extend = (from: number, to: number, step: number) => {
+    let position = 0;
+    for (let old = from; old !== to; old += step) {
+      const token = oldLines[old - 1];
+      if (token === undefined) break;
+      const unique = oldPositions.get(token) === old ? (newPositions.get(token) ?? 0) : 0;
+      if (unique !== 0 && token !== "") position = unique;
+      else if (position !== 0 && newLines[position + step - 1] === token) position += step;
+      else position = 0;
+      if (position !== 0) claim(old, position);
+    }
+  };
+  extend(1, table.length, 1);
+  extend(table.length - 1, 0, -1);
+  const newClaims = new Int32Array(reverse.length);
+  let claims = 0;
+  for (let line = 1; line < reverse.length; line += 1) {
+    if (reverse[line] !== 0) claims += 1;
+    newClaims[line] = claims;
+  }
+  return {
+    table,
+    oldLines,
+    newLines,
+    reordered,
+    conflicts,
+    newClaims,
+    duplicated,
+    newLine: (old) => (conflicts[old] === 0 ? table[old] || undefined : undefined),
+  };
+}
+
+/** Map a small changed stretch inside a moved block, not across a cut or paste boundary. */
+function movedHunk(map: ContextMap, line: number): LineHunk | undefined {
+  if (map.table[line] !== 0) return undefined;
+  let before = line - 1;
+  while (before > 0 && map.table[before] === 0 && line - before < maxHunkLines) before -= 1;
+  let after = line + 1;
+  while (after < map.table.length && map.table[after] === 0 && after - before < maxHunkLines)
+    after += 1;
+  const left = map.newLine(before);
+  const right = map.newLine(after);
+  if (
+    left === undefined ||
+    right === undefined ||
+    right - left !== after - before ||
+    map.newClaims[right - 1] !== map.newClaims[left] ||
+    after - before > maxHunkLines
+  )
+    return undefined;
+  return { oldFrom: before + 1, oldTo: after - 1, newFrom: left + 1, newTo: right - 1 };
+}
+
+export interface RangeTracker {
+  readonly move: (range: ResultRange, allowAdjusted?: boolean) => ResultRange | undefined;
+  readonly describe: (range: ResultRange) => string;
+}
+
+/** Track a snapshot pair once, even when many independent selections use it. */
+export function createRangeTracker(before: string, after: string): RangeTracker {
+  if (before === after) return { move: (range) => range, describe: describeUnmappedRange };
+  const old = lineTokens(before);
+  const next = lineTokens(after);
+  if (old === undefined || next === undefined)
+    return { move: () => undefined, describe: describeUnmappedRange };
+  const context = contextualMap(old, next);
+  let ordered: LineMap | null | undefined;
+  const getOrdered = () => {
+    if (ordered === undefined) ordered = orderedMap(old, next) ?? null;
+    return ordered ?? undefined;
+  };
+  let lines: string[] | undefined;
+  let positions: Map<string, number[]> | undefined;
+  const move: RangeTracker["move"] = (range, allowAdjusted = false) => {
+    const exact = rebaseRange(range, context);
+    if (exact !== undefined) return exact;
+    if (context.reordered)
+      return relocateInHunk(range, old, next, () => movedHunk(context, range.start.lineNumber));
+    const map = getOrdered();
+    if (map === undefined) return undefined;
+    // The ordered diff cannot overrule conflicting context or a known different destination.
+    const last =
+      range.end.column === 0 && range.end.lineNumber > range.start.lineNumber
+        ? range.end.lineNumber - 1
+        : range.end.lineNumber;
+    for (let line = range.start.lineNumber; line <= last; line += 1) {
+      const known = context.newLine(line);
+      const orderedLine = map.newLine(line);
+      if (
+        context.conflicts[line] ||
+        (known !== undefined && known !== orderedLine) ||
+        (known === undefined &&
+          orderedLine !== undefined &&
+          context.duplicated.has(old[line - 1] ?? ""))
+      )
+        return undefined;
+    }
+    return allowAdjusted
+      ? moveRange(range, map, () => (lines ??= after.split("\n")))
+      : rebaseOrRelocateRange(range, map);
+  };
+  const describe: RangeTracker["describe"] = (range) => {
+    const line = range.start.lineNumber;
+    const token = old[line - 1];
+    positions ??= candidateLines(next);
+    const candidates =
+      token === undefined || token.trim() === "" ? [] : (positions.get(token) ?? []);
+    const hunk = context.reordered ? movedHunk(context, line) : undefined;
+    if (candidates.length === 0 && !context.reordered) {
+      const map = getOrdered();
+      if (map !== undefined) return describeLostRange(range, map);
+    }
+    const head = `line ${String(line)} \`${preview(token?.trim() ?? "")}\``;
+    if (candidates.length > 0)
+      return `${head}: cannot verify the same selection; candidate lines: ${candidates.join(", ")}`;
+    if (hunk !== undefined) return describeHunk(head, next, hunk);
+    return `${head}: selected text changed, was deleted, or has no unique surrounding context`;
+  };
+  return { move, describe };
+}
+
+/** Keep only a few locations per line; diagnostics never need the whole file. */
+function candidateLines(lines: readonly string[]): Map<string, number[]> {
+  const positions = new Map<string, number[]>();
+  for (const [index, token] of lines.entries()) {
+    const matches = positions.get(token);
+    if (matches === undefined) positions.set(token, [index + 1]);
+    else if (matches.length < 3) matches.push(index + 1);
+  }
+  return positions;
+}
+
+function describeUnmappedRange(range: ResultRange): string {
+  return `line ${String(range.start.lineNumber)}: the snapshots cannot be compared safely`;
+}
+
 /**
  * Ranges selected in one text, placed in another text of the same source with their own text
  * unchanged. Every reference and anchor that holds ranges of an earlier or later text uses this to
@@ -266,12 +465,10 @@ export function rangesInText(
   from: string,
   to: string,
 ): ResultRange[] | undefined {
-  if (from === to) return [...ranges];
-  const map = createLineMap(from, to);
-  if (map === undefined) return undefined;
+  const tracker = createRangeTracker(from, to);
   const moved: ResultRange[] = [];
   for (const range of ranges) {
-    const next = rebaseOrRelocateRange(range, map);
+    const next = tracker.move(range);
     if (next === undefined) return undefined;
     moved.push(next);
   }
@@ -284,12 +481,19 @@ export function describeLostRange(range: ResultRange, map: LineMap | undefined):
   if (map === undefined) return `line ${String(line)}: the file changed too much to follow it`;
   const original = lineText(map.oldLines, line).trim();
   const hunk = hunkAround(map, line);
-  const shown = (text: string) => (text.length > 120 ? `${text.slice(0, 120)}…` : text);
-  const head = `line ${String(line)} \`${shown(original)}\``;
+  const head = `line ${String(line)} \`${preview(original)}\``;
   if (hunk === undefined) return `${head}: changed or moved`;
+  return describeHunk(head, map.newLines, hunk);
+}
+
+function preview(text: string): string {
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text;
+}
+
+function describeHunk(head: string, lines: readonly string[], hunk: LineHunk): string {
   if (hunk.newTo < hunk.newFrom) return `${head}: deleted`;
   const now = [];
   for (let at = hunk.newFrom; at <= Math.min(hunk.newTo, hunk.newFrom + 2); at += 1)
-    now.push(`${String(at)}| ${shown(lineText(map.newLines, at).trim())}`);
+    now.push(`${String(at)}| ${preview(lineText(lines, at).trim())}`);
   return `${head}: now ${now.join(" / ")}${hunk.newTo - hunk.newFrom > 2 ? " …" : ""}`;
 }

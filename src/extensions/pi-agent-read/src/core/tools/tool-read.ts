@@ -2,11 +2,9 @@ import { requiredValue } from "pi-agent-invariant";
 import { Text } from "@earendil-works/pi-tui";
 import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
-  createLineMap,
-  describeLostRange,
+  createRangeTracker,
   isAgentContent,
   isResourceResolutionAttempt,
-  rangesInText,
   ResourceError,
   resourceScheduler,
   resourceAccesses,
@@ -746,19 +744,17 @@ async function resolveTextTargets(
         // source since, so the range moves onto the text this Read acquired, or fails.
         const acquired = acquiredText(resolved.context);
         const expected = target.expectedContent;
-        const range =
+        const tracker =
           expected === undefined || acquired === undefined
-            ? resolvedRange
-            : rangesInText([resolvedRange], expected, acquired)?.[0];
+            ? undefined
+            : createRangeTracker(expected, acquired);
+        const range = tracker === undefined ? resolvedRange : tracker.move(resolvedRange);
         if (range === undefined)
           return withViewWarnings(
             failureResult({
               code: "RESOLVE_FAILED",
               source: target.source,
-              message: `${target.source} changed after the selection was resolved: ${describeLostRange(
-                resolvedRange,
-                createLineMap(requiredValue(expected), requiredValue(acquired)),
-              )}. Repeat the call that returned the reference for current references.`,
+              message: `${target.source} changed after the selection was resolved: ${requiredValue(tracker).describe(resolvedRange)}. Repeat the call that returned the reference for current references.`,
             }),
             viewWarnings,
           );
