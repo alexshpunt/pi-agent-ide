@@ -19,12 +19,17 @@ export async function requestRename(
   uri: string,
   position: LspPosition,
   newName: string,
+  signal?: AbortSignal,
 ): Promise<LspWorkspaceEdit | null> {
-  return await client.sendRequest<LspWorkspaceEdit | null>("textDocument/rename", {
-    textDocument: { uri },
-    position,
-    newName,
-  });
+  return await client.sendRequest<LspWorkspaceEdit | null>(
+    "textDocument/rename",
+    {
+      textDocument: { uri },
+      position,
+      newName,
+    },
+    signal,
+  );
 }
 
 /**

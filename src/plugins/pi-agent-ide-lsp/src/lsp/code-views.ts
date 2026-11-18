@@ -114,17 +114,13 @@ export async function resolveLspRenameTarget(
   filePath: string,
   selector: readonly string[],
   cwd: string,
+  content: string,
   signal?: AbortSignal,
 ) {
   throwIfAborted(signal);
-  const content = await manager.readSourceText(filePath, signal);
-  const document = await openCodeDocument(manager, filePath, cwd, signal);
-  if (
-    document.servedText !== content ||
-    content !== (await manager.readSourceText(filePath, signal)) ||
-    document.client.documentContent(document.uri) !== content
-  )
-    throw sourceChanged("The rename source changed during resolution.");
+  const document = await openCodeDocument(manager, filePath, cwd, signal, content);
+  if (document.servedText !== content)
+    throw sourceChanged("The language server changed documents during rename resolution.");
   throwIfAborted(signal);
   return {
     client: document.client,
@@ -392,9 +388,16 @@ async function openCodeDocument(
   filePath: string,
   cwd: string,
   signal?: AbortSignal,
+  snapshot?: string,
 ): Promise<LspCodeDocument> {
   const absolutePath = resolveCodeViewPath(filePath, cwd);
-  const opened = await manager.openFile(absolutePath, cwd, "symbols", signal);
+  const opened = await manager.openFile(
+    absolutePath,
+    cwd,
+    "symbols",
+    signal,
+    snapshot === undefined ? undefined : () => Promise.resolve(snapshot),
+  );
 
   if (!opened) {
     throw new Error(

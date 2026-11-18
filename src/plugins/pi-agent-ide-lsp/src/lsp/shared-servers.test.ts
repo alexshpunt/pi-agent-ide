@@ -280,6 +280,24 @@ test("an answer keeps the requesting session's version when another session's te
   expect(renamed.documentChanges[0]?.textDocument.version).toBe(second.documentVersion(uri));
 });
 
+test("unversioned rename edits are refused when another session changes the served document", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_DEFER_RENAME: "1" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  first.syncDocument(uri, "first\n", "fixture");
+  const pending = first.sendRequest("textDocument/rename", {
+    textDocument: { uri },
+    position: { line: 0, character: 0 },
+    newName: "renamed",
+  });
+  const checked = expect(pending).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
+  await until(() => second.sendRequest<boolean>("lifecycle/renamePending", null));
+  second.syncDocument(uri, "changed\n", "fixture");
+  await second.sendRequest("lifecycle/finishRename", null);
+  await checked;
+});
 test("a session with an older copy of a file does not take the file's text from the server", async () => {
   const { cwd, sharing } = await workspace();
   const first = await session(cwd, sharing);

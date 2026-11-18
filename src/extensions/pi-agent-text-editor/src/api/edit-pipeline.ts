@@ -11,19 +11,21 @@ export interface TextEditPlan {
   readonly files: readonly {
     readonly source: string;
     readonly expectedContent: string;
-    readonly changes: readonly {
-      readonly from: number;
-      readonly to: number;
-      readonly insert: string;
-    }[];
+    readonly changes: readonly TextEditPlanChange[];
+    /** Map the same edits onto the transaction's snapshot, or refuse if it is incompatible. */
+    readonly rebase?: (current: string) => readonly TextEditPlanChange[] | undefined;
   }[];
 }
+export interface TextEditPlanChange {
+  readonly from: number;
+  readonly to: number;
+  readonly insert: string;
+}
+
 /**
- * Plans native semantic edits on the current text. The editor calls it at the start of each
- * attempt of the edit, as it resolves the targets of other edits there. When another process
- * writes a planned file before the edit writes it, the edit runs again and is planned again. A
- * planner that finds its own source changed throws an error with code `SOURCE_CHANGED` to get the
- * same new attempt.
+ * Supplies native semantic edits. Called at the start of each attempt, including retries after a
+ * snapshot mismatch or a guarded write conflict. A planner may reuse a compatible plan or throw
+ * with code `SOURCE_CHANGED` to request another attempt.
  */
 export type TextEditPlanner = () => Promise<TextEditPlan>;
 

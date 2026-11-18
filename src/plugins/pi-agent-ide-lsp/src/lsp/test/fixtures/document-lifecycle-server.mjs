@@ -113,7 +113,16 @@ connection.onRequest("lifecycle/status", () => ({ open: [...open.keys()], events
 connection.onRequest("lifecycle/text", ({ textDocument }) => texts.get(textDocument.uri) ?? null);
 // Answers for the version it had when the request arrived, after LIFECYCLE_RENAME_DELAY_MS.
 const renameDelayMs = Number(process.env.LIFECYCLE_RENAME_DELAY_MS ?? 0);
+let finishRename;
+connection.onRequest("lifecycle/renamePending", () => finishRename !== undefined);
+connection.onRequest("lifecycle/finishRename", () => {
+  finishRename?.();
+  finishRename = undefined;
+  return null;
+});
 connection.onRequest("textDocument/rename", ({ textDocument }) => {
+  if (process.env.LIFECYCLE_DEFER_RENAME === "1")
+    return new Promise((resolve) => { finishRename = () => resolve({ changes: { [textDocument.uri]: [] } }); });
   const answer = {
     documentChanges: [{ textDocument: { uri: textDocument.uri, version: open.get(textDocument.uri) ?? null }, edits: [] }],
   };
