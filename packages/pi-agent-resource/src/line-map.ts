@@ -530,7 +530,7 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
     }
     const head = `line ${String(line)} \`${preview(token.trim())}\``;
     if (candidates.length > 0)
-      return `${head}: cannot verify the same selection; candidate lines: ${candidates.join(", ")}`;
+      return `${head}: selection is uncertain; possible locations: ${candidates.join(", ")}`;
     if (hunk !== undefined) return describeHunk(head, next, hunk);
     return `${head}: selected text changed, was deleted, or has no unique surrounding context`;
   };

@@ -80,14 +80,14 @@ export async function expandReferenceList(
       // itself as the id of a Search match, so the message names both.
       const name = store.referenceName(item);
       failures.push(
-        `Reference ${named(name === item ? item : `${name} (${item})`)} cannot be used: ${describe(error).replaceAll("\n", "\n  ")}`,
+        `Could not use ${named(name === item ? item : `${name} (${item})`)}: ${describe(error).replaceAll("\n", "\n  ")}`,
       );
     }
   }
   if (failures.length > 0)
     throw new Error(
       [
-        `${String(failures.length)} of ${String(list.length)} references cannot be used; nothing was changed. Repeat the call without them, or with fresh references for them:`,
+        `No write was made. Replace or remove the ${String(failures.length)} unusable entries in the list of ${String(list.length)}:`,
         ...failures.map((failure) => `- ${failure}`),
       ].join("\n"),
     );
