@@ -16,7 +16,7 @@ Pass exactly one mode:
 
 A selector segment is a name, or a name with parameter types that names one overload: `clamp(int, int, int)`, `Box/get() const`. Types are compared with the signature the server reports in the document symbol's `detail`, such as clangd's `int (int, int, int)`. Spacing does not matter (`const Vec&` and `const Vec &` are the same), parameter names and default values copied from a declaration are ignored, and `(void)` is `()`. Trailing qualifiers such as `const` tell methods apart; a segment without them prefers the unqualified overload.
 
-Entries with the same name, kind and signature in one scope are one declaration, such as a C++ prototype and its definition. References, calls and renames are the same from either entry. A `declaration` selection takes the entry with a body; when no single entry has one, the call fails and names the lines.
+Entries with the same name, kind and signature in one scope are one declaration, such as a C++ prototype and its definition. References, calls and renames are the same from either entry. A `declaration` selection takes the definition when the outline contains exactly one entry with a body. Otherwise it selects the first declaration. Replacing the issued name capture runs a semantic rename across the selected symbol's declarations and references.
 
 When a selector names several declarations, the error lists a selector for each. Servers whose document symbols carry no signature, such as most TypeScript and Python servers, cannot tell overloads apart this way; their error says so.
 
