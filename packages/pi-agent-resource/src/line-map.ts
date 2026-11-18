@@ -197,9 +197,12 @@ function hunkAround(map: LineMap, line: number): LineHunk | undefined {
   return { oldFrom: before + 1, oldTo: after - 1, newFrom: newBefore + 1, newTo: newAfter - 1 };
 }
 
+function withoutEnding(token: string): string {
+  return token.replace(/\r?\n$/u, "");
+}
+
 function lineText(lines: readonly string[], line: number): string {
-  const token = lines[line - 1] ?? "";
-  return token.endsWith("\n") ? token.slice(0, -1) : token;
+  return withoutEnding(lines[line - 1] ?? "");
 }
 
 /** Every start of `text` in the given lines, overlapping starts included, in reading order. */
@@ -235,6 +238,7 @@ function relocateInHunk(
   oldLines: readonly string[],
   newLines: readonly string[],
   locate: () => LineHunk | undefined,
+  requireUnique = false,
 ): ResultRange | undefined {
   const { start, end } = range;
   if (range.linewise === true || start.lineNumber !== end.lineNumber || start.column >= end.column)
@@ -250,7 +254,13 @@ function relocateInHunk(
     (item) => item.line === start.lineNumber && item.column === start.column,
   );
   const moved = next[index];
-  if (index === -1 || moved === undefined || old.length !== next.length) return undefined;
+  if (
+    index === -1 ||
+    moved === undefined ||
+    old.length !== next.length ||
+    (requireUnique && old.length !== 1)
+  )
+    return undefined;
   const target = lineText(newLines, moved.line);
   if (
     content.slice(start.column - 1, start.column) !==
@@ -287,8 +297,10 @@ interface ContextMap extends LineMap {
 }
 
 function contextualMap(oldLines: readonly string[], newLines: readonly string[]): ContextMap {
-  const oldPositions = uniqueLines(oldLines);
-  const newPositions = uniqueLines(newLines);
+  const oldText = oldLines.map(withoutEnding);
+  const newText = newLines.map(withoutEnding);
+  const oldPositions = uniqueLines(oldText);
+  const newPositions = uniqueLines(newText);
   const duplicated = new Set<string>();
   for (const [token, old] of oldPositions) {
     const next = newPositions.get(token);
@@ -322,11 +334,11 @@ function contextualMap(oldLines: readonly string[], newLines: readonly string[])
   const extend = (from: number, to: number, step: number) => {
     let position = 0;
     for (let old = from; old !== to; old += step) {
-      const token = oldLines[old - 1];
+      const token = oldText[old - 1];
       if (token === undefined) break;
       const unique = oldPositions.get(token) === old ? (newPositions.get(token) ?? 0) : 0;
       if (unique !== 0 && token !== "") position = unique;
-      else if (position !== 0 && newLines[position + step - 1] === token) position += step;
+      else if (position !== 0 && newText[position + step - 1] === token) position += step;
       else position = 0;
       if (position !== 0) claim(old, position);
     }
@@ -373,7 +385,9 @@ function movedHunk(map: ContextMap, line: number): LineHunk | undefined {
 }
 
 export interface RangeTracker {
+  /** Move a selection. Set `allowAdjusted` to also accept changed regions for display. */
   readonly move: (range: ResultRange, allowAdjusted?: boolean) => ResultRange | undefined;
+  /** Explain why a selection could not be moved and report current candidates. */
   readonly describe: (range: ResultRange) => string;
 }
 
@@ -393,10 +407,27 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
   let lines: string[] | undefined;
   let positions: Map<string, number[]> | undefined;
   const move: RangeTracker["move"] = (range, allowAdjusted = false) => {
-    const exact = rebaseRange(range, context);
+    const exact = rebaseRange(range, {
+      newLine(line) {
+        const moved = context.newLine(line);
+        // The last selected line can cross EOF only if the selection excludes its ending.
+        if (
+          moved !== undefined &&
+          (line === range.end.lineNumber || old[line - 1] === next[moved - 1])
+        )
+          return moved;
+        return undefined;
+      },
+    });
     if (exact !== undefined) return exact;
     if (context.reordered)
-      return relocateInHunk(range, old, next, () => movedHunk(context, range.start.lineNumber));
+      return relocateInHunk(
+        range,
+        old,
+        next,
+        () => movedHunk(context, range.start.lineNumber),
+        true,
+      );
     const map = getOrdered();
     if (map === undefined) return undefined;
     // The ordered diff cannot overrule conflicting context or a known different destination.
@@ -412,7 +443,7 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
         (known !== undefined && known !== orderedLine) ||
         (known === undefined &&
           orderedLine !== undefined &&
-          context.duplicated.has(old[line - 1] ?? ""))
+          context.duplicated.has(lineText(old, line)))
       )
         return undefined;
     }
@@ -422,16 +453,15 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
   };
   const describe: RangeTracker["describe"] = (range) => {
     const line = range.start.lineNumber;
-    const token = old[line - 1];
+    const token = lineText(old, line);
     positions ??= candidateLines(next);
-    const candidates =
-      token === undefined || token.trim() === "" ? [] : (positions.get(token) ?? []);
+    const candidates = token.trim() === "" ? [] : (positions.get(token) ?? []);
     const hunk = context.reordered ? movedHunk(context, line) : undefined;
     if (candidates.length === 0 && !context.reordered) {
       const map = getOrdered();
       if (map !== undefined) return describeLostRange(range, map);
     }
-    const head = `line ${String(line)} \`${preview(token?.trim() ?? "")}\``;
+    const head = `line ${String(line)} \`${preview(token.trim())}\``;
     if (candidates.length > 0)
       return `${head}: cannot verify the same selection; candidate lines: ${candidates.join(", ")}`;
     if (hunk !== undefined) return describeHunk(head, next, hunk);
@@ -443,7 +473,8 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
 /** Keep only a few locations per line; diagnostics never need the whole file. */
 function candidateLines(lines: readonly string[]): Map<string, number[]> {
   const positions = new Map<string, number[]>();
-  for (const [index, token] of lines.entries()) {
+  for (const [index, line] of lines.entries()) {
+    const token = withoutEnding(line);
     const matches = positions.get(token);
     if (matches === undefined) positions.set(token, [index + 1]);
     else if (matches.length < 3) matches.push(index + 1);

@@ -261,6 +261,26 @@ describe("tracking selections after a block move", () => {
     expect(rangesInText([span(500, 4, 500, 13)], before, after)).toBeUndefined();
   });
 
+  test("follows selected text across the end of a file without a trailing newline", () => {
+    const before = [...middle, ...block].join("\n");
+    const after = [...block, ...middle].join("\n");
+    const length = "int moved_999;".length;
+    expect(rangesInText([span(2200, 0, 2200, length)], before, after)).toEqual([
+      span(1000, 0, 1000, length),
+    ]);
+    expect(rangesInText([span(1200, 0, 1201, 0)], before, after)).toBeUndefined();
+  });
+
+  test("does not pair duplicate matches by order inside a changed stretch of a moved block", () => {
+    const edited = block.with(499, "first(old_arg);").with(500, "second(old_arg);");
+    const changed = edited
+      .with(499, "renamed_second(old_arg);")
+      .with(500, "renamed_first(old_arg);");
+    expect(
+      rangesInText([span(500, 6, 500, 13)], file(edited, middle), file(middle, changed)),
+    ).toBeUndefined();
+  });
+
   test("does not join the pieces of a selection split by a move", () => {
     const before = file(block, middle);
     const after = file(middle, block);
