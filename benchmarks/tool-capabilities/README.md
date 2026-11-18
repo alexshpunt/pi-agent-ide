@@ -29,6 +29,8 @@ The `move-destination-recovery` case also requires a refusal for an explicitly e
 
 The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The scripted `lsp-rename-window` integration tests exercise contention: consecutive stale plans, a shared refresh deadline, and reuse of the same capture after the attempt limit.
 
+The scripted `lsp-selector-retry` integration tests cover exact C++ `calls` and `declaration` queries when a peer writes the file and the first clangd outline omits the requested overload. The quiet paid case does not exercise this retry.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:
