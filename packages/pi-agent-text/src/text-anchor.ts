@@ -38,6 +38,12 @@ export abstract class TextAnchor {
     }
   }
 
+  /** Optionally checks the full current selection when paired with another endpoint. */
+  public rangeRejection?(
+    end: TextAnchor,
+    selected: string,
+  ): { readonly code: string; readonly reason: string } | undefined;
+
   public toString(): string {
     return this.value;
   }

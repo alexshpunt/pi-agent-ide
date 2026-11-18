@@ -117,6 +117,7 @@ const groups: [string[], string[]][] = [
   ],
   [["edit.repeated-line-anchor-shift"], ["repeated-line-anchor-after-shift"]],
   [["edit.repeated-line-anchor-block-recovery"], ["repeated-line-anchor-after-block-delete"]],
+  [["edit.line-anchor-range-interior-change"], ["line-anchor-range-interior-change"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],
