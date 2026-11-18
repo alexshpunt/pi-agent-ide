@@ -7,6 +7,45 @@ import { expect, test } from "vitest";
 
 const worker = fileURLToPath(new URL("ssh-transfer-worker.py", import.meta.url));
 
+test.skipIf(process.platform === "win32")(
+  "a held transfer lock leaves no new file",
+  async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "pi-transfer-worker-"));
+    try {
+      const lockAndReceive = String.raw`
+import fcntl, os, runpy, sys
+worker, parent, request = sys.argv[1:4]
+fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+try:
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    sys.argv = [worker, request]
+    runpy.run_path(worker, run_name="__main__")
+finally:
+    os.close(fd)
+`;
+      const request = JSON.stringify({
+        destination: path.join(directory, "target.bin"),
+        size: 0,
+        mode: 0o644,
+        expected: null,
+      });
+      const result = spawnSync("python3", ["-c", lockAndReceive, worker, directory, request], {
+        timeout: 8_000,
+      });
+      expect(result.error).toBeUndefined();
+      expect(JSON.parse(result.stdout.toString())).toMatchObject({
+        ok: false,
+        code: "LOCK_TIMEOUT",
+        effect: "not-applied",
+      });
+      expect(await readdir(directory)).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  10_000,
+);
+
 // Runs the worker and sends it SIGTERM as soon as the patched call at the chosen point returns, so
 // the stop lands there instead of wherever the scheduler puts it.
 const stopAfter = String.raw`
