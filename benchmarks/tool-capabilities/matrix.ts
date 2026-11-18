@@ -386,7 +386,8 @@ const groups: [string[], string[]][] = [
     ["lsp-rename"],
   ],
   // Declaration/calls selectors compare fixture-relative file paths, preserving symbol fragments.
-  // The quiet paid case checks nested calls; the real-Pi rename window tests check bounded retries.
+  // The quiet paid case checks nested calls. The real-Pi rename window tests cover layout drift,
+  // changes to overload binding, and bounded retries.
   [["lsp.overload-selectors", "compose.symbol-overload-rename"], ["lsp-overload-rename"]],
   [
     ["lsp.script-call-graph", "compose.lsp-caller-id", "lsp.script-line-text"],
