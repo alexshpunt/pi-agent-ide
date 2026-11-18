@@ -12,7 +12,10 @@ import { createFeatureFlags } from "#src/composite/feature-flags.ts";
 import { connectAgentDocumentation } from "#src/api/documentation.ts";
 import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.ts";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.ts";
-import { buildIdeDiscoveryGuidance } from "#src/composite/tool-discovery-guidance.ts";
+import {
+  buildIdeDiscoveryGuidance,
+  explainCodemodeDiscoveryError,
+} from "#src/composite/tool-discovery-guidance.ts";
 import { buildParallelToolGuidance } from "#src/composite/parallel-tool-guidance.ts";
 import { createIdeCapabilities } from "#src/composite/capabilities.ts";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.ts";
@@ -60,9 +63,9 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   pi.on("before_provider_request", (event, context) => {
     if (shutDown) return;
     const api: unknown = context.model?.api;
+    const registered = pi.getAllTools();
     const names = new Set(
-      pi
-        .getAllTools()
+      registered
         .filter((tool) => tool.namespace?.name.startsWith("ide_") && tool.exposure !== "hidden")
         .map((tool) => tool.name),
     );
@@ -70,7 +73,11 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
       api === "openai-responses"
         ? preserveResponsesToolOmission(event.payload, names)
         : event.payload;
-    return explainCodemodeToolNames(payload, names);
+    return explainCodemodeToolNames(
+      payload,
+      names,
+      registered.some((tool) => tool.name === "tool_search" && tool.exposure === "model-only"),
+    );
   });
   pi.on("session_start", (event, context) => {
     shutDown = false;
@@ -115,6 +122,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     options.sections.ide_discovery = buildIdeDiscoveryGuidance(
       pi.getAllTools(),
       pi.getActiveTools(),
+      pi.getSettings().codemode?.mode === "only",
     );
   });
   const flags = createFeatureFlags(pi, {
@@ -219,6 +227,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   }
   capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();
+  pi.on("tool_result", explainCodemodeDiscoveryError);
   textResults.finalize();
   registerDetachedResults(pi);
 }
