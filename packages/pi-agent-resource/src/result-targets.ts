@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createRangeTracker, type RangeTracker } from "./line-map.ts";
+import { createRangeTracker, lastSelectedLine, type RangeTracker } from "./line-map.ts";
 import { isRacyTimestamp } from "./unchanged-read.ts";
 import { ResourceError } from "./resource-error.ts";
 
@@ -750,12 +750,6 @@ function retiredReason(lost: readonly string[]): string {
   ].join("\n");
 }
 
-/** The final included line, excluding the next line's column-zero endpoint. */
-function lastSelectedLine({ start, end }: ResultRange): number {
-  return end.column === 0 && end.lineNumber > start.lineNumber
-    ? end.lineNumber - 1
-    : end.lineNumber;
-}
 /** Where the text of each adjusted range stands now, for the error of an edit that needs the old text. */
 function adjustedRegions(targets: readonly ResultSourceTarget[]): string[] {
   return targets.flatMap((target) => {

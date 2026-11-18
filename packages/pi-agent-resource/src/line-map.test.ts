@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   createLineMap,
+  createRangeTracker,
   describeLostRange,
   moveRange,
   rebaseOrRelocateRange,
@@ -245,6 +246,28 @@ describe("tracking selections after a block move", () => {
     expect(rangesInText([span(500, 21, 500, 28)], before, after)).toEqual([
       span(1700, 16, 1700, 23),
     ]);
+  });
+
+  test("follows a partial match through a moved stretch that gained a line", () => {
+    const edited = block.with(499, "return previous_name(old_arg);");
+    const changed = [
+      ...edited.slice(0, 499),
+      "log();",
+      "return new_name(old_arg);",
+      ...edited.slice(500),
+    ];
+    expect(
+      rangesInText([span(500, 21, 500, 28)], file(edited, middle), file(middle, changed)),
+    ).toEqual([span(1701, 16, 1701, 23)]);
+  });
+
+  test("can read an adjusted region when unrelated lines swapped", () => {
+    const before = "left\nupdated\nright\na\nb\n";
+    const after = "left\nchanged\nright\nb\na\n";
+    const range = { ...span(1, 0, 4, 0), linewise: true };
+    const tracker = createRangeTracker(before, after);
+    expect(tracker.move(range)).toBeUndefined();
+    expect(tracker.move(range, true)).toEqual({ ...range, adjusted: true });
   });
 
   test("does not jump to an unchanged copy when the selected copy was rewritten", () => {

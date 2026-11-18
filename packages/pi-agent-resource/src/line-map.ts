@@ -82,6 +82,13 @@ function orderedMap(old: readonly string[], next: readonly string[]): LineMap | 
   };
 }
 
+/** The final included line, excluding the next line's column-zero endpoint. */
+export function lastSelectedLine({ start, end }: ResultRange): number {
+  return end.column === 0 && end.lineNumber > start.lineNumber
+    ? end.lineNumber - 1
+    : end.lineNumber;
+}
+
 /**
  * Move a range to the new text. Every line it touches must be unchanged and still adjacent;
  * otherwise the selected text changed, and the range has no safe position.
@@ -91,9 +98,8 @@ export function rebaseRange(
   map: Pick<LineMap, "newLine">,
 ): ResultRange | undefined {
   const { start, end } = range;
-  // A range that ends at column 0 of a later line stops after the previous line's ending.
-  const endsAfterLine = end.column === 0 && end.lineNumber > start.lineNumber;
-  const lastLine = endsAfterLine ? end.lineNumber - 1 : end.lineNumber;
+  const lastLine = lastSelectedLine(range);
+  const endsAfterLine = lastLine !== end.lineNumber;
   let first: number | undefined;
   let previous: number | undefined;
   for (let line = start.lineNumber; line <= lastLine; line += 1) {
@@ -125,8 +131,8 @@ export function relocateRange(
   newLines: readonly string[],
 ): ResultRange | undefined {
   const { start, end } = range;
-  const endsAfterLine = end.column === 0 && end.lineNumber > start.lineNumber;
-  const lastLine = endsAfterLine ? end.lineNumber - 1 : end.lineNumber;
+  const lastLine = lastSelectedLine(range);
+  const endsAfterLine = lastLine !== end.lineNumber;
   let survives = false;
   for (let line = start.lineNumber; line <= lastLine && !survives; line += 1)
     survives = map.newLine(line) !== undefined;
@@ -289,7 +295,7 @@ function uniqueLines(lines: readonly string[]): Map<string, number> {
   return positions;
 }
 
-interface ContextMap extends LineMap {
+interface ContextMap extends Pick<LineMap, "newLine" | "table"> {
   readonly reordered: boolean;
   readonly conflicts: Int32Array;
   readonly newClaims: Int32Array;
@@ -353,8 +359,6 @@ function contextualMap(oldLines: readonly string[], newLines: readonly string[])
   }
   return {
     table,
-    oldLines,
-    newLines,
     reordered,
     conflicts,
     newClaims,
@@ -376,14 +380,16 @@ function movedHunk(map: ContextMap, line: number): LineHunk | undefined {
   if (
     left === undefined ||
     right === undefined ||
-    right - left !== after - before ||
-    map.newClaims[right - 1] !== map.newClaims[left] ||
-    after - before > maxHunkLines
+    right <= left + 1 ||
+    right - left > maxHunkLines ||
+    after - before > maxHunkLines ||
+    map.newClaims[right - 1] !== map.newClaims[left]
   )
     return undefined;
   return { oldFrom: before + 1, oldTo: after - 1, newFrom: left + 1, newTo: right - 1 };
 }
 
+/** Moves selections and explains losses between the same two text snapshots. */
 export interface RangeTracker {
   /** Move a selection. Set `allowAdjusted` to also accept changed regions for display. */
   readonly move: (range: ResultRange, allowAdjusted?: boolean) => ResultRange | undefined;
@@ -420,21 +426,20 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
       },
     });
     if (exact !== undefined) return exact;
-    if (context.reordered)
-      return relocateInHunk(
+    if (context.reordered) {
+      const moved = relocateInHunk(
         range,
         old,
         next,
         () => movedHunk(context, range.start.lineNumber),
         true,
       );
+      if (moved !== undefined || !allowAdjusted) return moved;
+    }
     const map = getOrdered();
     if (map === undefined) return undefined;
     // The ordered diff cannot overrule conflicting context or a known different destination.
-    const last =
-      range.end.column === 0 && range.end.lineNumber > range.start.lineNumber
-        ? range.end.lineNumber - 1
-        : range.end.lineNumber;
+    const last = lastSelectedLine(range);
     for (let line = range.start.lineNumber; line <= last; line += 1) {
       const known = context.newLine(line);
       const orderedLine = map.newLine(line);
@@ -443,10 +448,11 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
         (known !== undefined && known !== orderedLine) ||
         (known === undefined &&
           orderedLine !== undefined &&
-          context.duplicated.has(lineText(old, line)))
+          (context.reordered || context.duplicated.has(lineText(old, line))))
       )
         return undefined;
     }
+    if (context.reordered) return relocateRange(range, map, (lines ??= after.split("\n")));
     return allowAdjusted
       ? moveRange(range, map, () => (lines ??= after.split("\n")))
       : rebaseOrRelocateRange(range, map);
