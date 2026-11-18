@@ -12,12 +12,32 @@ import {
   type TextAnchorResolverContext,
 } from "pi-agent-text";
 
+import type { LineHashRangeHistory } from "./range-history.ts";
+
 /** The most candidates a rejection lists. */
 const MAX_CANDIDATES = 8;
 
 class LineHashTextAnchor extends TextAnchor {
-  public constructor(value: string, lineNumber: number) {
+  public constructor(
+    value: string,
+    lineNumber: number,
+    private readonly origin?: { readonly source: string; readonly history: LineHashRangeHistory },
+  ) {
     super(value, lineNumber);
+  }
+
+  public override rangeRejection(end: TextAnchor, selected: string) {
+    if (!(end instanceof LineHashTextAnchor) || this.origin === undefined) return undefined;
+    const { source, history } = this.origin;
+    const result = history.check(source, this.value, end.value, selected);
+    if (result === "unchanged") return undefined;
+    return {
+      code: "STALE_ANCHOR_RANGE",
+      reason:
+        result === "changed"
+          ? "The text between these line anchors changed since they were shown. Read the range and select it with exact text or a result reference for the whole span."
+          : "No retained source window verifies this pair of line anchors. Read both endpoints together, or use exact text or a result reference for the whole span.",
+    };
   }
 }
 
@@ -57,7 +77,7 @@ export function renderLineHashLines(content: string, startLine = 1, endLine?: nu
     .map((line, index) => `${requiredValue(anchors[first + index - 1])}|${line.content}`);
 }
 
-export function createLineHashAnchorResolver(): TextAnchorResolver {
+export function createLineHashAnchorResolver(history?: LineHashRangeHistory): TextAnchorResolver {
   return {
     id: "line-hash",
     description:
@@ -70,7 +90,7 @@ export function createLineHashAnchorResolver(): TextAnchorResolver {
       return `line ${context.anchor.lineNumber}`;
     },
     tryResolve(value, context) {
-      return Promise.resolve(resolveLineHashAnchor(value, context));
+      return Promise.resolve(resolveLineHashAnchor(value, context, history));
     },
     recover(value, context) {
       if (context.rejection.code !== "ambiguous") {
@@ -96,6 +116,7 @@ export function createLineHashAnchorResolver(): TextAnchorResolver {
 function resolveLineHashAnchor(
   value: string,
   context: TextAnchorResolverContext,
+  history: LineHashRangeHistory | undefined,
 ): TextAnchorResolutionAttempt {
   if (!isLineAnchor(value)) {
     return { kind: "not-handled" };
@@ -104,7 +125,14 @@ function resolveLineHashAnchor(
   const numbers = linesWithAnchor(currentAnchors(context), value);
 
   if (numbers.length === 1) {
-    return { kind: "resolved", anchor: new LineHashTextAnchor(value, requiredValue(numbers[0])) };
+    return {
+      kind: "resolved",
+      anchor: new LineHashTextAnchor(
+        value,
+        requiredValue(numbers[0]),
+        history === undefined ? undefined : { source: context.source, history },
+      ),
+    };
   }
 
   if (numbers.length === 0) {

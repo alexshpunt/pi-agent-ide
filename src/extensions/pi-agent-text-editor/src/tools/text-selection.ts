@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import { TextSelectionAnchor, type TextSelectionRange } from "#src/api/text-selection-anchor.ts";
 
-import type { TextMutationContext } from "#src/api/mutation-tool.ts";
+import { TextMutationInputError, type TextMutationContext } from "#src/api/mutation-tool.ts";
 import type { TextAnchor } from "pi-agent-text";
 
 export function textSelections(
@@ -112,6 +112,15 @@ export function anchorSpanRange(
   }
   if (start.from > end.from) {
     throw new Error(`Anchor ${startField} must not come after ${endField}.`);
+  }
+  const first = requiredValue(starts.get(start.source));
+  const last = requiredValue(ends.get(end.source));
+  if (first.rangeRejection !== undefined) {
+    const selected = context.documentFor(start.source).text({ from: start.from, to: end.to });
+    const rejection = first.rangeRejection(last, selected);
+    if (rejection !== undefined) {
+      throw new TextMutationInputError(rejection.code, rejection.reason);
+    }
   }
   return {
     source: start.source,

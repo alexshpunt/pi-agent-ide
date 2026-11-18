@@ -3448,6 +3448,35 @@ add(
 );
 
 add(
+  "line-anchor-range-interior-change",
+  ["edit.line-anchor-range-interior-change"],
+  'Read all of task.txt with views ["anchors"] and capture the 7-character anchors printed before BEGIN and END. Replace the exact line BODY OLD with BODY NEW, leaving BEGIN and END unchanged. Wait for Replace to finish, then call Delete on task.txt with start and end set to the BEGIN and END anchors from the first Read. Delete must refuse because the span changed after the anchors were issued. Leave the entire file intact after Replace.',
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "replace",
+      args: { path: "task.txt", start: "BODY OLD" },
+      exactText: ["start"],
+      after: [0],
+    },
+    {
+      tool: "delete",
+      args: {
+        path: "task.txt",
+        start: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        end: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+      },
+      reuse: reuse(0, ["start", "end"], "anchor"),
+      error: true,
+      after: [1],
+    },
+  ],
+  {
+    files: { "task.txt": "before\nBEGIN\nBODY OLD\nEND\nafter\n" },
+    expected: { "task.txt": "before\nBEGIN\nBODY NEW\nEND\nafter\n" },
+  },
+);
+add(
   // Agent-facing scope refusals are unchanged; native anchor-rejection cards have scripted Pi coverage.
   "result-selector-scope",
   ["compose.result-selector-scope"],

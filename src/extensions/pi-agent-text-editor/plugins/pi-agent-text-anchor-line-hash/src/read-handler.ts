@@ -5,7 +5,9 @@ import {
   type TextLinePresenter,
 } from "pi-agent-text";
 
-export function createLineHashPresenter(): TextLinePresenter {
+import type { LineHashRangeHistory } from "./range-history.ts";
+
+export function createLineHashPresenter(history?: LineHashRangeHistory): TextLinePresenter {
   return {
     id: "line-hash",
     present(document, context) {
@@ -15,6 +17,9 @@ export function createLineHashPresenter(): TextLinePresenter {
           context.sourceText === document.content);
       // Anchors name content, so a physical document needs the whole text, not only shown lines.
       const physicalAnchors = physical ? documentLineAnchors(document.lines) : undefined;
+      if (physicalAnchors !== undefined) {
+        history?.record(context.source, document, physicalAnchors, context.lineNumbers);
+      }
       const anchorFor = (line: TextLine) => {
         if (physicalAnchors !== undefined) {
           const anchor = physicalAnchors[line.lineNumber - 1];
