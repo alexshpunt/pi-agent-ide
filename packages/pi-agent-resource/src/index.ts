@@ -125,6 +125,7 @@ export {
 } from "./unchanged-read.ts";
 export {
   createLineMap,
+  createRangeTracker,
   describeLostRange,
   rangesInText,
   rebaseOrRelocateRange,
