@@ -27,6 +27,8 @@ The `outline-search-edit` case follows a continuation to a second outline page a
 
 The `move-destination-recovery` case also requires a refusal for an explicitly empty `start`. Scripted real-Pi tests cover that refusal, bounded diagnostics for oversized selectors, and a Move destination that overlaps a pending Replace. The revised paid routes remain unverified until paid execution.
 
+The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The scripted `lsp-rename-window` integration tests cover concurrent writes, exact overload scope, and a newly added reference that requires a fresh server plan. The paid case does not establish contention recovery.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:

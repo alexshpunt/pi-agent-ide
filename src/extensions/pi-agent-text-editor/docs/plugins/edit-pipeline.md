@@ -40,7 +40,7 @@ type TextEditPlanner = () => Promise<TextEditPlan>;
 
 Each handler returns the complete state for the next handler. Core does not merge plugin metadata.
 
-A plugin that computes its own edits, such as a language server rename, sets `planEdit` instead of a text selection. The planner returns each file's expected text and its changes. The editor calls it at the start of each attempt of the edit, as it resolves the targets of other edits there, and compares each expected text with the file under the edit. When another process wrote a planned file first, the attempt fails without writing and the next attempt calls the planner again on the current text. A planner that finds its own source changed throws an error with code `SOURCE_CHANGED` to get the same new attempt; any other error fails the edit.
+A plugin that computes its own edits, such as a language server rename, sets `planEdit` instead of a text selection. The planner returns each file’s expected text and changes. The editor asks for the plan on each attempt and checks it against the text read by the guarded transaction. If the text differs, the file’s optional `rebase(current)` may map the same edits onto that snapshot. A refusal fails the attempt before writing, and the next attempt asks for a plan again. The transaction still verifies its own snapshot before writing. Planners can also request a retry by throwing with code `SOURCE_CHANGED`.
 
 ## Resource operation
 
