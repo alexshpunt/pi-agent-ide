@@ -55,7 +55,11 @@ Authentication stays in OpenSSH. Target programs require their dependencies on t
 
 ## Outline
 
-Use `outline({ path: "src/file.ts" })` for a compressed declaration outline without implementation bodies. The path can also be a configured `ssh://` file. Its visible declarations retain original source mappings and anchors: reuse the result in Read, Search, AST Search or editing tools. In Codemode, Outline returns `{ text, id }` with the complete outline text. Read with `views: ["ast"]` still shows the original text with scope markers.
+Use `outline({ path: "src/file.ts" })` for a compressed declaration outline without implementation bodies. The path can also be a configured `ssh://` file. The result maps visible declarations back to the original source, so you can reuse it in Read, Search, AST Search or editing tools.
+
+`offset` is the first projected outline row (1-based), not a source line number. `limit` is the maximum number of projected rows (default and maximum: 100). A page can end earlier to stay within its output budget. Follow the continuation in the result to get the next page. In Codemode, `outline` returns `{ text, id }` for the current page; its reference covers only the source rows on that page. If a single projected row is too wide to show, use Read to inspect that source line.
+
+Outline parses the whole file on each call and accepts up to 4 MiB of normalized UTF-8 text and 100,000 lines. Beyond those limits, use Search to find declarations or Read with source-line `offset` and `limit`. Read with `views: ["ast"]` still shows the original text with scope markers.
 
 ## Read
 
