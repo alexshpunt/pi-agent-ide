@@ -22,7 +22,7 @@ export type { LspWorkspaceSymbol } from "./symbols.ts";
 
 export { requestCallHierarchy, requestReferences } from "./navigation.ts";
 
-export { readLspFileGraph, readLspSymbolGraph, resolveLspCodeSymbol } from "./code-views.ts";
+export { readLspFileGraph, readLspSymbolGraph } from "./code-views.ts";
 
 export type { LspCodeSymbol } from "./code-views.ts";
 

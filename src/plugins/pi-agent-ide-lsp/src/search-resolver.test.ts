@@ -57,29 +57,35 @@ test("rejects requests that combine or omit modes", async () => {
   }
 });
 
-test.each([{ calls: "main.cpp#target(int)" }, { query: "target", references: true }])(
-  "a stalled navigation search reports a timeout and registers no selection (%j)",
-  async (lsp) => {
-    vi.useFakeTimers();
-    try {
-      const stall = (signal: AbortSignal | undefined): Promise<never> =>
-        new Promise((_, reject) => {
-          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
-        });
-      backend.readLspSymbolGraph.mockImplementation((_manager, _file, _selector, _cwd, signal) =>
-        stall(signal),
-      );
-      backend.searchSymbols.mockImplementation((_query, _cwd, _limit, signal) => stall(signal));
-      const result = resolver.tryResolve(request(lsp), { cwd });
-      const checked = expect(result).rejects.toMatchObject({ code: "LSP_NAVIGATION_TIMEOUT" });
-      await vi.advanceTimersByTimeAsync(NAVIGATION_TIMEOUT_MS);
-      await checked;
-      expect(registered).toBeUndefined();
-    } finally {
-      vi.useRealTimers();
-    }
-  },
-);
+test.each([
+  { calls: "main.cpp#target(int)" },
+  { query: "target", references: true },
+  { declaration: "main.cpp#target(int)" },
+])("a stalled navigation search reports a timeout and registers no selection (%j)", async (lsp) => {
+  vi.useFakeTimers();
+  try {
+    const stall = (signal: AbortSignal | undefined): Promise<never> =>
+      new Promise((_, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    backend.readLspSymbolGraph.mockImplementation((_manager, _file, _selector, _cwd, signal) =>
+      stall(signal),
+    );
+    backend.searchSymbols.mockImplementation((_query, _cwd, _limit, signal) => stall(signal));
+    backend.resolveLspDeclaration.mockImplementation((_manager, _file, _selector, _cwd, signal) =>
+      stall(signal),
+    );
+    const result = resolver.tryResolve(request(lsp), { cwd });
+    const outcome = Promise.resolve(result).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(NAVIGATION_TIMEOUT_MS);
+    expect(await Promise.race([outcome, Promise.resolve(undefined)])).toMatchObject({
+      code: "LSP_NAVIGATION_TIMEOUT",
+    });
+    expect(registered).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 test("returns a declaration as an exact selection that refreshes from the server", async () => {
   const source = path.join(cwd, "app.ts");
@@ -99,7 +105,7 @@ test("returns a declaration as an exact selection that refreshes from the server
     source,
     ["App"],
     cwd,
-    undefined,
+    expect.any(AbortSignal),
   );
   expect(registered?.matches).toEqual([
     {

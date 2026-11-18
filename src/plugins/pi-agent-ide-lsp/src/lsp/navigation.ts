@@ -16,7 +16,7 @@ export async function withNavigationDeadline<T>(
     deadline.abort(
       Object.assign(
         new Error(
-          `LSP search timed out after ${NAVIGATION_TIMEOUT_MS / 1000} s. The server could not finish checking references or calls. Retry or search the text.`,
+          `LSP search timed out after ${NAVIGATION_TIMEOUT_MS / 1000} s. Retry or search the text.`,
         ),
         { code: "LSP_NAVIGATION_TIMEOUT" },
       ),

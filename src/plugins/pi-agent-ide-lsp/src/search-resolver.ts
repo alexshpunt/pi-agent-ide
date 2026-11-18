@@ -113,7 +113,10 @@ export function createLspSearchResolver(
     },
     tryResolve(request, callerContext) {
       const options = lspOptions(request);
-      const navigate = options?.calls !== undefined || options?.references === true;
+      const navigate =
+        options?.calls !== undefined ||
+        options?.declaration !== undefined ||
+        options?.references === true;
       const withDocuments = <T>(run: (context: typeof callerContext) => Promise<T>): Promise<T> =>
         navigate
           ? withNavigationDeadline(callerContext.signal, (signal) =>
@@ -258,10 +261,12 @@ export function createLspSearchResolver(
               // session's write and no longer fit it.
               contents,
               refresh: (signal) =>
-                withLspDocuments(async () => {
-                  const next = await resolve(signal);
-                  return { matches: [next.match], complete: true, contents: next.contents };
-                }),
+                withNavigationDeadline(signal, (refreshSignal) =>
+                  withLspDocuments(async () => {
+                    const next = await resolve(refreshSignal);
+                    return { matches: [next.match], complete: true, contents: next.contents };
+                  }),
+                ),
             });
             return { match, session, captured };
           }, context.signal);

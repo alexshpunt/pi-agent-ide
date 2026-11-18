@@ -32,6 +32,7 @@ import {
   normalizeDocumentSymbols,
   preferredDeclaration,
   resolveSymbolDeclaration,
+  SymbolNotFoundError,
   type LspCodeSymbol,
 } from "./symbol-selectors.ts";
 
@@ -76,6 +77,7 @@ export async function resolveLspDeclaration(
   return retryWhileSourceChanges(
     () => resolveLspDeclarationOnce(manager, filePath, selector, cwd, signal),
     signal,
+    isUnconfirmedSelector,
   );
 }
 
@@ -93,7 +95,7 @@ async function resolveLspDeclarationOnce(
 }> {
   throwIfAborted(signal);
   const document = await openCodeDocument(manager, filePath, cwd, signal);
-  const entries = resolveSymbolDeclaration(document.symbols, selector, document.displayPath);
+  const entries = resolveNavigationDeclaration(document, selector);
   const current = await manager.readSourceText(document.filePath, signal);
   throwIfAborted(signal);
   // Prefer the definition in the synchronized outline, otherwise select its first declaration.
@@ -226,21 +228,21 @@ export async function readLspSymbolGraph(
   cwd: string,
   signal?: AbortSignal,
 ): Promise<LspGraph> {
-  return retryWhileSourceChanges(async () => {
-    throwIfAborted(signal);
-    const document = await openCodeDocument(manager, filePath, cwd, signal);
-    const symbol = resolveLspCodeSymbol(
-      document.symbols,
-      selector,
-      document.displayPath,
-      document.servedText,
-    );
-    const context = relationContext(manager, cwd, true, signal);
-    const relations = await queryRelations(document, symbol, context, signal);
-    const locations = new LocationPresenter(cwd);
-    const text = await formatSymbolGraph(document, symbol, relations, locations);
-    return graphOf(text, [relations], context.texts);
-  }, signal);
+  return retryWhileSourceChanges(
+    async () => {
+      throwIfAborted(signal);
+      const document = await openCodeDocument(manager, filePath, cwd, signal);
+      const entries = resolveNavigationDeclaration(document, selector);
+      const symbol = preferredDeclaration(entries, document.servedText);
+      const context = relationContext(manager, cwd, true, signal);
+      const relations = await queryRelations(document, symbol, context, signal);
+      const locations = new LocationPresenter(cwd);
+      const text = await formatSymbolGraph(document, symbol, relations, locations);
+      return graphOf(text, [relations], context.texts);
+    },
+    signal,
+    isUnconfirmedSelector,
+  );
 }
 
 /**
@@ -382,15 +384,39 @@ export async function readLspFileGraph(
   }, signal);
 }
 
-/** The entry of the declaration `selector` names whose position navigation requests use. */
-export function resolveLspCodeSymbol(
-  symbols: readonly LspCodeSymbol[],
+class LspSelectorUnconfirmedError extends Error {
+  public readonly code = "LSP_SELECTOR_UNCONFIRMED";
+}
+
+function isUnconfirmedSelector(error: unknown): boolean {
+  return error instanceof LspSelectorUnconfirmedError;
+}
+
+/** Source spelling can justify asking the server again, but cannot identify a declaration. */
+function resolveNavigationDeclaration(
+  document: LspCodeDocument,
   selector: readonly string[],
-  displayPath: string,
-  text?: string,
-): LspCodeSymbol {
-  const entries = resolveSymbolDeclaration(symbols, selector, displayPath);
-  return preferredDeclaration(entries, text);
+): readonly LspCodeSymbol[] {
+  try {
+    return resolveSymbolDeclaration(document.symbols, selector, document.displayPath);
+  } catch (error) {
+    if (!(error instanceof SymbolNotFoundError) || !CLANG_LANGUAGES.has(document.languageId))
+      throw error;
+    const leaf = selector.at(-1) ?? "";
+    const identifier = /^~?([\p{ID_Start}_$][\p{ID_Continue}$]*)(?=\s*\(|$)/u.exec(leaf)?.[1];
+    if (identifier === undefined || document.servedText === undefined) throw error;
+    // The extracted identifier contains only identifier characters; none are regex syntax
+    // here except for '$'.
+    const token = new RegExp(
+      `(?<![\\p{ID_Continue}$])${identifier.replaceAll("$", "\\$")}(?![\\p{ID_Continue}$])`,
+      "u",
+    );
+    if (!token.test(document.servedText)) throw error;
+    throw new LspSelectorUnconfirmedError(
+      `The language server could not confirm "${formatSymbolSelector(selector)}" in ${document.displayPath}. Check the current outline before trying again.`,
+      { cause: error },
+    );
+  }
 }
 
 async function openCodeDocument(
