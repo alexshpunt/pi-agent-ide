@@ -9,6 +9,7 @@ import {
 } from "pi-agent-read/api/tools/read";
 import { connectResultTargets, trackScriptCalls, type ResultRange } from "pi-agent-resource";
 import { getTextSourceLine } from "pi-agent-text";
+import { OUTLINE_PAGE_ROWS } from "./outline-page.ts";
 import { createAstOutlineResolver } from "./outline-resolver.ts";
 import {
   ToolCallInterceptionRenderStore,
@@ -43,7 +44,7 @@ export function registerOutlineTool(
           openWorldHint: false,
         },
         description:
-          "Use outline to inspect a file's declarations without reading their implementations. Reuse its result in read, search, ast_search or edit tools to select the original source lines.",
+          "Use outline to inspect one page of a file's declarations without reading their implementations. Reuse the page in read, search, ast_search or edit tools to select its original source lines.",
         promptSnippet: "Inspect a local or SSH file's declaration outline",
         parameters: Type.Object(
           {
@@ -51,6 +52,20 @@ export function registerOutlineTool(
               minLength: 1,
               description: "Local file path or ssh://<target>/absolute/path.",
             }),
+            offset: Type.Optional(
+              Type.Integer({
+                minimum: 1,
+                description:
+                  "First projected outline row (1-based; default 1), not a source line number.",
+              }),
+            ),
+            limit: Type.Optional(
+              Type.Integer({
+                minimum: 1,
+                maximum: OUTLINE_PAGE_ROWS,
+                description: "Maximum outline rows to return (default 100).",
+              }),
+            ),
           },
           { additionalProperties: false },
         ),
@@ -92,6 +107,7 @@ export function registerOutlineTool(
                   lines: snapshot.lines.map((line) => line.content),
                 };
               },
+              parameters,
             );
             result = await current.api.readWith(
               resolver,

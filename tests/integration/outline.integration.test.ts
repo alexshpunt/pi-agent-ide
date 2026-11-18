@@ -78,6 +78,66 @@ text("outline-composed");
   });
 }, 90_000);
 
+test("outline pages a large C++ file and reuses only the returned source rows", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"], noPostProcessing: true }),
+    );
+    const cpp = [
+      "int first() {",
+      "  int hidden = 7;",
+      "  hidden += 1;",
+      "  return hidden;",
+      "}",
+      ...Array.from({ length: 26_000 }, (_, index) => `int entry_${index}() { return ${index}; }`),
+      "int tail() { return 9; }",
+      "",
+    ].join("\n");
+    await writeFile(path.join(cwd, "main.cpp"), cpp);
+    const run = await new PiIntegrationTest({
+      testName: "outline-large-cpp",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      rawMode: false,
+      cwd,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["outline", "search", "replace", "codemode"],
+      conversation: [
+        assistantMessage([
+          toolCall({ id: "large-direct", name: "outline", arguments: { path: "main.cpp" } }),
+        ]),
+        assistantMessage([
+          toolCall({
+            id: "large-script",
+            name: "codemode",
+            arguments: {
+              code: `
+const page = await tools.outline({path:"main.cpp", offset:26003, limit:2});
+if (!page.id?.startsWith("RESULT#") || !page.text.includes("tail()") ||
+    !page.text.includes("entry_25999()") || page.text.includes("entry_25998()")) throw Error(page.text);
+const all = await tools.search({path:page, query:"regex:first|tail|entry_25998"});
+if (all.matches.length !== 1 || all.matches[0].line !== 26006) throw Error(JSON.stringify(all.matches));
+const changed = await tools.replace({path:all.matches[0],start:"tail",text:"renamed"});
+if (changed.isError) throw Error(JSON.stringify(changed));
+`,
+            },
+          }),
+        ]),
+        assistantMessage([text("Finished")]),
+      ],
+    }).run("Open the declaration outline of main.cpp, then reuse its final page to rename tail.");
+    for (const id of ["large-direct", "large-script"])
+      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    const firstPage = getToolResultText(run, "large-direct");
+    expect(firstPage).toContain("int first()");
+    expect(firstPage).not.toContain("hidden");
+    expect(firstPage).not.toContain("tail()");
+    expect(firstPage.length).toBeLessThan(16 * 1024);
+    expect(await readFile(path.join(cwd, "main.cpp"), "utf8")).toBe(cpp.replace("tail", "renamed"));
+  });
+}, 90_000);
+
 test("outline rejects invalid file inputs and keeps an empty source reusable", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -88,15 +148,21 @@ test("outline rejects invalid file inputs and keeps an empty source reusable", a
     await writeFile(path.join(cwd, "empty.ts"), "");
     await writeFile(path.join(cwd, "binary.ts"), "\0binary");
     await writeFile(path.join(cwd, "unsupported.txt"), "ordinary text");
-    await writeFile(path.join(cwd, "large.ts"), "//" + "x".repeat(262_144));
+    await writeFile(path.join(cwd, "large.ts"), "//" + "x".repeat(4 * 1024 * 1024));
     const inputs = [
-      "missing.ts",
-      "binary.ts",
-      "unsupported.txt",
-      "large.ts",
-      ".",
-      "https://example.com/a.ts",
-      "ast:empty.ts",
+      ...[
+        "missing.ts",
+        "binary.ts",
+        "unsupported.txt",
+        "large.ts",
+        ".",
+        "https://example.com/a.ts",
+        "ast:empty.ts",
+      ].map((path) => ({ path })),
+      { path: "empty.ts", offset: 0 },
+      { path: "empty.ts", offset: 2 },
+      { path: "empty.ts", limit: 0 },
+      { path: "empty.ts", limit: 101 },
     ];
     const run = await new PiIntegrationTest({
       testName: "outline-invalid-inputs",
@@ -111,7 +177,7 @@ test("outline rejects invalid file inputs and keeps an empty source reusable", a
             toolCall({
               id: "invalid-" + index,
               name: "outline",
-              arguments: { path: input },
+              arguments: input,
             }),
           ]),
         ),
@@ -132,7 +198,9 @@ text("empty-source");`,
       ],
     }).run("Check outline errors and the empty file result.");
     for (let index = 0; index < inputs.length; index++)
-      expect(getToolExecution(run, "invalid-" + index).isError, inputs[index]).toBe(true);
+      expect(getToolExecution(run, "invalid-" + index).isError, JSON.stringify(inputs[index])).toBe(
+        true,
+      );
     expect(getToolExecution(run, "empty").isError, getToolResultText(run, "empty")).toBe(false);
   });
 }, 90_000);
