@@ -352,7 +352,7 @@ export class ResultTargetStore {
     if (!/^SEARCH#[A-F\d]{4,64}:[1-9]\d*:(line|match)$/u.test(reference))
       throw new Error("Only numbered Search references can alias a snapshot.");
     const entry = this.#entries.get(target);
-    if (entry?.state !== "ready" || entry.cwd !== path.resolve(cwd))
+    if (entry === undefined || entry.state === "pending" || entry.cwd !== path.resolve(cwd))
       throw new Error("A Search reference needs a registered result target from this worktree.");
     // A writer can change one match before publication. Bind its original target so use of this
     // selector reports the loss without failing the search or hiding its other matches.
