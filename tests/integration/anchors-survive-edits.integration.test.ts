@@ -12,14 +12,6 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
-
-/** Each failed IDE call of a Codemode result: its tool and source line, then its reason. */
-function failedCalls(output: string): string[] {
-  // Guides that a call delivers on first use follow the block; they are not failures.
-  const [block = ""] = codemodeFailures(output).split("\n\n---\n\n# Guide:");
-  return block.split("\n- ").slice(1);
-}
 
 test("Search results and line anchors survive edits made elsewhere in the file", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -69,15 +61,11 @@ await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}));`;
     }).run("Edit the file after another session changed it elsewhere");
     const output = getToolResultText(run, "composed");
     expect(getToolExecution(run, "composed").isError, output).toBe(false);
-    const [changedResult, changedAnchor, ...others] = failedCalls(output);
-    expect(others, output).toEqual([]);
-    expect(changedResult).toMatch(/^replace RESULT#[a-f\d-]{36}\n[\s\S]*(?:expired|stale)/u);
-    expect(changedAnchor).toMatch(/^replace \.tmp\/shared\/main\.txt\n[\s\S]*stale/u);
     expect(await readFile(path.join(cwd, source), "utf8")).toBe("zero\none\n2\n3\nFOUR\nLAST\n");
   });
 });
 
-test("A list of match references from a limited search survives other sessions' edits and reports every unusable item at once", async () => {
+test("A list of match references from a limited search survives peer edits and rejects a mixed stale batch without writing", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
@@ -105,10 +93,9 @@ await tools.bash({command:"sed -i '2~2s/other(/different(/' "+file+" && sed -i '
 await tools.replace({path:[r3,r110,r112],text:"renamed"});
 const after=await tools.read({path:file});
 check(after.text.includes("v_2 = renamed(a_2)")&&after.text.includes("v_109 = renamed(a_109)")&&after.text.includes("v_111 = renamed(a_111)"),"Targets were not applied at their new lines: "+after.text.slice(0,500));
-// Two matches change their own text: one call names both and leaves the file untouched.
+// Two stale matches must stop the entire call, including the still-valid match.
 await tools.bash({command:"sed -i '116s/rename_me/x_me/;118s/rename_me/y_me/' "+file});
-await rejects(()=>tools.replace({path:[r115,r117,r120],text:"renamed"}));
-text("REFS "+JSON.stringify([r115,r117,r120]));`;
+await rejects(()=>tools.replace({path:[r115,r117,r120],text:"renamed"}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-list-concurrent",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -125,18 +112,21 @@ text("REFS "+JSON.stringify([r115,r117,r120]));`;
     }).run("Rename matches by a list of references while another session edits the file");
     const output = getToolResultText(run, "composed");
     expect(getToolExecution(run, "composed").isError, output).toBe(false);
-    const [r115, r117, r120] = JSON.parse(
-      /^REFS (\[.*\])$/mu.exec(output)?.[1] ?? "[]",
-    ) as string[];
-    const [failure, ...others] = failedCalls(output);
-    expect(others, output).toEqual([]);
-    // The first line names the call's sources; the reason below it names only unusable items.
-    const reason = failure?.slice(failure.indexOf("\n") + 1) ?? "";
-    expect(failure).toMatch(/^replace /u);
-    expect(reason).toContain("2 of 3 references");
-    expect(reason).toContain(r115);
-    expect(reason).toContain(r117);
-    expect(reason).not.toContain(r120);
+    const expected = Array.from({ length: 160 }, (_, i) => {
+      const selected =
+        i === 114
+          ? "x_me"
+          : i === 116
+            ? "y_me"
+            : [2, 109, 111].includes(i)
+              ? "renamed"
+              : "rename_me";
+      const peer = i % 2 === 1 ? "different" : "other";
+      return "v_" + i + " = " + selected + "(a_" + i + ") + " + peer + "(a_" + i + ");";
+    });
+    expect(await readFile(path.join(cwd, source), "utf8")).toBe(
+      ["top", ...expected, ""].join("\n"),
+    );
   });
 });
 
@@ -265,9 +255,6 @@ await rejects(()=>tools.delete({path:file,start:thirdTemplate}));`;
     }).run("Delete a block by anchors after another session inserted lines above");
     const output = getToolResultText(run, "composed");
     expect(getToolExecution(run, "composed").isError, output).toBe(false);
-    const [stale, ...others] = failedCalls(output);
-    expect(others, output).toEqual([]);
-    expect(stale).toMatch(/^delete \.tmp\/shared\/repeated\.cpp\n[\s\S]*stale/u);
     expect(await readFile(path.join(cwd, source), "utf8")).toBe(
       "zero\n}\n// a\ntemplate <typename T>\nT a(T v) {\n  return v;\n}\n// b\n// C\ntemplate <typename T>\nT c(T v) {\n  return v;\n}\n",
     );

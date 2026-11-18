@@ -142,3 +142,73 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
     );
   });
 }, 180_000);
+
+test("one rename keeps all 403 Search matches after a peer renames another type on the same lines", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const source = "main.cpp";
+    const original = "Vec2iType";
+    const replacement = "Vector2i";
+    const peerType = "ty_vec2f_t";
+    const newPeerType = "Vector2Float";
+    const tail = Array.from({ length: 1800 }, (_, i) => `int tail_${i};\n`).join("");
+    const spacer = Array.from({ length: 2436 }, (_, i) => `int spacer_${i};\n`).join("");
+    const lines = Array.from({ length: 403 }, (_, i) => {
+      if (i >= 91) return `inline ${original} unchanged_${i}();\n`;
+      const prefix = i % 2 === 0 ? `inline ${original}` : `inline pair<${peerType}, ${original}>`;
+      const name = i === 0 ? "func_image_coords_func" : `convert_point_${i}`;
+      return `${prefix} ${name}(const ${peerType}& MousePosArgument, const ${peerType}& center_arg);\n`;
+    });
+    const body = lines
+      .map((line, i) => line + (i % 3 === 2 ? `// declaration group ${i}\n` : ""))
+      .join("");
+    const before = "struct Header;\n" + body + spacer + tail;
+    const peer = tail + "struct Header;\n" + body.replaceAll(peerType, newPeerType) + spacer;
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint", "ide.formatter"] }),
+    );
+    await writeFile(path.join(cwd, source), before);
+    await writeFile(path.join(cwd, "peer-snapshot.cpp"), peer);
+    const call = (options: Parameters<typeof toolCall>[0]) =>
+      assistantMessage([toolCall(options)], { stopReason: "toolUse" });
+    const run = await new PiIntegrationTest({
+      testName: "peer-same-line-rename",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      isolateUserResources: true,
+      rawMode: false,
+      timeoutMs: 120_000,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["search", "replace", "bash", "codemode"],
+      conversation: [
+        call({
+          id: "search",
+          name: "codemode",
+          arguments: {
+            code: `const found = await tools.search({ path: "${source}", query: "${original}", wholeWord: true, limit: 1000 });
+if (found?.complete !== true || found.matches.length !== 403) throw Error("Expected 403 matches");
+store("matches", found.matches);`,
+          },
+        }),
+        call({ id: "peer", name: "bash", arguments: { command: "mv peer-snapshot.cpp main.cpp" } }),
+        call({
+          id: "replace",
+          name: "codemode",
+          arguments: {
+            code: `const result = await tools.replace({ path: load("matches"), text: "${replacement}" });
+if (result === null) throw Error("Replace rejected the original matches");`,
+          },
+        }),
+        assistantMessage([text("Done")]),
+      ],
+    }).run(
+      "Rename one type using the original Search matches after a separate writer renames another type",
+    );
+    for (const id of ["search", "peer", "replace"])
+      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    await expect(readFile(path.join(cwd, source), "utf8")).resolves.toBe(
+      peer.replaceAll(original, replacement),
+    );
+  });
+}, 180_000);
