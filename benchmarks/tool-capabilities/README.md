@@ -23,6 +23,8 @@ Rust edition selection is formatter behavior after an edit, not a new model oper
 
 The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostics and requests a symbol from the real server. Its dependency-free build script records an unexpected compilation; the final validator requires that marker to remain absent. It covers default Cargo safety, not explicit build-backed opt-in or large-workspace performance. The focused Rust diagnostic integration case also guards compiler invocations on a cold target and can use a real large workspace. Direct and Codemode paid routes remain unverified until paid execution.
 
+The `outline-search-edit` case follows a continuation to a second outline page and reuses that page to restrict Search and Replace. A focused scripted real-Pi test checks bounded output and exact edit scope on a large C++ fixture. Direct and Codemode paid routes remain unverified until paid execution.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:
