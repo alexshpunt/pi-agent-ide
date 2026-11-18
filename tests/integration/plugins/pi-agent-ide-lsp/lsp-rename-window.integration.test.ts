@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   testArtifactsDir,
   text,
@@ -58,6 +59,11 @@ function addedCalls(count: number, vecName: string): string {
   }).join("");
 }
 
+const CLANGD_AST_WORK = Array.from(
+  { length: 2_000 },
+  (_, i) => `int padding${i}() { return ${i}; }\n`,
+).join("");
+
 async function renameOverload(
   cwd: string,
   mode:
@@ -71,7 +77,9 @@ async function renameOverload(
     | "replan"
     | "auto-repeat"
     | "stall-once"
-    | "exhaust",
+    | "exhaust"
+    | "save-first"
+    | "save-first-exhaust",
 ) {
   const file = path.join(cwd, "main.cpp");
   let source = OVERLOADS;
@@ -86,6 +94,7 @@ async function renameOverload(
   if (mode === "lookup")
     source = OVERLOADS.replace("  auto argument", "  int scalar = 3;\n  auto argument");
   if (mode === "indent") source += additionalCalls("  ", "normalize");
+  if (mode.startsWith("save-first")) source += CLANGD_AST_WORK;
   await writeFile(file, source);
   await writeFile(path.join(cwd, "compile_flags.txt"), "-std=c++17\n");
   await mkdir(path.join(cwd, ".tmp/edit-window"), { recursive: true });
@@ -147,7 +156,7 @@ async function renameOverload(
           { stopReason: "toolUse" },
         ),
         rename("rename"),
-        ...(mode === "stall" || mode === "exhaust" ? [rename("repeat")] : []),
+        ...(mode === "stall" || mode.endsWith("exhaust") ? [rename("repeat")] : []),
         assistantMessage([text("Done.")]),
       ],
     }),
@@ -227,6 +236,31 @@ test("one replace includes references added during seven consecutive native requ
     expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
     expect(events).toEqual(Array(8).fill("rename"));
     expect(content).toBe(RENAMED_OVERLOADS + addedCalls(7, "normalizeVec"));
+  });
+}, 50_000);
+
+test("one replace refreshes when clangd rejects a rename after a peer sync", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "save-first");
+    expect(events.slice(0, 2)).toEqual(["rename", "save-first"]);
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(["rename", "save-first", "rename"]);
+    expect(content).toBe(RENAMED_OVERLOADS + CLANGD_AST_WORK + addedCalls(1, "normalizeVec"));
+  });
+}, 50_000);
+
+test("repeated clangd refusals exhaust the shared budget and leave the capture reusable", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "save-first-exhaust");
+    const refusal = getToolExecution(run, "rename");
+    expect(refusal.isError).toBe(true);
+    expect(getToolExecutionDetails(refusal)).toMatchObject({ effect: "not-applied" });
+    expect(getToolExecution(run, "repeat").isError, getToolResultText(run, "repeat")).toBe(false);
+    expect(events).toEqual([
+      ...Array.from({ length: 10 }, () => ["rename", "save-first"]).flat(),
+      "rename",
+    ]);
+    expect(content).toBe(RENAMED_OVERLOADS + CLANGD_AST_WORK + addedCalls(10, "normalizeVec"));
   });
 }, 50_000);
 
