@@ -6,7 +6,7 @@ The project is experimental. The behavior below describes the current implementa
 
 ## Tool discovery
 
-Read, Diagnostics, Search, File Search and the common editing and terminal tools are declared initially. AST Search, LSP Search, Diff and Undo are deferred, alongside Stage, Unstage and Debug. Discover them with `tool_search`, or use `describeTool()` inside Codemode when the tool name is known. Deferred tools remain callable from scripts.
+Read, Diagnostics, Search, File Search and the common editing and terminal tools are declared initially. AST Search, LSP Search, Diff and Undo are deferred, alongside Stage, Unstage and Debug. Use `tool_search({ query })` for direct calls. Inside Codemode, call known tools through `tools`, such as `tools.ast_search(args)`, without loading them first. Use `await searchTools(query)` to find other script tools and `await describeTool(name)` to see their arguments.
 
 Use AST Search for syntax patterns, captures and enclosing code. Use LSP Search for symbol definitions, references and call graphs through language servers.
 
