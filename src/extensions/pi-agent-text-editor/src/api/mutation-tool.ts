@@ -13,8 +13,13 @@ export class TextMutationInputError extends Error {
     super(message);
   }
 }
+export interface TextMutationChange extends TextChange {
+  /** Selector fields that define this change when a tool has multiple selection roles. */
+  readonly selectorFields?: readonly string[];
+}
+
 export interface TextMutationEdit {
-  readonly changes: readonly TextChange[];
+  readonly changes: readonly TextMutationChange[];
   readonly action: "edited" | "overwritten";
   /** Indices of changes that produce live output targets; omit to select all, or use [] for removals. */
   readonly resultChanges?: readonly number[];

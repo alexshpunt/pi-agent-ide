@@ -1,3 +1,5 @@
+import { quoteAnchorExcerpt } from "./anchor-excerpt.ts";
+
 export interface StaleAnchorMessageDetails {
   readonly guardId: "stale-anchor";
   readonly effect: "not-applied";
@@ -23,7 +25,7 @@ export function formatStaleAnchorMessage(
     ? "The guard intentionally stopped this call during streaming, before the full arguments or payload arrived. Missing text is a consequence of that stop, not a missing-payload mistake. Retrying the same stale selector will be refused again. "
     : "";
   return (
-    `[SYSTEM] ${details.toolName} blocked: ${details.field === "anchor" ? "anchor" : `${details.field} anchor`} "${details.anchor}" is stale. ` +
+    `[SYSTEM] ${details.toolName} blocked: ${details.field === "anchor" ? "anchor" : `${details.field} anchor`} ${quoteAnchorExcerpt(details.anchor)} is stale. ` +
     `${earlyStop}${guidance} (${reason})${context}`
   );
 }

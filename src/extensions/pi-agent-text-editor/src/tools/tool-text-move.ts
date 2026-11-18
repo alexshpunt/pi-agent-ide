@@ -75,7 +75,10 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const sourceSpan = anchorSpanRange(context, starts, ends, "start", "end");
     const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
-    const deletion = deleteAnchorSpan(sourceSpan);
+    const deletion = {
+      ...deleteAnchorSpan(sourceSpan),
+      selectorFields: parameters.end === undefined ? ["start"] : ["start", "end"],
+    };
 
     const targetStarts = await context.resolveAnchors("targetStart");
     let target: string;
@@ -95,14 +98,20 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
       targetChange = { from: targetSpan.from, to: targetSpan.to, insert: copied };
     }
 
-    if (sourceSpan.source === target && rangesTouch(deletion, targetChange)) {
+    const destination = {
+      ...targetChange,
+      selectorFields:
+        parameters.targetEnd === undefined ? ["targetStart"] : ["targetStart", "targetEnd"],
+    };
+
+    if (sourceSpan.source === target && rangesTouch(deletion, destination)) {
       throw new Error("Move target must not overlap or touch its source range.");
     }
 
     if (sourceSpan.source === target) {
       return {
         edits: new Map([
-          [target, { changes: [deletion, targetChange], action: "edited", resultChanges: [1] }],
+          [target, { changes: [deletion, destination], action: "edited", resultChanges: [1] }],
         ]),
       };
     }
@@ -110,7 +119,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
     return {
       edits: new Map([
         [sourceSpan.source, { changes: [deletion], action: "edited", resultChanges: [] }],
-        [target, { changes: [targetChange], action: "edited" }],
+        [target, { changes: [destination], action: "edited" }],
       ]),
     };
   },
