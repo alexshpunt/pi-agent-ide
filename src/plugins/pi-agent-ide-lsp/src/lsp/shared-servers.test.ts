@@ -5,6 +5,7 @@ import { URI } from "vscode-uri";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { LspClient } from "./client.ts";
+import { diagnosticErrors } from "./corrected-names.ts";
 import { requestDiagnostics } from "./diagnostics.ts";
 import { LspSharedServers } from "./shared-servers.ts";
 import { requestDocumentSymbols } from "./symbols.ts";
@@ -186,6 +187,59 @@ test("sessions with different text each get diagnostics for their own version", 
       second.diagnosticPublication(uri)?.version === second.documentVersion(uri),
   );
 });
+
+test.each([
+  ["waiting", "edited\n"],
+  ["already superseded", "first\n"],
+])(
+  "push diagnostics reject when a peer syncs newer disk text (%s)",
+  async (when, recoveredText) => {
+    const { cwd, sharing } = await workspace();
+    const env = { LIFECYCLE_MANUAL_DIAGNOSTICS: "1" };
+    const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+    const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+    const file = path.join(cwd, "first.fx");
+    const uri = URI.file(file).toString();
+    const params = { textDocument: { uri } };
+    const errors = () =>
+      diagnosticErrors(
+        async () => ({ client: first, uri }),
+        AbortSignal.timeout(1500),
+      )(uri).catch((error: unknown) => error);
+    first.syncDocument(uri, "first\n", "fixture");
+    expect(await first.sendRequest("lifecycle/text", params)).toBe("first\n");
+    const pending = when === "waiting" ? Promise.all([errors(), errors()]) : undefined;
+
+    await writeFile(file, "edited\n");
+    const mtime = new Date(Date.now() + 1);
+    await utimes(file, mtime, mtime);
+    second.syncDocument(uri, "edited\n", "fixture");
+    expect(await second.sendRequest("lifecycle/text", params)).toBe("edited\n");
+
+    // Round-trip on the first connection so the late waiter starts after the notice arrived.
+    await status(first);
+    const failures = pending ? await pending : [await errors()];
+    for (const failure of failures) expect(failure).toMatchObject({ code: "SOURCE_CHANGED" });
+
+    if (when === "already superseded") {
+      await until(() => Date.now() > mtime.getTime());
+      first.syncDocument(uri, "first\n", "fixture");
+      await expect(
+        first.sendRequest("textDocument/references", {
+          ...params,
+          position: { line: 0, character: 0 },
+        }),
+      ).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
+    }
+
+    // The file can return to the exact text the first session already has cached.
+    await writeFile(file, recoveredText);
+    first.syncDocument(uri, recoveredText, "fixture");
+    const recovered = errors();
+    await first.sendRequest("lifecycle/publishDiagnostics", params);
+    expect(await recovered).toMatchObject({ starts: new Set(["0:0"]) });
+  },
+);
 
 test("a document reopened at once stays open on the server", async () => {
   const { cwd, sharing } = await workspace();

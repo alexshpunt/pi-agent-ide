@@ -18,12 +18,14 @@ const refreshAfter = (sent) =>
   void sent.then(() =>
     pullRegistered ? connection.sendRequest("workspace/diagnostic/refresh").catch(() => process.exit(1)) : undefined,
   );
-const publish = (uri, version) =>
-  pullDiagnostics && version !== undefined
-    ? refreshAfter(connection.sendNotification("textDocument/publishDiagnostics", { uri, version, diagnostics: [] }))
-    : version !== undefined && delayMs > 0
-    ? setTimeout(() => open.get(uri) === version && send(uri, version), delayMs)
-    : send(uri, version);
+const publish = (uri, version) => {
+  if (version !== undefined && process.env.LIFECYCLE_MANUAL_DIAGNOSTICS === "1") return;
+  if (pullDiagnostics && version !== undefined)
+    return refreshAfter(connection.sendNotification("textDocument/publishDiagnostics", { uri, version, diagnostics: [] }));
+  if (version !== undefined && delayMs > 0)
+    return setTimeout(() => open.get(uri) === version && send(uri, version), delayMs);
+  return send(uri, version);
+};
 const send = (uri, version) =>
   connection.sendNotification("textDocument/publishDiagnostics", {
     uri,
@@ -111,6 +113,10 @@ connection.onRequest("lifecycle/finishOutline", () => {
 });
 connection.onRequest("lifecycle/status", () => ({ open: [...open.keys()], events, watched, pid: process.pid }));
 connection.onRequest("lifecycle/text", ({ textDocument }) => texts.get(textDocument.uri) ?? null);
+connection.onRequest("lifecycle/publishDiagnostics", async ({ textDocument: { uri } }) => {
+  await send(uri, open.get(uri));
+  return null;
+});
 connection.onRequest("textDocument/references", ({ textDocument, position }) =>
   texts.get(textDocument.uri)?.split("\n")[position.line] === "first"
     ? [{ uri: textDocument.uri, range: { start: position, end: { ...position, character: 5 } } }]
