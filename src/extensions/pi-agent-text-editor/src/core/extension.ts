@@ -7,6 +7,8 @@ import {
 import { NoTextTargetError } from "./file-result-targets.ts";
 import { setMutationSnapshotReader } from "./mutation-result-targets.ts";
 import { registerTextEditOrigins } from "./text-edit-origin.ts";
+import { compactMutationReceipt } from "./mutation-result/compact-receipt.ts";
+import type { FileMutationBatchResult } from "./mutation-result/file-mutation-result.ts";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -101,11 +103,14 @@ export default async function registerTextEditorCore(
   pi.on("tool_result", (event) => {
     rememberLastResolvedResource(pi, event.details);
 
-    if (mutationTools.has(event.toolName) && isFailedTextMutationResult(event.details)) {
-      return { isError: true };
+    if (!mutationTools.has(event.toolName)) return;
+    const isError = isFailedTextMutationResult(event.details);
+    const details = event.details as FileMutationBatchResult | undefined;
+    if (details && Array.isArray(details.results)) {
+      const persist = core.getToolRenderer(event.toolName)?.persistResult ?? compactMutationReceipt;
+      return { details: persist(details), ...(isError ? { isError: true } : {}) };
     }
-
-    return;
+    if (isError) return { isError: true };
   });
   let readApi: ReadPluginApi | undefined;
   await connectReadPlugin(pi, {
