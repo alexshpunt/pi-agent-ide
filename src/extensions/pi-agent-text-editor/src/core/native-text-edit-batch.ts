@@ -33,6 +33,7 @@ import { resolveResultScope } from "./result-scope.ts";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.ts";
 import { writeProblemNotices } from "./write-agent-result.ts";
 import {
+  EDIT_WAIT_TIMEOUT_MS,
   ResourceScheduler,
   ResourceError,
   resourceAccesses,
@@ -495,7 +496,15 @@ class NativeTextEditBatchCoordinator {
         });
         return;
       }
-      const work = script.scheduler.run(undefined, () => this.commit(script));
+      const work = script.scheduler.run(
+        undefined,
+        () => this.commit(script),
+        script.cancellation.signal,
+        {
+          waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+          waitFor: "the preceding editor batch",
+        },
+      );
       script.tail = work.then(
         () => undefined,
         () => undefined,
@@ -901,6 +910,7 @@ class NativeTextEditBatchCoordinator {
           scopedSources,
         ),
       effectiveSignal,
+      { waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS, waitFor: sources.join(", ") || "the editor batch" },
     );
     script.tail = Promise.allSettled([script.tail, work]).then(() => undefined);
     return work;

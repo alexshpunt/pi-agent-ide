@@ -97,7 +97,9 @@ export function createUndoMutationTool(
         if (result.indexUpdate !== undefined) {
           const update = result.indexUpdate;
           afterWrite = () =>
-            queue.run(() => creation.service.applyIndexUpdate(update, context.signal));
+            queue.run(source, context.signal, () =>
+              creation.service.applyIndexUpdate(update, context.signal),
+            );
         }
       }
 
@@ -118,8 +120,32 @@ export function createUndoMutationTool(
 }
 
 function createTextChanges(currentText: string, restoredText: string) {
+  // Precision is useful for small edits, but not required to restore the verified snapshot.
+  // In particular, Myers can spend minutes comparing the characters in a large block move.
+  let from = 0;
+  const shorter = Math.min(currentText.length, restoredText.length);
+  while (from < shorter && currentText.charCodeAt(from) === restoredText.charCodeAt(from)) {
+    from += 1;
+  }
+  let to = currentText.length;
+  let restoredEnd = restoredText.length;
+  while (
+    to > from &&
+    restoredEnd > from &&
+    currentText.charCodeAt(to - 1) === restoredText.charCodeAt(restoredEnd - 1)
+  ) {
+    to -= 1;
+    restoredEnd -= 1;
+  }
+  const before = currentText.slice(from, to);
+  const insert = restoredText.slice(from, restoredEnd);
+  const parts =
+    before.length + insert.length <= 64_000
+      ? diffChars(before, insert, { timeout: 50, maxEditLength: 1_000 })
+      : undefined;
+  if (parts === undefined) return [{ from, to, insert }];
   const changes: { from: number; to: number; insert: string }[] = [];
-  let sourceOffset = 0;
+  let sourceOffset = from;
   let changeStart: number | undefined;
   let removedLength = 0;
   let insertedText = "";
@@ -139,7 +165,7 @@ function createTextChanges(currentText: string, restoredText: string) {
     insertedText = "";
   };
 
-  for (const part of diffChars(currentText, restoredText)) {
+  for (const part of parts) {
     if (!part.added && !part.removed) {
       flush();
       sourceOffset += part.value.length;

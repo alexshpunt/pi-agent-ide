@@ -2,10 +2,10 @@ import { createHash } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { EDIT_WAIT_TIMEOUT_MS } from "pi-agent-resource";
 
 /** A lock older than this belongs to a process that died while holding it. */
 const STALE_LOCK_MS = 10_000;
-const WAIT_TIMEOUT_MS = 30_000;
 
 /**
  * Runs `action` while no other Pi process on this machine reads or writes the same file through
@@ -46,9 +46,13 @@ async function acquire(
   } catch {
     return false;
   }
-  const started = Date.now();
+  const deadline = performance.now() + EDIT_WAIT_TIMEOUT_MS;
   for (;;) {
     signal?.throwIfAborted();
+    if (performance.now() >= deadline)
+      throw Object.assign(new Error(`Timed out waiting for the write lock on ${filePath}`), {
+        code: "LOCK_TIMEOUT",
+      });
     try {
       await mkdir(lock);
       return true;
@@ -63,8 +67,6 @@ async function acquire(
       await rm(lock, { recursive: true, force: true });
       continue;
     }
-    if (Date.now() - started > WAIT_TIMEOUT_MS)
-      throw new Error(`Timed out waiting for another Pi process to finish with ${filePath}`);
     await new Promise((resolve) => setTimeout(resolve, 5 + Math.random() * 20));
   }
 }

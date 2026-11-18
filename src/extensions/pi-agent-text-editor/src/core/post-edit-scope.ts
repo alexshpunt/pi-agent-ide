@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { requiredValue } from "pi-agent-invariant";
-import { ResourceScheduler, resourceAccesses } from "pi-agent-resource";
+import { EDIT_WAIT_TIMEOUT_MS, ResourceScheduler, resourceAccesses } from "pi-agent-resource";
 import type { TextResourceEditOutcome } from "./text-editor-core.ts";
 
 type Completed = Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>;
@@ -78,7 +78,10 @@ export function createPostEditScope(cwd = process.cwd()) {
         const scheduler = new ResourceScheduler();
         const outcomes = await Promise.allSettled(
           work.map(([source, finalize]) =>
-            scheduler.run(resourceAccesses(source, cwd, "write"), finalize),
+            scheduler.run(resourceAccesses(source, cwd, "write"), finalize, undefined, {
+              waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+              waitFor: source,
+            }),
           ),
         );
         for (const [index, outcome] of outcomes.entries()) {

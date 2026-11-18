@@ -286,6 +286,7 @@ const groups: [string[], string[]][] = [
     ["codemode.parallel-edit-effects", "compose.read-concurrent-edit-snapshot"],
     ["parallel-edit-effects-all", "parallel-edit-effects-allSettled"],
   ],
+  // This route checks exact restoration without competing writes. Scripted Pi covers contention.
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
   [
     [

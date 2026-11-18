@@ -84,20 +84,39 @@ function coveredAccess(
     ),
   );
 }
-async function waitForDependencies<T>(pending: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (signal === undefined) {
-    return await pending;
-  }
-  signal.throwIfAborted();
+/** Common acquisition budget for editor reservations and cooperating write locks. */
+export const EDIT_WAIT_TIMEOUT_MS = 5_000;
+
+interface ReservationOptions {
+  readonly allowNestedWrites?: boolean;
+  /** Deadline for acquiring the scope, not for executing the action. */
+  readonly waitTimeoutMs?: number;
+  /** What to name if the scope is unresolved or exclusive. */
+  readonly waitFor?: string;
+}
+
+async function waitForDependencies<T>(
+  pending: Promise<T>,
+  signal: AbortSignal | undefined,
+  timeoutMs: number | undefined,
+  timeoutError: () => Error,
+): Promise<T> {
+  signal?.throwIfAborted();
+  const deadline = timeoutMs === undefined ? undefined : performance.now() + timeoutMs;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let abort!: () => void;
   const cancelled = new Promise<never>((_resolve, reject) => {
-    abort = () => reject(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
+    abort = () => reject(signal?.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (timeoutMs !== undefined) timer = setTimeout(() => reject(timeoutError()), timeoutMs);
   });
   try {
-    return await Promise.race([pending, cancelled]);
+    const result = await Promise.race([pending, cancelled]);
+    if (deadline !== undefined && performance.now() >= deadline) throw timeoutError();
+    return result;
   } finally {
-    signal.removeEventListener("abort", abort);
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
   }
 }
 /**
@@ -120,7 +139,7 @@ export class ResourceScheduler {
       | Promise<readonly ResourceAccess[] | undefined>,
     action: () => T | Promise<T>,
     signal?: AbortSignal,
-    ownership: { readonly allowNestedWrites?: boolean } = {},
+    ownership: ReservationOptions = {},
   ): Promise<T> {
     const resolved = Promise.resolve(accesses);
     const parent = this.state.active.getStore();
@@ -138,6 +157,7 @@ export class ResourceScheduler {
       });
       parent.nested ??= new ResourceScheduler();
       const child = parent.nested.run(validated, action, signal, {
+        ...ownership,
         allowNestedWrites: parent.allowNestedWrites,
       });
       parent.children.add(child);
@@ -159,8 +179,10 @@ export class ResourceScheduler {
     return (async () => {
       try {
         signal?.throwIfAborted();
+        let resources: string[] = [];
         const current = await waitForDependencies(
           resolved.then(async (current) => {
+            resources = [...new Set(current?.map((access) => access.resource))];
             await Promise.all(
               prior.map((previous) =>
                 Promise.race([
@@ -174,6 +196,14 @@ export class ResourceScheduler {
             return current;
           }),
           signal,
+          ownership.waitTimeoutMs,
+          () =>
+            Object.assign(
+              new Error(
+                `Timed out waiting for ${ownership.waitFor ?? (resources.join(", ") || "the editor reservation or its resource resolution")}.`,
+              ),
+              { code: "RESOURCE_WAIT_TIMEOUT", resources },
+            ),
         );
         signal?.throwIfAborted();
         const reservation: ActiveReservation = {

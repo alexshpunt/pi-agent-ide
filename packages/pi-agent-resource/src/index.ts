@@ -1,5 +1,10 @@
 export { normalizeStructuredArguments } from "./json-structured-arguments.ts";
-export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.ts";
+export {
+  EDIT_WAIT_TIMEOUT_MS,
+  ResourceScheduler,
+  resourceScheduler,
+  type ResourceAccess,
+} from "./resource-scheduler.ts";
 export { resourceAccesses } from "./resource-access.ts";
 export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.ts";
 export {
