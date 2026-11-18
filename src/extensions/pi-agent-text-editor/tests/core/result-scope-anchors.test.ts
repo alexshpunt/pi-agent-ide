@@ -390,7 +390,7 @@ test.each([
   { content: "keep\nOLD\nlast\n", query: "OLD\nlast" },
   { content: "\uFEFFkeep\r\nOLD\r\nlast\r\n", query: "\uFEFFlast\n" },
 ])(
-  "a scope-only exact miss does not mark the file for blocking: $query",
+  "an exact selector that crosses or lies outside the selection fails: $query",
   async ({ content, query }) => {
     const f = await fixture({ "task.txt": content });
     const read = await f.lines("task.txt", 2, 2);
@@ -400,13 +400,13 @@ test.each([
       text: "BAD",
     });
     expect(result.details.effect).toBe("not-applied");
-    expect(result.details.metadata?.exactTextFailures ?? []).toEqual([]);
+    expect(result.details.results?.[0]?.errors[0]?.code).toBe("outside-scope");
     expect(await f.content("task.txt")).toBe(content);
   },
 );
 
 test.each(["absent", "\uFEFF"])(
-  "an exact selector absent from the file still marks it for blocking: %s",
+  "an exact selector absent from the file fails: %s",
   async (query) => {
     const content = "keep\nOLD\nlast\n";
     const f = await fixture({ "task.txt": content });
@@ -417,7 +417,7 @@ test.each(["absent", "\uFEFF"])(
       text: "BAD",
     });
     expect(result.details.effect).toBe("not-applied");
-    expect(result.details.metadata?.exactTextFailures).toEqual([path.join(cwd, "task.txt")]);
+    expect(result.details.results?.[0]?.errors[0]?.code).toBe("missing");
     expect(await f.content("task.txt")).toBe(content);
   },
 );

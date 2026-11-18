@@ -2578,6 +2578,36 @@ add(
   },
 );
 add(
+  "move-destination-recovery",
+  ["edit.move-destination-recovery"],
+  "Call Move on task.txt with the exact text move this as start and the misspelled second makrer as targetStart. After that refusal, read task.txt with anchors. Retry the same Move, changing only targetStart to the issued anchor for the second marker line. Move the line exactly once. Once that Move succeeds, replace the exact text keep this with kept. Preserve every other line. In Codemode, wait for the result of each call before the next.",
+  [
+    {
+      tool: "move",
+      args: { path: "task.txt", start: "move this", targetStart: "second makrer" },
+      error: true,
+      exactText: ["start", "targetStart"],
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [0] },
+    {
+      tool: "move",
+      args: { path: "task.txt", start: "move this", targetStart: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      exactText: ["start"],
+      reuse: reuse(1, "targetStart", "anchor"),
+      after: [1],
+    },
+    {
+      tool: "replace",
+      args: { path: "task.txt", start: "keep this", text: "kept" },
+      after: [2],
+    },
+  ],
+  {
+    files: { "task.txt": "header\nmove this\nkeep this\nfirst marker\nsecond marker\ntail\n" },
+    expected: { "task.txt": "header\nkept\nfirst marker\nsecond marker\nmove this\ntail\n" },
+  },
+);
+add(
   "selection-copy-move",
   [
     "edit.copy-selection",
