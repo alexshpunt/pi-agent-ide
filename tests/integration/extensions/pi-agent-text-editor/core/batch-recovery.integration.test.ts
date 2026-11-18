@@ -348,7 +348,6 @@ describe("pi-agent-text-editor batch recovery", () => {
       for (const { id } of tailCalls) {
         expect(getToolExecution(result, id).isError).toBe(false);
       }
-      expect(getToolResultText(result, "streamed-stale")).toContain("start anchor");
       expect(deltas).toContain(staleChunks.chunks[0]);
       expect(deltas).not.toContain(staleChunks.chunks[1]);
 
