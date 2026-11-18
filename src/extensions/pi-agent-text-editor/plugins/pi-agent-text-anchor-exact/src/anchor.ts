@@ -20,10 +20,7 @@ interface NormalizedText {
 }
 
 /** Creates the catch-all resolver for unique exact text spans. */
-export function createExactTextAnchorResolver(
-  config: ExactTextRecoveryConfig,
-  requiresAnchor: (source: string, cwd: string, value: string) => boolean = () => false,
-): TextAnchorResolver {
+export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): TextAnchorResolver {
   return {
     id: "exact-text",
     description:
@@ -35,14 +32,7 @@ export function createExactTextAnchorResolver(
       return "selected text";
     },
     tryResolve(value, context) {
-      return Promise.resolve(
-        requiresAnchor(context.source, context.cwd, value)
-          ? rejected(
-              "invalid",
-              "Exact-text editing is blocked for this file; use a current returned anchor for the next edit.",
-            )
-          : resolveExactTextAnchor(value, context),
-      );
+      return Promise.resolve(resolveExactTextAnchor(value, context));
     },
     recover(value, context) {
       return recoverExactText(value, context, config);

@@ -401,34 +401,35 @@ test("store/load retains text and UUID composition; Search reads a changed file'
   });
 });
 
-test("explicit-text errors require a current anchor, then allow explicit text again", async () => {
-  await withTempWorkspace(async (cwd) => {
-    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
-    const run = await runText(cwd, "text-result-anchor-recovery", [
-      `
-if((await tools.replace({path:"note.txt",start:"betx",text:"BETA"}))!==null) throw Error("A missing exact text was applied");
-if((await tools.replace({path:"note.txt",start:"beta",text:"BETA"}))!==null) throw Error("Explicit text retried without an anchor");
-await tools.write({path:"note.txt",content:"ALPHA\\nbeta\\ngamma\\n"});
-if((await tools.replace({path:"note.txt",start:"beta",text:"BETA"}))!==null) throw Error("An unanchored write bypassed recovery");
-const current=await tools.read({path:"note.txt",views:["anchors"]});
-const anchor=/^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|beta/m.exec(current.text)?.[1];
-if(!anchor) throw Error("Read did not show beta's anchor: "+current.text);
-await tools.replace({path:"note.txt",start:anchor,text:"BETA"});
-const recovered=await tools.read({path:"note.txt"});
-if(recovered.text!=="ALPHA\\nBETA\\ngamma\\n") throw Error("Anchored recovery was not applied");
-await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
-`,
-    ]);
-    const output = getToolResultText(run, "script-0");
-    expect(getToolExecution(run, "script-0").isError, output).toBe(false);
-    const [failed, blocked, stillBlocked, ...others] = failedCalls(output);
-    expect(others, output).toEqual([]);
-    expect(failed).toMatch(/^replace note\.txt\n[\s\S]*anchor/u);
-    expect(blocked).toMatch(/^replace note\.txt\n[\s\S]*blocked/u);
-    expect(stillBlocked).toMatch(/^replace note\.txt\n[\s\S]*blocked/u);
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\nGAMMA\n");
-  });
-});
+test.each(["missing", "ambiguous"] as const)(
+  "Move retries after a %s destination without changing its exact-text source",
+  async (state) => {
+    await withTempWorkspace(async (cwd) => {
+      const initial = "header\nmove this\nkeep this\nfirst marker\nsecond marker\ntail\n";
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const destination = state === "missing" ? "second makrer" : "marker";
+      const run = await runText(cwd, `move-retry-${state}`, [
+        `const failed = await tools.move({path:"note.txt",start:"move this",targetStart:${JSON.stringify(destination)}});
+if (failed !== null) throw Error("The invalid destination was accepted");
+const current = await tools.read({path:"note.txt"});
+if (current.text !== ${JSON.stringify(initial)}) throw Error("Failed Move changed the file");`,
+        state === "missing"
+          ? String.raw`const current = await tools.read({path:"note.txt",views:["anchors"]});
+const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|second marker/m.exec(current.text)?.[1];
+if (!anchor) throw Error("Read did not issue an anchor for the intended destination");
+await tools.move({path:"note.txt",start:"move this",targetStart:anchor});`
+          : `await tools.move({path:"note.txt",start:"move this",targetStart:"second marker"});`,
+        `await tools.replace({path:"note.txt",start:"keep this",text:"kept"});`,
+      ]);
+      for (const id of ["script-0", "script-1", "script-2"]) {
+        expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+      }
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "header\nkept\nfirst marker\nsecond marker\nmove this\ntail\n",
+      );
+    });
+  },
+);
 
 test("direct tools accept unchanged results and UUIDs without Codemode", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -478,7 +479,7 @@ test("direct tools accept unchanged results and UUIDs without Codemode", async (
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\n");
   });
 });
-test("a registered Search selection restores exact-text editing after a selector failure", async () => {
+test("a registered Search selection can recover an edit after an exact-text miss", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runText(cwd, "text-result-search-recovery", [
