@@ -1,11 +1,53 @@
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 
 const backend = fileURLToPath(new URL(".", import.meta.url));
+
+test.skipIf(process.platform === "win32")(
+  "a held SSH write lock refuses without publishing",
+  async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "pi-ssh-worker-"));
+    try {
+      const target = path.join(directory, "target.txt");
+      await writeFile(target, "before");
+      const lockAndWrite = String.raw`
+import fcntl, os, sys
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+import ssh_worker_common, ssh_worker_posix
+ssh_worker_posix.LOCK_TIMEOUT_SECONDS = 0.05
+fd = os.open(sys.argv[2], os.O_RDONLY | os.O_DIRECTORY)
+try:
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    ssh_worker_common.run(ssh_worker_posix)
+finally:
+    os.close(fd)
+`;
+      const result = spawnSync("python3", ["-c", lockAndWrite, backend, directory], {
+        input: JSON.stringify({
+          operation: "write",
+          path: target,
+          bytes: Buffer.from("after").toString("base64"),
+        }),
+        timeout: 2_000,
+      });
+      expect(result.error).toBeUndefined();
+      expect(JSON.parse(result.stdout.toString())).toMatchObject({
+        ok: false,
+        code: "LOCK_TIMEOUT",
+        effect: "not-applied",
+      });
+      await expect(readFile(target, "utf8")).resolves.toBe("before");
+      expect(await readdir(directory)).toEqual(["target.txt"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 // Runs one request through the POSIX worker and sends it SIGTERM right after it closes the
 // write handle of a file whose name ends with the given suffix. The operations below close that

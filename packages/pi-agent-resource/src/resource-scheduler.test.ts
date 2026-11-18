@@ -118,6 +118,44 @@ test("cancelling a queued operation rejects without waiting for its active depen
     await Promise.allSettled([first, cancelled]);
   }
 });
+test("a stalled write expires with its resource and never runs after the owner releases it", async () => {
+  const scheduler = new ResourceScheduler();
+  const release = gate();
+  const access = [{ resource: "file:///workspace/shared.txt", mode: "write" }] as const;
+  let ownerFinished = false;
+  let expiredRan = false;
+  const owner = scheduler.run(
+    access,
+    async () => {
+      await release.promise;
+      ownerFinished = true;
+    },
+    undefined,
+    { waitTimeoutMs: 50 },
+  );
+  const expired = scheduler.run(
+    access,
+    () => {
+      expiredRan = true;
+    },
+    undefined,
+    { waitTimeoutMs: 50 },
+  );
+  try {
+    await expect(expired).rejects.toMatchObject({
+      code: "RESOURCE_WAIT_TIMEOUT",
+      resources: ["file:///workspace/shared.txt"],
+    });
+    expect(ownerFinished).toBe(false);
+  } finally {
+    release.resolve();
+    await owner;
+  }
+  await expect(scheduler.run(access, () => "next")).resolves.toBe("next");
+  expect(ownerFinished).toBe(true);
+  expect(expiredRan).toBe(false);
+});
+
 test("a helper read borrows its parent's reservation instead of waiting for itself", async () => {
   const scheduler = new ResourceScheduler();
   const nested = scheduler.run([{ resource: "a", mode: "write" }], () =>

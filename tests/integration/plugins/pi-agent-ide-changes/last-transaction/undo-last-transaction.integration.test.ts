@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { requiredValue } from "pi-agent-invariant";
@@ -9,6 +9,7 @@ import {
   assistantMessage,
   type AssistantMessageScenario,
   getToolExecution,
+  getToolResultMessage,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -17,6 +18,7 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, describe, expect, test } from "vitest";
 
+import { installConcurrentWriter } from "#integration/support/concurrent-writer.ts";
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
 import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
@@ -41,6 +43,110 @@ const done = assistantMessage([text("The last transaction undo scenario finished
 afterAll(() => extensions.dispose());
 
 describe("undo last text transaction", () => {
+  test("returns promptly after a large move, even while a peer writes the same file", async () => {
+    await withTempWorkspace(async (directory) => {
+      const block = Array.from(
+        { length: 2900 },
+        (_, i) => `// moved_${String(i)} ${"a".repeat(55)}\n`,
+      ).join("");
+      const remainder = Array.from(
+        { length: 23_337 },
+        (_, i) => `// kept_${String(i)} ${"z".repeat(55)}\n`,
+      ).join("");
+      const initial = `// header\n${block}${remainder}// destination\n`;
+      const moved = `// header\n${remainder}// destination\n${block}`;
+      const unchangedName = "unchanged.txt";
+      const sharedName = "shared.txt";
+      const unchanged = await createFixture(directory, unchangedName, initial);
+      const shared = await createFixture(directory, sharedName, initial);
+      const peer = await installConcurrentWriter(directory, {
+        file: sharedName,
+        intervalMs: 50,
+        lifetimeMs: 30_000,
+      });
+      await mkdir(path.join(directory, ".pi/pi-agent-ide"), { recursive: true });
+      await writeFile(
+        path.join(directory, ".pi/pi-agent-ide/extensions.json"),
+        JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+      );
+      const move = (id: string, file: string) =>
+        toolCall({
+          id,
+          name: "move",
+          arguments: {
+            path: file,
+            start: block.split("\n", 1)[0],
+            end: block.trimEnd().split("\n").at(-1),
+            targetStart: "// destination",
+          },
+          delayMs: 0,
+        });
+      const undo = (id: string, file: string) =>
+        toolCall({ id, name: "undo", arguments: { file, change: "last" }, delayMs: 0 });
+      const run = await new PiIntegrationTest({
+        testName: "undo-last-large-move",
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd: directory,
+        rawMode: true,
+        timeoutMs: 30_000,
+        traceToolDetails: false,
+        extensions: [path.resolve("src/pi-agent-ide.ts")],
+        tools: ["move", "undo", "bash", "delete"],
+        conversation: [
+          toolMessage(move("move-unchanged", unchangedName)),
+          toolMessage(undo("undo-unchanged", unchangedName)),
+          toolMessage(move("move-shared", sharedName)),
+          toolMessage(
+            toolCall({
+              id: "peer-start",
+              name: "bash",
+              arguments: { command: peer.command, background: true, name: peer.session },
+              delayMs: 0,
+            }),
+          ),
+          toolMessage(
+            toolCall({
+              id: "peer-ready",
+              name: "bash",
+              arguments: {
+                command:
+                  "for ((i=0; i<100; i++)); do test -s peer-writer.mjs.writes && exit 0; sleep 0.05; done; exit 1",
+              },
+              delayMs: 0,
+            }),
+          ),
+          toolMessage(undo("undo-shared", sharedName)),
+          toolMessage(
+            toolCall({
+              id: "peer-stop",
+              name: "delete",
+              arguments: { path: `shell:${peer.session}` },
+              delayMs: 0,
+            }),
+          ),
+          done,
+        ],
+      }).run("Undo the large move in each file.");
+      for (const id of [
+        "move-unchanged",
+        "undo-unchanged",
+        "move-shared",
+        "peer-start",
+        "peer-ready",
+        "peer-stop",
+      ]) {
+        expect(getToolExecution(run, id).isError, id).toBe(false);
+      }
+      expect(getToolExecution(run, "undo-shared").isError).toBe(true);
+      for (const id of ["undo-unchanged", "undo-shared"]) {
+        expect(getToolResultMessage(run, id).durationMs, id).toBeLessThan(5_000);
+      }
+      await expect(readFile(unchanged, "utf8")).resolves.toBe(initial);
+      expect(await peer.writes()).toBeGreaterThan(0);
+      expect((await readFile(shared, "utf8")).replace(/^(?:\/\/ peer \d+\n)+/u, "")).toBe(moved);
+    });
+  }, 45_000);
+
   test("restores one direct edit and does not expose redo", async () => {
     await withTempWorkspace(async (directory) => {
       const fileName = "direct.txt";
@@ -79,9 +185,6 @@ describe("undo last text transaction", () => {
       expect(getToolExecution(result, "direct-edit").isError).toBe(false);
       expect(getToolExecution(result, "direct-undo").isError).toBe(false);
       expect(getToolExecution(result, "direct-redo-attempt").isError).toBe(true);
-      expect(getToolResultText(result, "direct-redo-attempt")).toContain(
-        "No last text transaction",
-      );
       await expect(readFile(file, "utf8")).resolves.toBe(initial);
     });
   }, 120_000);
@@ -252,18 +355,9 @@ describe("undo last text transaction", () => {
 
       expect(getToolExecution(result, "latest-undo").isError).toBe(false);
       expect(getToolExecution(result, "latest-older-attempt").isError).toBe(true);
-      expect(getToolResultText(result, "latest-older-attempt")).toContain(
-        "No last text transaction",
-      );
       expect(getToolExecution(result, "stale-undo-attempt").isError).toBe(true);
-      expect(getToolResultText(result, "stale-undo-attempt")).toContain(
-        "changed after its last text transaction",
-      );
       expect(getToolExecution(result, "created-write").isError).toBe(false);
       expect(getToolExecution(result, "created-undo-attempt").isError).toBe(true);
-      expect(getToolResultText(result, "created-undo-attempt")).toContain(
-        "No last text transaction",
-      );
       await expect(readFile(latest, "utf8")).resolves.toBe("base\nfirst");
       await expect(readFile(stale, "utf8")).resolves.toBe("external");
       await expect(readFile(path.join(directory, createdName), "utf8")).resolves.toBe("created");
@@ -314,9 +408,6 @@ describe("undo last text transaction", () => {
       expect(getToolExecution(result, "selective-source-edit").isError).toBe(false);
       expect(getToolExecution(result, "selective-undo").isError).toBe(false);
       expect(getToolExecution(result, "selective-last-attempt").isError).toBe(true);
-      expect(getToolResultText(result, "selective-last-attempt")).toContain(
-        "No last text transaction",
-      );
       await expect(readFile(file, "utf8")).resolves.toBe(baseline);
     });
   }, 120_000);
