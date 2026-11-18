@@ -1,10 +1,12 @@
 import { describe, expect, test } from "vitest";
 import {
   createLineMap,
+  createRangeTracker,
   describeLostRange,
   moveRange,
   rebaseOrRelocateRange,
   rebaseRange,
+  rangesInText,
   relocateRange,
 } from "./line-map.ts";
 import type { ResultRange } from "./result-targets.ts";
@@ -210,5 +212,118 @@ describe("matches inside changed lines", () => {
     const after = code.replace("pIn", "p_incoming");
     expect(relocated(after, { ...span(2, 0, 3, 0), linewise: true })).toBeUndefined();
     expect(relocated(after, span(2, 4, 3, 3))).toBeUndefined();
+  });
+});
+
+describe("tracking selections after a block move", () => {
+  const block = Array.from({ length: 1000 }, (_, index) => `int moved_${index};`);
+  const middle = Array.from({ length: 1200 }, (_, index) => `int kept_${index};`);
+  const file = (...parts: string[][]) => [...parts.flat(), ""].join("\n");
+
+  test("follows both the moved block and the text it crossed when the diff exceeds its budget", () => {
+    const before = file(block, middle);
+    const after = file(middle, block);
+    const inside = { ...span(500, 0, 505, 0), linewise: true };
+    const crossed = span(1100, 4, 1100, 12);
+    expect(rangesInText([inside, crossed], before, after)).toEqual([
+      { ...span(1700, 0, 1705, 0), linewise: true },
+      span(100, 4, 100, 12),
+    ]);
+  });
+
+  test("uses surrounding lines to distinguish identical matches in moved blocks", () => {
+    const a = ["void a() {", "  call(oldName);", "  finish_a();", "}"];
+    const b = ["void b() {", "  call(oldName);", "  finish_b();", "}"];
+    const before = file(a, middle, b);
+    const after = file(b, middle, a);
+    expect(rangesInText([span(2, 7, 2, 14)], before, after)).toEqual([span(1206, 7, 1206, 14)]);
+  });
+
+  test("follows a match when a peer also changed an identifier earlier on the moved line", () => {
+    const edited = block.with(499, "return previous_name(old_arg);");
+    const before = file(edited, middle);
+    const after = file(middle, edited.with(499, "return new_name(old_arg);"));
+    expect(rangesInText([span(500, 21, 500, 28)], before, after)).toEqual([
+      span(1700, 16, 1700, 23),
+    ]);
+  });
+
+  test("follows a partial match through a moved stretch that gained a line", () => {
+    const edited = block.with(499, "return previous_name(old_arg);");
+    const changed = [
+      ...edited.slice(0, 499),
+      "log();",
+      "return new_name(old_arg);",
+      ...edited.slice(500),
+    ];
+    expect(
+      rangesInText([span(500, 21, 500, 28)], file(edited, middle), file(middle, changed)),
+    ).toEqual([span(1701, 16, 1701, 23)]);
+  });
+
+  test("can read an adjusted region when unrelated lines swapped", () => {
+    const before = "left\nupdated\nright\na\nb\n";
+    const after = "left\nchanged\nright\nb\na\n";
+    const range = { ...span(1, 0, 4, 0), linewise: true };
+    const tracker = createRangeTracker(before, after);
+    expect(tracker.move(range)).toBeUndefined();
+    expect(tracker.move(range, true)).toEqual({ ...range, adjusted: true });
+  });
+
+  test("does not jump to an unchanged copy when the selected copy was rewritten", () => {
+    const a = ["void a() {", "  call(oldName);", "}"];
+    const b = ["void b() {", "  call(oldName);", "}"];
+    const before = file(a, middle, b);
+    const after = file(b, middle, a.with(1, "  call(newName);"));
+    expect(rangesInText([span(2, 7, 2, 14)], before, after)).toBeUndefined();
+  });
+
+  test("does not follow a formerly unique range into either of two identical copies", () => {
+    const before = file(block, middle);
+    const after = file(middle, block, block);
+    expect(rangesInText([span(500, 4, 500, 13)], before, after)).toBeUndefined();
+  });
+
+  test("follows selected text across the end of a file without a trailing newline", () => {
+    const before = [...middle, ...block].join("\n");
+    const after = [...block, ...middle].join("\n");
+    const length = "int moved_999;".length;
+    expect(rangesInText([span(2200, 0, 2200, length)], before, after)).toEqual([
+      span(1000, 0, 1000, length),
+    ]);
+    expect(rangesInText([span(1200, 0, 1201, 0)], before, after)).toBeUndefined();
+  });
+
+  test("does not pair duplicate matches by order inside a changed stretch of a moved block", () => {
+    const edited = block.with(499, "first(old_arg);").with(500, "second(old_arg);");
+    const changed = edited
+      .with(499, "renamed_second(old_arg);")
+      .with(500, "renamed_first(old_arg);");
+    expect(
+      rangesInText([span(500, 6, 500, 13)], file(edited, middle), file(middle, changed)),
+    ).toBeUndefined();
+  });
+
+  test("reports possible match locations beyond the preview of a changed moved stretch", () => {
+    const edited = block.with(499, "first(old_arg);").with(500, "second(old_arg);");
+    const changed = [
+      ...edited.slice(0, 499),
+      "log_a();",
+      "log_b();",
+      "log_c();",
+      "renamed_second(old_arg);",
+      "renamed_first(old_arg);",
+      ...edited.slice(501),
+    ];
+    const tracker = createRangeTracker(file(edited, middle), file(middle, changed));
+    const range = span(500, 6, 500, 13);
+    expect(tracker.move(range)).toBeUndefined();
+    const locations = tracker.describe(range).match(/\b\d+\b/gu);
+    expect(locations).toEqual(expect.arrayContaining(["1703", "1704"]));
+  });
+  test("does not join the pieces of a selection split by a move", () => {
+    const before = file(block, middle);
+    const after = file(middle, block);
+    expect(rangesInText([span(999, 0, 1002, 0)], before, after)).toBeUndefined();
   });
 });

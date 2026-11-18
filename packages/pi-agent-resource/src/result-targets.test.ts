@@ -410,6 +410,20 @@ describe("selections registered from a text the file no longer has", () => {
     await expect(store.verify(resolved)).resolves.toBeUndefined();
   });
 
+  test("a stale match can be published without suppressing its surviving sibling", () => {
+    const store = new ResultTargetStore();
+    writeFileSync(file, original.replace("three", "thr33"));
+    const changed = match(store, 3);
+    const kept = match(store, 4);
+    store.registerSearchReference("SEARCH#ABCD:1:match", changed, directory);
+    store.registerSearchReference("SEARCH#ABCD:2:match", kept, directory);
+
+    expect(() => store.resolveSearchReference("SEARCH#ABCD:1:match", directory)).toThrow(Error);
+    expect(
+      store.resolveSearchReference("SEARCH#ABCD:2:match", directory)?.targets[0]?.ranges,
+    ).toEqual([line(4)]);
+  });
+
   test("a match whose own text changed before it was registered is refused with its current line", () => {
     const store = new ResultTargetStore();
     writeFileSync(file, original.replace("three", "thr33"));

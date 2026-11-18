@@ -1374,24 +1374,47 @@ for (const operation of ["insert", "replace", "delete"] as const) {
     },
   );
 }
+const movedReferenceBlock =
+  [
+    "BLOCK_START",
+    "OLD",
+    ...Array.from({ length: 800 }, (_, index) => `moved_${index}`),
+    "BLOCK_END",
+  ].join("\n") + "\n";
+const crossedReferenceBlock =
+  [
+    "keep2",
+    "OLD",
+    ...Array.from({ length: 800 }, (_, index) => `crossed_${index}`),
+    "TAIL",
+    "DESTINATION",
+  ].join("\n") + "\n";
 add(
   "replace-search-anchor-list",
   ["edit.replace-search-anchor-list"],
-  "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Replace call whose path is an array of two actual issued references: the first match of the OLD search and the first match of the TAIL search (their :match references in direct calls, the matches themselves or their ids in Codemode). Replace both selected matches with NEW. Do not retype the file path, do not use start/end and do not retry. Keep every other byte.",
+  'Search task.txt for OLD and separately search it for TAIL. Wait for both results. Move the block from the exact line "BLOCK_START\\n" through the exact line "BLOCK_END\\n" (inclusive) in task.txt to immediately after the exact line "DESTINATION\\n" in the same file. Pass path, start, end, target and targetStart to Move. Wait for Move to finish, then make one Replace call with text NEW and path set to an array of two references from the original searches: the first OLD match and the first TAIL match. Use their numbered :match references in direct calls and their match values or ids in Codemode. Do not search again, use Replace selectors, or edit the second OLD match.',
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     { tool: "search", args: { path: "task.txt", query: "TAIL" } },
     {
+      tool: "move",
+      args: { path: "task.txt", target: "task.txt" },
+      exactText: ["start", "end", "targetStart"],
+      after: [0, 1],
+    },
+    {
       tool: "replace",
-      args: {
-        path: [matchReference(1), matchReference(1)],
-      },
+      args: { path: [matchReference(1), matchReference(1)] },
       reuse: [reuse(0), reuse(1)],
+      after: [2],
     },
   ],
   {
-    files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nTAIL\n" },
-    expected: { "task.txt": "keep1\nNEW\nkeep2\nOLD\nkeep3\nNEW\n" },
+    files: { "task.txt": movedReferenceBlock + crossedReferenceBlock },
+    expected: {
+      "task.txt":
+        crossedReferenceBlock.replace("TAIL", "NEW") + movedReferenceBlock.replace("OLD", "NEW"),
+    },
   },
 );
 add(
