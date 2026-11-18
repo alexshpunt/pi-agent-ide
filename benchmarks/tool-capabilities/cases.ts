@@ -1374,10 +1374,17 @@ for (const operation of ["insert", "replace", "delete"] as const) {
     },
   );
 }
+const scalarCalls = "Vec scalar: OLD(x, b), OLD(y, b)";
+const vectorCalls = "Vec vector: OLD(x, b.x), OLD(y, b.y)";
+const callLines = `${scalarCalls}\n${vectorCalls}`;
+const renamedScalarCalls = scalarCalls.replace("Vec ", "Vector ");
+const renamedVectorCalls = vectorCalls.replace("Vec ", "Vector ");
+const renamedCallLines = `${renamedScalarCalls}\n${renamedVectorCalls}`;
 const movedReferenceBlock =
   [
     "BLOCK_START",
     "OLD",
+    callLines,
     ...Array.from({ length: 800 }, (_, index) => `moved_${index}`),
     "BLOCK_END",
   ].join("\n") + "\n";
@@ -1392,7 +1399,12 @@ const crossedReferenceBlock =
 add(
   "replace-search-anchor-list",
   ["edit.replace-search-anchor-list"],
-  'Search task.txt for OLD and separately search it for TAIL. Wait for both results. Move the block from the exact line "BLOCK_START\\n" through the exact line "BLOCK_END\\n" (inclusive) in task.txt to immediately after the exact line "DESTINATION\\n" in the same file. Pass path, start, end, target and targetStart to Move. Wait for Move to finish, then make one Replace call with text NEW and path set to an array of two references from the original searches: the first OLD match and the first TAIL match. Use their numbered :match references in direct calls and their match values or ids in Codemode. Do not search again, use Replace selectors, or edit the second OLD match.',
+  [
+    "Search task.txt for OLD and separately for TAIL. Wait for both results.",
+    'Move the block from the exact line "BLOCK_START\\n" through "BLOCK_END\\n" (inclusive) in task.txt to immediately after the exact line "DESTINATION\\n" in the same file. Pass path, start, end, target and targetStart to Move.',
+    `After Move, call Replace with path "task.txt", start set to the literal two-line string ${JSON.stringify(callLines)}, and text set to ${JSON.stringify(renamedCallLines)}. Omit end.`,
+    "After that edit, make one Replace call with text NEW and path set to an array of four references: the first three OLD matches and the first TAIL match from the original searches. Use their numbered :match references in direct calls and their match values or ids in Codemode. Do not search again, pass selectors to this final Replace, or change the other OLD matches.",
+  ].join(" "),
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     { tool: "search", args: { path: "task.txt", query: "TAIL" } },
@@ -1404,16 +1416,28 @@ add(
     },
     {
       tool: "replace",
-      args: { path: [matchReference(1), matchReference(1)] },
-      reuse: [reuse(0), reuse(1)],
+      args: { path: "task.txt" },
+      exactText: ["start"],
       after: [2],
+    },
+    {
+      tool: "replace",
+      args: { path: [1, 2, 3, 1].map(matchReference) },
+      reuse: [reuse(0), reuse(0), reuse(0), reuse(1)],
+      after: [3],
     },
   ],
   {
     files: { "task.txt": movedReferenceBlock + crossedReferenceBlock },
     expected: {
       "task.txt":
-        crossedReferenceBlock.replace("TAIL", "NEW") + movedReferenceBlock.replace("OLD", "NEW"),
+        crossedReferenceBlock.replace("TAIL", "NEW") +
+        movedReferenceBlock
+          .replace("OLD", "NEW")
+          .replace(
+            callLines,
+            `${renamedScalarCalls.replaceAll("OLD", "NEW")}\n${renamedVectorCalls}`,
+          ),
     },
   },
 );

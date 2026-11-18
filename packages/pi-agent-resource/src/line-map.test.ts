@@ -261,6 +261,62 @@ describe("tracking selections after a block move", () => {
     ).toEqual([span(1701, 16, 1701, 23)]);
   });
 
+  describe("repeated matches on an edited moved line", () => {
+    const name = "CallMaxRoutine";
+    const pair = `inline Vec2 ${name}(const Vec2& a, float b) { return {${name}(a.x, b), ${name}(a.y, b)}; }`;
+    const overload = `inline Vec2 ${name}(const Vec2& a, const Vec2& b) { return {${name}(a.x, b.x), ${name}(a.y, b.y)}; }`;
+    const reduction = `inline float ${name}(const Vec2& a) { return ${name}(a.x, a.y); }`;
+    const renamed = (line: string) => line.replaceAll("Vec2", "Vector2f");
+    const edited = block.with(499, pair).with(500, overload).with(501, reduction);
+    const changed = edited
+      .with(499, renamed(pair))
+      .with(500, renamed(overload))
+      .with(501, renamed(reduction));
+    const original = file(edited, middle);
+    const match = (line: string, lineNumber: number, argumentsText: string) => {
+      const column = line.indexOf(`${name}(${argumentsText})`);
+      return span(lineNumber, column, lineNumber, column + name.length);
+    };
+    const first = match(pair, 500, "a.x, b");
+    const second = match(pair, 500, "a.y, b");
+
+    test("follows both scalar calls and the reduction past a nearby overload", () => {
+      expect(
+        rangesInText(
+          [first, second, match(reduction, 502, "a.x, a.y")],
+          original,
+          file(middle, changed),
+        ),
+      ).toEqual([
+        match(renamed(pair), 1700, "a.x, b"),
+        match(renamed(pair), 1700, "a.y, b"),
+        match(renamed(reduction), 1702, "a.x, a.y"),
+      ]);
+    });
+
+    test("does not pick a copy when the same call suffix survives twice", () => {
+      const duplicate = changed.with(500, renamed(pair).replace("float b", "int b"));
+      expect(rangesInText([first], original, file(middle, duplicate))).toBeUndefined();
+    });
+
+    test("does not follow repeated calls paired only by their order after they swap", () => {
+      const swapped = renamed(pair)
+        .replace("(a.x, b)", "(a.y, b)")
+        .replace(/\(a\.y, b\)\}/u, "(a.x, b)}");
+      const tracker = createRangeTracker(original, file(middle, changed.with(499, swapped)));
+      expect(tracker.move(first)).toBeUndefined();
+      expect(tracker.move(second)).toBeUndefined();
+    });
+
+    test("does not follow a match into an extended identifier", () => {
+      const extended = changed.with(
+        499,
+        renamed(pair).replace(`${name}(a.x, b)`, `${name}Func(a.x, b)`),
+      );
+      expect(rangesInText([first], original, file(middle, extended))).toBeUndefined();
+    });
+  });
+
   test("can read an adjusted region when unrelated lines swapped", () => {
     const before = "left\nupdated\nright\na\nb\n";
     const after = "left\nchanged\nright\nb\na\n";
