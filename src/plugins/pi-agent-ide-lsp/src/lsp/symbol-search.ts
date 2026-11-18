@@ -27,10 +27,10 @@ import {
 } from "./clang-coverage.ts";
 import { requestWorkspaceSymbols, requestDocumentSymbols } from "./symbols.ts";
 import {
-  bodyEntry,
   declarationAt,
   declarationsNamed,
   normalizeDocumentSymbols,
+  preferredDeclaration,
   type LspCodeSymbol,
 } from "./symbol-selectors.ts";
 
@@ -367,11 +367,11 @@ async function searchSymbolsOnce(
         const entry =
           entries === undefined
             ? undefined
-            : (bodyEntry(
+            : preferredDeclaration(
                 entries,
                 opened.client.documentContent(opened.uri) ??
                   (await manager.readSourceText(sourceOf(opened.uri, cwd), signal)),
-              ) ?? entries[0]);
+              );
         const location =
           entry === undefined
             ? definition.location

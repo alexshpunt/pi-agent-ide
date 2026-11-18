@@ -125,20 +125,28 @@ async function planRename(
   const manager = await managerFor(state.cwd, source, state.signal);
   const target = await resolveLspRenameTarget(manager, source, selector, state.cwd, state.signal);
   const selected = await capture();
+  // A capture from any redeclaration names the same symbol, but never a sibling overload.
+  const entry = target.entries.find(
+    ({ selectionRange: { start, end } }) =>
+      selected.range.start.lineNumber === start.line + 1 &&
+      selected.range.start.column === start.character &&
+      selected.range.end.lineNumber === end.line + 1 &&
+      selected.range.end.column === end.character,
+  );
   if (
+    entry === undefined ||
     selected.target.source !== source ||
-    selected.target.expectedContent !== target.content ||
-    selected.range.start.lineNumber !== target.position.line + 1 ||
-    selected.range.start.column !== target.position.character
+    selected.target.expectedContent !== target.content
   )
     throw new Error("The name capture no longer identifies this declaration. Repeat lsp_search.");
+  const position = entry.selectionRange.start;
   await loadQueryProject(target.client, target.uri, state.signal);
   const fileOf = (uri: string) => (uri.startsWith("ssh://") ? uri : fileURLToPath(uri));
   const errorsOf = diagnosticErrors(
     (uri) => manager.openFile(fileOf(uri), state.cwd, "symbols", state.signal),
     state.signal,
   );
-  const oldNames = [target.name, identifierAt(target.content, target.position)];
+  const oldNames = [entry.name, identifierAt(target.content, position)];
   // clangd renames unopened files from its index; opened files become participants with edits
   // from a fresh parse.
   const reach = await createClangReach({
@@ -155,7 +163,7 @@ async function planRename(
   // The first request discovers participants; only the second request can supply applied edits.
   // Capture and synchronize every participant first, so unopened files have a guarded revision.
   const preview = renameEntries(
-    await requestRename(target.client, target.uri, target.position, newName),
+    await requestRename(target.client, target.uri, position, newName),
     target.client,
   );
   const snapshots = new Map<string, { file: string; content: string; version: string }>();
@@ -178,7 +186,7 @@ async function planRename(
     snapshots.set(uri, { file, ...snapshot });
   }
   const entries = renameEntries(
-    await requestRename(target.client, target.uri, target.position, newName),
+    await requestRename(target.client, target.uri, position, newName),
     target.client,
   );
   state.signal?.throwIfAborted();

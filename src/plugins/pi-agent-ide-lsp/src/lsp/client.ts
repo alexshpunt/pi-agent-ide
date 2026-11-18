@@ -20,7 +20,8 @@ import { URI } from "vscode-uri";
 import type { LspDiagnostic } from "./types.ts";
 
 import { LspFileWatchers, type LspFileWatcherSubscriptions } from "./file-watchers.ts";
-import { configurationItems } from "./server-request-handlers.mjs";
+import { configurationItems, SHARED_SOURCE_CHANGED } from "./server-request-handlers.mjs";
+import { sourceChanged } from "./source-changes.ts";
 import {
   DEFAULT_SHARED_SERVER_LINGER_MS,
   type LspSharedServer,
@@ -789,6 +790,8 @@ export class LspClient {
         try {
           result = await this._sendRequest<T>(method, parameters, signal);
         } catch (error) {
+          if (this.shared && error instanceof ResponseError && error.code === SHARED_SOURCE_CHANGED)
+            throw sourceChanged(error.message);
           const delay = REQUEST_RETRY_DELAYS_MS[attempt];
           if (delay === undefined || !isRetryableCancellation(error)) throw error;
           // The server dropped a stale result; ask again once it has applied the latest text.

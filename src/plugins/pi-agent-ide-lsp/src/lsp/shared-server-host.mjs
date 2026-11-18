@@ -12,6 +12,7 @@ import spawnProcess from "cross-spawn";
 import {
   CancellationTokenSource,
   createMessageConnection,
+  ResponseError,
   StreamMessageReader,
   StreamMessageWriter,
 } from "vscode-jsonrpc/node";
@@ -20,6 +21,7 @@ import {
   configurationItems,
   LspFileWatchers,
   SHARED_SERVER_PROTOCOL,
+  SHARED_SOURCE_CHANGED,
 } from "./server-request-handlers.mjs";
 
 /**
@@ -523,6 +525,15 @@ function openSession(socket, started) {
     // the answer arrives, so the versions are mapped as they were when the request was sent.
     const owned = uri === undefined ? undefined : session.documents.get(uri);
     const document = uri === undefined ? undefined : documents.get(uri);
+    // If align kept newer on-disk text, these ranges cannot be interpreted in the caller's
+    // copy. In particular, a rename's position might now name a different overload.
+    if (
+      owned &&
+      document &&
+      document.text !== owned.text &&
+      (method === "textDocument/documentSymbol" || method === "textDocument/rename")
+    )
+      throw new ResponseError(SHARED_SOURCE_CHANGED, "The language server has newer file text.");
     const sent =
       uri !== undefined && owned && document && document.text === owned.text
         ? { uri, server: document.version, session: owned.version }
@@ -533,6 +544,16 @@ function openSession(socket, started) {
     try {
       /** @type {unknown} */
       const result = await started.connection.sendRequest(method, parameters, cancellation.token);
+      // Document symbols carry ranges but no version to tie them to the request's text.
+      if (
+        method === "textDocument/documentSymbol" &&
+        sent &&
+        documents.get(sent.uri)?.version !== sent.server
+      )
+        throw new ResponseError(
+          SHARED_SOURCE_CHANGED,
+          "The language server text changed while listing symbols.",
+        );
       return sessionVersions(session, result, sent);
     } finally {
       forward.dispose();

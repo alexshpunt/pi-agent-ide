@@ -169,38 +169,12 @@ function requiredPosition(input: { position?: { line: number; character: number 
 test("a call graph asks at the position of the text the server holds while another session writes the file", async () => {
   const file = await writtenFile();
 
-  const { text: graph, ...places } = await readLspSymbolGraph(
-    file.manager,
-    "a.cpp",
-    ["handle"],
-    file.cwd,
-  );
+  const places = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
 
   // Every line is a line of the file as it is now, though the server answered for an older text.
   const [handle, helper, first, second] = await Promise.all(
     ["handle", "helper", "first", "second"].map((name) => file.lineOf(name)),
   );
-  expect(graph).toContain(`Definition: a.cpp ${String(handle)} (Function)`);
-  expect(graph).toContain(
-    [
-      "References: 3 in 1 file(s)",
-      "- a.cpp (3)",
-      `  - ${String(handle)}`,
-      `  - ${String(first)}`,
-      `  - ${String(second)}`,
-    ].join("\n"),
-  );
-  expect(graph).toContain(
-    [
-      "Incoming calls: 2",
-      `- Function first — a.cpp ${String(first)}`,
-      `- Function second — a.cpp ${String(second)}`,
-    ].join("\n"),
-  );
-  expect(graph).toContain(
-    ["Outgoing calls: 1", `- Function helper — a.cpp ${String(helper)}`].join("\n"),
-  );
-  // The same places as ranges of one text of the file, for selections.
   const lines = (list: readonly LspGraphLocation[]) =>
     list.map((location) => location.range.start.line + 1);
   expect(lines(places.references)).toEqual([handle, first, second]);
@@ -215,24 +189,13 @@ test("a call graph asks at the position of the text the server holds while anoth
 test("a file graph lists every relation while another session writes the file", async () => {
   const file = await writtenFile();
 
-  const { text: graph, ...places } = await readLspFileGraph(file.manager, "a.cpp", file.cwd);
+  const places = await readLspFileGraph(file.manager, "a.cpp", file.cwd);
 
   // The peer writes again while the graph runs, so its lines are those of one text of the file:
   // the four declarations on consecutive lines, as in every text the peer writes.
-  const definitions = [...graph.matchAll(/^Definition: (\d+)$/gmu)].map((hit) => Number(hit[1]));
-  const first = definitions[0] ?? 0;
-  expect(definitions).toEqual([first, first + 1, first + 2, first + 3]);
+  const source = places.contents.get(path.join(file.cwd, "a.cpp"));
+  const first = (source ?? "").split("\n").findIndex((line) => line.startsWith("int helper(")) + 1;
   expect(first).toBeGreaterThan(1);
-  expect(graph).toContain(
-    [
-      "### Function handle",
-      "Selector: handle",
-      `Definition: ${String(first + 1)}`,
-      "Used by: a.cpp (3)",
-      "Incoming calls: first (a.cpp), second (a.cpp)",
-      "Outgoing calls: helper (a.cpp)",
-    ].join("\n"),
-  );
   // The places of every declaration merge into one list each.
   const lines = (list: readonly LspGraphLocation[]) =>
     list.map((location) => location.range.start.line + 1);
@@ -255,14 +218,15 @@ test("a call graph runs again when the server's text changes while it answers", 
     return answer?.(method, parameters, signal);
   });
 
-  const { text: graph } = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
+  const graph = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
 
   expect(reopened).toBe(true);
   // The graph was taken again: a second document-symbol read follows the failed attempt.
   expect(file.requests.filter((method) => method === "textDocument/documentSymbol")).toHaveLength(
     2,
   );
-  expect(graph).toContain(`Definition: a.cpp ${String(await file.lineOf("handle"))} (Function)`);
-  expect(graph).toContain("References: 3 in 1 file(s)");
-  expect(graph).toContain("Incoming calls: 2");
+  const handle = await file.lineOf("handle");
+  expect(graph.references.map(({ range }) => range.start.line + 1)).toContain(handle);
+  expect(graph.references).toHaveLength(3);
+  expect(graph.incoming).toHaveLength(2);
 });

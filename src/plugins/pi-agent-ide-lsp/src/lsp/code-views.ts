@@ -1,4 +1,3 @@
-import { requiredValue } from "pi-agent-invariant";
 import { followRange, LinePositionMap } from "./position-map.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./source-changes.ts";
 import path from "node:path";
@@ -30,8 +29,8 @@ import {
 } from "./clang-coverage.ts";
 import { withinScope } from "./symbol-search.ts";
 import {
-  declarationBody,
   normalizeDocumentSymbols,
+  preferredDeclaration,
   resolveSymbolDeclaration,
   type LspCodeSymbol,
 } from "./symbol-selectors.ts";
@@ -95,25 +94,14 @@ async function resolveLspDeclarationOnce(
   const entries = resolveSymbolDeclaration(document.symbols, selector, document.displayPath);
   const current = await manager.readSourceText(document.filePath, signal);
   throwIfAborted(signal);
-  // A text edit acts on the definition, not on its prototype.
-  const symbol = declarationBody(entries, document.servedText ?? current, document.displayPath);
-  // Other Pi processes may have edited the file while the server answered, and on a shared
-  // server another session's newer text may be what it answered for. The text where the name
-  // sits at the reported position is the one the ranges belong to; the declaration then moves
-  // with its unchanged lines, and one whose own lines changed is resolved again.
-  const served = document.servedText;
-  const range =
-    served === current || answeredFor(current, symbol)
-      ? symbol.range
-      : served !== undefined && answeredFor(served, symbol)
-        ? LinePositionMap.between(served, current).mapRange(symbol.range)
-        : undefined;
+  // Prefer the definition in the synchronized outline, otherwise select its first declaration.
+  // Map that entry as a whole: a matching identifier alone doesn't prove that its body stayed put.
+  const served = document.servedText ?? current;
+  const symbol = preferredDeclaration(entries, served);
+  const map = served === current ? undefined : LinePositionMap.between(served, current);
+  const range = map === undefined ? symbol.range : map.mapRange(symbol.range);
   const selectionRange =
-    served === current || answeredFor(current, symbol)
-      ? symbol.selectionRange
-      : served !== undefined && answeredFor(served, symbol)
-        ? LinePositionMap.between(served, current).mapRange(symbol.selectionRange)
-        : undefined;
+    map === undefined ? symbol.selectionRange : map.mapRange(symbol.selectionRange);
   if (range === undefined || selectionRange === undefined)
     throw sourceChanged(
       "The symbol source changed during resolution. Read it again before editing.",
@@ -131,19 +119,17 @@ export async function resolveLspRenameTarget(
   throwIfAborted(signal);
   const content = await manager.readSourceText(filePath, signal);
   const document = await openCodeDocument(manager, filePath, cwd, signal);
-  const symbol = declarationBody(
-    resolveSymbolDeclaration(document.symbols, selector, document.displayPath),
-    document.servedText ?? content,
-    document.displayPath,
-  );
-  if (content !== (await manager.readSourceText(filePath, signal)))
+  if (
+    document.servedText !== content ||
+    content !== (await manager.readSourceText(filePath, signal)) ||
+    document.client.documentContent(document.uri) !== content
+  )
     throw sourceChanged("The rename source changed during resolution.");
   throwIfAborted(signal);
   return {
     client: document.client,
     uri: document.uri,
-    position: symbol.selectionRange.start,
-    name: symbol.name,
+    entries: resolveSymbolDeclaration(document.symbols, selector, document.displayPath),
     content,
   };
 }
@@ -241,7 +227,12 @@ export async function readLspSymbolGraph(
   return retryWhileSourceChanges(async () => {
     throwIfAborted(signal);
     const document = await openCodeDocument(manager, filePath, cwd, signal);
-    const symbol = resolveLspCodeSymbol(document.symbols, selector, document.displayPath);
+    const symbol = resolveLspCodeSymbol(
+      document.symbols,
+      selector,
+      document.displayPath,
+      document.servedText,
+    );
     const context = relationContext(manager, cwd, true, signal);
     const relations = await queryRelations(document, symbol, context, signal);
     const locations = new LocationPresenter(cwd);
@@ -390,9 +381,10 @@ export function resolveLspCodeSymbol(
   symbols: readonly LspCodeSymbol[],
   selector: readonly string[],
   displayPath: string,
+  text?: string,
 ): LspCodeSymbol {
-  // A prototype and its definition answer references, calls and renames alike.
-  return requiredValue(resolveSymbolDeclaration(symbols, selector, displayPath)[0]);
+  const entries = resolveSymbolDeclaration(symbols, selector, displayPath);
+  return preferredDeclaration(entries, text);
 }
 
 async function openCodeDocument(
@@ -791,15 +783,4 @@ function abortReason(signal: AbortSignal, fallback?: unknown): Error {
   const error = new Error("The operation was aborted");
   error.name = "AbortError";
   return error;
-}
-
-/**
- * Whether the server's ranges belong to this text: the symbol's name is where it says. A name
- * range over several lines cannot be checked this way and never matches.
- */
-function answeredFor(text: string, symbol: LspCodeSymbol): boolean {
-  const lines = text.split("\n");
-  const { start, end } = symbol.selectionRange;
-  if (start.line !== end.line) return false;
-  return lines[start.line]?.slice(start.character, end.character) === symbol.name;
 }

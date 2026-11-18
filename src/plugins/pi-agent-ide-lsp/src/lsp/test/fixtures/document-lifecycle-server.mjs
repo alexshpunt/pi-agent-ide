@@ -97,7 +97,18 @@ connection.onNotification("textDocument/didClose", ({ textDocument }) => {
   if (clearDelayMs > 0) setTimeout(() => send(textDocument.uri, undefined), clearDelayMs);
   else publish(textDocument.uri, undefined);
 });
-connection.onRequest("textDocument/documentSymbol", () => []);
+let finishOutline;
+connection.onRequest("textDocument/documentSymbol", () =>
+  process.env.LIFECYCLE_DEFER_OUTLINE === "1"
+    ? new Promise((resolve) => { finishOutline = resolve; })
+    : [],
+);
+connection.onRequest("lifecycle/outlinePending", () => finishOutline !== undefined);
+connection.onRequest("lifecycle/finishOutline", () => {
+  finishOutline?.([]);
+  finishOutline = undefined;
+  return null;
+});
 connection.onRequest("lifecycle/status", () => ({ open: [...open.keys()], events, watched, pid: process.pid }));
 connection.onRequest("lifecycle/text", ({ textDocument }) => texts.get(textDocument.uri) ?? null);
 // Answers for the version it had when the request arrived, after LIFECYCLE_RENAME_DELAY_MS.
