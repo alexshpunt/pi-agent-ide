@@ -3900,6 +3900,7 @@ add(
   },
 );
 
+// Quiet workspace: shared-server diagnostics and concurrent writes are covered by free tests.
 add(
   "lsp-overload-rename",
   ["lsp.overload-selectors", "compose.symbol-overload-rename"],

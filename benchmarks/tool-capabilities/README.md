@@ -31,6 +31,8 @@ The `lsp-overload-rename` case covers exact selection and bare name-capture UUID
 
 The scripted `lsp-selector-retry` integration tests cover exact C++ `calls` and `declaration` queries when a peer writes the file and the first clangd outline omits the requested overload. The quiet paid case does not exercise this retry.
 
+Shared-server tests cover another retry trigger: when one session syncs newer disk text, a session whose older text will not get diagnostics is told to resync rather than wait for the old report. The quiet paid case does not cover shared-server diagnostics.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:
