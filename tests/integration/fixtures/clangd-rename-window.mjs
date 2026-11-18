@@ -30,12 +30,25 @@ new StreamMessageReader(process.stdin).listen((message) => {
         waiting.set(message.id, timer);
         return;
       }
-    } else if (mode === "binding" || mode === "literal") {
+    } else if (mode === "indent") {
+      const source = readFileSync("main.cpp", "utf8");
+      writeFileSync(
+        "main.cpp",
+        "// peer formatted\n" + source.replace(/^ +return normalize\(/gmu, "  $&"),
+      );
+    } else if (mode === "column") {
       if (requests === 1) {
         const source = readFileSync("main.cpp", "utf8");
-        const changed = mode === "binding"
-          ? source.replace("Vec{2}", "2")
-          : source.replace("// x", "// a longer raw string");
+        writeFileSync("main.cpp", source.replace("  return ARG;", "    return ARG;"));
+      }
+    } else if (mode === "lookup" || mode === "binding" || mode === "literal") {
+      if (requests === 1) {
+        const source = readFileSync("main.cpp", "utf8");
+        const changed = mode === "lookup"
+          ? source.replace("normalize(argument)", "normalize(scalar)")
+          : mode === "binding"
+            ? source.replace("Vec{2}", "2")
+            : source.replace("// x", "// a longer raw string");
         writeFileSync("main.cpp", changed);
       }
     } else {

@@ -27,17 +27,57 @@ int main() {
 
 const RAW_LITERAL = `[] { if constexpr (sizeof(R"(\n// x\n)") < 10) return Vec{2}; else return 2; }()`;
 const LITERAL_OVERLOADS = OVERLOADS.replace("Vec{2}", RAW_LITERAL);
+const COLUMN_OVERLOADS = OVERLOADS.replace(
+  "int main() {\n  auto argument = Vec{2};",
+  `template <bool> struct Arg { using Type = int; };
+template <> struct Arg<true> { using Type = Vec; };
+#include "argument.h"
+auto choose() {
+  return ARG;
+}
+int main() {
+  auto argument = choose();`,
+);
 const RENAMED_OVERLOADS = OVERLOADS.replace(
   "normalize(const Vec&",
   "normalizeVec(const Vec&",
 ).replace("normalize(argument)", "normalizeVec(argument)");
 
+function additionalCalls(indent: string, vecName: string): string {
+  return Array.from(
+    { length: 109 },
+    (_, index) =>
+      `int caller${index}() {\n${indent}return normalize(${index}) + ${vecName}(Vec{${index}});\n}\n`,
+  ).join("");
+}
+
 async function renameOverload(
   cwd: string,
-  mode: "write" | "stall" | "binding" | "literal" | "replan" | "exhaust",
+  mode:
+    | "write"
+    | "indent"
+    | "column"
+    | "stall"
+    | "binding"
+    | "lookup"
+    | "literal"
+    | "replan"
+    | "exhaust",
 ) {
   const file = path.join(cwd, "main.cpp");
-  await writeFile(file, mode === "literal" ? LITERAL_OVERLOADS : OVERLOADS);
+  let source = OVERLOADS;
+  if (mode === "literal") source = LITERAL_OVERLOADS;
+  if (mode === "column") {
+    source = COLUMN_OVERLOADS;
+    await writeFile(
+      path.join(cwd, "argument.h"),
+      "#define ARG Arg<(__builtin_COLUMN() < 11)>::Type{}\n",
+    );
+  }
+  if (mode === "lookup")
+    source = OVERLOADS.replace("  auto argument", "  int scalar = 3;\n  auto argument");
+  if (mode === "indent") source += additionalCalls("  ", "normalize");
+  await writeFile(file, source);
   await writeFile(path.join(cwd, "compile_flags.txt"), "-std=c++17\n");
   await mkdir(path.join(cwd, ".tmp/edit-window"), { recursive: true });
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -116,6 +156,46 @@ test("an exact clangd overload rename survives writes before the server replies 
     expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
     expect(events).toEqual(["rename"]);
     expect(content).toBe("// after plan\n" + RENAMED_OVERLOADS + "// during rename\n");
+  });
+}, 50_000);
+
+test("one overload rename carries 111 edits through line shifts and reindentation", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "indent");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(content).toBe(
+      "// peer formatted\n" +
+        RENAMED_OVERLOADS.replace("  return normalize(1)", "    return normalize(1)") +
+        additionalCalls("    ", "normalizeVec"),
+    );
+    expect(events).toEqual(["rename"]);
+  });
+}, 50_000);
+
+test("reindentation refreshes a binding that depends on the column of a header macro", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "column");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(content).toBe(
+      COLUMN_OVERLOADS.replace("  return ARG;", "    return ARG;").replace(
+        "normalize(const Vec&",
+        "normalizeVec(const Vec&",
+      ),
+    );
+    expect(events).toEqual(["rename", "rename"]);
+  });
+}, 50_000);
+
+test("switching to a differently typed local refreshes the binding of an unchanged call token", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "lookup");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(["rename", "rename"]);
+    expect(content).toBe(
+      OVERLOADS.replace("  auto argument", "  int scalar = 3;\n  auto argument")
+        .replace("normalize(argument)", "normalize(scalar)")
+        .replace("normalize(const Vec&", "normalizeVec(const Vec&"),
+    );
   });
 }, 50_000);
 

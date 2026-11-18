@@ -3927,12 +3927,12 @@ add(
   {
     files: {
       "main.cpp":
-        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clamp(const Vec& v, float lo, float hi);\ninline Vec clamp(const Vec& point, float lower, float upper);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clamp(const Vec& v, float lo, float hi) {\n  return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y};\n}\n\nint main() {\n  Vec v = clamp(clamp(Vec{1, 2}, 0.0f, 1.0f), 0.0f, 2.0f);\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
+        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clamp(const Vec& v, float lo, float hi);\ninline Vec clamp(const Vec& point, float lower, float upper);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clamp(const Vec& v, float lo, float hi) {\n  return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y};\n}\n\nint main() {\n  Vec v = clamp(clamp(Vec{1, 2}, 0.0f, 1.0f), 0.0f, static_cast<float>(clamp(3, 0, 2)));\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
       "compile_flags.txt": "-std=c++17\n",
     },
     expected: {
       "main.cpp":
-        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clampVec(const Vec& v, float lo, float hi);\ninline Vec clampVec(const Vec& point, float lower, float upper);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clampVec(const Vec& v, float lo, float hi) {\n  return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y};\n}\n\nint main() {\n  Vec v = clampVec(clampVec(Vec{1, 2}, 0.0f, 1.0f), 0.0f, 2.0f);\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
+        "struct Vec { float x, y; };\ninline int clamp(int v, int lo, int hi);\ninline Vec clampVec(const Vec& v, float lo, float hi);\ninline Vec clampVec(const Vec& point, float lower, float upper);\n\ninline int clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }\ninline Vec clampVec(const Vec& v, float lo, float hi) {\n  return {static_cast<float>(clamp(static_cast<int>(v.x), 0, 1)), v.y};\n}\n\nint main() {\n  Vec v = clampVec(clampVec(Vec{1, 2}, 0.0f, 1.0f), 0.0f, static_cast<float>(clamp(3, 0, 2)));\n  return clamp(3, 0, 2) + static_cast<int>(v.x);\n}\n",
     },
     prerequisite: "command -v clangd",
   },
