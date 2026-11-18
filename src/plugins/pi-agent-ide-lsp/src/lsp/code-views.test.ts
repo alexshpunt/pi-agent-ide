@@ -3,9 +3,15 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import { LspClient } from "./client.ts";
-import { readLspFileGraph, readLspSymbolGraph, type LspGraphLocation } from "./code-views.ts";
+import {
+  readLspFileGraph,
+  readLspSymbolGraph,
+  resolveLspDeclaration,
+  type LspGraphLocation,
+} from "./code-views.ts";
 import { LspManager } from "./manager.ts";
 import { LspServerRegistry } from "./registry.ts";
+import { SymbolNotFoundError } from "./symbol-selectors.ts";
 
 import type { LspRange } from "./types.ts";
 
@@ -165,6 +171,46 @@ function requiredPosition(input: { position?: { line: number; character: number 
   if (input.position === undefined) throw Error("The request carries no position.");
   return input.position;
 }
+
+test.each([readLspSymbolGraph, resolveLspDeclaration])(
+  "%s stops retrying when the server never confirms the overload",
+  async (resolve) => {
+    const file = await writtenFile();
+    await expect(resolve(file.manager, "a.cpp", ["handle(float)"], file.cwd)).rejects.toMatchObject(
+      {
+        code: "LSP_SELECTOR_UNCONFIRMED",
+      },
+    );
+    expect(file.requests).toEqual(Array.from({ length: 5 }, () => "textDocument/documentSymbol"));
+  },
+);
+
+test.each([readLspSymbolGraph, resolveLspDeclaration])(
+  "%s does not retry when the source contains only a substring of another identifier",
+  async (resolve) => {
+    const file = await writtenFile();
+    await expect(resolve(file.manager, "a.cpp", ["hand"], file.cwd)).rejects.toBeInstanceOf(
+      SymbolNotFoundError,
+    );
+    expect(file.requests).toEqual(["textDocument/documentSymbol"]);
+  },
+);
+
+test.each([readLspSymbolGraph, resolveLspDeclaration])(
+  "%s does not retry an ambiguous overload name",
+  async (resolve) => {
+    const file = await writtenFile();
+    const range = { start: { line: 1, character: 4 }, end: { line: 1, character: 10 } };
+    file.sendRequest.mockResolvedValue([
+      { name: "handle", kind: 12, range, selectionRange: range, detail: "int (int)" },
+      { name: "handle", kind: 12, range, selectionRange: range, detail: "int (float)" },
+    ]);
+    await expect(resolve(file.manager, "a.cpp", ["handle"], file.cwd)).rejects.toBeInstanceOf(
+      Error,
+    );
+    expect(file.sendRequest).toHaveBeenCalledTimes(1);
+  },
+);
 
 test("a call graph asks at the position of the text the server holds while another session writes the file", async () => {
   const file = await writtenFile();
