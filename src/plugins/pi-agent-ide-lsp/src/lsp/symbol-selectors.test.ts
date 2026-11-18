@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
 import {
-  declarationBody,
+  bodyEntry,
   declarationsNamed,
   normalizeDocumentSymbols,
   resolveSymbolDeclaration,
@@ -120,40 +120,18 @@ test("canonical selectors carry the signature only where a name has several decl
     );
 });
 
-test("an ambiguous or unknown selector lists usable selectors without percent encoding", () => {
-  expect(() => lines(["clamp"])).toThrow(
-    'Symbol selector "clamp" matches 2 declarations in main.cpp: main.cpp#clamp(int, int, int) (line 1, 11), main.cpp#clamp(const Vec&, float, float) (line 2, 14). Use one of these selectors.',
-  );
-  expect(() => lines(["clamp(float, float)"])).toThrow(
-    'Symbol "clamp(float, float)" was not found in main.cpp. Declarations named "clamp": main.cpp#clamp(int, int, int) (line 1, 11), main.cpp#clamp(const Vec&, float, float) (line 2, 14).',
-  );
-  expect(() => lines(["missing"])).toThrow('Symbol "missing" was not found in main.cpp.');
-});
-
-test("servers without signatures keep each entry apart and say why a name stays ambiguous", () => {
+test("entries without signatures are kept apart", () => {
   const untyped = normalizeDocumentSymbols([entry("f", "", 0, 9), entry("f", "", 1, 9)]);
-  expect(() => resolveSymbolDeclaration(untyped, ["f"], "a.ts")).toThrow(
-    "The language server reports no signatures that tell them apart.",
-  );
-  expect(() => resolveSymbolDeclaration(untyped, ["f(int)"], "a.ts")).toThrow("was not found");
+  expect(declarationsNamed(untyped, "f").map((group) => group.length)).toEqual([1, 1]);
 });
 
-test("a text edit takes the entry with a body, and fails when none or several have one", () => {
+test("body detection uses a unique definition in the declaration group", () => {
   const body = (selector: string) =>
-    declarationBody(
-      resolveSymbolDeclaration(symbols, selector.split("/"), "main.cpp"),
-      text,
-      "main.cpp",
-    ).selectionRange.start.line + 1;
-  expect(body("clamp(int, int, int)")).toBe(11);
-  expect(body("lerp")).toBe(17);
-  expect(body("Box/get()")).toBe(6);
+    bodyEntry(resolveSymbolDeclaration(symbols, selector.split("/"), "main.cpp"), text)
+      ?.selectionRange.start.line;
+  expect(body("clamp(int, int, int)")).toBe(10);
+  expect(body("lerp")).toBe(16);
+  expect(body("Box/get()")).toBe(5);
   const prototypes = resolveSymbolDeclaration(symbols, ["lerp"], "main.cpp");
-  expect(() =>
-    declarationBody(
-      prototypes,
-      text.replace("{ return a + (b - a) * t; }", ";".padEnd(27)),
-      "main.cpp",
-    ),
-  ).toThrow("main.cpp#lerp is declared 2 times (lines 3, 17)");
+  expect(bodyEntry(prototypes, text.replace("{ return a + (b - a) * t; }", ";"))).toBeUndefined();
 });

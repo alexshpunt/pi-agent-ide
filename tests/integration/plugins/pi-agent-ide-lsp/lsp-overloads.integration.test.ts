@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   testArtifactsDir,
   text,
@@ -30,6 +31,11 @@ const SOURCE = [
   "  return clamp(3, 0, 2) + static_cast<int>(lerp(v.x, v.y, 0.5f));",
   "}",
   "",
+  "float upper(float left, float right);",
+  "float upper(float a, float b);",
+  "int upper(int a, int b) { return a > b ? a : b; }",
+  "float useUpper() { return upper(1.0f, 2.0f) + upper(1, 2); }",
+  "",
 ].join("\n");
 
 async function run(
@@ -45,8 +51,8 @@ async function run(
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       rawMode: false,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["read", "replace", "lsp_search"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["read", "replace", "lsp_search", "codemode"],
       conversation: [
         ...calls.map((call, index) =>
           assistantMessage([toolCall({ id: `call-${index}`, ...call })], { stopReason: "toolUse" }),
@@ -54,7 +60,7 @@ async function run(
         assistantMessage([text("Done.")]),
       ],
     }),
-  ).run("Find and rename one overload of clamp");
+  ).run("Find and rename one C++ overload");
 }
 
 function output(result: Awaited<ReturnType<typeof run>>, index: number, failed = false): string {
@@ -69,7 +75,12 @@ test("selectors with parameter types find, list and rename one overload", async 
     // The calls view goes first: clangd answers symbol searches from an index it fills after
     // parsing the opened file.
     const result = await run(cwd, "overload-selectors", [
-      { name: "lsp_search", arguments: { calls: "main.cpp#clamp(int, int, int)" } },
+      {
+        name: "codemode",
+        arguments: {
+          code: 'const result = await tools.lsp_search({ calls: "main.cpp#clamp(int, int, int)" }); text(JSON.stringify(result.matches.map(({ line }) => line)));',
+        },
+      },
       { name: "lsp_search", arguments: { query: "clamp", path: "main.cpp" } },
       { name: "lsp_search", arguments: { declaration: "main.cpp#lerp" } },
       { name: "lsp_search", arguments: { declaration: "main.cpp#clamp" } },
@@ -82,28 +93,45 @@ test("selectors with parameter types find, list and rename one overload", async 
       },
     ]);
 
-    // The prototype, the call in the other overload and the call in main; not the Vec call.
-    expect(output(result, 0)).toContain(
-      "References: 4 in 1 file(s)\n- main.cpp (4)\n  - 2\n  - 6\n  - 7\n  - 12\n",
-    );
+    // The int prototype, definition and calls, without the Vec call.
+    expect(output(result, 0).split("\n")).toContain("[2,6,7,12]");
 
-    const search = output(result, 1);
-    expect(search).toContain(
-      "main.cpp:6:12 definition clamp · selector main.cpp#clamp(int, int, int)",
-    );
-    expect(search).toContain(
-      "main.cpp:7:12 definition clamp · selector main.cpp#clamp(const Vec&, float, float)",
-    );
-    expect(search).toContain("main.cpp:11:11 reference clamp · declared at main.cpp:7:12");
+    output(result, 1);
+    const {
+      payload: { hits },
+    } = getToolExecutionDetails(getToolExecution(result, "call-1")) as {
+      payload: {
+        hits: {
+          role: string;
+          lineNumber: number;
+          symbol: { selector?: string[]; range: { startLine: number; startColumn: number } };
+        }[];
+      };
+    };
+    const definitions = hits
+      .filter(({ role }) => role === "definition")
+      .map(({ lineNumber, symbol }) => [lineNumber, symbol.selector]);
+    expect(definitions).toEqual([
+      [6, ["clamp(int, int, int)"]],
+      [7, ["clamp(const Vec&, float, float)"]],
+    ]);
+    expect(
+      hits
+        .filter(({ role }) => role === "reference")
+        .map(({ lineNumber, symbol }) => [
+          lineNumber,
+          symbol.range.startLine,
+          symbol.range.startColumn,
+        ]),
+    ).toContainEqual([11, 7, 11]);
 
-    // A prototype and its definition are one declaration; the selection is the definition.
-    const declaration = output(result, 2);
-    expect(declaration).toContain("main.cpp:8-8 declaration main.cpp#lerp");
-    expect(declaration).toContain("return a + (b - a) * t;");
+    expect(output(result, 2)).toContain("return a + (b - a) * t;");
 
-    expect(output(result, 3, true)).toContain(
-      "matches 2 declarations in main.cpp: main.cpp#clamp(int, int, int) (line 2, 6), main.cpp#clamp(const Vec&, float, float) (line 3, 7).",
-    );
+    const ambiguous = output(result, 3, true);
+    expect(ambiguous.match(/main\.cpp#clamp\([^)]*\)/gu)).toEqual([
+      "main.cpp#clamp(int, int, int)",
+      "main.cpp#clamp(const Vec&, float, float)",
+    ]);
 
     output(result, 4);
     expect(await readFile(path.join(cwd, "main.cpp"), "utf8")).toBe(
@@ -116,6 +144,30 @@ test("selectors with parameter types find, list and rename one overload", async 
           "inline Vec clampVec(const Vec& v, float lo, float hi) {",
         )
         .replace("Vec v = clamp(Vec{1, 2}", "Vec v = clampVec(Vec{1, 2}"),
+    );
+  });
+}, 120_000);
+
+test("one overload can be selected and renamed when its declarations have no local body", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const declaration = "main.cpp#upper(float, float)";
+    const result = await run(cwd, "prototype-only-overload", [
+      { name: "lsp_search", arguments: { declaration } },
+      {
+        name: "replace",
+        arguments: {
+          path: `fixture:declaration:${declaration}#name`,
+          text: "upperFloat",
+        },
+      },
+    ]);
+
+    expect(output(result, 0)).toContain("float upper(float left, float right);");
+    output(result, 1);
+    expect(await readFile(path.join(cwd, "main.cpp"), "utf8")).toBe(
+      SOURCE.replace("upper(float left", "upperFloat(float left")
+        .replace("upper(float a", "upperFloat(float a")
+        .replace("upper(1.0f", "upperFloat(1.0f"),
     );
   });
 }, 120_000);

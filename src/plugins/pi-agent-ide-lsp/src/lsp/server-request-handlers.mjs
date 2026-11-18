@@ -9,6 +9,9 @@ import { URI } from "vscode-uri";
 /** Version of the shared server host protocol; part of every shared server key. */
 export const SHARED_SERVER_PROTOCOL = 3;
 
+/** Private host response: resync from disk before asking again, not a server-side retry. */
+export const SHARED_SOURCE_CHANGED = -32090;
+
 /** @typedef {import("./file-watchers.js").WatchPattern} WatchPattern */
 /** @typedef {import("./file-watchers.js").WatchedFileChange} WatchedFileChange */
 

@@ -1,3 +1,4 @@
+import { requiredValue } from "pi-agent-invariant";
 import { formatSymbolSelector } from "pi-agent-ide/api/code-view";
 
 import { textInRange } from "./corrected-names.ts";
@@ -95,23 +96,6 @@ export function resolveSymbolDeclaration(
 }
 
 /**
- * The entry of a declaration that holds its body, such as a C++ definition rather than its
- * prototype. `text` is the source the entries' ranges belong to.
- */
-export function declarationBody(
-  entries: readonly LspCodeSymbol[],
-  text: string,
-  displayPath: string,
-): LspCodeSymbol {
-  const body = bodyEntry(entries, text);
-  if (body !== undefined) return body;
-  const lines = entries.map((entry) => entry.selectionRange.start.line + 1).join(", ");
-  throw new Error(
-    `${displayPath}#${formatSymbolSelector(entries[0]?.selector ?? [])} is declared ${entries.length} times (lines ${lines}) and none is the only one with a body; select the text with a line anchor.`,
-  );
-}
-
-/**
  * The only entry of a declaration, or the only one whose text ends with a body (`}`), such as a
  * C++ definition next to its prototype; undefined when that does not single one out.
  */
@@ -123,6 +107,14 @@ export function bodyEntry(
   if (only !== undefined && entries.length === 1) return only;
   const bodies = entries.filter((entry) => textInRange(text, entry.range).trimEnd().endsWith("}"));
   return bodies.length === 1 ? bodies[0] : undefined;
+}
+
+/** The unique definition in the supplied source, or the first entry of the declaration. */
+export function preferredDeclaration(
+  entries: readonly LspCodeSymbol[],
+  text: string | undefined,
+): LspCodeSymbol {
+  return (text === undefined ? undefined : bodyEntry(entries, text)) ?? requiredValue(entries[0]);
 }
 
 /** Entries of `symbols` at any depth with the same name and signature, grouped by declaration. */

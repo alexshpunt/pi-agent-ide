@@ -7,6 +7,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { LspClient } from "./client.ts";
 import { requestDiagnostics } from "./diagnostics.ts";
 import { LspSharedServers } from "./shared-servers.ts";
+import { requestDocumentSymbols } from "./symbols.ts";
 
 const SERVER = path.resolve(
   "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",
@@ -300,9 +301,38 @@ test("a session with an older copy of a file does not take the file's text from 
   // The first session still holds the old copy; its request leaves the file's text in place.
   expect(await text(first)).toBe("edited\n");
   expect((await status(first)).events.filter(([event]) => event === "open")).toHaveLength(1);
+  // Unlike an unpositioned status query, symbol ranges must belong to the caller's text.
+  await expect(requestDocumentSymbols(first, uri)).rejects.toMatchObject({
+    code: "SOURCE_CHANGED",
+  });
+  expect(await text(second)).toBe("edited\n");
+  await expect(
+    first.sendRequest("textDocument/rename", {
+      textDocument: { uri },
+      position: { line: 0, character: 0 },
+      newName: "renamed",
+    }),
+  ).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
   // Once it syncs the file, it sees its own text again.
   first.syncDocument(uri, "edited\n", "fixture");
   expect(await text(first)).toBe("edited\n");
+  await expect(requestDocumentSymbols(first, uri)).resolves.toEqual([]);
+});
+
+test("a shared outline is rejected if the host changes its text during the request", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_DEFER_OUTLINE: "1" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  first.syncDocument(uri, "first\n", "fixture");
+
+  const result = requestDocumentSymbols(first, uri).catch((error: unknown) => error);
+  await until(() => second.sendRequest<boolean>("lifecycle/outlinePending", {}));
+  second.syncDocument(uri, "second\n", "fixture");
+  expect(await second.sendRequest("lifecycle/text", { textDocument: { uri } })).toBe("second\n");
+  await second.sendRequest("lifecycle/finishOutline", {});
+  expect(await result).toMatchObject({ code: "SOURCE_CHANGED" });
 });
 
 test("requests the server cancels as stale are retried through the shared host", async () => {

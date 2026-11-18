@@ -7,6 +7,7 @@
 import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
 import type { LspRange } from "./types.ts";
+import { sourceChanged } from "./source-changes.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -75,11 +76,14 @@ export async function requestDocumentSymbols(
   uri: string,
   signal?: AbortSignal,
 ): Promise<LspDocumentSymbol[]> {
+  const version = client.documentVersion(uri);
   const result = await client.sendRequest<LspDocumentSymbol[] | null>(
     "textDocument/documentSymbol",
     { textDocument: { uri } },
     signal,
   );
+  if (client.documentVersion(uri) !== version)
+    throw sourceChanged("The document changed while the server listed its symbols.");
   return result ?? [];
 }
 
