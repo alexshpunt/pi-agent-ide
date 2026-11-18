@@ -59,7 +59,7 @@ test("files that contain the name are opened and parsed before the query", async
   ]);
   expect(result).toMatchObject({
     opened: ["file:///workspace/a.cpp", "file:///workspace/b.cpp", "file:///workspace/lib.h"],
-    unopened: 0,
+    unopened: [],
     unlisted: false,
   });
   expect(errorsOf).toHaveBeenCalledTimes(3);
@@ -72,10 +72,10 @@ test("one operation opens a limited number of files for all its names and looks 
   );
   const { client, manager, filesContaining, openFile, errorsOf } = fixture(files);
   const reach = createClangReach({ manager, cwd: "/workspace", errorsOf });
-  expect((await reach(client, "cpp", "first"))?.unopened).toBe(3);
+  expect((await reach(client, "cpp", "first"))?.unopened).toEqual(files.slice(MAX_OPENED_FILES));
   expect(openFile).toHaveBeenCalledTimes(MAX_OPENED_FILES);
   // The budget is spent; files opened for the first name are already open for the second.
-  expect((await reach(client, "cpp", "second"))?.unopened).toBe(3);
+  expect((await reach(client, "cpp", "second"))?.unopened).toEqual(files.slice(MAX_OPENED_FILES));
   expect(openFile).toHaveBeenCalledTimes(MAX_OPENED_FILES);
   await reach(client, "cpp", "first");
   expect(filesContaining).toHaveBeenCalledTimes(2);
@@ -107,7 +107,7 @@ test("an owner without a text search reports that files could not be listed", as
   ]);
 });
 
-test("coverage names fatal errors of open files and counts files without diagnostics", async () => {
+test("coverage distinguishes missing diagnostics from paths skipped by the server", async () => {
   const { client, errorsOf } = fixture([], ["/workspace/a.cpp", "/workspace/b.cpp"]);
   errorsOf.mockImplementation(async (uri) =>
     uri.endsWith("a.cpp")
@@ -115,14 +115,20 @@ test("coverage names fatal errors of open files and counts files without diagnos
       : undefined,
   );
   const coverage = await clangCoverage(
-    { client, opened: ["file:///workspace/b.cpp"], unopened: 1, unlisted: false },
+    {
+      client,
+      opened: ["file:///workspace/b.cpp"],
+      unopened: ["/workspace/skipped.cpp"],
+      unlisted: false,
+    },
     ["file:///workspace/a.cpp", "file:///workspace/unopened.cpp"],
     errorsOf,
     (uri) => uri.slice("file://".length),
   );
   expect(coverage).toEqual({
     fatal: [{ source: "/workspace/a.cpp", line: 2, message: "'x.h' file not found" }],
-    unchecked: 2,
+    unopened: ["/workspace/skipped.cpp"],
+    missingDiagnostics: ["/workspace/b.cpp"],
     unlisted: false,
   });
   expect(errorsOf).not.toHaveBeenCalledWith("file:///workspace/unopened.cpp");
@@ -131,19 +137,23 @@ test("coverage names fatal errors of open files and counts files without diagnos
 test("notes and rename refusals say what can be missing", () => {
   const coverage: ClangCoverage = {
     fatal: [{ source: "/workspace/a.cpp", line: 2, message: "'x.h' file not found" }],
-    unchecked: 3,
+    unopened: ["/workspace/c.cpp"],
+    missingDiagnostics: ["/workspace/b.cpp"],
     unlisted: false,
   };
   const display = (source: string) => source.slice("/workspace/".length);
   const notes = coverageNotes(coverage, display);
-  expect(notes).toHaveLength(2);
+  expect(notes).toHaveLength(3);
   expect(notes[0]).toContain("a.cpp:2 'x.h' file not found");
-  expect(notes[1]).toContain("3 more file(s)");
+  expect(notes[1]).toContain("c.cpp");
+  expect(notes[2]).toContain("b.cpp");
   const refusal = renameRefusal(coverage, display);
-  expect(refusal).toMatch(/^LSP rename refused; no edits applied\./u);
   expect(refusal).toContain("a.cpp:2 'x.h' file not found");
-  expect(refusal).toContain("3 more file(s)");
-  expect(renameRefusal({ fatal: [], unchecked: 0, unlisted: false }, display)).toBeUndefined();
+  expect(refusal).toContain("c.cpp");
+  expect(refusal).toContain("b.cpp");
+  expect(
+    renameRefusal({ fatal: [], unopened: [], missingDiagnostics: [], unlisted: false }, display),
+  ).toBeUndefined();
   expect(renameRefusal(undefined, display)).toBeUndefined();
 });
 
@@ -151,10 +161,15 @@ test("merged coverage keeps each fatal error once", () => {
   const error = { source: "/workspace/a.cpp", line: 2, message: "'x.h' file not found" };
   expect(
     mergeCoverage([
-      { fatal: [error], unchecked: 1, unlisted: false },
+      { fatal: [error], unopened: ["a.cpp"], missingDiagnostics: ["c.cpp"], unlisted: false },
       undefined,
-      { fatal: [error], unchecked: 2, unlisted: true },
+      { fatal: [error], unopened: ["b.cpp"], missingDiagnostics: ["c.cpp"], unlisted: true },
     ]),
-  ).toEqual({ fatal: [error], unchecked: 2, unlisted: true });
+  ).toEqual({
+    fatal: [error],
+    unopened: ["a.cpp", "b.cpp"],
+    missingDiagnostics: ["c.cpp"],
+    unlisted: true,
+  });
   expect(mergeCoverage([undefined])).toBeUndefined();
 });

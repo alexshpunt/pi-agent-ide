@@ -1,3 +1,5 @@
+import { delayWithSignal } from "./abort.ts";
+
 /** Error code of a server answer that does not fit the file text it was compared with. */
 export const SOURCE_CHANGED = "SOURCE_CHANGED";
 
@@ -23,7 +25,7 @@ export async function retryWhileSourceChanges<T>(
       const delay = RETRY_DELAYS_MS[attempt];
       const changed = (error as { code?: unknown } | null)?.code === SOURCE_CHANGED;
       if (!changed || delay === undefined || signal?.aborted) throw error;
-      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (delay > 0) await delayWithSignal(delay, signal);
     }
   }
 }

@@ -204,6 +204,37 @@ test("a file graph lists every relation while another session writes the file", 
   expect(lines(places.outgoing)).toEqual([first]);
 });
 
+test("an empty reference reply for a known function is retried", async () => {
+  const file = await writtenFile();
+  const answer = file.sendRequest.getMockImplementation();
+  let asked = false;
+  file.sendRequest.mockImplementation(async (method, parameters, signal) => {
+    if (method === "textDocument/references" && !asked) {
+      asked = true;
+      return [];
+    }
+    return answer?.(method, parameters, signal);
+  });
+
+  const graph = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
+
+  expect(graph.references).toHaveLength(3);
+  expect(graph.incoming).toHaveLength(2);
+});
+
+test("an unresolved call hierarchy keeps the references but marks the graph incomplete", async () => {
+  const file = await writtenFile();
+  const answer = file.sendRequest.getMockImplementation();
+  file.sendRequest.mockImplementation(async (method, parameters, signal) =>
+    method === "textDocument/prepareCallHierarchy" ? null : answer?.(method, parameters, signal),
+  );
+
+  const graph = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
+
+  expect(graph.complete).toBe(false);
+  expect(graph.references).toHaveLength(3);
+});
+
 test("a call graph runs again when the server's text changes while it answers", async () => {
   const file = await writtenFile();
   const answer = file.sendRequest.getMockImplementation();

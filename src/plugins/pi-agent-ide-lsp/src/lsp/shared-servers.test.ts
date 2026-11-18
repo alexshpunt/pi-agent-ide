@@ -337,6 +337,26 @@ test("a session with an older copy of a file does not take the file's text from 
   await expect(requestDocumentSymbols(first, uri)).resolves.toEqual([]);
 });
 
+test("references cannot return an empty answer for a position from an older copy", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const file = path.join(cwd, "first.fx");
+  const uri = URI.file(file).toString();
+  const params = { textDocument: { uri }, position: { line: 0, character: 0 } };
+  first.syncDocument(uri, "first\n", "fixture");
+  expect(await first.sendRequest("textDocument/references", params)).toHaveLength(1);
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await writeFile(file, "// peer\nfirst\n");
+  second.syncDocument(uri, "// peer\nfirst\n", "fixture");
+  expect(await second.sendRequest("lifecycle/text", params)).toBe("// peer\nfirst\n");
+
+  await expect(first.sendRequest("textDocument/references", params)).rejects.toMatchObject({
+    code: "SOURCE_CHANGED",
+  });
+});
+
 test("a shared outline is rejected if the host changes its text during the request", async () => {
   const { cwd, sharing } = await workspace();
   const env = { LIFECYCLE_DEFER_OUTLINE: "1" };

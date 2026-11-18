@@ -14,7 +14,7 @@ import {
 
 import { LspManager } from "./manager.ts";
 import type { LspClient } from "./client.ts";
-import { requestReferences, type LspLocation } from "./navigation.ts";
+import { requireReferenceReply, requestReferences, type LspLocation } from "./navigation.ts";
 import { lspRangeMatch } from "./range-match.ts";
 import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import type { LspPosition } from "./types.ts";
@@ -409,6 +409,7 @@ async function searchSymbolsOnce(
         if (opened.client.documentContent(opened.uri) !== servedBefore)
           throw sourceChanged("The server's text changed while it answered a references request.");
         signal?.throwIfAborted();
+        if (reach !== undefined) requireReferenceReply(symbol.name, references);
         const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
         const reported: { location: LspLocation; reference: SearchSelectionMatch }[] = [];
         for (const location of references) {
