@@ -801,17 +801,20 @@ test("a call whose anchor another writer removed fails alone at commit", async (
   });
 });
 
-test("an accepted exact-text edit still commits after a later exact-text failure", async () => {
+test("a failed exact-text selector leaves other Codemode edits in the same file intact", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
-    const run = await runScripts(cwd, "native-codemode-exact-text-block", [
-      'text(await tools.replace({path:"note.txt",start:"gamma",text:"G"}));' +
-        'await tools.replace({path:"note.txt",start:"a",text:"ambiguous"});',
+    const run = await runScripts(cwd, "native-codemode-exact-text-retry", [
+      `await tools.replace({path:"note.txt",start:"gamma",text:"G"});
+const result = await tools.replace({path:"note.txt",start:"a",text:"BAD"});
+if (result !== null) throw Error("The ambiguous selector was accepted");
+await tools.replace({path:"note.txt",start:"omega",text:"O"});`,
     ]);
-    const output = getToolResultText(run, "script-0");
-    expect(output).toContain("Editor batches: 1 committed");
-    expect(output).not.toContain("Call 1");
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\nG\nomega\n");
+    expect(getToolExecution(run, "script-0").isError).toBe(false);
+    expect(
+      batchDetails(run).editorBatches.flatMap((batch) => batch.calls.map((call) => call.state)),
+    ).toEqual(["completed", "completed"]);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\nG\nO\n");
   });
 });
 

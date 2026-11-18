@@ -83,6 +83,6 @@ Check the readable operation effects and the failure block of the parent result 
 
 Automatic batch boundaries save pending edits, not their final formatting. Write finishes its own post-edit processing before returning. Final post-edit processing can retire earlier snapshots. Ordinary script errors keep accepted edits; abort/deadline discards pending writes, not already committed batches.
 
-After an exact-text selector fails, the tool returns current anchors and blocks further exact-text edits for that file. Use a current anchor for the next successful edit. Exact text is then available again.
+A missing or ambiguous exact-text selector stops only its own edit. The tool names the failed field and may show current anchors. Retry that field with a current anchor from Read or Search, or with text that matches exactly once. Keep any other selector that still identifies the intended text.
 
 Edit tools share one selection rule in the system prompt: anchor kinds, whole-line and exact-text boundaries, and line endings. Search explains Boolean parsing and broadened queries in the result where they apply.
