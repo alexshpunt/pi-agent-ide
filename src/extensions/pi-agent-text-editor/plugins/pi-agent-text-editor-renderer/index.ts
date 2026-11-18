@@ -11,7 +11,6 @@ import {
 import { createMutationAnimationPressure } from "./src/animation-pressure.ts";
 import { registerMutationRenderers } from "./src/renderer.ts";
 
-import { compactMutationDetails } from "./src/persisted-result.ts";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -64,8 +63,6 @@ export default async function registerTextEditorRenderer(
           return panel;
         },
       });
-      const tools = new Set<string>();
-      api.onMutationTool(({ name }) => tools.add(name));
       registerMutationRenderers(
         api,
         animationPressure,
@@ -74,17 +71,6 @@ export default async function registerTextEditorRenderer(
         diffPresentation,
         context?.toolName,
       );
-      pi.on("tool_result", (event) => {
-        if (
-          !tools.has(event.toolName) ||
-          typeof event.details !== "object" ||
-          event.details === null
-        )
-          return;
-        const details = event.details as FileMutationBatchResult;
-        if (!Array.isArray(details.results)) return;
-        return { details: compactMutationDetails(details) };
-      });
     },
   } satisfies TextEditorPlugin;
 

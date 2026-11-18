@@ -13,6 +13,8 @@ export type TextEditorToolRendererRegistration = Pick<
 > & {
   readonly tool: TextEditorToolId;
   readonly fallback?: boolean;
+  /** Project bounded display details from a finished mutation before Pi saves its result. */
+  readonly persistResult?: (details: FileMutationBatchResult) => FileMutationBatchResult;
   /** Select this renderer for matching tool arguments or results; unmatched values use the previous renderer. */
   readonly matches?: (value: unknown, phase: "call" | "result") => boolean;
 };
@@ -22,6 +24,7 @@ const toolRendererRegistrationSchema = Type.Object({
   tool: Type.String({ pattern: "\\S" }),
   fallback: Type.Optional(Type.Boolean()),
   matches: Type.Optional(rendererFunctionSchema),
+  persistResult: Type.Optional(rendererFunctionSchema),
   renderCall: Type.Optional(rendererFunctionSchema),
   renderResult: Type.Optional(rendererFunctionSchema),
   renderShell: Type.Optional(Type.Union([Type.Literal("default"), Type.Literal("self")])),
