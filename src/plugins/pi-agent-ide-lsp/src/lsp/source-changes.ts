@@ -13,10 +13,11 @@ export function sourceChanged(message: string): Error {
   return Object.assign(new Error(message), { code: SOURCE_CHANGED });
 }
 
-/** Runs `action` again while it fails because the file changed under it. */
+/** Retries source changes and any other explicitly retryable failure on the same budget. */
 export async function retryWhileSourceChanges<T>(
   action: () => Promise<T>,
   signal: AbortSignal | undefined,
+  shouldRetry?: (error: unknown) => boolean,
 ): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -24,7 +25,8 @@ export async function retryWhileSourceChanges<T>(
     } catch (error) {
       const delay = RETRY_DELAYS_MS[attempt];
       const changed = (error as { code?: unknown } | null)?.code === SOURCE_CHANGED;
-      if (!changed || delay === undefined || signal?.aborted) throw error;
+      if (delay === undefined || signal?.aborted || (!changed && !shouldRetry?.(error)))
+        throw error;
       if (delay > 0) await delayWithSignal(delay, signal);
     }
   }
