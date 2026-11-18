@@ -713,20 +713,54 @@ test.each([
   });
 });
 
-test("overlapping accepted-snapshot edits reject the second operation", async () => {
+test("overlapping accepted-snapshot edits identify the destination range", async () => {
   await withTempWorkspace(async (cwd) => {
-    await writeFile(path.join(cwd, "note.txt"), initial);
+    const header = "untouched\n".repeat(20);
+    await writeFile(path.join(cwd, "note.txt"), header + initial);
     const run = await runScripts(cwd, "native-codemode-overlap", [
-      'text(await tools.replace({path:"note.txt",start:"alpha",text:"FIRST"})); text("second:" + (await tools.replace({path:"note.txt",start:"alpha",text:"SECOND"})));',
+      'await tools.replace({path:"note.txt",start:"alpha",text:"FIRST"}); text("second:" + (await tools.move({path:"note.txt",start:"gamma",targetStart:"alpha",targetEnd:"alpha"})));',
     ]);
-    // The rejected second edit resolves to null; the first one is still committed.
     const output = getToolResultText(run, "script-0");
     expect(getToolExecution(run, "script-0").isError, output).toBe(false);
     expect(output).toContain("second:null");
-    expect(codemodeFailures(output)).toContain("overlaps an earlier successful mutation");
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("FIRST\nbeta\ngamma\nomega\n");
+    const failure = codemodeFailures(output);
+    expect(failure).toContain("targetStart");
+    expect(failure).toContain("targetEnd");
+    expect(failure).toContain("replace");
+    expect(failure).toMatch(/\b21\b/u);
+    expect(failure).not.toContain("script-0/2");
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+      header + "FIRST\nbeta\ngamma\nomega\n",
+    );
   });
 });
+
+test.each(["empty", "large"] as const)(
+  "move rejects the %s start with a bounded result",
+  async (kind) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const run = await runScripts(cwd, `native-codemode-rejected-start-${kind}`, [
+        `const start = ${kind === "empty" ? '""' : '"SELECTOR_HEAD" + "\\\\t".repeat(180_000) + "SELECTOR_TAIL"'};
+text("move:" + (await tools.move({path:"note.txt",start,targetStart:"omega"}))); `,
+      ]);
+      const output = getToolResultText(run, "script-0");
+      expect(output).toContain("move:null");
+      expect(Buffer.byteLength(output)).toBeLessThan(2048);
+      const failure = codemodeFailures(output);
+      expect(failure).toContain("start");
+      expect(failure).not.toContain(anchor(1, "alpha"));
+      if (kind === "large") {
+        expect(failure).toContain("SELECTOR_HEAD");
+        expect(failure).toContain("SELECTOR_TAIL");
+        expect(failure).toContain("360026");
+      } else {
+        expect(failure).toContain("EMPTY_SELECTOR");
+      }
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(initial);
+    });
+  },
+);
 
 test("a rejected combined write fails the parent and blocks the next read", async () => {
   await withTempWorkspace(async (cwd) => {

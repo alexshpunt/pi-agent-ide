@@ -1019,6 +1019,12 @@ function wholeFileFailureCause(code: string): string {
     case "COPIED_LINE_ANCHOR": {
       return "replacement contains a copied line prefix; remove it and retry";
     }
+    case "EMPTY_SELECTOR": {
+      return "a required selector is empty";
+    }
+    case "OVERLAPPING_EDITS": {
+      return "overlaps an earlier edit; read the current text before retrying";
+    }
     case "INVALID_REQUEST": {
       return "the request was invalid";
     }

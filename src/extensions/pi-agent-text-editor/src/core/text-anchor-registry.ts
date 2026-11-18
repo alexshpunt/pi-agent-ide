@@ -1,3 +1,4 @@
+import { quoteAnchorExcerpt } from "#src/api/anchor-excerpt.ts";
 import { requiredValue } from "pi-agent-invariant";
 import {
   attachTextAnchorRenderer,
@@ -236,7 +237,7 @@ export class TextAnchorRegistrySnapshot {
 
       if (!isTextAnchorResourceResolutionAttempt(attempt)) {
         throw new TextAnchorResourceResolutionError(
-          `Text anchor resource resolver ${resolver.id} returned an invalid result for "${value}"`,
+          `Text anchor resource resolver ${resolver.id} returned an invalid result for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: attempt },
         );
@@ -274,7 +275,9 @@ export class TextAnchorRegistrySnapshot {
     allowedKinds?: ReadonlySet<string>,
   ): Promise<TextAnchor> {
     if (context.lines.length === 0) {
-      throw new TextAnchorResolutionError(`Anchor "${value}" cannot resolve in an empty file`);
+      throw new TextAnchorResolutionError(
+        `Anchor ${quoteAnchorExcerpt(value)} cannot resolve in an empty file`,
+      );
     }
     for (const { kind, resolver, type } of this.resolvers) {
       if (allowedKinds !== undefined && !allowedKinds.has(kind)) {
@@ -294,7 +297,7 @@ export class TextAnchorRegistrySnapshot {
         attempt = await resolver.tryResolve(normalizedValue, context);
       } catch (error) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} failed for "${value}"`,
+          `Text anchor resolver ${resolver.id} failed for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: error },
         );
@@ -302,7 +305,7 @@ export class TextAnchorRegistrySnapshot {
 
       if (!isTextAnchorResolutionAttempt(attempt)) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} returned an invalid result for "${value}"`,
+          `Text anchor resolver ${resolver.id} returned an invalid result for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: attempt },
         );
@@ -314,7 +317,7 @@ export class TextAnchorRegistrySnapshot {
 
       if (attempt.kind === "failed") {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} failed for "${value}"`,
+          `Text anchor resolver ${resolver.id} failed for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: attempt.error },
         );
@@ -342,7 +345,7 @@ export class TextAnchorRegistrySnapshot {
         attempt.anchor.lineNumber > context.lines.length
       ) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} resolved "${value}" outside the current text`,
+          `Text anchor resolver ${resolver.id} resolved ${quoteAnchorExcerpt(value)} outside the current text`,
           resolver.id,
           { cause: attempt },
         );
@@ -353,7 +356,7 @@ export class TextAnchorRegistrySnapshot {
         !isSelectionWithinContext(attempt.anchor, context)
       ) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} resolved "${value}" outside the current text`,
+          `Text anchor resolver ${resolver.id} resolved ${quoteAnchorExcerpt(value)} outside the current text`,
           resolver.id,
           { cause: attempt },
         );
@@ -365,7 +368,9 @@ export class TextAnchorRegistrySnapshot {
       return attempt.anchor;
     }
 
-    throw new TextAnchorResolutionError(`No text anchor resolver handled "${value}"`);
+    throw new TextAnchorResolutionError(
+      `No text anchor resolver handled ${quoteAnchorExcerpt(value)}`,
+    );
   }
 }
 

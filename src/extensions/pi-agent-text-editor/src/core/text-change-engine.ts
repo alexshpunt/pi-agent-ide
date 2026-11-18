@@ -38,6 +38,19 @@ export class TextChangeDocument {
     return this.content.length;
   }
 
+  /** One-based number of the line containing an offset in the current snapshot. */
+  public lineNumberAt(offset: number): number {
+    this.#assertRange({ from: offset, to: offset });
+    let first = 0;
+    let last = this.#lineStarts.length;
+    while (first < last) {
+      const mid = Math.floor((first + last) / 2);
+      if (requiredValue(this.#lineStarts[mid]) <= offset) first = mid + 1;
+      else last = mid;
+    }
+    return first;
+  }
+
   public lineRange(firstLine: number, lastLine: number): TextRange {
     const first = Math.min(firstLine, lastLine);
     const last = Math.max(firstLine, lastLine);

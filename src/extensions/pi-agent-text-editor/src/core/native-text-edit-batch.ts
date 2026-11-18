@@ -981,7 +981,7 @@ class NativeTextEditBatchCoordinator {
               context,
               signal,
               () => {},
-              batch.plan.changes,
+              batch.plan,
             );
           return { changes: planning.plan.changes, result: planning.plan };
         } catch (error) {

@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { MAX_ANCHOR_EXCERPT_LENGTH, quoteAnchorExcerpt } from "#src/api/anchor-excerpt.ts";
 import {
   ResourceError,
   resourceErrorMetadataOf,
@@ -1336,6 +1337,13 @@ export async function preflightMutationAnchors(
   if (!preflightMutationTools.has(definition.name)) {
     return;
   }
+  const empty = definition.anchors?.find(({ field }) => input[field] === "");
+  if (empty !== undefined) {
+    throw new TextMutationInputError(
+      "EMPTY_SELECTOR",
+      `${definition.name} selector "${empty.field}" is empty. Supply exact existing text or an issued anchor.`,
+    );
+  }
   const failures: TextMutationAnchorResolutionError[] = [];
   await Promise.all(
     (definition.anchors ?? []).map(async (descriptor) => {
@@ -2043,16 +2051,19 @@ async function anchorFailureToolResult(
 
   const contextual = failure.cause;
   const resolution = contextual.resolution;
-  const recovery = await resolveAnchorRecovery(contextual).catch(() => {
-    context.signal?.throwIfAborted();
-    return undefined;
-  });
+  const showRecovery = contextual.anchor.length <= MAX_ANCHOR_EXCERPT_LENGTH;
+  const recovery = showRecovery
+    ? await resolveAnchorRecovery(contextual).catch(() => {
+        context.signal?.throwIfAborted();
+        return undefined;
+      })
+    : undefined;
 
   // A reference such as SEARCH#…:all:match names resources, not a position: reading it as a path
   // would only resolve it again, and the first lines of a file say nothing about it.
   const reference = resolution instanceof TextAnchorResourceResolutionError;
   const windows =
-    reference && contextual.source === contextual.anchor
+    !showRecovery || (reference && contextual.source === contextual.anchor)
       ? []
       : recovery?.kind === "candidates"
         ? recoveryWindows(
@@ -2063,7 +2074,12 @@ async function anchorFailureToolResult(
           ? []
           : [resolution.rejection.contextRange];
   // An anchor no line produces has no position to show lines around; the first lines would only mislead.
-  if (windows.length === 0 && !reference && resolution.rejection?.code !== "stale") {
+  if (
+    showRecovery &&
+    windows.length === 0 &&
+    !reference &&
+    resolution.rejection?.code !== "stale"
+  ) {
     windows.push({ offset: 1, limit: 40 });
   }
 
@@ -2159,9 +2175,11 @@ function formatRejectedAnchorMessage(
       ? "Choose text inside the result's selection, or pass the file path to edit elsewhere."
       : failure.resolution.resolverId === "exact-text"
         ? `${recoveryContext.length > 0 ? "Use a current anchor below or from Read/Search" : "Get a current anchor with Read/Search"}, or retry with text that matches exactly once.`
-        : "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor.";
+        : recoveryContext.length > 0
+          ? "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor."
+          : "Reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
-  const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${JSON.stringify(failure.anchor)} ${state} in "${failure.source}"`;
+  const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${quoteAnchorExcerpt(failure.anchor)} ${state} in "${failure.source}"`;
   // Nothing is shown below a reference without a position; its reason carries the next step.
   if (failure.resolution instanceof TextAnchorResourceResolutionError && context.length === 0)
     return `${subject}: ${reason}`;

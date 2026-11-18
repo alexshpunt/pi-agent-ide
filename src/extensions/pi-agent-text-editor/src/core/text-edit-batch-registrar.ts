@@ -8,7 +8,7 @@ import {
 } from "pi-agent-resource";
 import { retryWhenSourceChanged } from "#src/core/source-change-retry.ts";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
-import { withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.ts";
+import { TextMutationInputError, withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.ts";
 import { isResultInput } from "./result-transfer.ts";
 import { isWholeFileInvocation } from "./file-operation-tools.ts";
 import {
@@ -23,7 +23,12 @@ import { postWriteFailureEffect } from "./text-mutation.ts";
 import type { TextTarget } from "pi-agent-text";
 import { TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH } from "pi-agent-tool-call-interception";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
-import { applyTextChanges, type TextChange } from "#src/core/text-change-engine.ts";
+import { quoteAnchorExcerpt } from "#src/api/anchor-excerpt.ts";
+import {
+  applyTextChanges,
+  TextChangeDocument,
+  type TextChange,
+} from "#src/core/text-change-engine.ts";
 import {
   executeWithBatchCoordinator,
   registerBlockedToolCall,
@@ -274,11 +279,11 @@ export async function planRegisteredTextBatch(
   context: ExtensionContext,
   signal: AbortSignal | undefined,
   renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
-  priorChanges: ReadonlyMap<string, readonly TextChange[]> = new Map(),
+  priorPlan?: PlannedTextBatch,
 ): Promise<PlannedTextBatch> {
   const mutations: PlannedTextBatch["mutations"][number][] = [];
   const failures: PlannedTextBatch["failures"][number][] = [];
-  const changes = new Map([...priorChanges].map(([source, edits]) => [source, [...edits]]));
+  const changes = new Map<string, readonly TextChange[]>(priorPlan?.changes);
   // Compute against immutable snapshots together; accept conflicts in call order.
   const planned = await Promise.allSettled(
     parameters.edits.map(async (entry): Promise<PlannedTextBatch["mutations"][number]> => {
@@ -377,12 +382,32 @@ export async function planRegisteredTextBatch(
       if (result.status === "rejected") throw result.reason;
       const mutation = result.value.mutation;
       for (const [source, edit] of mutation.edits) {
-        if (
-          edit.changes.some((change) =>
-            (changes.get(source) ?? []).some((prior) => textChangesConflict(prior, change)),
-          )
-        ) {
-          throw new Error(`Text mutation ${callId} overlaps an earlier successful mutation.`);
+        const previous = changes.get(source);
+        if (previous === undefined) continue;
+        for (const change of edit.changes) {
+          const prior = previous.find((candidate) => textChangesConflict(candidate, change));
+          if (prior === undefined) continue;
+          const ownsChange = ({ mutation: earlier }: PlannedTextBatch["mutations"][number]) =>
+            earlier.edits.get(source)?.changes.includes(prior) === true;
+          const owner = requiredValue(
+            priorPlan?.mutations.find(ownsChange) ?? mutations.find(ownsChange),
+          );
+          const fields =
+            change.selectorFields ??
+            (registration.anchors ?? [])
+              .filter((anchor) => typeof input[anchor.field] === "string")
+              .map((anchor) => anchor.field);
+          const selector = (fields.length > 0 ? fields : [registration.source.field])
+            .map((field) => `"${field}"`)
+            .join(" through ");
+          const snapshot = new TextChangeDocument(requiredValue(texts.get(source)));
+          const first = snapshot.lineNumberAt(prior.from);
+          const last = snapshot.lineNumberAt(Math.max(prior.from, prior.to - 1));
+          const lines = first === last ? `line ${first}` : `lines ${first}–${last}`;
+          throw new TextMutationInputError(
+            "OVERLAPPING_EDITS",
+            `${registration.name} selector ${selector} overlaps an earlier ${owner.mutation.operation} edit at ${lines} of ${quoteAnchorExcerpt(source)}. Reread the current text before choosing a new selector.`,
+          );
         }
       }
       mutations.push(result.value);

@@ -8,6 +8,10 @@
     "#tests/*": "./tests/*"
   },
   "exports": {
+    "./api/anchor-excerpt": {
+      "types": "./src/api/anchor-excerpt.ts",
+      "default": "./src/api/anchor-excerpt.ts"
+    },
     "./api/anchor-inspection": {
       "types": "./src/api/anchor-inspection.ts",
       "default": "./src/api/anchor-inspection.ts"

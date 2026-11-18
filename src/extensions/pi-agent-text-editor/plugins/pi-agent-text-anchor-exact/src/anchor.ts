@@ -9,6 +9,7 @@ import {
   type TextSelectionPosition,
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
+import { quoteAnchorExcerpt } from "pi-agent-text-editor/api/anchor-excerpt";
 import type { ExactTextRecoveryConfig } from "./config.ts";
 import { recoverExactText } from "./recovery.ts";
 
@@ -87,7 +88,7 @@ export function resolveExactTextAnchor(
     ) {
       return rejected(
         "missing",
-        `Exact-text selector ${JSON.stringify(value)} contains literal backslash escapes; the character form ${JSON.stringify(decoded)} matches text inside the ${scope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
+        `Exact-text selector ${quoteAnchorExcerpt(value)} contains literal backslash escapes; the character form ${quoteAnchorExcerpt(decoded)} matches text inside the ${scope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
       );
     }
     return rejected(
