@@ -17,15 +17,35 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
   await withTempWorkspace(async (cwd) => {
     const first = Array.from({ length: 1800 }, (_, i) => `int first_${i};`);
     const second = Array.from({ length: 24440 }, (_, i) => `int second_${i};`);
-    const needle = "old_symbol";
+    const needle = "CallMaxRoutine";
+    const replacement = "CallMaxRoutineFunc";
+    const pair = `inline OldVec ${needle}(const OldVec& a, float b) { return {${needle}(a.x, b), ${needle}(a.y, b)}; }`;
+    const overload = `inline OldVec ${needle}(const OldVec& a, const OldVec& b) { return {${needle}(a.x, b.x), ${needle}(a.y, b.y)}; }`;
+    const reduction = `inline float ${needle}(const OldVec& a) { return ${needle}(a.x, a.y); }`;
+    first[450] = pair;
+    first[451] = overload;
+    first[452] = reduction;
     const carrier = "int carry_this_line;";
     first[20] = carrier;
-    for (let i = 0; i < 46; i += 1) {
+    for (let i = 0; i < 44; i += 1) {
       const block = i < 23 ? first : second;
       block[101 + 2 * i] = `int use_${i} = ${needle};`;
     }
     const file = (...blocks: string[][]) => `${blocks.flat().join("\n")}\n`;
-    const after = file(second, first.with(101, `int peer_renamed_this_local = ${needle};`));
+    const renamedType = (line: string) => line.replaceAll("OldVec", "NewVectorType");
+    const after = file(
+      second,
+      first
+        .with(101, `int peer_renamed_this_local = ${needle};`)
+        .with(450, renamedType(pair))
+        .with(451, renamedType(overload))
+        .with(452, renamedType(reduction)),
+    );
+    // Keep the three overload declarations and the two vector-overload calls unchanged.
+    const skipped = new Set([24, 27, 28, 29, 30]);
+    const matches = Array.from({ length: 52 }, (_, index) => index + 1)
+      .filter((index) => !skipped.has(index))
+      .map((index) => `$issued-searchmatch:matches:${index}`);
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
@@ -54,7 +74,7 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
         call({
           id: "matches",
           name: "search",
-          arguments: { path: "main.cpp", query: needle, limit: 46 },
+          arguments: { path: "main.cpp", query: needle, limit: 52 },
         }),
         call({
           id: "carrier",
@@ -80,11 +100,8 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
           id: "replace-moved",
           name: "replace",
           arguments: {
-            path: Array.from(
-              { length: 46 },
-              (_, index) => `$issued-searchmatch:matches:${index + 1}`,
-            ),
-            text: "new_symbol",
+            path: matches,
+            text: replacement,
           },
           chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
         }),
@@ -108,7 +125,17 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
       getToolExecutions(result).filter((entry) => entry.toolCallId === "move-moved"),
     ).toHaveLength(1);
     await expect(readFile(path.join(cwd, "main.cpp"), "utf8")).resolves.toBe(
-      after.replace(`${carrier}\n`, "").replaceAll(needle, "new_symbol"),
+      after
+        .replace(`${carrier}\n`, "")
+        .replaceAll(`= ${needle};`, `= ${replacement};`)
+        .replace(
+          renamedType(pair),
+          renamedType(pair).replaceAll(`${needle}(a.`, `${replacement}(a.`),
+        )
+        .replace(
+          renamedType(reduction),
+          renamedType(reduction).replace(`${needle}(a.`, `${replacement}(a.`),
+        ),
     );
     await expect(readFile(path.join(cwd, "sink.cpp"), "utf8")).resolves.toBe(
       `// destination\n${carrier}\n`,
