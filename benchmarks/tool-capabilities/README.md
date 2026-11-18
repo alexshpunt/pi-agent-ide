@@ -33,7 +33,7 @@ The `outline-search-edit` case follows a continuation to a second outline page a
 
 The `move-destination-recovery` case also requires a refusal for an explicitly empty `start`. Scripted real-Pi tests cover that refusal, bounded diagnostics for oversized selectors, and a Move destination that overlaps a pending Replace. The revised paid routes remain unverified until paid execution.
 
-The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The scripted `lsp-rename-window` integration tests cover line and indentation changes, replanning when overload binding can change, and automatic recovery from repeated stale plans or one stalled refresh within a single `replace` call.
+The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The `lsp-rename-window` tests use real clangd to cover stale plans, a stalled refresh, and a peer sync that makes clangd refuse the rename. The tests also check that the same capture remains usable if retries run out. The paid case does not exercise contention.
 
 The scripted `lsp-selector-retry` integration tests cover exact C++ `calls` and `declaration` queries when a peer writes the file and the first clangd outline omits the requested overload. The quiet paid case does not exercise this retry.
 
