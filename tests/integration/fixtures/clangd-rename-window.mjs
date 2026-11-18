@@ -7,7 +7,7 @@ const [mode] = process.argv.slice(2);
 const clangd = spawn("clangd", [], { stdio: ["pipe", "pipe", "inherit"] });
 const toPi = new StreamMessageWriter(process.stdout);
 const toClang = new StreamMessageWriter(clangd.stdin);
-const waiting = new Set();
+const waiting = new Map();
 const log = (event) => appendFileSync(".tmp/rename-requests", event + "\n");
 let requests = 0;
 
@@ -15,11 +15,22 @@ new StreamMessageReader(process.stdin).listen((message) => {
   if (Message.isRequest(message) && message.method === "textDocument/rename") {
     log("rename");
     requests++;
-    if (mode === "stall" && requests > 1) {
-      waiting.add(message.id);
-      return;
-    }
-    if (mode === "binding" || mode === "literal") {
+    if (mode === "stall" || mode === "replan" || mode === "exhaust") {
+      const writeCount = mode === "stall" ? 3 : mode === "replan" ? 2 : 4;
+      if (requests <= writeCount)
+        appendFileSync("main.cpp", `int added${requests}() { return normalize(Vec{${requests}}); }\n`);
+      if (mode === "stall" && requests > 1) {
+        // Two replies would take 4.4 s together, though either fits on its own.
+        const timer = requests <= writeCount
+          ? setTimeout(() => {
+              waiting.delete(message.id);
+              void toClang.write(message);
+            }, 2_200)
+          : undefined;
+        waiting.set(message.id, timer);
+        return;
+      }
+    } else if (mode === "binding" || mode === "literal") {
       if (requests === 1) {
         const source = readFileSync("main.cpp", "utf8");
         const changed = mode === "binding"
@@ -28,17 +39,16 @@ new StreamMessageReader(process.stdin).listen((message) => {
         writeFileSync("main.cpp", changed);
       }
     } else {
-      appendFileSync(
-        "main.cpp",
-        mode === "stall" ? "int added() { return normalize(Vec{3}); }\n" : "// during rename\n",
-      );
+      appendFileSync("main.cpp", "// during rename\n");
     }
   }
   if (
     Message.isNotification(message) &&
     message.method === "$/cancelRequest" &&
-    waiting.delete(message.params?.id)
+    waiting.has(message.params?.id)
   ) {
+    clearTimeout(waiting.get(message.params.id));
+    waiting.delete(message.params.id);
     log("cancel");
     return;
   }

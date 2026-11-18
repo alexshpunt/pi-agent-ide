@@ -27,7 +27,15 @@ int main() {
 
 const RAW_LITERAL = `[] { if constexpr (sizeof(R"(\n// x\n)") < 10) return Vec{2}; else return 2; }()`;
 const LITERAL_OVERLOADS = OVERLOADS.replace("Vec{2}", RAW_LITERAL);
-async function renameOverload(cwd: string, mode: "write" | "stall" | "binding" | "literal") {
+const RENAMED_OVERLOADS = OVERLOADS.replace(
+  "normalize(const Vec&",
+  "normalizeVec(const Vec&",
+).replace("normalize(argument)", "normalizeVec(argument)");
+
+async function renameOverload(
+  cwd: string,
+  mode: "write" | "stall" | "binding" | "literal" | "replan" | "exhaust",
+) {
   const file = path.join(cwd, "main.cpp");
   await writeFile(file, mode === "literal" ? LITERAL_OVERLOADS : OVERLOADS);
   await writeFile(path.join(cwd, "compile_flags.txt"), "-std=c++17\n");
@@ -90,7 +98,7 @@ async function renameOverload(cwd: string, mode: "write" | "stall" | "binding" |
           { stopReason: "toolUse" },
         ),
         rename("rename"),
-        ...(mode === "stall" ? [rename("repeat")] : []),
+        ...(mode === "stall" || mode === "exhaust" ? [rename("repeat")] : []),
         assistantMessage([text("Done.")]),
       ],
     }),
@@ -107,24 +115,46 @@ test("an exact clangd overload rename survives writes before the server replies 
     const { run, content, events } = await renameOverload(cwd, "write");
     expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
     expect(events).toEqual(["rename"]);
+    expect(content).toBe("// after plan\n" + RENAMED_OVERLOADS + "// during rename\n");
+  });
+}, 50_000);
+
+test("one overload rename includes references added during two consecutive native requests", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "replan");
+    expect(getToolExecution(run, "rename").isError, getToolResultText(run, "rename")).toBe(false);
+    expect(events).toEqual(["rename", "rename", "rename"]);
     expect(content).toBe(
-      "// after plan\n" +
-        OVERLOADS.replace("normalize(const Vec&", "normalizeVec(const Vec&").replace(
-          "normalize(argument)",
-          "normalizeVec(argument)",
-        ) +
-        "// during rename\n",
+      RENAMED_OVERLOADS +
+        "int added1() { return normalizeVec(Vec{1}); }\n" +
+        "int added2() { return normalizeVec(Vec{2}); }\n",
     );
   });
 }, 50_000);
 
-test("a stalled rename refresh and an immediate repeat each cancel without writing", async () => {
+test("three stale refreshes exhaust the rename and leave the selection usable for an immediate repeat", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { run, content, events } = await renameOverload(cwd, "exhaust");
+    expect(getToolExecution(run, "rename").isError).toBe(true);
+    expect(getToolExecution(run, "repeat").isError, getToolResultText(run, "repeat")).toBe(false);
+    expect(events).toEqual(Array(5).fill("rename"));
+    expect(content).toBe(
+      RENAMED_OVERLOADS +
+        [1, 2, 3, 4].map((i) => `int added${i}() { return normalizeVec(Vec{${i}}); }\n`).join(""),
+    );
+  });
+}, 50_000);
+
+test("rename refreshes share a deadline, and an immediate repeat cancels without writing", async () => {
   await withTempWorkspace(async (cwd) => {
     const { run, content, events } = await renameOverload(cwd, "stall");
     expect(getToolExecution(run, "rename").isError).toBe(true);
     expect(getToolExecution(run, "repeat").isError).toBe(true);
-    expect(events).toEqual(["rename", "rename", "cancel", "rename", "cancel"]);
-    expect(content).toBe(OVERLOADS + "int added() { return normalize(Vec{3}); }\n");
+    expect(events).toEqual(["rename", "rename", "rename", "cancel", "rename", "cancel"]);
+    expect(content).toBe(
+      OVERLOADS +
+        [1, 2, 3].map((i) => `int added${i}() { return normalize(Vec{${i}}); }\n`).join(""),
+    );
   });
 }, 50_000);
 
