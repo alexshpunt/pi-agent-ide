@@ -63,7 +63,7 @@ Tools use fixed native exposure; there are no IDE exposure overrides or named pr
 
 Direct tools keep their normal calls and can also run through Codemode while active. Edits consume the snapshot-bound targets that Read and Search return.
 
-Git staging and debugger tools are not declared ahead of time. Short agent guidance names the enabled capabilities and tells the agent to find them through native `tool_search`. IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
+Git staging and debugger tools are not declared ahead of time. Agent guidance names the enabled capabilities and distinguishes [direct discovery from Codemode](./tools.md#tool-discovery). IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
 
 Explicit `-name` entries in Pi's `defaultTools` hide matching IDE tools from direct calls, discovery and nested calls. A later `+name` restores the capability and selects it at startup. Pi's CLI allowlist and exclusions still apply: IDE does not restore a tool removed from the host registry. Disabling an IDE module removes its tools rather than leaving a deferred path behind. Discovery guidance omits disabled capabilities.
 
