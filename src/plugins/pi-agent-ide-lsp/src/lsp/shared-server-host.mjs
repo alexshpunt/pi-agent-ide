@@ -519,8 +519,19 @@ function openSession(socket, started) {
   );
   connection.onNotification((method, parameters) => notifyServer(method, parameters));
   connection.onRequest(async (method, parameters, token) => {
-    const uri = documentUriOf(parameters);
-    if (uri) align(session, uri);
+    const callContinuation =
+      method === "callHierarchy/incomingCalls" || method === "callHierarchy/outgoingCalls";
+    const requestUri = documentUriOf(parameters);
+    const itemUri = /** @type {{ item?: { uri?: unknown } } | undefined} */ (parameters)?.item?.uri;
+    const uri = callContinuation && typeof itemUri === "string" ? itemUri : requestUri;
+    // A hierarchy item already belongs to a server snapshot. Do not change that snapshot to
+    // serve the continuation.
+    if (uri && !callContinuation) align(session, uri);
+    const unversionedNavigation =
+      method === "textDocument/documentSymbol" ||
+      method === "textDocument/references" ||
+      method === "textDocument/prepareCallHierarchy" ||
+      callContinuation;
     // The server answers for the text it has now. Another session's text may replace it before
     // the answer arrives, so the versions are mapped as they were when the request was sent.
     const owned = uri === undefined ? undefined : session.documents.get(uri);
@@ -531,13 +542,14 @@ function openSession(socket, started) {
       owned &&
       document &&
       document.text !== owned.text &&
-      (method === "textDocument/documentSymbol" || method === "textDocument/rename")
+      (unversionedNavigation || method === "textDocument/rename")
     )
       throw new ResponseError(SHARED_SOURCE_CHANGED, "The language server has newer file text.");
     const sent =
       uri !== undefined && owned && document && document.text === owned.text
         ? { uri, server: document.version, session: owned.version }
         : undefined;
+    const documentVersion = document?.version;
     const renameVersions =
       method === "textDocument/rename"
         ? new Map(
@@ -553,15 +565,15 @@ function openSession(socket, started) {
     try {
       /** @type {unknown} */
       const result = await started.connection.sendRequest(method, parameters, cancellation.token);
-      // Document symbols carry ranges but no version to tie them to the request's text.
+      // Navigation replies carry ranges but no version to tie them to the request's text.
       if (
-        method === "textDocument/documentSymbol" &&
-        sent &&
-        documents.get(sent.uri)?.version !== sent.server
+        unversionedNavigation &&
+        uri !== undefined &&
+        documents.get(uri)?.version !== documentVersion
       )
         throw new ResponseError(
           SHARED_SOURCE_CHANGED,
-          "The language server text changed while listing symbols.",
+          "The language server could not answer from one document version because the file changed.",
         );
       if (renameVersions && !unversionedRenameMatches(result, renameVersions))
         throw new ResponseError(

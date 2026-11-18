@@ -8,6 +8,7 @@ import { SearchSessionStore } from "pi-agent-search-text/search-session";
 import { LspClient } from "./lsp/client.ts";
 import { coverageNotes } from "./lsp/clang-coverage.ts";
 import { LspManager } from "./lsp/manager.ts";
+import { NAVIGATION_TIMEOUT_MS } from "./lsp/navigation.ts";
 import { LspServerRegistry } from "./lsp/registry.ts";
 import { createLspSearchResolver, type LspSearchBackend } from "./search-resolver.ts";
 
@@ -55,6 +56,30 @@ test("rejects requests that combine or omit modes", async () => {
     expect(result.kind).toBe("failed");
   }
 });
+
+test.each([{ calls: "main.cpp#target(int)" }, { query: "target", references: true }])(
+  "a stalled navigation search reports a timeout and registers no selection (%j)",
+  async (lsp) => {
+    vi.useFakeTimers();
+    try {
+      const stall = (signal: AbortSignal | undefined): Promise<never> =>
+        new Promise((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      backend.readLspSymbolGraph.mockImplementation((_manager, _file, _selector, _cwd, signal) =>
+        stall(signal),
+      );
+      backend.searchSymbols.mockImplementation((_query, _cwd, _limit, signal) => stall(signal));
+      const result = resolver.tryResolve(request(lsp), { cwd });
+      const checked = expect(result).rejects.toMatchObject({ code: "LSP_NAVIGATION_TIMEOUT" });
+      await vi.advanceTimersByTimeAsync(NAVIGATION_TIMEOUT_MS);
+      await checked;
+      expect(registered).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 test("returns a declaration as an exact selection that refreshes from the server", async () => {
   const source = path.join(cwd, "app.ts");
@@ -178,7 +203,7 @@ test("registers a call graph's references, callers and callees as selections", a
     source,
     ["save"],
     cwd,
-    undefined,
+    expect.any(AbortSignal),
   );
   // References exactly; each caller and callee as its whole declaration.
   expect(
@@ -210,7 +235,12 @@ test("registers a call graph's references, callers and callees as selections", a
   expect(backend.readLspSymbolGraph).toHaveBeenCalledTimes(2);
 
   await graphs.tryResolve(request({ calls: "app.ts" }), { cwd });
-  expect(backend.readLspFileGraph).toHaveBeenCalledWith(manager, source, cwd, undefined);
+  expect(backend.readLspFileGraph).toHaveBeenCalledWith(
+    manager,
+    source,
+    cwd,
+    expect.any(AbortSignal),
+  );
 });
 
 test("follows references only when requested", async () => {
@@ -510,7 +540,8 @@ test("symbol anchors register from the text the hits were mapped onto while anot
 test("names the fatal compiler errors that can hide references", async () => {
   const coverage = {
     fatal: [{ source: path.join(cwd, "src/main.cpp"), line: 3, message: "'x.h' file not found" }],
-    unchecked: 2,
+    unopened: ["/workspace/skipped.cpp"],
+    missingDiagnostics: ["/workspace/no-diagnostics.cpp"],
     unlisted: false,
   };
   backend.searchSymbols.mockResolvedValue({

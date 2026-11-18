@@ -1,6 +1,39 @@
 import type { LspClient } from "./client.ts";
 import { isMethodNotFound } from "./errors.ts";
+import { sourceChanged } from "./source-changes.ts";
 import type { LspPosition, LspRange } from "./types.ts";
+
+/** One budget for server startup, coverage checks, queries and all retries. */
+export const NAVIGATION_TIMEOUT_MS = 15_000;
+
+export async function withNavigationDeadline<T>(
+  parent: AbortSignal | undefined,
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const deadline = new AbortController();
+  const signal = parent ? AbortSignal.any([parent, deadline.signal]) : deadline.signal;
+  const timer = setTimeout(() => {
+    deadline.abort(
+      Object.assign(
+        new Error(
+          `LSP search timed out after ${NAVIGATION_TIMEOUT_MS / 1000} s. The server could not finish checking references or calls. Retry or search the text.`,
+        ),
+        { code: "LSP_NAVIGATION_TIMEOUT" },
+      ),
+    );
+  }, NAVIGATION_TIMEOUT_MS);
+  try {
+    signal.throwIfAborted();
+    const result = await run(signal);
+    signal.throwIfAborted();
+    return result;
+  } catch (error) {
+    signal.throwIfAborted();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export interface LspLocation {
   uri: string;
@@ -87,6 +120,17 @@ export async function requestReferences(
     signal,
   );
   return result ?? [];
+}
+
+/**
+ * A reference query asked clangd to include the declaration. An empty reply for a known
+ * declaration cannot establish that the symbol has no references.
+ */
+export function requireReferenceReply(name: string, references: readonly LspLocation[]): void {
+  if (references.length === 0)
+    throw sourceChanged(
+      `The language server returned no locations for "${name}", including its known declaration. Retry or search the text.`,
+    );
 }
 
 export async function requestCallHierarchy(

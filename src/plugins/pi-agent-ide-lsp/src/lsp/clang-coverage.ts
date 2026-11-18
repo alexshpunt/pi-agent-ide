@@ -37,8 +37,8 @@ export interface ClangReach {
   readonly client: ReachClient;
   /** URIs of the opened files and of files that were already open, with the name in their text. */
   readonly opened: readonly string[];
-  /** Files with the name in their text that were not opened, because of the limit. */
-  readonly unopened: number;
+  /** Paths found by the name scan but not opened on this server. */
+  readonly unopened: readonly string[];
   /** The workspace owner cannot list files by their text. */
   readonly unlisted: boolean;
 }
@@ -51,8 +51,10 @@ export interface ClangCoverage {
     readonly line: number;
     readonly message: string;
   }[];
-  /** Files with the name in their text whose references were not read from a fresh parse. */
-  readonly unchecked: number;
+  /** Paths found by the name scan but not opened on this server. */
+  readonly unopened: readonly string[];
+  /** Paths that were open but did not have diagnostics for the checked snapshot. */
+  readonly missingDiagnostics: readonly string[];
   /** The workspace owner cannot list files by their text. */
   readonly unlisted: boolean;
 }
@@ -79,7 +81,7 @@ export type ClangReachProvider = (
  * Each opened file is parsed before the provider returns.
  *
  * One operation opens at most {@link MAX_OPENED_FILES} files for all its names together; the rest
- * are counted. Each name is looked up once. The provider returns undefined for other languages.
+ * are listed as skipped. Each name is looked up once. The provider returns undefined for other languages.
  */
 export function createClangReach(input: {
   readonly manager: ReachManager;
@@ -94,21 +96,24 @@ export function createClangReach(input: {
   let newlyOpened = 0;
   const reach = async (client: ReachClient, word: string): Promise<ClangReach> => {
     const found = await manager.filesContaining(client, word, CLANG_LANGUAGES, signal);
-    if (found === undefined) return { client, opened: [], unopened: 0, unlisted: true };
+    if (found === undefined) return { client, opened: [], unopened: [], unlisted: true };
     const opened: string[] = [];
-    let unopened = 0;
-    for (const source of [...found].sort()) {
+    const unopened: string[] = [];
+    for (const source of [...new Set(found)].sort()) {
       signal?.throwIfAborted();
       if (input.accepts !== undefined && !input.accepts(source)) continue;
       const uri = client.toUri(source);
       if (client.documentContent(uri) === undefined) {
         if (newlyOpened >= MAX_OPENED_FILES) {
-          unopened += 1;
+          unopened.push(source);
           continue;
         }
         newlyOpened += 1;
         const document = await manager.openFile(source, cwd, "symbols", signal);
-        if (document?.client !== client) continue;
+        if (document?.client !== client) {
+          unopened.push(source);
+          continue;
+        }
       }
       opened.push(uri);
     }
@@ -119,7 +124,7 @@ export function createClangReach(input: {
   return async (client, languageId, name) => {
     if (!CLANG_LANGUAGES.has(languageId)) return undefined;
     const word = searchedWord(name);
-    if (word === undefined) return { client, opened: [], unopened: 0, unlisted: false };
+    if (word === undefined) return { client, opened: [], unopened: [], unlisted: false };
     const key = JSON.stringify([client.serverId, client.rootUri, word]);
     let result = reached.get(key);
     if (result === undefined) {
@@ -132,8 +137,8 @@ export function createClangReach(input: {
 
 /**
  * The fatal errors of the open files an answer depends on: the declaration file, the opened files
- * and any other open file with a reference. Files whose diagnostics are unavailable count as
- * unchecked.
+ * and any other open file with a reference. Keep skipped files separate from checked files
+ * whose diagnostics could not be read.
  */
 export async function clangCoverage(
   reach: ClangReach,
@@ -149,7 +154,10 @@ export async function clangCoverage(
     fatal: checked.flatMap((uri, index) =>
       (errors[index]?.fatal ?? []).map((error) => ({ source: sourceOf(uri), ...error })),
     ),
-    unchecked: reach.unopened + errors.filter((item) => item === undefined).length,
+    unopened: reach.unopened,
+    missingDiagnostics: checked.flatMap((uri, index) =>
+      errors[index] === undefined ? [sourceOf(uri)] : [],
+    ),
     unlisted: reach.unlisted,
   };
 }
@@ -158,7 +166,10 @@ export async function clangCoverage(
 export function coverageComplete(coverage: ClangCoverage | undefined): boolean {
   return (
     coverage === undefined ||
-    (coverage.fatal.length === 0 && coverage.unchecked === 0 && !coverage.unlisted)
+    (coverage.fatal.length === 0 &&
+      coverage.unopened.length === 0 &&
+      coverage.missingDiagnostics.length === 0 &&
+      !coverage.unlisted)
   );
 }
 
@@ -173,7 +184,8 @@ export function mergeCoverage(
     fatal.set(JSON.stringify([error.source, error.line, error.message]), error);
   return {
     fatal: [...fatal.values()],
-    unchecked: Math.max(...present.map((item) => item.unchecked)),
+    unopened: [...new Set(present.flatMap((item) => item.unopened))].sort(),
+    missingDiagnostics: [...new Set(present.flatMap((item) => item.missingDiagnostics))].sort(),
     unlisted: present.some((item) => item.unlisted),
   };
 }
@@ -194,15 +206,26 @@ export function coverageNotes(
       `Incomplete: clang stopped with a fatal error (${errors}), so references after it can be missing. Fix it (diagnostics with path ${first}) and search again, or search the text.`,
     );
   }
-  if (coverage.unchecked > 0)
+  if (coverage.unopened.length > 0)
     notes.push(
-      `Incomplete: ${coverage.unchecked} more file(s) contain the name and were not checked; search the text for their references.`,
+      `Incomplete: the name scan found these files, but the server did not check them: ${displayFiles(coverage.unopened, display)}. Search those files for references.`,
+    );
+  if (coverage.missingDiagnostics.length > 0)
+    notes.push(
+      `Incomplete: the server did not provide diagnostics for ${displayFiles(coverage.missingDiagnostics, display)}. The reference list may be incomplete.`,
     );
   if (coverage.unlisted)
     notes.push(
       "Incomplete: files that contain the name could not be listed, so references from files the server has not opened can be missing. Search the text.",
     );
   return notes;
+}
+
+/** Keep coverage notes short when a name appears in a large workspace. */
+function displayFiles(sources: readonly string[], display: (source: string) => string): string {
+  const limit = 8;
+  const names = sources.slice(0, limit).map(display).join(", ");
+  return sources.length > limit ? `${names} (and ${sources.length - limit} more)` : names;
 }
 
 /**
@@ -223,9 +246,13 @@ export function renameRefusal(
       `clang stopped with a fatal error (${errors}), so places after it can be missing from the rename. Fix it (diagnostics with path ${display(requiredValue(coverage.fatal[0]).source)}) and rename again.`,
     );
   }
-  if (coverage.unchecked > 0)
+  if (coverage.unopened.length > 0)
     reasons.push(
-      `${coverage.unchecked} more file(s) contain the name and were not checked, so the rename can miss them.`,
+      `The server did not check these files: ${displayFiles(coverage.unopened, display)}.`,
+    );
+  if (coverage.missingDiagnostics.length > 0)
+    reasons.push(
+      `The server did not provide diagnostics for ${displayFiles(coverage.missingDiagnostics, display)}.`,
     );
   if (coverage.unlisted)
     reasons.push(

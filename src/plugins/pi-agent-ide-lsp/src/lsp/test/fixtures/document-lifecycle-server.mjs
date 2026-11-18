@@ -111,6 +111,11 @@ connection.onRequest("lifecycle/finishOutline", () => {
 });
 connection.onRequest("lifecycle/status", () => ({ open: [...open.keys()], events, watched, pid: process.pid }));
 connection.onRequest("lifecycle/text", ({ textDocument }) => texts.get(textDocument.uri) ?? null);
+connection.onRequest("textDocument/references", ({ textDocument, position }) =>
+  texts.get(textDocument.uri)?.split("\n")[position.line] === "first"
+    ? [{ uri: textDocument.uri, range: { start: position, end: { ...position, character: 5 } } }]
+    : [],
+);
 // Answers for the version it had when the request arrived, after LIFECYCLE_RENAME_DELAY_MS.
 const renameDelayMs = Number(process.env.LIFECYCLE_RENAME_DELAY_MS ?? 0);
 let finishRename;

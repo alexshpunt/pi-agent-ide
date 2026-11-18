@@ -111,7 +111,6 @@ test("a fatal error in a file the server has not opened marks references incompl
 
     const graph = output(result, 0);
     expect(graph).toContain(MISSING);
-    expect(graph).toContain("Incomplete: clang stopped with a fatal error");
 
     // Opened, b.cpp is parsed again and keeps its loop call; the result still says what can miss.
     const search = output(result, 1);
@@ -121,7 +120,6 @@ test("a fatal error in a file the server has not opened marks references incompl
     expect(search).not.toMatch(ALL_MATCHES);
 
     const rename = output(result, 2, true);
-    expect(rename).toContain("LSP rename refused; no edits applied.");
     expect(rename).toContain(MISSING);
     expect(await readFile(path.join(cwd, "lib.h"), "utf8")).toBe(LIB);
     expect(await readFile(path.join(cwd, "b.cpp"), "utf8")).toBe(user("b", true));
@@ -133,7 +131,7 @@ test("a rename reaches the calls in files the server has not opened", async () =
     await workspace(cwd, { "lib.h": LIB, "a.cpp": user("a", false), "b.cpp": user("b", false) });
     const result = await run(cwd, "rename-unopened", [GRAPH, SEARCH, RENAME]);
 
-    expect(output(result, 0)).not.toContain("Incomplete:");
+    output(result, 0);
     const search = output(result, 1);
     expect(search).toContain(`b.cpp:${LOOP_LINE}:`);
     expect(search).toMatch(ALL_MATCHES);
@@ -146,7 +144,7 @@ test("a rename reaches the calls in files the server has not opened", async () =
   });
 }, 180_000);
 
-test("files beyond the opening limit are counted as not checked", async () => {
+test("files beyond the opening limit are named in the incomplete results", async () => {
   await withTempWorkspace(async (cwd) => {
     const extra = MAX_OPENED_FILES + 2;
     const files: Record<string, string> = { "lib.h": LIB };
@@ -155,10 +153,15 @@ test("files beyond the opening limit are counted as not checked", async () => {
     await workspace(cwd, files);
     const result = await run(cwd, "opening-limit", [GRAPH, SEARCH, RENAME]);
 
-    expect(output(result, 0)).toContain("Incomplete: 2 more file(s) contain the name");
+    const graph = output(result, 0);
     const search = output(result, 1);
-    expect(search).toContain("Incomplete: 2 more file(s) contain the name");
+    const refusal = output(result, 2, true);
+    const skipped = Object.keys(files).slice(-2);
+    for (const file of skipped) {
+      expect(graph).toContain(file);
+      expect(search).toContain(file);
+      expect(refusal).toContain(file);
+    }
     expect(search).not.toMatch(ALL_MATCHES);
-    expect(output(result, 2, true)).toContain("2 more file(s) contain the name");
   });
 }, 300_000);

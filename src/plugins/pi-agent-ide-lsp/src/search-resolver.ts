@@ -29,6 +29,7 @@ import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
 import { lspRangeMatch } from "./lsp/range-match.ts";
+import { withNavigationDeadline } from "./lsp/navigation.ts";
 import { createTextDocument, type TextDocument } from "pi-agent-text";
 
 /** Options the `lsp_search` tool passes in `SearchRequest.options.lsp`; their presence selects this resolver. */
@@ -110,21 +111,29 @@ export function createLspSearchResolver(
         ? { kind: "custom", resolverId: "lsp", value: result.data }
         : result.data;
     },
-    tryResolve(request, context) {
-      // Anchors register only while the file still has the text the server answered for; another
-      // process may write it in between, and the search then runs again on the new text.
-      const register = async (selection: Parameters<typeof registerSelection>[0]) => {
-        try {
-          return await registerSelection(selection, context);
-        } catch (error) {
-          if (error instanceof Error && error.name === "SearchSnapshotChangedError")
-            throw sourceChanged(error.message);
-          throw error;
-        }
-      };
+    tryResolve(request, callerContext) {
+      const options = lspOptions(request);
+      const navigate = options?.calls !== undefined || options?.references === true;
+      const withDocuments = <T>(run: (context: typeof callerContext) => Promise<T>): Promise<T> =>
+        navigate
+          ? withNavigationDeadline(callerContext.signal, (signal) =>
+              withLspDocuments(() => run({ ...callerContext, signal })),
+            )
+          : withLspDocuments(() => run(callerContext));
       // Documents opened for this request close when it finishes.
-      return withLspDocuments(async () => {
-        const options = lspOptions(request);
+      return withDocuments(async (context) => {
+        // Anchors register only while the file still has the text the server answered for; another
+        // process may write it in between, and the search then runs again on the new text.
+        const register = async (selection: Parameters<typeof registerSelection>[0]) => {
+          try {
+            return await registerSelection(selection, context);
+          } catch (error) {
+            if (error instanceof Error && error.name === "SearchSnapshotChangedError")
+              throw sourceChanged(error.message);
+            throw error;
+          }
+        };
+
         if (options === undefined) return { kind: "not-handled" };
         const modes = [options.query, options.declaration, options.calls].filter(
           (value) => value !== undefined,

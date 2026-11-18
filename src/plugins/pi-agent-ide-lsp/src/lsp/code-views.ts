@@ -9,7 +9,7 @@ import {
   formatSymbolSelector,
 } from "pi-agent-ide/api/code-view";
 
-import { requestCallHierarchy, requestReferences } from "./navigation.ts";
+import { requireReferenceReply, requestCallHierarchy, requestReferences } from "./navigation.ts";
 import { requestDocumentSymbols, symbolKindName } from "./symbols.ts";
 import {
   diagnosticErrors,
@@ -43,6 +43,8 @@ import type { LspPosition, LspRange } from "./types.ts";
 const MAX_GROUPS = 10;
 const MAX_ITEMS_PER_GROUP = 5;
 const MAX_CALLS = 10;
+// LSP SymbolKind: Method, Constructor, Function, Operator.
+const CALLABLE_SYMBOL_KINDS = new Set([6, 9, 12, 25]);
 
 export type { LspCodeSymbol } from "./symbol-selectors.ts";
 
@@ -172,6 +174,10 @@ interface SymbolRelations {
   readonly outgoing: readonly CallSite[];
   /** Call directions the server does not implement. */
   readonly unsupported: readonly LspCallDirection[];
+  /** The server returned no hierarchy item for a callable symbol. */
+  readonly callItemMissing: boolean;
+  /** A C/C++ file graph received no locations for this declaration. */
+  readonly referenceReplyMissing: boolean;
   /** Why C/C++ references and callers can be missing. */
   readonly coverage: ClangCoverage | undefined;
 }
@@ -270,7 +276,11 @@ async function graphOf(
     outgoing: await locate(relations.flatMap((relation) => declarations(relation.outgoing))),
     // A direction the server does not implement leaves its list unknown, not empty.
     complete: relations.every(
-      (relation) => coverageComplete(relation.coverage) && relation.unsupported.length === 0,
+      (relation) =>
+        coverageComplete(relation.coverage) &&
+        relation.unsupported.length === 0 &&
+        !relation.callItemMissing &&
+        !relation.referenceReplyMissing,
     ),
     contents,
   };
@@ -430,7 +440,7 @@ async function queryRelations(
     ? ((await context.reachOf?.(document.client, document.languageId, symbol.name)) ?? {
         client: document.client,
         opened: [],
-        unopened: 0,
+        unopened: [],
         unlisted: false,
       })
     : undefined;
@@ -445,6 +455,8 @@ async function queryRelations(
   // An answer for a text the server replaced while answering fits neither text.
   if (document.client.documentContent(document.uri) !== served)
     throw sourceChanged("The server's text changed while it answered a call graph request.");
+  if (context.reachOf !== undefined && CLANG_LANGUAGES.has(document.languageId))
+    requireReferenceReply(symbol.name, references);
   // The text each answer belongs to, taken before later diagnostics reads open its file again.
   const answered = new Map<string, string | undefined>([[document.uri, served]]);
   for (const uri of [
@@ -525,6 +537,11 @@ async function queryRelations(
       calls.outgoing.map((call) => site(call.to, call.to.selectionRange)),
     ),
     unsupported: calls.unsupported,
+    callItemMissing:
+      calls.items.length === 0 &&
+      calls.unsupported.length === 0 &&
+      CALLABLE_SYMBOL_KINDS.has(symbol.kind),
+    referenceReplyMissing: reach !== undefined && references.length === 0,
   };
 }
 
@@ -566,10 +583,10 @@ async function formatSymbolGraph(
     "",
     ...(await formatReferences(relations.references, locations)),
     "",
-    ...(unsupportedCalls(document, relations, "incoming") ??
+    ...(unavailableCalls(document, relations, "incoming") ??
       (await formatIncomingCalls(relations.incoming, locations))),
     "",
-    ...(unsupportedCalls(document, relations, "outgoing") ??
+    ...(unavailableCalls(document, relations, "outgoing") ??
       (await formatOutgoingCalls(relations.outgoing, locations))),
   ];
   return lines.join("\n");
@@ -601,15 +618,18 @@ async function formatReferences(
   return lines;
 }
 
-/** A calls section for a direction the server does not implement, or undefined when it does. */
-function unsupportedCalls(
+/** Explain unavailable call data in place of a count. */
+function unavailableCalls(
   document: LspCodeDocument,
   relations: SymbolRelations,
   direction: LspCallDirection,
 ): string[] | undefined {
-  if (!relations.unsupported.includes(direction)) return undefined;
   const label = direction === "incoming" ? "Incoming calls" : "Outgoing calls";
-  return [`${label}: not supported by ${document.client.serverId}`];
+  if (relations.unsupported.includes(direction))
+    return [`${label}: not supported by ${document.client.serverId}`];
+  if (relations.callItemMissing)
+    return [`${label}: unavailable; the server could not resolve the callable declaration.`];
+  return undefined;
 }
 
 async function formatIncomingCalls(
@@ -669,11 +689,13 @@ async function formatFileGraphSymbol(
     `### ${kind} ${symbol.name}`,
     `Selector: ${formatSymbolSelector(symbol.selector)}`,
     `Definition: ${definitionAnchor}`,
-    `Used by: ${summarize(referenceFiles)}`,
-    ...(unsupportedCalls(document, relations, "incoming") ?? [
+    relations.referenceReplyMissing
+      ? "Used by: unavailable; the server returned no locations for this declaration."
+      : `Used by: ${summarize(referenceFiles)}`,
+    ...(unavailableCalls(document, relations, "incoming") ?? [
       `Incoming calls: ${summarize(incoming)}`,
     ]),
-    ...(unsupportedCalls(document, relations, "outgoing") ?? [
+    ...(unavailableCalls(document, relations, "outgoing") ?? [
       `Outgoing calls: ${summarize(outgoing)}`,
     ]),
   ];

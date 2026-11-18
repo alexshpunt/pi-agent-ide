@@ -15,20 +15,23 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
 
 /** Callers of the graphed function, each on its own line. */
-const CALLERS = 40;
+const CALLERS = 110;
 /** Graphs taken while the peer writes the file. */
 const ROUNDS = 4;
 
-/** A C++ file of about 3,000 lines with one function that {@link CALLERS} functions call. */
+/** A large C++ file with two overloads and separate callers. */
 function sourceFile(): string {
   const lines = [
     "// header",
     "int helper(int value) { return value * 2; }",
-    "int handle(int value) { return helper(value) + 1; }",
+    "struct Vec3fForm { int value; };",
+    "int handle(const Vec3fForm& arg) { return helper(arg.value) + 1; }",
+    "int handle(int value) { return value - 1; }",
+    "int other_caller() { return handle(1); }",
   ];
   for (let index = 0; index < CALLERS; index += 1) {
-    lines.push(`int caller_${String(index)}() { return handle(${String(index)}); }`);
-    for (let filler = 0; filler < 70; filler += 1)
+    lines.push(`int caller_${String(index)}() { return handle(Vec3fForm{${String(index)}}); }`);
+    for (let filler = 0; filler < 235; filler += 1)
       lines.push(
         `int filler_${String(index)}_${String(filler)}() { return ${String(filler)} * 3; }`,
       );
@@ -62,7 +65,7 @@ function graphOf(value) {
     raw: JSON.stringify(value).slice(0, 1500),
   };
 }
-const calls = async () => graphOf(await tools.lsp_search({ calls: "main.cpp#handle" }));
+const calls = async () => graphOf(await tools.lsp_search({ calls: "main.cpp#handle(const Vec3fForm&)" }));
 // clangd answers callers from an index it fills after parsing the opened file.
 let baseline;
 for (let attempt = 1; attempt <= 15; attempt += 1) {
@@ -96,6 +99,8 @@ try {
     const found = relative(graph);
     report.push("round " + round + " definition=" + graph.definition + " " + graph.references + " " + graph.incoming);
     if (found !== expected) failures.push("round " + round + " differs: " + found);
+    const refs = await tools.lsp_search({ query: "handle", path: "main.cpp", references: true, limit: 200 });
+    check(refs.matches.length === 113, "Expected both overloads and their references: " + refs.matches.length);
   }
 } finally {
   await tools.delete({ path: ${JSON.stringify(`shell:${peer.session}`)} });
