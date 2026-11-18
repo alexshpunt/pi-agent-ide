@@ -2987,7 +2987,7 @@ for (const method of ["all", "allSettled"] as const) {
 add(
   "undo-last",
   ["edit.undo-last", "compose.mutation-undo"],
-  'Change OLD to NEW in task.txt using replace. Wait for the Replace result before undoing the last editor transaction using undo with change equal to "last" (file is optional). After the Undo result returns, Read the restored file and report its original marker.',
+  'In task.txt, use replace with start equal to "OLD" and text equal to "NEW". After Replace returns, use undo with change equal to "last" (file is optional). After Undo returns, Read the file and report its original marker. Leave the original CRLF bytes intact.',
   [
     { tool: "replace", args: { path: "task.txt", text: "NEW" } },
     { tool: "undo", args: { change: "last" }, after: [0] },

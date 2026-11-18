@@ -8,6 +8,7 @@ import signal
 import stat
 import sys
 import tempfile
+import time
 
 
 class TransferError(Exception):
@@ -60,7 +61,16 @@ try:
         raise TransferError("CONFLICT")
     os.makedirs(parent, exist_ok=True)
     parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
-    fcntl.flock(parent_fd, fcntl.LOCK_EX)
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            fcntl.flock(parent_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except BlockingIOError:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TransferError("LOCK_TIMEOUT")
+            time.sleep(min(0.025, remaining))
     if revision(destination) != request["expected"]:
         raise TransferError("CONFLICT")
     # A stop held back until the name is recorded cannot leave an unknown staging file.

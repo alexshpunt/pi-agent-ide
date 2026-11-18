@@ -18,6 +18,7 @@ from ssh_worker_common import MAX_BYTES, OperationError, encoded
 
 active_process = None
 effect = "not-applied"
+LOCK_TIMEOUT_SECONDS = 5
 
 
 def regular(path, follow=True):
@@ -144,11 +145,25 @@ def release_owned():
             pass
 
 
+def acquire_lock(fd):
+    """Bound contention on cooperating workers without interrupting an active write."""
+    deadline = time.monotonic() + LOCK_TIMEOUT_SECONDS
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise OperationError("LOCK_TIMEOUT")
+            time.sleep(min(0.025, remaining))
+
+
 @contextmanager
 def locked_directory(parent):
     fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        acquire_lock(fd)
         yield
     finally:
         os.close(fd)
@@ -477,7 +492,7 @@ def perform(request):
                     info = os.fstat(existing_fd)
                     if not stat.S_ISREG(info.st_mode):
                         raise OperationError("INVALID_FILE_TYPE")
-                    fcntl.flock(existing_fd, fcntl.LOCK_EX)
+                    acquire_lock(existing_fd)
                     info = os.fstat(existing_fd)
                     if info.st_nlink > 1:
                         # Replacing this inode would disconnect other linked names. This write
@@ -570,7 +585,7 @@ def perform(request):
                 if operation == "restore" and os.path.exists(destination) and regular(destination, follow=False).st_nlink > 1:
                     linked_fd = os.open(destination, os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
                     try:
-                        fcntl.flock(linked_fd, fcntl.LOCK_EX)
+                        acquire_lock(linked_fd)
                         linked_info = os.fstat(linked_fd)
                         if (fingerprint(destination, b"", linked_info) != request["targetRevision"] or
                                 fingerprint(destination, b"", regular(destination, follow=False)) != request["targetRevision"]):

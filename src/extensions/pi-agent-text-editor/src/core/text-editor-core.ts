@@ -22,6 +22,7 @@ import {
   isAgentContent,
   ResourceError,
   isResourceResolutionAttempt,
+  EDIT_WAIT_TIMEOUT_MS,
   resourceScheduler,
   resourceAccesses,
   type ResourceAccess,
@@ -513,7 +514,10 @@ export function createTextEditorCore(
     action: () => Promise<T>,
     signal?: AbortSignal,
     accesses?: Promise<readonly ResourceAccess[] | undefined>,
-  ): Promise<T> => scheduler.run(accesses, action, signal);
+  ): Promise<T> =>
+    scheduler.run(accesses, action, signal, {
+      waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+    });
   const registerContributions = (draft: PluginContributionDraft): void => {
     validateContributionDraft(
       draft,
@@ -770,6 +774,8 @@ export function createTextEditorCore(
             ).then((sets) => sets.flat());
       return scheduler.run(accesses, action, signal, {
         allowNestedWrites: scope?.allowNestedEdits === true,
+        waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+        waitFor: scope === undefined ? "the file operation reservation" : scope.sources.join(", "),
       });
     },
     executeFileOperation: (operation, input, cwd, signal, deletion) =>
