@@ -23,6 +23,8 @@ The `replace-search-anchor-list` case issues references before moving a block an
 
 The `line-anchor-range-interior-change` case checks that Delete refuses a pair of line anchors after a same-length interior edit. The scripted Pi regression separately covers a peer moving a neighbour of two identical blocks, plus a successful edit after an unrelated shift. The direct and Codemode paid routes remain unverified.
 
+The `stale-whole-file-write` case checks refusal after a peer changes a file, then a fresh Read and successful Write that preserves the peer’s change. Scripted Pi cases also cover a partial Read, a changed whole-file result, and creation. The direct and Codemode paid routes remain unverified.
+
 Rust edition selection is formatter behavior after an edit, not a new model operation. The existing edit routes still cover tool use; focused Rust formatter and real-Pi tests cover Cargo edition discovery and formatting. The paid routes do not verify Rust editions.
 
 The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostics and requests a symbol from the real server. Its dependency-free build script records an unexpected compilation; the final validator requires that marker to remain absent. It covers default Cargo safety, not explicit build-backed opt-in or large-workspace performance. The focused Rust diagnostic integration case also guards compiler invocations on a cold target and can use a real large workspace. Direct and Codemode paid routes remain unverified until paid execution.
