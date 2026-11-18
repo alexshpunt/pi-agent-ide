@@ -225,6 +225,8 @@ export type ReadScriptData =
     }
   | {
       readonly kind: "text";
+      /** Digest of the raw file snapshot from which this selection was taken. Not published. */
+      readonly fileDigest?: string;
       /** Strict source-window handle, independent of preview truncation. */
       readonly target?: string;
       readonly source: string;

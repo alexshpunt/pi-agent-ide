@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -49,7 +50,7 @@ const window=(write)=>tools.write({path:".tmp/edit-window/write.json",content:JS
       "builtin:codemode",
       path.resolve("tests/integration/fixtures/write-in-edit-window.ts"),
     ],
-    tools: ["write", "read", "search", "replace", "move", "codemode"],
+    tools: ["write", "read", "search", "replace", "move", "bash", "codemode"],
     conversation: [
       assistantMessage([toolCall({ id: "composed", name: "codemode", arguments: { code } })], {
         stopReason: "toolUse",
@@ -62,6 +63,83 @@ const window=(write)=>tools.write({path:".tmp/edit-window/write.json",content:JS
   return { output, final: await readFile(path.join(cwd, source), "utf8") };
 }
 
+test("A whole-file Write based on an earlier Read does not discard a peer's write before the transaction", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const original = "int task = 0;\nint peer = 0;\n";
+    const { output, final } = await runInWindow(
+      cwd,
+      "edit-window-write-stale-read",
+      original,
+      String.raw`
+const prior=await tools.read({path:file});
+const peer=await tools.bash({command:"printf 'int task = 0;\\nint peer = 1;\\n' > "+file});
+check(peer.exit_code===0,"Peer write failed");
+// Search does not bless a new whole-file snapshot; the partial Read does not show the peer's line.
+await tools.search({path:file,query:"task"});
+await tools.read({path:file,offset:1,limit:1});
+await rejects(()=>tools.write({path:"./"+file,content:prior.text.replace("task = 0","task = 1")}));
+const fresh=await tools.read({path:file});
+check(fresh.text.includes("peer = 1"),"Peer's change was lost");
+await tools.write({path:file,content:fresh.text.replace("task = 0","task = 2")});
+await tools.write({path:file,content:fresh.text.replace("task = 0","task = 3")});`,
+    );
+    expect(codemodeFailures(output)).toMatch(/^1 of \d+ IDE calls failed:\n- write /u);
+    expect(final).toBe("int task = 3;\nint peer = 1;\n");
+  });
+});
+
+test("A whole-file Write refuses a peer edit between result verification and the transaction", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const { output, final } = await runInWindow(
+      cwd,
+      "edit-window-write-result",
+      "int task = 0;\nint peer = 0;\n",
+      String.raw`
+const prior=await tools.read({path:file});
+await window({replace:["peer = 0", "peer = 1"]});
+await rejects(()=>tools.write({path:prior,content:prior.text.replace("task = 0","task = 1")}));`,
+    );
+    expect(codemodeFailures(output)).toMatch(/^1 of \d+ IDE calls failed:\n- write /u);
+    expect(final).toBe("int task = 0;\nint peer = 1;\n");
+  });
+});
+test("Direct Write refuses stale content and permits creation and a fresh overwrite", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const file = "shared.txt";
+    const original = "task old\npeer old\n";
+    const peerVersion = "task old\npeer new\n";
+    const rebuilt = "task new\npeer new\n";
+    await writeFile(path.join(cwd, file), original);
+    const turn = (id: string, name: string, args: Record<string, unknown>) =>
+      assistantMessage([toolCall({ id, name, arguments: args })], { stopReason: "toolUse" });
+    const run = await new PiIntegrationTest({
+      testName: "direct-stale-write",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["read", "write", "bash"],
+      conversation: [
+        turn("observed", "read", { path: file }),
+        turn("peer", "bash", { command: "printf 'task old\\npeer new\\n' > shared.txt" }),
+        turn("stale", "write", { path: "./" + file, content: "task new\npeer old\n" }),
+        turn("fresh", "read", { path: file }),
+        turn("rebuilt", "write", { path: file, content: rebuilt }),
+        turn("new", "write", { path: "new.txt", content: "created\n" }),
+        assistantMessage([text("Done.")]),
+      ],
+    }).run("Refuse a stale whole-file overwrite, then recover with a fresh read");
+
+    const refusal = getToolExecution(run, "stale");
+    expect(refusal.isError).toBe(true);
+    expect(getToolExecutionDetails(refusal)).toMatchObject({ effect: "not-applied" });
+    expect(getToolResultText(run, "fresh")).toContain(peerVersion);
+    expect(getToolExecution(run, "rebuilt").isError).toBe(false);
+    expect(getToolExecution(run, "new").isError).toBe(false);
+    expect(await readFile(path.join(cwd, file), "utf8")).toBe(rebuilt);
+    expect(await readFile(path.join(cwd, "new.txt"), "utf8")).toBe("created\n");
+  });
+});
 const row = (index: number, name: string) =>
   `int f_${String(index)}() { return ${name}(${String(index)}) + keep(${String(index)}); }`;
 

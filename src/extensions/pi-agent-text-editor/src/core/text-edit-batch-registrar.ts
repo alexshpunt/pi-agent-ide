@@ -263,6 +263,8 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
   };
 
   core.onMutationTool((registration) => {
+    // Whole-file Write must check its own observation, not a shared batch snapshot.
+    if (registration.name === "write") return;
     registrations.set(registration.name, registration);
     sourceTools.push(registration.name);
   });

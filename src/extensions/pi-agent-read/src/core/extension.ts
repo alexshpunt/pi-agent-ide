@@ -1,5 +1,12 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectResultTargets, trackScriptCalls } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  trackScriptCalls,
+  fileTextDigest,
+  fileTextKeys,
+  FILE_TEXT_READ_EVENT,
+  type FileTextRead,
+} from "pi-agent-resource";
 import { createReadResultTargetHandler } from "#src/core/tools/read/result-target.ts";
 import {
   ToolCallInterceptionRenderStore,
@@ -33,6 +40,18 @@ export default async function registerReadCore(
     () => parsePresentation(context?.preferences["ui.read"]),
     trackScriptCalls(pi, "read"),
   );
+  core.read.setReadObserver(async ({ script, details }, cwd) => {
+    if (script?.kind !== "text" || script.fileDigest === undefined) return;
+    const keys = await fileTextKeys(script.source, cwd);
+    if (keys.length === 0) return;
+    pi.events.emit(FILE_TEXT_READ_EVENT, {
+      keys,
+      digest: script.fileDigest,
+      complete:
+        details.truncation?.truncated !== true &&
+        fileTextDigest(script.content) === script.fileDigest,
+    } satisfies FileTextRead);
+  });
   const targets = connectResultTargets(pi);
   await core.registerPlugin({
     protocol: READ_PROTOCOL,

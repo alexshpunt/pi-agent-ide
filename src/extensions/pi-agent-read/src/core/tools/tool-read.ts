@@ -122,6 +122,8 @@ export interface ReadTool {
   saveTemporary(text: string): Promise<string>;
   /** Sets the saver used before agent-facing text is truncated. */
   setOutputSaver(saver: (text: string) => Promise<string>): void;
+  /** Observe only tool calls, never internal rereads. */
+  setReadObserver(observer: (result: ReadToolResult, cwd: string) => Promise<void>): void;
   readonly tool: ToolDefinition<typeof readToolParameters, ReadResultDetails>;
   execute(
     request: ReadPipelineContext["request"],
@@ -152,6 +154,7 @@ export function createReadTool(
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
   let outputSaver: ((text: string) => Promise<string>) | undefined;
+  let readObserver: ((result: ReadToolResult, cwd: string) => Promise<void>) | undefined;
   const resolvers: RegisteredResolver[] = [
     {
       resolver: temporaryResources.resolver,
@@ -175,6 +178,9 @@ export function createReadTool(
     saveTemporary: (text) => temporaryResources.save(text),
     setOutputSaver(saver) {
       outputSaver = saver;
+    },
+    setReadObserver(observer) {
+      readObserver = observer;
     },
     tool: {
       name: toolId,
@@ -258,11 +264,9 @@ export function createReadTool(
               outputSaver,
               nested ? "none" : "model",
             );
-            return withoutScriptData(
-              structuredRead(withReadCancellation(result, request.path, signal), {
-                complete: nested,
-              }),
-            );
+            const checked = withReadCancellation(result, request.path, signal);
+            if (!checked.isError) await readObserver?.(checked, context.cwd);
+            return withoutScriptData(structuredRead(checked, { complete: nested }));
           } catch (error) {
             if (signal?.aborted) throw error;
             return structuredRead(

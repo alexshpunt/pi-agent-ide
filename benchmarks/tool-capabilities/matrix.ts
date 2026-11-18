@@ -171,6 +171,7 @@ const groups: [string[], string[]][] = [
     ["exact-range-delete", "exact-range-copy", "exact-range-move"],
   ],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["edit.stale-whole-file-write"], ["stale-whole-file-write"]],
   [["edit.semantic-write-receipt"], ["semantic-write-receipts"]],
   // Optional safe error metadata does not change provider receipt effects or their data fields.
   // Rate-limit metadata transport has deterministic ResourceError/Read/Write coverage, not a paid route.

@@ -5,6 +5,7 @@ import {
   UnsupportedContentError,
 } from "pi-agent-resource";
 import { NoTextTargetError } from "./file-result-targets.ts";
+import { FileWriteObservations } from "./file-write-observations.ts";
 import { setMutationSnapshotReader } from "./mutation-result-targets.ts";
 import { registerTextEditOrigins } from "./text-edit-origin.ts";
 import { compactMutationReceipt } from "./mutation-result/compact-receipt.ts";
@@ -58,6 +59,7 @@ export default async function registerTextEditorCore(
     registerToolCallAnnotationSink(pi);
     interceptionRendering.clear();
   });
+  const observations = new FileWriteObservations(pi);
   const resultTargets = connectResultTargets(pi);
   const resultImages = connectResultImages(pi);
   const mutationTools = new Set<string>();
@@ -72,6 +74,7 @@ export default async function registerTextEditorCore(
         resultTargets,
         pi.events,
         resultImages,
+        observations,
       ),
     );
   }, resultTargets);
@@ -83,6 +86,7 @@ export default async function registerTextEditorCore(
   });
   registerTextEditOrigins(pi, core);
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
+  core.onDidEdit((completion) => observations.saved(completion));
   core.onDidEdit((completion) => {
     // A final formatting pass must not retire fresh mutation spans when it left the text unchanged.
     const before = completion.beforePostProcessing ?? completion.before;

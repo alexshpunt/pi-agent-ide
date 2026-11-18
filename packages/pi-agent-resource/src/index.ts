@@ -6,6 +6,12 @@ export {
   type ResourceAccess,
 } from "./resource-scheduler.ts";
 export { resourceAccesses } from "./resource-access.ts";
+export {
+  fileTextDigest,
+  fileTextKeys,
+  FILE_TEXT_READ_EVENT,
+  type FileTextRead,
+} from "./file-text-read.ts";
 export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.ts";
 export {
   assertJsonData,

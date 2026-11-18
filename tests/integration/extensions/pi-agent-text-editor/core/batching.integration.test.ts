@@ -26,7 +26,7 @@ function call(name: string, id: string, arguments_: Record<string, unknown>) {
 }
 
 describe("pi-agent-text-editor batching", () => {
-  test("executes flat write calls as one batch and returns each call its file", async () => {
+  test("executes flat whole-file writes independently and returns each call its file", async () => {
     await withTempWorkspace(async (directory) => {
       const result = await new PiIntegrationTest({
         artifactsDir: testArtifactsDir(expect.getState().testPath),
