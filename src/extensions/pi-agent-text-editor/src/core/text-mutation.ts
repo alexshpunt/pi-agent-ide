@@ -85,6 +85,7 @@ import {
   isAlreadyDone,
 } from "./already-done.ts";
 import { wholeFileResultSource } from "./result-input.ts";
+import { guardWholeFileWrite, type FileWriteObservations } from "./file-write-observations.ts";
 import {
   bindContextAliases,
   canonicalizeContextEdits,
@@ -115,6 +116,7 @@ import type {
   TextEditorCore,
   TextResourceEditFailure,
   TextResourceEditOutcome,
+  TextResourceEditRequest,
   TextPresentedLines,
   TextResourcesEditOutcome,
 } from "#src/core/text-editor-core.ts";
@@ -137,6 +139,7 @@ export function createTextTool<TParameters extends TSchema>(
   resultTargets?: ResultTargetStore,
   events?: Pick<ExtensionAPI["events"], "emit">,
   resultImages?: ResultImageStore,
+  observations?: FileWriteObservations,
 ): ToolDefinition<TParameters, FileMutationBatchResult> {
   const renderer = core.getToolRenderer(definition.name);
   const initialRenderCall = renderer?.renderCall;
@@ -196,6 +199,7 @@ export function createTextTool<TParameters extends TSchema>(
             captureScriptMutation(core, async () => {
               const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
                 let input = asMutationParameters<TParameters>(parameters);
+                let expectedWriteContent: string | undefined;
                 // The IDE replaces a value with an id by its reference before the call; a host
                 // without its result store cannot, and must not ignore the selector.
                 const valueAnchors = (definition.anchors ?? []).filter(
@@ -274,6 +278,8 @@ export function createTextTool<TParameters extends TSchema>(
                     if (definition.name === "write" || definition.name === "undo") {
                       await resultTargets.verify(selected, signal);
                       wholeFileResultSource(selected, definition.name);
+                      if (definition.name === "write")
+                        expectedWriteContent = requiredValue(selected.targets[0]).expectedContent;
                     }
                     if (selected.targets.length === 0)
                       return {
@@ -460,6 +466,9 @@ export function createTextTool<TParameters extends TSchema>(
                         [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
                       }),
                     getLastResolvedSource(),
+                    definition.name === "write"
+                      ? guardWholeFileWrite(observations, expectedWriteContent)
+                      : undefined,
                   );
                 return directExecute();
               };
@@ -1439,6 +1448,7 @@ export async function executeTextMutation<TParameters extends TSchema>(
   context: ExtensionContext,
   publishAnchorRenderState?: (field: string, state: ToolCallAnchorRenderState) => void,
   lastResolvedSource?: string,
+  checkSnapshot?: TextResourceEditRequest["checkSnapshot"],
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   const execution = await executeTextMutationPipeline(
     core,
@@ -1448,6 +1458,7 @@ export async function executeTextMutation<TParameters extends TSchema>(
     context,
     publishAnchorRenderState,
     lastResolvedSource,
+    checkSnapshot,
   );
   const result = await buildToolResult(
     core,
@@ -1470,6 +1481,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
   context: ExtensionContext,
   publishAnchorRenderState?: (field: string, state: ToolCallAnchorRenderState) => void,
   lastResolvedSource?: string,
+  checkSnapshot?: TextResourceEditRequest["checkSnapshot"],
 ): Promise<{ readonly pipeline: TextEditExecutionOutcome; readonly source: string }> {
   const source = mutationSource(definition, parameters);
   const pipeline = await core.executeEdit(
@@ -1597,6 +1609,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
           source: resourceSource,
           read: true,
           ...(definition.name === "write" && { allowReadFailure: true }),
+          ...(checkSnapshot !== undefined && { checkSnapshot }),
         })),
         {
           cwd: state.cwd,

@@ -2173,6 +2173,22 @@ add(
 );
 
 add(
+  "stale-whole-file-write",
+  ["edit.stale-whole-file-write"],
+  'Read all of shared.txt. Once Read returns, run Bash with command "printf \'task old\\npeer new\\n\' > shared.txt" to simulate a peer changing its second line. After Bash finishes, call Write with path shared.txt and content "task new\\npeer old\\n" (actual newline characters) without reading again. Write must refuse. Read shared.txt again after the refusal and confirm it contains task old and peer new; then Write "task new\\npeer new\\n" with real newline characters. Leave both changes in the file.',
+  [
+    { tool: "read", args: { path: "shared.txt" } },
+    { tool: "bash", after: [0] },
+    { tool: "write", args: { path: "shared.txt" }, error: true, after: [1] },
+    { tool: "read", args: { path: "shared.txt" }, contains: "peer new", after: [2] },
+    { tool: "write", args: { path: "shared.txt" }, after: [3] },
+  ],
+  {
+    files: { "shared.txt": "task old\npeer old\n" },
+    expected: { "shared.txt": "task new\npeer new\n" },
+  },
+);
+add(
   "write-hook-read",
   ["edit.write-hook-feedback", "compose.write-hook-read"],
   "Write review.txt containing exactly WRITE_HOOK_BODY review plus a newline. Report the saved-check hook's remark from the compact Write receipt, or in Codemode from the script's result, then pass that unchanged Write result into Read and report the saved value. Do not treat the remark as a failed or interrupted write.",

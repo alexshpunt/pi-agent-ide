@@ -324,11 +324,23 @@ export type TextResourceEditOutcome<Result> =
 export interface TextResourceEditRequest {
   /** Reject a resource created or removed since its batch snapshot was captured. */
   readonly expectedExistence?: boolean;
+  /** Check the resolved transaction snapshot before planning any writes. */
+  readonly checkSnapshot?: (
+    snapshot: TextResourceSnapshot,
+    cwd: string,
+  ) => Promise<string | undefined>;
   readonly source: string;
   readonly read: boolean;
   readonly allowReadFailure?: boolean;
   /** Allow an anchored semantic action to use a read-only resource. */
   readonly requireWrite?: boolean;
+}
+
+export interface TextResourceSnapshot {
+  readonly source: string;
+  readonly resolvedBy: string;
+  readonly existed: boolean;
+  readonly content: string;
 }
 
 export interface TextResourcesMutationResult<Result> {
@@ -1464,6 +1476,21 @@ async function editTextResources<Result>(
     if (request.expectedExistence !== undefined && request.expectedExistence !== outcome.existed) {
       throw new Error(`Snapshot source ${source} was created or removed before the edit batch.`);
     }
+    const conflict = await request.checkSnapshot?.(
+      {
+        source: outcome.resource.source,
+        resolvedBy: outcome.resolverId,
+        existed: outcome.existed,
+        content: outcome.before.content,
+      },
+      context.cwd,
+    );
+    if (conflict !== undefined)
+      return {
+        kind: "failed",
+        completed: [],
+        failure: { code: "CONFLICT", source, message: conflict },
+      };
     prepared.set(source, outcome);
   }
 
@@ -1882,7 +1909,10 @@ async function prepareTextResource(
           context.signal === undefined ? {} : { signal: context.signal },
         );
       } catch (error) {
-        if (!allowReadFailure) {
+        const file = resolver.id === "filesystem" || resolver.id === "ssh";
+        // Only absence authorizes creating a file. Permission or transport errors are not absence.
+        const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
+        if (!allowReadFailure || (file && !missing)) {
           return {
             failure: {
               code: "READ_FAILED",

@@ -35,7 +35,7 @@ export default async function writeInEditWindow(pi: ExtensionAPI): Promise<void>
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: "fixture-write-in-edit-window",
     setup(api) {
-      for (const tool of ["replace", "delete", "insert", "move", "copy"] as const)
+      for (const tool of ["replace", "delete", "insert", "move", "copy", "write"] as const)
         api.tool(tool).addHandler({
           stage: "text-pre-edit",
           async handler(state) {

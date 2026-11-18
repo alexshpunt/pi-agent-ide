@@ -49,6 +49,20 @@ test("a write refuses to replace a file another process changed after the read",
   expect(await readFile(filePath, "utf8")).toBe("their second edit\n");
 });
 
+test("creating a file refuses to replace a peer's creation after observing absence", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "pi-agent-filesystem-"));
+  directories.push(directory);
+  const filePath = path.join(directory, "shared.txt");
+  const mine = await openFile(filePath);
+  await expect(mine.read?.({})).rejects.toMatchObject({ code: "ENOENT" });
+  await writeFile(filePath, "their new file\n");
+
+  await expect(mine.write([{ type: "text", text: "my new file\n" }], {})).rejects.toMatchObject({
+    code: "RESOURCE_CHANGED",
+    effect: "not-applied",
+  });
+  expect(await readFile(filePath, "utf8")).toBe("their new file\n");
+});
 test("a directory read lists its entries; directory names end with a slash", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "pi-agent-filesystem-"));
   directories.push(directory);

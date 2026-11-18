@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { ResultRange, ResultTargetStore } from "pi-agent-resource";
+import { fileTextDigest, type ResultRange, type ResultTargetStore } from "pi-agent-resource";
 import type { ReadPostReadHandler, ReadToolPluginApi } from "#src/api/tools/read.ts";
 
 /** Retain exact source-backed text windows with an owning reread and optional source-wide edit prohibition. */
@@ -87,7 +87,15 @@ export function createReadResultTargetHandler(
           undefined,
           readOnlyReason,
         );
-        return { ...result, script: { ...script, target } };
+        return {
+          ...result,
+          script: {
+            ...script,
+            target,
+            ...((state.resolvedBy === "filesystem" || state.resolvedBy === "ssh") &&
+              state.entries === undefined && { fileDigest: fileTextDigest(state.text.content) }),
+          },
+        };
       },
     };
   };
