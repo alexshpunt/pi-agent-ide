@@ -1,7 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ResourceError, type ResultTargetStore } from "pi-agent-resource";
-import { diffLines } from "diff";
+import { createRangeTracker, ResourceError, type ResultTargetStore } from "pi-agent-resource";
 import { type NameCapture, type NameCaptures, currentNameCapture } from "./name-captures.ts";
 import type {
   TextEditPlan,
@@ -14,11 +13,16 @@ import { withLspDocuments } from "./lsp/document-leases.ts";
 import { SOURCE_CHANGED, sourceChanged } from "./lsp/source-changes.ts";
 import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.ts";
 import type { LspClient } from "./lsp/client.ts";
-import type { LspPosition } from "./lsp/types.ts";
+import type { LspPosition, LspTextEdit } from "./lsp/types.ts";
 import { documentUri } from "./lsp/document-uri.ts";
 import { loadQueryProject } from "./lsp/navigation.ts";
 import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./lsp/corrected-names.ts";
-import { clangCoverage, createClangReach, renameRefusal } from "./lsp/clang-coverage.ts";
+import {
+  CLANG_LANGUAGES,
+  clangCoverage,
+  createClangReach,
+  renameRefusal,
+} from "./lsp/clang-coverage.ts";
 
 /** The identifier that contains `position`, or an empty string. */
 function identifierAt(content: string, position: LspPosition): string {
@@ -71,66 +75,108 @@ function offsets(content: string): (position: LspPosition) => number {
   };
 }
 
-/**
- * Reuse native identifier edits only across trivia changes. An altered argument type can
- * change which overload a call binds to without touching any line that names the overload.
- */
+/** Match the same substantive lines in order. A range's spelling alone says nothing about lookup. */
+function matchLayout(
+  before: string,
+  current: string,
+  oldName: string,
+  newName: string,
+  allowIndentation: boolean,
+) {
+  const isTrivia = (line: string) =>
+    /^[ \t]*\r?$/u.test(line) ||
+    (/^[ \t]*\/\/[^\\@#\r]*\r?$/u.test(line) &&
+      !line.includes("*/") &&
+      !line.includes("??/") &&
+      !line.includes(oldName) &&
+      !line.includes(newName));
+  const significantLines = (content: string) =>
+    content.split("\n").flatMap((line, index) => {
+      if (isTrivia(line)) return [];
+      const text = line.replace(/^[ \t]*/u, "");
+      return [{ index, text, indent: line.slice(0, line.length - text.length) }];
+    });
+  const old = significantLines(before);
+  const next = significantLines(current);
+  if (old.length !== next.length) return undefined;
+  const lines = new Map<number, { line: number; shift: number }>();
+  for (const [index, line] of old.entries()) {
+    const moved = next[index];
+    if (
+      moved === undefined ||
+      moved.text !== line.text ||
+      (!allowIndentation && moved.indent !== line.indent)
+    )
+      return undefined;
+    lines.set(line.index, { line: moved.index, shift: moved.indent.length - line.indent.length });
+  }
+  return lines;
+}
+
 function rebaseRename(
   before: string,
   current: string,
+  edits: readonly LspTextEdit[],
   changes: readonly TextEditPlanChange[],
   oldName: string,
   newName: string,
   languageId: string,
 ): readonly TextEditPlanChange[] | undefined {
-  // A line that looks like a comment can be literal text or part of a spliced line.
-  if (
-    !C_LANGUAGES.has(languageId) ||
-    /R"|__LINE__|__builtin_LINE|(?:\\|\?\?\/)[ \t]*\r?\n/u.test(before)
-  )
-    return undefined;
+  if (!CLANG_LANGUAGES.has(languageId)) return undefined;
+  // Comment-like text can be literal or part of a spliced line. Position-dependent builtins
+  // can change the meaning of otherwise identical syntax when a line or column moves.
+  const dependsOnLayout =
+    /R"|__LINE__|__builtin_LINE|__builtin_COLUMN|source_location|##|%:%:|\?\?=\?\?=|(?:\\|\?\?\/)[ \t]*\r?\n/u;
+  if (dependsOnLayout.test(before) || dependsOnLayout.test(current)) return undefined;
   const identifier = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
   if (!identifier.test(oldName) || !identifier.test(newName)) return undefined;
-  if (
-    changes.some(({ from, to, insert }) => insert !== newName || before.slice(from, to) !== oldName)
-  )
-    return undefined;
-  const hunks = diffLines(before, current, { timeout: 500 });
-  if (hunks === undefined) return undefined;
-  const sorted = changes.toSorted((a, b) => a.from - b.from);
+
+  // Macros from headers can read the column at their expansion site without spelling
+  // the builtin in this file. Keep line-only tracking when preprocessing may be involved.
+  const mayUseMacros = /#|%:|\?\?=|\bimport\b/u.test(before);
+  const layout = matchLayout(before, current, oldName, newName, !mayUseMacros);
+  if (layout === undefined) return undefined;
+  const tracker = createRangeTracker(before, current);
+  const offset = offsets(current);
   const remapped: TextEditPlanChange[] = [];
-  let fromOffset = 0;
-  let toOffset = 0;
-  for (const hunk of hunks) {
-    const length = hunk.value.length;
-    if (hunk.added || hunk.removed) {
-      const harmless = hunk.value
-        .split("\n")
-        .every(
-          (line) =>
-            /^[ \t]*\r?$/u.test(line) ||
-            (/^[ \t]*\/\/[^\\@#\r]*\r?$/u.test(line) &&
-              !line.includes("*/") &&
-              !line.includes("??/")),
-        );
-      if (!harmless || hunk.value.includes(oldName) || hunk.value.includes(newName))
-        return undefined;
-    } else {
-      const shift = toOffset - fromOffset;
-      let change = sorted[remapped.length];
-      while (change !== undefined && change.from < fromOffset + length) {
-        if (change.from < fromOffset || change.to > fromOffset + length) return undefined;
-        remapped.push({ ...change, from: change.from + shift, to: change.to + shift });
-        change = sorted[remapped.length];
-      }
-    }
-    if (!hunk.added) fromOffset += length;
-    if (!hunk.removed) toOffset += length;
+  for (const [
+    index,
+    {
+      range: { start, end },
+      newText,
+    },
+  ] of edits.entries()) {
+    const original = changes[index];
+    const expected = layout.get(start.line);
+    if (
+      original === undefined ||
+      newText !== newName ||
+      before.slice(original.from, original.to) !== oldName ||
+      expected === undefined ||
+      start.line !== end.line
+    )
+      return undefined;
+    const moved = tracker.move({
+      start: { lineNumber: start.line + 1, column: start.character },
+      end: { lineNumber: end.line + 1, column: end.character },
+    });
+    const line = expected.line;
+    if (
+      moved === undefined ||
+      moved.start.lineNumber !== line + 1 ||
+      moved.end.lineNumber !== line + 1 ||
+      moved.start.column !== start.character + expected.shift ||
+      moved.end.column !== end.character + expected.shift
+    )
+      return undefined;
+    const from = offset({ line, character: moved.start.column });
+    const to = offset({ line, character: moved.end.column });
+    if (current.slice(from, to) !== oldName) return undefined;
+    remapped.push({ from, to, insert: newText });
   }
-  return remapped.length === changes.length ? remapped : undefined;
+  return remapped;
 }
 
-const C_LANGUAGES = new Set(["c", "cpp", "objective-c", "objective-cpp"]);
 const REFRESH_BUDGET_MS = 4_000;
 const MAX_REFRESH_ATTEMPTS = 3;
 /** An immediate repeat of a contended selection is a refresh too, not another cold request. */
@@ -382,6 +428,7 @@ async function planRename(
         rebaseRename(
           before.content,
           current,
+          edits,
           changes,
           oldNames[1] ?? "",
           newName,
