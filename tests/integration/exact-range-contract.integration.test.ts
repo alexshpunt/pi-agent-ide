@@ -33,8 +33,12 @@ for (const route of ["direct", "codemode"] as const) {
         edits.push(
           { tool: "insert", args: { path: file, anchor: "base", text: "added" } },
           { tool: "delete", args: { path: file, start: "added" } },
-          // A literal selects only its characters; the line break comes from the inserted text.
-          { tool: "insert", args: { path: file, anchor: "base", before: true, text: "correct\n" } },
+          // A literal selects only its characters; the line break comes from the inserted text,
+          // written as sent, so it uses the file's own line break.
+          {
+            tool: "insert",
+            args: { path: file, anchor: "base", before: true, text: `correct${eol}` },
+          },
         );
         expected[file] = `correct${eol}base${eol}`;
         for (const tool of ["delete", "replace"]) {
@@ -60,7 +64,7 @@ for (const route of ["direct", "codemode"] as const) {
             args: {
               path: source,
               // Include the line break in the literal to transfer the whole line.
-              start: ending === "" ? "段🙂" : "段🙂\n",
+              start: `段🙂${ending}`,
               target,
               targetStart: "TARGET",
               targetEnd: "TARGET",
@@ -72,7 +76,8 @@ for (const route of ["direct", "codemode"] as const) {
         const file = `insert-${before}.txt`;
         files[file] = "pre α\r\nβ end\r\n";
         expected[file] = before ? "pre +α\r\nβ end\r\n" : "pre α\r\nβ+ end\r\n";
-        edits.push({ tool: "insert", args: { path: file, anchor: "α\nβ", text: "+", before } });
+        // A literal matches only the file's own line breaks: CRLF in a CRLF file.
+        edits.push({ tool: "insert", args: { path: file, anchor: "α\r\nβ", text: "+", before } });
       }
       await Promise.all(
         Object.entries(files).map(([file, content]) => writeFile(path.join(cwd, file), content)),

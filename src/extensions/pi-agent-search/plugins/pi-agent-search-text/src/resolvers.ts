@@ -651,7 +651,8 @@ function previewMatch(match: TextSearchMatch): { text: string; range: ResultRang
   if (match.endLineNumber !== undefined) {
     // Show the matched lines themselves, bounded; continuation lines keep the preview indent.
     const maximumLines = 8;
-    const matched = match.matchedText.replace(/\r\n/gu, "\n").split("\n");
+    // Only LF ends a line: a CRLF line's preview keeps its CR, as the file holds it.
+    const matched = match.matchedText.split("\n");
     const shown = matched.slice(0, maximumLines);
     const more = matched.length - shown.length;
     return {

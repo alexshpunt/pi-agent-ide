@@ -5,7 +5,8 @@ let fuzzy;
 let prepared;
 
 function normalizeLine(value) {
-  return value.replace(/[\t ]+$/u, "");
+  // Guidance only: a CRLF source line keeps its CR, which must not lower the score.
+  return value.replace(/[\t \r]+$/u, "");
 }
 
 function normalizeLines(value) {

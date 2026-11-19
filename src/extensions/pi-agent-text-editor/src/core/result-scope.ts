@@ -46,8 +46,15 @@ function scopeOffsets(document: TextChangeDocument, range: TextSelectionRange): 
     range.end.lineNumber,
     range.end.column,
   );
-  const rest = document.content.slice(to, to + 2);
-  return { from, to: to + (rest.startsWith("\r\n") ? 2 : /^[\r\n]/u.test(rest) ? 1 : 0) };
+  return { from, to: to + lineBreakAt(document.content, to) };
+}
+
+/**
+ * The length of the LF at `offset`, or of a CRLF when a range stops before a CRLF line's CR. Only
+ * LF ends a line; a lone CR is ordinary text.
+ */
+function lineBreakAt(content: string, offset: number): number {
+  return content.startsWith("\r\n", offset) ? 2 : content[offset] === "\n" ? 1 : 0;
 }
 
 /** The ranges an anchor selects; a line anchor selects its whole line with its break. */
@@ -97,7 +104,7 @@ export function describeScope(
   // A file inside the workspace is named relative to it, as the agent usually names it.
   const root = cwd.endsWith(path.sep) ? cwd : cwd + path.sep;
   const shown = source.startsWith(root) ? source.slice(root.length) : source;
-  const lines = document.content.split(/\r\n|\r|\n/u);
+  const lines = document.content.split("\n");
   const parts = scope.map((range) => {
     const { start, end } = range;
     const last = lastLine(range);

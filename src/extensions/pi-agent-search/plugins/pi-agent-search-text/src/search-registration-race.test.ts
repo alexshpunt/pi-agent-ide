@@ -60,8 +60,8 @@ async function selected(sessions: SearchSessionStore, reference: string, cwd: st
   const attempt = await sessions.resourceResolver().tryResolve(reference, { cwd });
   if (attempt.kind !== "resolved") throw new Error(JSON.stringify(attempt));
   return attempt.targets.flatMap((target) => {
-    // Lines end at a line feed, a carriage return, or both, as a text document splits them.
-    const rows = (target.expectedContent ?? "").split(/\r\n|\r|\n/u);
+    // Only LF ends a line, as a text document splits them; a CR is part of its line's text.
+    const rows = (target.expectedContent ?? "").split("\n");
     return (target.ranges ?? []).map((range) =>
       [
         String(range.start.lineNumber),
@@ -219,9 +219,8 @@ test("a search fails with a reason when the matched file cannot be read any more
   );
 });
 
-test("a search registers anchors in a file whose lines a lone carriage return splits", async () => {
-  // Ripgrep ends a line at a line feed only, so its matches sit on other lines than the ones the
-  // registration splits this text into. The anchors must still describe the file.
+test("a search registers anchors in a file with a lone carriage return inside a line", async () => {
+  // A lone CR is an ordinary character: it neither ends a line nor shifts the lines below it.
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-registration-cr-"));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
   const source = path.join(cwd, "main.cpp");
@@ -238,6 +237,6 @@ test("a search registers anchors in a file whose lines a lone carriage return sp
   expect(details.target).toBeDefined();
   expect(details.matchCount).toBe(1);
   expect(await selected(sessions, `SEARCH#${String(details.sessionId)}:all:match`, cwd)).toEqual([
-    "3:rename_me",
+    "2:rename_me",
   ]);
 });

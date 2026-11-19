@@ -495,10 +495,10 @@ async function selectionMatches(
       startColumn: bytes.subarray(lineStart, start).toString("utf8").length,
       endColumn: bytes.subarray(requiredValue(starts[endLine]), end).toString("utf8").length,
       matchedText: match.text,
+      // Only LF ends a line: a CRLF line's text keeps its CR, as the editor's line does.
       lineText: bytes
         .subarray(lineStart, nextLine === undefined ? bytes.length : nextLine - 1)
-        .toString("utf8")
-        .replace(/\r$/u, ""),
+        .toString("utf8"),
     };
   });
 }

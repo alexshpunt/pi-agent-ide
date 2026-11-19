@@ -74,11 +74,14 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
     // Another writer changes the file after acceptance but keeps other calls' anchors.
     if (event.input.text === "RACE_APPEND" && typeof event.input.path === "string")
       await appendFile(path.resolve(context.cwd, event.input.path), "external\n");
-    if (event.input.text === "RACE_PREPEND" && typeof event.input.path === "string") {
+    // A line replacement sends its marker with the line's LF.
+    const marker =
+      typeof event.input.text === "string" ? event.input.text.replace(/\n$/u, "") : undefined;
+    if (marker === "RACE_PREPEND" && typeof event.input.path === "string") {
       const file = path.resolve(context.cwd, event.input.path);
       await writeFile(file, "external\n" + (await readFile(file, "utf8")));
     }
-    if (event.input.text === "RACE_REMOVE_GAMMA" && typeof event.input.path === "string") {
+    if (marker === "RACE_REMOVE_GAMMA" && typeof event.input.path === "string") {
       const file = path.resolve(context.cwd, event.input.path);
       await writeFile(file, (await readFile(file, "utf8")).replace("gamma\n", ""));
     }

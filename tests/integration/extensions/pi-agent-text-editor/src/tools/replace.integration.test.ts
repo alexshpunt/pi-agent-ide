@@ -24,7 +24,8 @@ describe("pi-agent-text-editor replace", () => {
         arguments: {
           path: relativeFile,
           start: formatLineHashAnchor("before\nreplace-me\nafter\n", 2),
-          text: "replaced",
+          // A line anchor selects the line with its line break; the text keeps it.
+          text: "replaced\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -45,7 +46,7 @@ describe("pi-agent-text-editor replace", () => {
         arguments: {
           path: relativeFile,
           start: formatLineHashAnchor(`${lines.join("\n")}\n`, 600),
-          text: "changed 600",
+          text: "changed 600\n",
         },
       });
       const edited = getToolResultText(scenario.result, scenario.mutationCallId).split("\n");

@@ -250,7 +250,7 @@ test("the paid Search fixture works without a project config directory", async (
 const shown = (await tools.read({path:".pi/issued-search.txt"})).text;
 const session = shown.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
 await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
-await tools.replace({start:"SEARCH#"+session+":1:line",text:"BETA"});
+await tools.replace({start:"SEARCH#"+session+":1:line",text:"BETA\\n"});
 await tools.delete({path:"note.txt",start:"gamma\\n"});`,
               },
             }),
@@ -281,7 +281,7 @@ const shown = (await tools.read({path:"search-selection.txt"})).text;
 const session = shown.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
 const selected = "SEARCH#" + session + ${selection.startsWith("all") ? '":all:line"' : '":1:line"'};
 await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
-await tools.replace(${selection.endsWith("-path") ? '{path:selected,text:"BETA"}' : '{start:selected,text:"BETA"}'});
+await tools.replace(${selection.endsWith("-path") ? '{path:selected,text:"BETA\\n"}' : '{start:selected,text:"BETA\\n"}'});
 await tools.delete({path:"note.txt",start:"gamma\\n"});`,
       ]);
       expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -333,8 +333,8 @@ test.each(["RACE_PREPEND", "RACE_REMOVE_GAMMA"] as const)(
       const run = await runScripts(cwd, "native-search-" + race, [
         searchRefs("session", "note.txt", "regex:beta|gamma") +
           `
-await tools.replace({path:"note.txt",start:"SEARCH#"+session+":2:line",text:${JSON.stringify(race)}});
-await tools.replace({start:"SEARCH#"+session+":1:line",text:"BETA"});
+await tools.replace({path:"note.txt",start:"SEARCH#"+session+":2:line",text:${JSON.stringify(`${race}\n`)}});
+await tools.replace({start:"SEARCH#"+session+":1:line",text:"BETA\\n"});
 await tools.replace({path:"note.txt",start:"omega",text:"OMEGA"});
 `,
       ]);
@@ -360,7 +360,8 @@ test("local Search typed sources retain their implicit selection alongside expli
       searchRefs("session", "note.txt", "beta") +
         `
 await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
-await tools.replace({path:"SEARCH#"+session+":all:line",start:"gamma",text:"changed"});
+// The beta line selection includes its LF, so the literal takes gamma's LF too.
+await tools.replace({path:"SEARCH#"+session+":all:line",start:"gamma\\n",text:"changed\\n"});
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -381,7 +382,7 @@ test("multi-file Search all selections remain a commit boundary", async () => {
       searchRefs("session", ["a.txt", "b.txt"], "beta") +
         `
 await tools.replace({path:"a.txt",start:"alpha",text:"ALPHA"});
-await tools.replace({start:"SEARCH#"+session+":all:line",text:"BETA"});
+await tools.replace({start:"SEARCH#"+session+":all:line",text:"BETA\\n"});
 await tools.insert({path:"a.txt",anchor:"ALPHA",before:true,text:"added\\n"});
 `,
     ]);
@@ -585,7 +586,7 @@ test.each(["on", "only"] as const)(
         [
           `text(await tools.read({path:"note.txt",views:["anchors"]}));
 text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added"}));
-text(await tools.replace({start:${JSON.stringify(anchor(2, "beta"))},text:"BETA"}));
+text(await tools.replace({start:${JSON.stringify(anchor(2, "beta"))},text:"BETA\\n"}));
 text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma"))}}));`,
         ],
         mode,
@@ -655,7 +656,7 @@ test("read and search finish a batch before dependent work starts", async () => 
       `text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added"}));
 const shown = await tools.read({path:"note.txt",views:["anchors"]});
 if (!shown.text.includes(${JSON.stringify(anchor(3, "beta"))})) throw new Error("read saw an uncommitted file");
-text(await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(3, "beta"))},text:"BETA"}));
+text(await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(3, "beta"))},text:"BETA\\n"}));
 const found = await tools.search({path:"note.txt",query:"BETA"});
 if (found.matches.length !== 1 || found.matches[0].line !== 3) throw new Error("search saw an uncommitted file: " + JSON.stringify(found));
 text(JSON.stringify(found));`,

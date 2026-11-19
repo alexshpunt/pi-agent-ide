@@ -162,7 +162,8 @@ describe("text mutation renderer", () => {
                 arguments: {
                   path: "inherited-path.ts",
                   start: uniqueLineAnchor("const value4 = 4;"),
-                  text: "const value4 = loadPrimaryValue();",
+                  // A line anchor selects the line with its line break; the text keeps it.
+                  text: "const value4 = loadPrimaryValue();\n",
                 },
                 delayMs: 0,
               }),
@@ -171,7 +172,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   start: uniqueLineAnchor("const value18 = 18;"),
-                  text: "const value18 = loadStreamedInheritedValue();",
+                  text: "const value18 = loadStreamedInheritedValue();\n",
                 },
                 chunks: { kind: "fixed", size: 3 },
                 delayMs: 25,
@@ -218,7 +219,8 @@ describe("text mutation renderer", () => {
                 arguments: {
                   path: "post-edit-viewport.ts",
                   start: uniqueLineAnchor("const value7 = 7;"),
-                  text: "const value7 = loadPrimaryValue();",
+                  // A line anchor selects the line with its line break; the text keeps it.
+                  text: "const value7 = loadPrimaryValue();\n",
                 },
               }),
               toolCall({
@@ -227,7 +229,7 @@ describe("text mutation renderer", () => {
                 arguments: {
                   path: "post-edit-viewport.ts",
                   start: uniqueLineAnchor("const value25 = 25;"),
-                  text: "const value25 = loadSecondaryValue();",
+                  text: "const value25 = loadSecondaryValue();\n",
                 },
               }),
             ],
@@ -280,7 +282,8 @@ describe("text mutation renderer", () => {
         path: "streaming.ts",
         start: uniqueLineAnchor("    const retries = resolveRetries();"),
         end: uniqueLineAnchor("    const service = new Service(transport);"),
-        text: ["    const retryLimit = 3;", "    const timeoutMs = 5_000;"].join("\n"),
+        // The line range ends with its line break; the replacement keeps it.
+        text: ["    const retryLimit = 3;", "    const timeoutMs = 5_000;", ""].join("\n"),
       };
       const argumentsJson = JSON.stringify(arguments_);
       const textStart = argumentsJson.indexOf('"text":') + '"text":"'.length;
@@ -349,7 +352,7 @@ describe("text mutation renderer", () => {
       const result = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
         start: uniqueLineAnchor("const value20 = 20;"),
-        text: "const value20 = computeValue();",
+        text: "const value20 = computeValue();\n",
       });
       const rendered = result.tuiRenderedOutput;
       const [panel] = mutationPanels(rendered, "replace post-edit-viewport.ts · ");
@@ -380,7 +383,7 @@ describe("text mutation renderer", () => {
       const firstRun = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
         start: uniqueLineAnchor("const value20 = 20;"),
-        text: "const value20 = computeValue();",
+        text: "const value20 = computeValue();\n",
       });
       const sessionData = await readSessionArtifact(firstRun.artifacts.run);
       const sessionFile = path.join(directory, "persisted-mutation-session.jsonl");

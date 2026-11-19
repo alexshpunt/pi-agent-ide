@@ -110,12 +110,29 @@ describe("text change document", () => {
 
   test("replaces and deletes first and last lines without changing unrelated separators", () => {
     const document = new TextChangeDocument("one\ntwo\nthree");
-    expect(applyTextChanges(document.content, [document.replaceLines(1, 1, "ONE")]).content).toBe(
+    expect(applyTextChanges(document.content, [document.replaceLines(1, 1, "ONE\n")]).content).toBe(
       "ONE\ntwo\nthree",
     );
     expect(applyTextChanges(document.content, [document.deleteLines(3, 3)]).content).toBe(
       "one\ntwo\n",
     );
+  });
+
+  test("replaces whole lines with exactly the sent text, adding no line break", () => {
+    const document = new TextChangeDocument("one\r\ntwo\nthree");
+    expect(applyTextChanges(document.content, [document.replaceLines(1, 1, "ONE")]).content).toBe(
+      "ONEtwo\nthree",
+    );
+    expect(applyTextChanges(document.content, [document.replaceLines(2, 2, "2\n")]).content).toBe(
+      "one\r\n2\nthree",
+    );
+  });
+
+  test("counts a CRLF line's CR as its last column", () => {
+    const document = new TextChangeDocument("one\r\ntwo\rtwo\nthree");
+    expect(document.range(1, 3, 1, 4)).toEqual({ from: 3, to: 4 });
+    expect(document.lineNumberAt(9)).toBe(2);
+    expect(() => document.range(1, 5, 1, 5)).toThrow(RangeError);
   });
 
   test("handles a final newline and an empty document", () => {
@@ -141,7 +158,7 @@ describe("text change document", () => {
     );
 
     const crlf = new TextChangeDocument("one\r\ntwo\r\nthree");
-    expect(applyTextChanges(crlf.content, [crlf.replaceLines(2, 2, "TWO")]).content).toBe(
+    expect(applyTextChanges(crlf.content, [crlf.replaceLines(2, 2, "TWO\r\n")]).content).toBe(
       "one\r\nTWO\r\nthree",
     );
     expect(applyTextChanges(crlf.content, [crlf.insertAfterLine(1, "middle")]).content).toBe(

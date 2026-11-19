@@ -15,6 +15,7 @@ import { requestRename, type LspWorkspaceEdit } from "./lsp/rename.ts";
 import type { LspClient } from "./lsp/client.ts";
 import type { LspPosition, LspTextEdit } from "./lsp/types.ts";
 import { documentUri } from "./lsp/document-uri.ts";
+import { assertLspLines } from "./lsp/line-breaks.ts";
 import { loadQueryProject } from "./lsp/navigation.ts";
 import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./lsp/corrected-names.ts";
 import {
@@ -54,6 +55,8 @@ function renameEntries(edit: LspWorkspaceEdit | null, client: LspClient) {
   return entries;
 }
 function offsets(content: string): (position: LspPosition) => number {
+  // LSP lines equal the editor's LF-only lines unless the text holds a lone CR.
+  assertLspLines(content);
   let start = 0;
   const lines = content.split("\n").map((line) => {
     const span = { start, length: line.replace(/\r$/u, "").length };

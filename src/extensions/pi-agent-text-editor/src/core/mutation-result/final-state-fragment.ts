@@ -10,6 +10,7 @@ import {
   selectSyntaxHints,
   splitLines,
 } from "./agent-diff.ts";
+import { NO_FINAL_LINE_BREAK } from "./diff.ts";
 
 import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.ts";
 
@@ -122,6 +123,8 @@ export function renderFinalStateFragment(
           : "";
       result.push(`${prefix}${content}${suffix}`);
     }
+    // The text shows the file as it is, including an end without a final LF.
+    if (range.end >= lines.length && !after.endsWith("\n")) result.push(NO_FINAL_LINE_BREAK);
   }
 
   return result;

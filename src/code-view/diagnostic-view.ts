@@ -37,7 +37,8 @@ export function createDiagnosticViewContent(
     count: sources.reduce((count, source) => count + source.diagnostics.length, 0),
     sources: sources.map((source) => source.source),
   };
-  const fileLines = text.split(/\r\n|\r|\n/u);
+  // Only LF ends a line, as in Read; a CRLF line keeps its CR.
+  const fileLines = text.split("\n");
   const anchors = textLineAnchors(filePath, text);
   const diagnosticsByLine = diagnosticsByValidLine(sources, fileLines.length);
 
@@ -103,7 +104,7 @@ export function addDiagnosticAnnotations(
   const diagnostics = diagnosticsByValidLine(
     sources,
     document.lines.length,
-    /[\r\n]$/u.test(document.content),
+    document.content.endsWith("\n"),
   );
 
   const lines = document.lines.map((line) => {

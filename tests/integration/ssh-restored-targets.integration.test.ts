@@ -74,9 +74,8 @@ test("whole-file transfers and last text undo publish only present native destin
             arguments: {
               code: `
 const source = await tools.read({path:${JSON.stringify(local)}});
-// A refused IDE call resolves to null; the Codemode result lists its reason.
-const transferRefused = (await tools.copy({path:source,target:${JSON.stringify(copied)}})) === null;
-if (!transferRefused) throw Error("BOM conversion must not grant source coordinates");
+// The text is the file's exact content: the UTF-8 BOM stays its first character.
+if (source.text !== ${JSON.stringify(original)}) throw Error("Read changed the BOM file: " + JSON.stringify(source.text));
 const copied = await tools.copy({path:${JSON.stringify(local)},target:${JSON.stringify(copied)}});
 const copiedBytes = await tools.read({path:${JSON.stringify("raw:" + copied)},limit:3});
 // "77u/" is the base64 of the UTF-8 BOM, ef bb bf.
@@ -115,9 +114,9 @@ text({removed});
     }).run("Keep whole-file transfer bytes and restored source authority on their native owners.");
     for (const id of ["transfers"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
-    // Last text undo restores decoded text, not the BOM consumed by the text converter.
+    // Last text undo restores the exact prior text, BOM included.
     expect((await backend.read(`${fixture.workspace}/moved.txt`)).bytes.toString("utf8")).toBe(
-      original.slice(1),
+      original,
     );
     await expect(backend.read(`${fixture.workspace}/copied.txt`)).rejects.toMatchObject({
       code: "ENOENT",
@@ -128,10 +127,7 @@ text({removed});
     expect(await readFile(local, "utf8")).toBe(original);
     expect(getToolResultText(run, "transfers")).toContain("prior");
     expect(getToolResultText(run, "transfers")).toContain('"removed":null');
-    // The refused Copy resolved to null and is listed with its reason.
-    const refusals = codemodeFailures(getToolResultText(run, "transfers"));
-    expect(refusals).toMatch(/^1 of \d+ IDE calls failed:\n- copy RESULT#[^\n]+\n/u);
-    expect(refusals).toContain("no reusable text selection");
+    expect(codemodeFailures(getToolResultText(run, "transfers"))).toBe("");
     expect(run.tuiRenderedOutput).toContain(root);
   } finally {
     await fixture.stop();

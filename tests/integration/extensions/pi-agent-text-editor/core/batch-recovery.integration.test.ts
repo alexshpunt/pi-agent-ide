@@ -125,7 +125,8 @@ describe("pi-agent-text-editor batch recovery", () => {
               call("replace", "mixed-replace", {
                 path: "transaction.ts",
                 start: formatLineHashAnchor(source, 3),
-                text: "    const retries = 4;",
+                // A line anchor selects the line with its line break; the text keeps it.
+                text: "    const retries = 4;\n",
               }),
               call("delete", "mixed-delete", {
                 path: "transaction.ts",
@@ -187,12 +188,12 @@ describe("pi-agent-text-editor batch recovery", () => {
               call("replace", "atomic-first", {
                 path: "atomic-first.txt",
                 start: formatLineHashAnchor(firstContent, 2),
-                text: "first-change",
+                text: "first-change\n",
               }),
               call("replace", "atomic-second", {
                 path: "atomic-second.txt",
                 start: formatLineHashAnchor(secondContent, 2),
-                text: "second-change",
+                text: "second-change\n",
               }),
               call("replace", "atomic-stale", {
                 path: "atomic-first.txt",
@@ -262,13 +263,13 @@ describe("pi-agent-text-editor batch recovery", () => {
         id,
         contentIndex: index + 4,
         argumentsJson: `{"start":${JSON.stringify(formatLineHashAnchor(source, line))},"text":${JSON.stringify(
-          `${id}\n${staleText}`,
+          `${id}\n${staleText}\n`,
         )}}`,
         chunks: {
           kind: "explicit" as const,
           chunks: [
             `{"start":${JSON.stringify(formatLineHashAnchor(source, line))},`,
-            `"text":${JSON.stringify(`${id}\n${staleText}`)}}`,
+            `"text":${JSON.stringify(`${id}\n${staleText}\n`)}}`,
           ],
         },
       }));
@@ -286,11 +287,11 @@ describe("pi-agent-text-editor batch recovery", () => {
               call("replace", "safe-first", {
                 path: "streamed-batch.txt",
                 start: formatLineHashAnchor(source, 2),
-                text: "first-change",
+                text: "first-change\n",
               }),
               call("replace", "safe-second", {
                 start: formatLineHashAnchor(source, 3),
-                text: "second-change",
+                text: "second-change\n",
               }),
               ...tailChunks.map(({ id, contentIndex, argumentsJson, chunks }) =>
                 toolCall({

@@ -84,8 +84,9 @@ describe("line maps", () => {
     expect(rebased(`zero\n${before}`, span(6, 0, 6, 0))).toEqual(span(7, 0, 7, 0));
   });
 
-  test("never relates texts with a lone carriage return", () => {
-    expect(createLineMap("a\rb\n", "a\rb\nc\n")).toBeUndefined();
+  test("treats a lone carriage return as ordinary line text", () => {
+    const map = createLineMap("a\rb\n", "c\na\rb\n");
+    expect(map?.newLine(1)).toBe(2);
   });
 
   test("gives up on texts that differ in too many lines", () => {

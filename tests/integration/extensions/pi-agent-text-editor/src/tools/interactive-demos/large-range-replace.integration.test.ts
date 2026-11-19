@@ -119,7 +119,8 @@ describe("interactive text editor demos", () => {
         path: demoFileName,
         start: formatLineHashAnchor(initialSource, startIndex + 1),
         end: formatLineHashAnchor(initialSource, endIndex + 1),
-        text: replacement,
+        // Line anchors select their lines with their line breaks; the text keeps the last one.
+        text: `${replacement}\n`,
       };
       const callId = "demo-large-range-replace";
       const result = await new PiIntegrationTest({

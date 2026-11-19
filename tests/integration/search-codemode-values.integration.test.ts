@@ -29,10 +29,11 @@ check(large.complete === true && large.matches.length === 150,"Search value lost
 check(large.matches.every((match, index) => match.path === "large.txt" && match.line === index + 1),"Match lines or paths changed");
 check(large.matches[149].lineText === large.matches[149].text,"Long line context was cut");
 check(large.matches[149].text.length > 4096 && large.matches[149].text.startsWith("entry149 "),"Long match text was cut");
+// Only LF ends a line: the line text of a CRLF line keeps its CR.
 const literal = await tools.search({path:"cpp.txt",query:'"flags | MASK"'});
-check(literal.matches[0].text === "flags | MASK" && literal.matches[0].lineText === "  int x = flags | MASK; // PASS-MARKER","Literal context");
+check(literal.matches[0].text === "flags | MASK" && literal.matches[0].lineText === "  int x = flags | MASK; // PASS-MARKER\\r","Literal context");
 const multiline = await tools.search({path:"multiline.txt",query:"regex:first\\\\r?\\\\nlast",multiline:true});
-check(multiline.matches[0].text === "first\\r\\nlast" && multiline.matches[0].lineText === "prefix first\\r\\nlast suffix","Multiline context");
+check(multiline.matches[0].text === "first\\r\\nlast" && multiline.matches[0].lineText === "prefix first\\r\\nlast suffix\\r","Multiline context");
 const ast = await tools.ast_search({path:"multi.ts",pattern:"probe($$$ARGS)"});
 check(ast.matches[0].lineText === "const result = probe(\\n  first,\\n  second\\n); // tail","AST multiline context");
 const docs = await tools.search({path:"docs:terminal",query:"regex:^#"});

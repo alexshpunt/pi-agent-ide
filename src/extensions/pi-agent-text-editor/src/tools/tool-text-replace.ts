@@ -28,7 +28,8 @@ export const replaceSchema = Type.Object(
     ),
     ...sourceRangeProperties(),
     text: Type.String({
-      description: "Replacement for each selected range; empty text deletes it.",
+      description:
+        "Replacement for each selected range, saved exactly as sent; empty text deletes it. A line selection includes its line break: end the text with one to keep the line.",
     }),
   },
   { additionalProperties: false },
@@ -96,10 +97,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
     const span = await anchorSpanRange(context, starts, ends, "start", "end");
     return {
       edits: new Map([
-        [
-          span.source,
-          { changes: [replaceAnchorSpan(context, span, parameters.text)], action: "edited" },
-        ],
+        [span.source, { changes: [replaceAnchorSpan(span, parameters.text)], action: "edited" }],
       ]),
     };
   },

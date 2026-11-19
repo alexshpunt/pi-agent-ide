@@ -1119,7 +1119,7 @@ for (const mode of ["direct", "codemode"]) {
     );
   });
 }
-void test("Search :line replacement allows one terminal separator, never :match or fabricated provenance", () => {
+void test("Search :line replacement keeps the line only with its sent separator, never :match or fabricated provenance", () => {
   for (const ending of ["\n", "\r\n"]) {
     const line = "SEARCH#ABCD:1:line";
     const search: Call = {
@@ -1133,7 +1133,7 @@ void test("Search :line replacement allows one terminal separator, never :match 
         { tool: "search" },
         {
           tool: "replace",
-          args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" },
+          args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" + ending },
           reuse: { from: 0, field: "start" },
         },
       ],
@@ -1144,6 +1144,8 @@ void test("Search :line replacement allows one terminal separator, never :match 
       { ...replace, args: { ...replace.args, start: "SEARCH#ABCD:1:match" } },
       { ...replace, args: { ...replace.args, start: "SEARCH#FFFF:1:line" } },
       { ...replace, args: { ...replace.args, text: "BETA" + ending + ending } },
+      // Replace writes exactly its text: without the separator the line joins the next one.
+      { ...replace, args: { ...replace.args, text: "BETA" } },
       { ...replace, error: true },
     ])
       assert.ok(!validateRoute(task, events([search, changed], "codemode"), "codemode").passed);

@@ -13,6 +13,9 @@ export interface UnifiedDiffResult {
 
 const PATCH_CONTEXT_LINES = 3;
 
+/** Marks the end of a file that has no final LF, as a unified diff does. */
+export const NO_FINAL_LINE_BREAK = "\\ No newline at end of file";
+
 /**
  * Creates a unified diff with three context lines, as jsdiff's `createTwoFilesPatch` does, but runs
  * the line diff only over the lines that differ.
@@ -213,7 +216,7 @@ function patchHunks(
 
   for (const hunk of hunks) {
     hunk.lines = hunk.lines.flatMap((line) =>
-      line.endsWith("\n") ? [line.slice(0, -1)] : [line, "\\ No newline at end of file"],
+      line.endsWith("\n") ? [line.slice(0, -1)] : [line, NO_FINAL_LINE_BREAK],
     );
   }
   return hunks;

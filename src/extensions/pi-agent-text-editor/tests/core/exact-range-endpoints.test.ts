@@ -20,7 +20,7 @@ function fixture(content: string) {
     const result = resolveExactTextAnchor(value, {
       source,
       content,
-      lines: content.split(/\r\n|\r|\n/u),
+      lines: content.split("\n"),
       cwd: context.cwd,
     });
     if (result.kind !== "resolved") throw new Error("Expected a unique exact match");
@@ -35,7 +35,7 @@ function fixture(content: string) {
       "end",
     );
   const replace = async (start: string, end: string | undefined, text: string) => {
-    const change = replaceAnchorSpan(context, await span(start, end), text);
+    const change = replaceAnchorSpan(await span(start, end), text);
     return content.slice(0, change.from) + change.insert + content.slice(change.to);
   };
   /** Copy a single-anchor source over a paired destination span, as Copy does. */
@@ -61,7 +61,7 @@ test.each(["\n", "\r\n"])(
   async (eol) => {
     const content = `## Leave alone${eol}${eol}Keep this paragraph.${eol}${eol}Based on [source](url).${eol}`;
     const { replace } = fixture(content);
-    expect(await replace("\n\nBased on", "(url).", "")).toBe(
+    expect(await replace(`${eol}${eol}Based on`, "(url).", "")).toBe(
       `## Leave alone${eol}${eol}Keep this paragraph.${eol}`,
     );
   },

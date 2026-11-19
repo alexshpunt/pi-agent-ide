@@ -115,7 +115,8 @@ test("returns a declaration as an exact selection that refreshes from the server
       endLineNumber: 5,
       endColumn: 0,
       matchedText: "class App {\r\n  start() {}\r\n}\r\n",
-      lineText: "class App {",
+      // Only LF ends a line: a CRLF line's text keeps its CR.
+      lineText: "class App {\r",
     },
   ]);
   if (result.kind !== "resolved") return;

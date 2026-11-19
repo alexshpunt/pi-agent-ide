@@ -36,7 +36,8 @@ test("registered matches capture complete spanned lines from the searched snapsh
         startColumn: 7,
         endColumn: 4,
         matchedText: "first\r\nlast",
-        lineText: "prefix first",
+        // Only LF ends a line: a CRLF line's text keeps its CR.
+        lineText: "prefix first\r",
       },
       {
         source,
@@ -45,7 +46,7 @@ test("registered matches capture complete spanned lines from the searched snapsh
         startColumn: 7,
         endColumn: 0,
         matchedText: "first\r\nlast suffix\r\n",
-        lineText: "prefix first",
+        lineText: "prefix first\r",
       },
     ],
     true,
@@ -58,10 +59,10 @@ test("registered matches capture complete spanned lines from the searched snapsh
     new Map([[source, contents]]),
   );
   expect(session.matches.map((match) => match.linesText)).toEqual([
-    "prefix first\r\nlast suffix",
-    "prefix first\r\nlast suffix",
+    "prefix first\r\nlast suffix\r",
+    "prefix first\r\nlast suffix\r",
   ]);
-  expect(session.matches[0]?.lineText).toBe("prefix first");
+  expect(session.matches[0]?.lineText).toBe("prefix first\r");
 });
 test("numbered line aliases keep complete containing lines and expire after source changes", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-line-alias-"));
@@ -80,7 +81,7 @@ test("numbered line aliases keep complete containing lines and expire after sour
         startColumn: 7,
         endColumn: 4,
         matchedText: "OLD\r\nTAIL",
-        lineText: "prefix OLD",
+        lineText: "prefix OLD\r",
       },
     ],
     false,

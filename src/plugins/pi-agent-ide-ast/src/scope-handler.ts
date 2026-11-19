@@ -223,7 +223,8 @@ function appendTextLines(
       return `${prefix}${line.content}${suffix}${lineEnding}`;
     })
     .join("");
-  const separatorBeforeContext = /(?:\r\n|\r|\n)$/.test(block.text) ? "" : separator;
+  // Only LF ends a line: text that ends with a CR still needs a separator.
+  const separatorBeforeContext = block.text.endsWith("\n") ? "" : separator;
   const text = `${block.text}${separatorBeforeContext}${appendedText}`;
 
   return {

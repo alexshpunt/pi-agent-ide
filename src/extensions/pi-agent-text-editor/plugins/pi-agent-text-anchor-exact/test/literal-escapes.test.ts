@@ -18,7 +18,7 @@ function context(
   return {
     source: "fixture.txt",
     content,
-    lines: content.split(/\r\n|\r|\n/u),
+    lines: content.split("\n"),
     cwd: "/project",
     ...(scope === undefined ? {} : { scope }),
   };
@@ -60,9 +60,9 @@ test("does not diagnose escapes when the decoded text is absent", () => {
   expect(result.rejection.reason).not.toContain(JSON.stringify(actual));
 });
 
-test("checks decoded spans against selection boundaries after CRLF normalization", () => {
-  const literal = "alpha\\n\\tbravo";
-  const actual = "alpha\n\tbravo";
+test("checks decoded spans against selection boundaries in a CRLF file", () => {
+  const literal = "alpha\\r\\n\\tbravo";
+  const actual = "alpha\r\n\tbravo";
   const content = `prefix\r\nalpha\r\n\tbravo\r\nsuffix`;
   for (const [endLine, expected] of [
     [3, true],

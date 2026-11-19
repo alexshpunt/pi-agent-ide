@@ -60,9 +60,13 @@ function encode(input: string): string {
   return token;
 }
 
-/** A column-0 closing brace ends a top-level block, such as a C++ function or class. */
+/**
+ * A column-0 closing brace ends a top-level block, such as a C++ function or class. A CRLF line
+ * keeps its CR in its text, so the brace may be followed by one.
+ */
 function endsBlock(line: string): boolean {
-  return line === "}" || line === "};";
+  const text = line.endsWith("\r") ? line.slice(0, -1) : line;
+  return text === "}" || text === "};";
 }
 
 interface Landmark {

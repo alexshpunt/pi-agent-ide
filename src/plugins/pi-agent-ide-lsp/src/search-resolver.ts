@@ -30,6 +30,7 @@ import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
 import { lspRangeMatch } from "./lsp/range-match.ts";
+import { assertLspLines } from "./lsp/line-breaks.ts";
 import { withNavigationDeadline } from "./lsp/navigation.ts";
 import { createTextDocument, type TextDocument } from "pi-agent-text";
 
@@ -565,12 +566,13 @@ function declarationMatch(
     readonly end: { readonly line: number };
   },
 ): SearchSelectionMatch {
-  const raw = content.split("\n");
-  const lines = raw.map((line) => line.replace(/\r$/u, ""));
+  assertLspLines(content);
+  // Only LF ends a line: a CRLF line's text keeps its CR, as the editor's line does.
+  const lines = content.split("\n");
   const starts = [0];
-  for (const line of raw) starts.push((starts.at(-1) ?? 0) + line.length + 1);
+  for (const line of lines) starts.push((starts.at(-1) ?? 0) + line.length + 1);
   const first = range.start.line;
-  const hasNextLine = range.end.line + 1 < raw.length;
+  const hasNextLine = range.end.line + 1 < lines.length;
   // Without a following line, the selection ends at the end of the last declaration line.
   const endLine = hasNextLine ? range.end.line + 1 : range.end.line;
   const endColumn = hasNextLine ? 0 : (lines[range.end.line] ?? "").length;

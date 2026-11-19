@@ -84,7 +84,8 @@ test("background lint reports fixable errors without changing the edited file", 
       arguments: {
         path: fileName,
         start: formatLineHashAnchor(before, 1),
-        text: requested.trimEnd(),
+        // A line anchor selects the line with its line break; the text keeps it.
+        text: requested,
       },
     });
 
@@ -113,7 +114,7 @@ test("an installed Ruff does not run without project evidence", async () => {
       arguments: {
         path: fileName,
         start: formatLineHashAnchor("value = 1\n", 1),
-        text: "value = 2",
+        text: "value = 2\n",
       },
     });
     await expect(readFile(path.join(directory, ".ruff_cache", "ran"), "utf8")).rejects.toThrow(
@@ -137,7 +138,7 @@ test("built-in Ruff uses an isolated cache", async () => {
       arguments: {
         path: fileName,
         start: formatLineHashAnchor("value = 1\n", 1),
-        text: "value = 2",
+        text: "value = 2\n",
       },
     });
     expect(await readFile(path.join(directory, "ruff-ran"), "utf8")).toBe("isolated-cache");
@@ -186,7 +187,8 @@ test("malformed linter output does not break an edit", async () => {
       arguments: {
         path: fileName,
         start: formatLineHashAnchor(before, 1),
-        text: after.trimEnd(),
+        // A line anchor selects the line with its line break; the text keeps it.
+        text: after,
       },
     });
 

@@ -526,7 +526,8 @@ test("lists every reference when another session's write reaches the server whil
   expect(result.contents.get(source)).toBe(advanced);
   expect(result.contents.get(path.join(cwd, "b.ts"))).toBe("same();\n");
   for (const hit of result.hits) {
-    const line = requiredValue(result.contents.get(hit.source)).split(/\r?\n/u)[hit.lineNumber - 1];
+    // Only LF ends a line: a CRLF line's text keeps its CR.
+    const line = requiredValue(result.contents.get(hit.source)).split("\n")[hit.lineNumber - 1];
     expect(line).toBe(hit.lineText);
     expect(line?.slice(hit.startColumn, hit.endColumn)).toBe(hit.matchedText);
   }

@@ -912,7 +912,7 @@ export function createTextEditorCore(
       const context: TextAnchorResolverContext = {
         source: request.source,
         content: request.content,
-        lines: request.content.length === 0 ? [] : request.content.split(/\r?\n/u),
+        lines: request.content.length === 0 ? [] : request.content.split("\n"),
         cwd: request.cwd,
         ...(request.signal !== undefined && { signal: request.signal }),
       };
@@ -1332,7 +1332,7 @@ async function inspectTextResource(
     return anchors.inspect(request.anchors, request.kinds, {
       source: resource.source,
       content: content[0].text,
-      lines: content[0].text.length === 0 ? [] : content[0].text.split(/\r?\n/u),
+      lines: content[0].text.length === 0 ? [] : content[0].text.split("\n"),
       cwd: request.cwd,
       ...(request.signal !== undefined && { signal: request.signal }),
     });
