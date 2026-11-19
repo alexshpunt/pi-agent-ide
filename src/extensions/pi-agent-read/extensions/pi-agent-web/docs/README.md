@@ -47,7 +47,7 @@ Responses with an explicitly unsupported binary Content-Type do not enter conten
 
 `search({ query: "extensions", path: "https://pi.dev/" })` fetches and searches the same converted text as Read. No earlier Read is needed. Results keep the requested URL, including after a redirect.
 
-Web search supports literal text, quoted literals, `regex:` queries, case sensitivity, and whole-word matching. It searches one page, not linked pages. File include/exclude globs do not apply. Converted images return a text-content error.
+Web search supports literal text (quotes are literal characters), `regex:` queries, case sensitivity, and whole-word matching. It searches one page, not linked pages. File include/exclude globs do not apply. Converted images return a text-content error.
 
 The default limit is 50 matches. An extra match marks the result incomplete. Text previews are short, and rendered output stays below 50 KiB. Structured results use the shared search limits. Web matches do not return editable `SEARCH#` anchors.
 
