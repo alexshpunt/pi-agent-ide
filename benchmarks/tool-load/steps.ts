@@ -106,13 +106,13 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       ),
       expectsError: files.sizeBytes > AST_OUTLINE_LIMIT_BYTES,
     },
-    step("search-file", "search", { query: `"${name}"`, path: file }, (result) =>
+    step("search-file", "search", { query: name, path: file }, (result) =>
       expectAll(result, ["2 matches in 1 file"]),
     ),
     step(
       "search-project",
       "search",
-      { query: `"${stepLine}"`, path: "src", include: `*.${spec.extension}` },
+      { query: stepLine, path: "src", include: `*.${spec.extension}` },
       (result) => expectAll(result, ["1 match in 1 file", file]),
     ),
     step(
@@ -256,7 +256,7 @@ const match = line && /^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|(.*)$/.exec(line);
 if (!match) throw new Error("no anchored line with " + stepLine);
 await tools.replace({ path: file, start: match[1], text: match[2].replace(stepLine, stepLine + " + ${cycle}") });
 const [found, calls, diagnostics] = await Promise.all([
-  tools.search({ query: JSON.stringify(stepLine + " + ${cycle}"), path: file }),
+  tools.search({ query: stepLine + " + ${cycle}", path: file }),
   tools.ast_search({ pattern: ${JSON.stringify(`${name}($A)`)}, path: file, language: ${JSON.stringify(spec.astLanguage)} }),
   tools.diagnostics({ path: file }),
 ]);

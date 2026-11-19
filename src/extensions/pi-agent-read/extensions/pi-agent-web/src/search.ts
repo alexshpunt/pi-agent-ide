@@ -214,9 +214,8 @@ function previewMatch(match: SearchSelectionMatch): string {
 }
 function searchPattern(request: SearchRequest): RegExp {
   const query = request.query;
-  const literal = query.startsWith('"') && query.endsWith('"') ? query.slice(1, -1) : query;
   const pattern = query.startsWith("regex:")
     ? query.slice(6)
-    : literal.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    : query.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   return new RegExp(pattern, request.caseSensitive === true ? "gu" : "giu");
 }

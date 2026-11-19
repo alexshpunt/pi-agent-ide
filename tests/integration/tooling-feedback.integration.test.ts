@@ -134,7 +134,7 @@ test.each(sameFileEdits)(
                     call(`window${index}`, "read", { path: "note.txt", offset: line, limit: 1 }),
                     call(`selection${index}`, "search", {
                       path: `$issued-uuid:window${index}`,
-                      query: '"OLD"',
+                      query: "OLD",
                     }),
                   ]
                 : [
@@ -312,16 +312,16 @@ test("issued Search line and match scopes stay sparse through direct calls and C
       "title first\nfeature legacyCheckout\ntitle middle\nfeature legacyCheckout\ntitle final\n";
     await writeFile(path.join(cwd, "note.txt"), original);
     const scopes = [
-      { kind: "searchallline", query: '"legacyCheckout"', count: 0 },
-      { kind: "searchallline", query: '"title"', count: 3 },
-      { kind: "search", query: '"first"', count: 1 },
-      { kind: "searchmatch", query: '"first"', count: 0 },
-      { kind: "searchallmatch", query: '"first"', count: 0 },
-      { kind: "searchallmatch", query: '"title"', count: 3 },
-      { kind: "uuid", query: '"title"', count: 3 },
+      { kind: "searchallline", query: "legacyCheckout", count: 0 },
+      { kind: "searchallline", query: "title", count: 3 },
+      { kind: "search", query: "first", count: 1 },
+      { kind: "searchmatch", query: "first", count: 0 },
+      { kind: "searchallmatch", query: "first", count: 0 },
+      { kind: "searchallmatch", query: "title", count: 3 },
+      { kind: "uuid", query: "title", count: 3 },
     ];
     const result = await run(cwd, "search-reference-scopes", [
-      call("titles", "search", { path: "note.txt", query: '"title"' }),
+      call("titles", "search", { path: "note.txt", query: "title" }),
       ...scopes.map((scope, index) =>
         call(`direct${index}`, "search", {
           path: `$issued-${scope.kind}:titles`,
@@ -359,7 +359,7 @@ test("issued Search line and match scopes stay sparse through direct calls and C
         {
           steps: scopes.map((scope) => ({
             tool: "search",
-            args: { query: scope.query.slice(1, -1) },
+            args: { query: scope.query },
             contains:
               scope.count === 0
                 ? "No matches found"

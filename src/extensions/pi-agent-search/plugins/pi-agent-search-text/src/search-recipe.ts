@@ -97,27 +97,42 @@ export function tokenSelectionWarning(
   count: number,
   complete: boolean,
 ): string | undefined {
+  const hint = wordHintRejection(recipe, selectedQuery, count);
+  if (hint !== undefined) return hint;
   if (count === 0 || recipe.originalQuery === undefined) return undefined;
   const fallback = recipe.fallbacks?.find((step) => step.query === selectedQuery);
   const condition = fallback === undefined ? recipe.condition : fallback.condition;
-  if (fallback?.mode !== "words" && (condition === undefined || condition.kind === "term"))
-    return undefined;
+  if (condition === undefined || condition.kind === "term") return undefined;
   const query = recipe.originalQuery;
-  return `Search query ${JSON.stringify(query)} matched ${String(count)}${complete ? "" : "+"} separate tokens, not the phrase. Editing the whole result is unsafe; use an individual match as path, or use the result as path with that match as start (and the same match as end if needed), or search for ${JSON.stringify(query)} as a quoted literal.`;
+  return `Search query ${JSON.stringify(query)} matched ${String(count)}${complete ? "" : "+"} separate tokens, not one phrase. Editing the whole result is unsafe; use an individual match as path, or use the result as path with that match as start (and the same match as end if needed). To find the exact text instead, put it in quotes.`;
+}
+
+/**
+ * Why no match of the separate-word fallback can be edited. Those matches are words found anywhere,
+ * not the query's text, so they serve only as location hints.
+ */
+export function wordHintRejection(
+  recipe: SearchRecipe,
+  selectedQuery: string,
+  count: number,
+): string | undefined {
+  if (count === 0 || recipe.originalQuery === undefined) return undefined;
+  const fallback = recipe.fallbacks?.find((step) => step.query === selectedQuery);
+  if (fallback?.mode !== "words") return undefined;
+  return `No exact text ${JSON.stringify(recipe.originalQuery)} was found; these matches are its separate words, shown as read-only location hints. Read a location, then edit through a Read anchor or search for the exact current text.`;
 }
 /** Tell the agent how a broadened search may be used, because its matches can differ from the query. */
 export function fallbackNotice(mode: SearchFallback["mode"]): string {
-  const hint = "Use these matches as location hints; refine the query before editing.";
   return mode === "regex"
-    ? `Search fallback: no literal matches; tried unquoted terms as regex. ${hint}`
-    : `Search fallback: no matches in earlier modes; tried separate words. ${hint}`;
+    ? "Search fallback: no literal matches; tried the query as regex. Use these matches as location hints; refine the query before editing."
+    : "Search fallback: no exact text; tried separate words.";
 }
 
-/** Name the operators when a plain query was parsed as a Boolean expression. */
+/** Name the operators when a query was parsed as a Boolean expression. */
 export function booleanQueryNotice(recipe: SearchRecipe): string | undefined {
   return recipe.condition === undefined || recipe.condition.kind === "term"
     ? undefined
-    : "Boolean query: uppercase AND, OR, NOT, || and a spaced | are operators. Quote text to search for it literally.";
+    : "Boolean query: uppercase AND, OR, NOT, || and a spaced | are operators, and quotes group a phrase. To find text that contains an operator, put that text in quotes.";
 }
 
 function isRegexSyntaxError(error: unknown): boolean {

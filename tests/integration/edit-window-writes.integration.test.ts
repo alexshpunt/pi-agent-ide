@@ -190,7 +190,7 @@ test("A reference whose own text changed in that window is refused with its curr
       String.raw`
 const found=await tools.search({path:file,query:"rename_me"});
 const refs=found.matches.map((match)=>match.id);
-const keeps=(await tools.search({path:file,query:'"keep(4)"'})).matches.map((match)=>match.id);
+const keeps=(await tools.search({path:file,query:"keep(4)"})).matches.map((match)=>match.id);
 check(refs.length===6&&keeps.length===1,"Unexpected references: "+JSON.stringify(found).slice(0,400));
 await window({replace:["rename_me(2)","rename_ME(2)"]});
 await rejects(()=>tools.replace({path:[refs[1],refs[2]],text:"renamed"}));

@@ -1064,7 +1064,7 @@ function wholeFileFailureCause(code: string): string {
       return "this result is read-only; read the source file to edit it";
     }
     case "UNSAFE_TOKEN_SELECTION": {
-      return "search selected separate tokens; choose a match or quote the query";
+      return "search selected separate tokens, not one phrase";
     }
     case "RESULT_INPUT_REJECTED": {
       return "result input was rejected";
