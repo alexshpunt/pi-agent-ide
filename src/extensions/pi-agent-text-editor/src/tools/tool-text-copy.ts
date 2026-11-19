@@ -69,7 +69,7 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
   mutate: async (context, parameters: CopyParameters) => {
     const starts = await context.resolveAnchors("start");
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const sourceSpan = anchorSpanRange(context, starts, ends, "start", "end");
+    const sourceSpan = await anchorSpanRange(context, starts, ends, "start", "end");
     const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
 
     const targetStarts = await context.resolveAnchors("targetStart");
@@ -83,7 +83,7 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
     }
 
     const targetEnds = await context.resolveAnchors("targetEnd");
-    const targetSpan = anchorSpanRange(
+    const targetSpan = await anchorSpanRange(
       context,
       targetStarts,
       targetEnds,

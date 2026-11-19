@@ -11,6 +11,12 @@ export {
   fileTextKeys,
   FILE_TEXT_READ_EVENT,
   type FileTextRead,
+  FILE_TEXT_VISIBLE_EVENT,
+  type FileTextVisible,
+  type FileTextWindow,
+  attachFileTextWindows,
+  takeFileTextWindows,
+  retainFileTextWindows,
 } from "./file-text-read.ts";
 export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.ts";
 export {

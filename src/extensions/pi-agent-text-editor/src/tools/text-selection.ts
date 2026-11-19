@@ -55,7 +55,10 @@ export function singleAnchorSpan(
   const [source, anchor] = requiredValue(anchors.entries().next().value);
   if (TextSelectionAnchor.is(anchor)) {
     if (anchor.ranges.length !== 1) {
-      throw new Error(`Anchor ${field} must select one match for this operation.`);
+      throw new TextMutationInputError(
+        "ANCHOR_NOT_SINGLE_MATCH",
+        `Anchor ${field} must select one match for this operation.`,
+      );
     }
     const selectedRange = requiredValue(
       (rangeEndpoint ? (anchor.endpointRanges ?? anchor.ranges) : anchor.ranges)[0],
@@ -96,22 +99,28 @@ function selectsWholeLines(anchors: ReadonlyMap<string, TextAnchor>): boolean {
  * Join ordered endpoints. Two whole-line endpoints, such as BEGIN/END marker lines, select their
  * complete lines; otherwise exact text and :match keep character boundaries.
  */
-export function anchorSpanRange(
+export async function anchorSpanRange(
   context: TextMutationContext,
   starts: ReadonlyMap<string, TextAnchor>,
   ends: ReadonlyMap<string, TextAnchor> | undefined,
   startField: string,
   endField: string,
-): TextAnchorSpan {
+): Promise<TextAnchorSpan> {
   if (ends === undefined) return singleAnchorSpan(context, starts, startField);
   const exactEndpoints = !(selectsWholeLines(starts) && selectsWholeLines(ends));
   const start = singleAnchorSpan(context, starts, startField, exactEndpoints);
   const end = singleAnchorSpan(context, ends, endField, exactEndpoints);
   if (start.source !== end.source) {
-    throw new Error(`Anchors ${startField} and ${endField} must resolve in one resource.`);
+    throw new TextMutationInputError(
+      "ANCHOR_RANGE_CROSS_RESOURCE",
+      `Anchors ${startField} and ${endField} must resolve in one resource.`,
+    );
   }
   if (start.from > end.from) {
-    throw new Error(`Anchor ${startField} must not come after ${endField}.`);
+    throw new TextMutationInputError(
+      "ANCHOR_RANGE_REVERSED",
+      `Anchor ${startField} must not come after ${endField}.`,
+    );
   }
   const first = requiredValue(starts.get(start.source));
   const last = requiredValue(ends.get(end.source));
@@ -122,6 +131,7 @@ export function anchorSpanRange(
       throw new TextMutationInputError(rejection.code, rejection.reason);
     }
   }
+  await context.checkSpan?.({ source: start.source, from: start.from, to: end.to });
   return {
     source: start.source,
     from: start.from,

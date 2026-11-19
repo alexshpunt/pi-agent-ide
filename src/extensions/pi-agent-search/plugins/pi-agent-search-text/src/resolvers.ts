@@ -1,4 +1,5 @@
 import path from "node:path";
+import { attachFileTextWindows, type FileTextWindow, type ResultRange } from "pi-agent-resource";
 import { pathToFileURL } from "node:url";
 import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.ts";
@@ -114,18 +115,64 @@ async function captureCandidate(
   };
 }
 
+type RecordScriptWindows = (details: SearchToolDetails, windows: readonly FileTextWindow[]) => void;
+
+function searchWindows(
+  contents: ReadonlyMap<string, string>,
+  rangesBySource: ReadonlyMap<string, readonly ResultRange[]>,
+): FileTextWindow[] {
+  return [...rangesBySource].flatMap(([source, ranges]) => {
+    const content = contents.get(source);
+    return content === undefined ? [] : [{ source, content, ranges }];
+  });
+}
+
+/** Match the exact text and containing lines returned by the script adapter. */
+function scriptRanges(matches: readonly TextSearchMatch[]): Map<string, ResultRange[]> {
+  const bySource = new Map<string, ResultRange[]>();
+  for (const match of matches) {
+    const last = match.endLineNumber ?? match.lineNumber;
+    const context = match.linesText ?? (last === match.lineNumber ? match.lineText : undefined);
+    const ranges = bySource.get(match.source) ?? [];
+    ranges.push({
+      start: { lineNumber: match.lineNumber, column: match.startColumn },
+      end: { lineNumber: last, column: match.endColumn },
+    });
+    if (context !== undefined) {
+      const tail = context.lastIndexOf("\n") + 1;
+      ranges.push({
+        start: { lineNumber: match.lineNumber, column: 0 },
+        end: {
+          lineNumber: last > match.lineNumber && match.endColumn === 0 ? last - 1 : last,
+          column: context.length - tail,
+        },
+      });
+    }
+    bySource.set(match.source, ranges);
+  }
+  return bySource;
+}
+
 /** Search unhandled requests with literal-first hybrid matching. */
 export function createTextResolver(
   sessions: SearchSessionStore,
   resultScopeOnly = false,
+  recordScriptWindows?: RecordScriptWindows,
 ): SearchResolver {
-  return createMatchResolver("text", sessions, createSearchRecipe, resultScopeOnly);
+  return createMatchResolver(
+    "text",
+    sessions,
+    createSearchRecipe,
+    resultScopeOnly,
+    recordScriptWindows,
+  );
 }
 
 /** Search an explicit regex without broadening or swallowing syntax errors. */
 export function createRegexResolver(
   sessions: SearchSessionStore,
   resultScopeOnly = false,
+  recordScriptWindows?: RecordScriptWindows,
 ): SearchResolver {
   return createMatchResolver(
     "regex",
@@ -135,6 +182,7 @@ export function createRegexResolver(
         ? { ...request, query: request.query.slice("regex:".length), regex: true }
         : undefined,
     resultScopeOnly,
+    recordScriptWindows,
   );
 }
 
@@ -226,6 +274,7 @@ function createMatchResolver(
   sessions: SearchSessionStore,
   queryBody: (request: SearchRequest) => SearchRecipe | undefined,
   resultScopeOnly = false,
+  recordScriptWindows?: RecordScriptWindows,
 ): SearchResolver {
   /**
    * What the registration made of each formatted payload. Registering can relocate or leave out
@@ -473,27 +522,32 @@ function createMatchResolver(
           },
         };
       }
-      return {
-        content: [
-          {
-            type: "text",
-            text: [...notices, formatSearchSession(session, context.cwd, detailBudget)].join("\n"),
-          },
-        ],
-        details: {
-          ...createSearchToolDetails(
-            session.query,
-            session.matches,
-            session.complete,
-            context.cwd,
-            session.id,
-            detailBudget,
-          ),
-          ...(session.target === undefined
-            ? {}
-            : { target: session.target, matchTargets: session.matchTargets }),
-        },
+      const rangesBySource = new Map<string, ResultRange[]>();
+      const formatted = formatSearchSession(session, context.cwd, detailBudget, (match, range) => {
+        const ranges = rangesBySource.get(match.source) ?? [];
+        ranges.push(range);
+        rangesBySource.set(match.source, ranges);
+      });
+      const details = {
+        ...createSearchToolDetails(
+          session.query,
+          session.matches,
+          session.complete,
+          context.cwd,
+          session.id,
+          detailBudget,
+        ),
+        ...(session.target === undefined
+          ? {}
+          : { target: session.target, matchTargets: session.matchTargets }),
       };
+      const block = { type: "text" as const, text: [...notices, formatted].join("\n") };
+      attachFileTextWindows(block, searchWindows(captured.contents, rangesBySource));
+      recordScriptWindows?.(
+        details,
+        searchWindows(captured.contents, scriptRanges(session.matches)),
+      );
+      return { content: [block], details };
     },
     renderResult: renderSearchResult as SearchResolver["renderResult"],
   };
@@ -503,6 +557,7 @@ function formatSearchSession(
   session: TextSearchSession,
   cwd: string,
   detailBudget: number,
+  visible: (match: TextSearchMatch, range: ResultRange) => void,
 ): string {
   const fileCount = new Set(session.matches.map((match) => match.source)).size;
   const count = session.matches.length;
@@ -524,6 +579,15 @@ function formatSearchSession(
       for (const group of file.groups) {
         const index = indices.get(group.first);
         const first = group.first;
+        // The compact view shows a representative, not all its occurrences.
+        if (group.text === first.lineText)
+          visible(first, {
+            start: { lineNumber: first.lineNumber, column: 0 },
+            end: {
+              lineNumber: first.lineNumber,
+              column: Math.min(first.lineText.length, compactPreviewLength),
+            },
+          });
         lines.push(
           index === undefined
             ? `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)}`
@@ -554,10 +618,12 @@ function formatSearchSession(
         match.endLineNumber === undefined
           ? String(match.endColumn + 1)
           : `${String(match.endLineNumber)}:${String(match.endColumn + 1)}`;
+      const preview = previewMatch(match);
+      visible(match, preview.range);
       const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${end}`;
       lines.push(
         `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`,
-        `  ${previewMatch(match)}`,
+        `  ${preview.text}`,
       );
     }
   }
@@ -575,30 +641,39 @@ function formatSearchSession(
   return lines.join("\n");
 }
 
-function previewMatch(match: TextSearchMatch): string {
+const compactPreviewLength = 129;
+
+function previewMatch(match: TextSearchMatch): { text: string; range: ResultRange } {
   const context = 64;
+  const lineNumber = match.lineNumber;
+  const from = Math.max(0, match.startColumn - context);
+  const start = { lineNumber, column: from };
   if (match.endLineNumber !== undefined) {
     // Show the matched lines themselves, bounded; continuation lines keep the preview indent.
     const maximumLines = 8;
-    const from = Math.max(0, match.startColumn - context);
     const matched = match.matchedText.replace(/\r\n/gu, "\n").split("\n");
     const shown = matched.slice(0, maximumLines);
     const more = matched.length - shown.length;
-    return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${shown.join("\n  ")}${
-      more > 0 ? `\n  … ${String(more)} more lines` : ""
-    }⟧`;
+    return {
+      range: {
+        start,
+        end:
+          more > 0
+            ? { lineNumber: lineNumber + maximumLines, column: 0 }
+            : { lineNumber: match.endLineNumber, column: match.endColumn },
+      },
+      text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${shown.join("\n  ")}${more > 0 ? `\n  … ${String(more)} more lines` : ""}⟧`,
+    };
   }
-  const from = Math.max(0, match.startColumn - context);
   const to = Math.min(match.lineText.length, match.endColumn + context);
-  return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${match.lineText.slice(
-    match.startColumn,
-    match.endColumn,
-  )}⟧${match.lineText.slice(match.endColumn, to)}${to < match.lineText.length ? "…" : ""}`;
+  return {
+    range: { start, end: { lineNumber, column: to } },
+    text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${match.lineText.slice(match.startColumn, match.endColumn)}⟧${match.lineText.slice(match.endColumn, to)}${to < match.lineText.length ? "…" : ""}`,
+  };
 }
 
 function previewLine(text: string): string {
-  const context = 129;
-  return `${text.slice(0, context)}${text.length > context ? "…" : ""}`;
+  return `${text.slice(0, compactPreviewLength)}${text.length > compactPreviewLength ? "…" : ""}`;
 }
 
 function plural(count: number, singular: string, pluralForm: string): string {

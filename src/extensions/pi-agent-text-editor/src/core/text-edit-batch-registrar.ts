@@ -282,6 +282,7 @@ export async function planRegisteredTextBatch(
   signal: AbortSignal | undefined,
   renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
   priorPlan?: PlannedTextBatch,
+  checkSpan?: TextEditorCore["checkSpan"],
 ): Promise<PlannedTextBatch> {
   const mutations: PlannedTextBatch["mutations"][number][] = [];
   const failures: PlannedTextBatch["failures"][number][] = [];
@@ -357,6 +358,7 @@ export async function planRegisteredTextBatch(
           renderArguments(callId, {
             [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
           }),
+        checkSpan,
       );
       await preflightMutationAnchors(registration, input, mutationContext);
       const mutation = await registration.mutate(mutationContext, input);
@@ -496,6 +498,8 @@ export async function executeRegisteredTextBatch(
           context,
           signal,
           renderArguments,
+          undefined,
+          core.checkSpan,
         );
         executionPlan = result;
         return {

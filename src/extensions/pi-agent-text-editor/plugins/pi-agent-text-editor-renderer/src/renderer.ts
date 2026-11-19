@@ -270,12 +270,9 @@ function createRenderer(
       state.panel?.setBackground(context.isError ? "toolErrorBg" : "toolSuccessBg");
       cancelPreviewWorker(state);
       const details = result.details;
-      const truncated =
-        details &&
-        "mutationDetailsTruncated" in details &&
-        details.mutationDetailsTruncated === true
-          ? theme.fg("warning", "Edit display shortened to fit the saved-result limit.")
-          : "";
+      const truncated = mutationDetailsWereTruncated(details)
+        ? theme.fg("warning", "Edit display shortened to fit the saved-result limit.")
+        : "";
       const resources = resolveMutationResultResources(details, viewports, false);
 
       if (!context.isError && resources.length > 0) {
@@ -1022,6 +1019,15 @@ function wholeFileOperationSummary(details: unknown):
 
 const GENERIC_FAILURE_CAUSE = "file operation failed";
 
+function mutationDetailsWereTruncated(details: unknown): boolean {
+  return (
+    details !== null &&
+    typeof details === "object" &&
+    "mutationDetailsTruncated" in details &&
+    details.mutationDetailsTruncated === true
+  );
+}
+
 function wholeFileFailureCause(code: string): string {
   switch (code) {
     case "missing": {
@@ -1035,6 +1041,9 @@ function wholeFileFailureCause(code: string): string {
     }
     case "stale": {
       return "anchor is stale";
+    }
+    case "UNSEEN_EDIT_SPAN": {
+      return "selection includes too much unread text; read the range or use closer anchors";
     }
     case "STALE_ANCHOR_RANGE": {
       return "line anchors no longer verify the range; select the full span again";

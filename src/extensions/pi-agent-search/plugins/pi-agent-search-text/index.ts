@@ -1,6 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
-import { connectResultTargets } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  fileTextKeys,
+  FILE_TEXT_VISIBLE_EVENT,
+  trackScriptCalls,
+  type FileTextVisible,
+  type FileTextWindow,
+} from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -23,7 +30,7 @@ import { createFileResolver, createRegexResolver, createTextResolver } from "#sr
 import { SearchSessionStore } from "#src/search-session.ts";
 
 import { compactSearchDetails } from "#src/persisted-result.ts";
-import { isSearchToolDetails } from "#src/search-result.ts";
+import { isSearchToolDetails, type SearchToolDetails } from "#src/search-result.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -109,11 +116,34 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
     };
   });
 
-  pi.on("tool_result", (event) => {
-    if (event.toolName !== "search" || typeof event.details !== "object" || event.details === null)
+  // A script receives its complete typed matches, not the formatted result preview.
+  const scriptWindows = new WeakMap<SearchToolDetails, readonly FileTextWindow[]>();
+  const scriptCall = trackScriptCalls(pi, "search");
+  const recordScriptWindows = (details: SearchToolDetails, windows: readonly FileTextWindow[]) => {
+    scriptWindows.set(details, windows);
+  };
+  pi.on("tool_result", async (event, ctx) => {
+    if (
+      event.isError ||
+      event.toolName !== "search" ||
+      typeof event.details !== "object" ||
+      event.details === null
+    )
       return;
     const details = event.details as { payload?: unknown };
     if (!isSearchToolDetails(details.payload)) return;
+    const visible = scriptCall(event.toolCallId) ? (scriptWindows.get(details.payload) ?? []) : [];
+    await Promise.all(
+      visible.map(async ({ source, content, ranges }) => {
+        if (source.includes("://") && !source.startsWith("ssh://")) return;
+        const keys = await fileTextKeys(source, ctx.cwd);
+        pi.events.emit(FILE_TEXT_VISIBLE_EVENT, {
+          keys,
+          content,
+          ranges,
+        } satisfies FileTextVisible);
+      }),
+    );
     return {
       details: {
         ...details,
@@ -159,11 +189,23 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
         );
         if (includeFilesystem) {
           resolveSearchApi(api);
-          api.addResolver({ resolver: createRegexResolver(sessions), priority: -10 });
-          api.addResolver({ resolver: createTextResolver(sessions), fallback: true });
+          api.addResolver({
+            resolver: createRegexResolver(sessions, false, recordScriptWindows),
+            priority: -10,
+          });
+          api.addResolver({
+            resolver: createTextResolver(sessions, false, recordScriptWindows),
+            fallback: true,
+          });
         } else {
-          api.addResolver({ resolver: createRegexResolver(sessions, true), priority: -10 });
-          api.addResolver({ resolver: createTextResolver(sessions, true), fallback: true });
+          api.addResolver({
+            resolver: createRegexResolver(sessions, true, recordScriptWindows),
+            priority: -10,
+          });
+          api.addResolver({
+            resolver: createTextResolver(sessions, true, recordScriptWindows),
+            fallback: true,
+          });
         }
       },
     }),

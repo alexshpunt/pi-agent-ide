@@ -1,3 +1,4 @@
+import type { FileTextWindow, ResultRange } from "pi-agent-resource";
 import { requiredValue } from "pi-agent-invariant";
 
 import {
@@ -46,13 +47,12 @@ export function finalStateLineNumbers(input: FinalStateLineInput): number[] {
   );
 }
 
-/** Renders the final file state around a successful mutation. */
-export function renderFinalStateFragment(fmr: FileMutationResult, path: string): string[] {
+function finalStateFragment(fmr: FileMutationResult, path: string) {
   const before = fmr.data.snapshot?.content ?? fmr.data.beforeContentMap?.[path];
   const after = fmr.data.afterContent ?? fmr.data.afterDocument?.content;
 
   if (before == null || after === undefined) {
-    return [path];
+    return undefined;
   }
 
   const lines = splitLines(after);
@@ -75,6 +75,32 @@ export function renderFinalStateFragment(fmr: FileMutationResult, path: string):
     ],
     lineCount,
   );
+  return { after, lines, ranges, visibleRanges, selectedSyntaxHints };
+}
+
+/** Renders the final file state around a successful mutation. */
+export function renderFinalStateFragment(
+  fmr: FileMutationResult,
+  path: string,
+  shown?: (window: FileTextWindow) => void,
+): string[] {
+  const fragment = finalStateFragment(fmr, path);
+  if (fragment === undefined) return [path];
+  const { after, lines, ranges, visibleRanges, selectedSyntaxHints } = fragment;
+  const source = fmr.data.afterDocument?.source;
+  if (shown !== undefined && source !== undefined && ranges.length > 0) {
+    shown({
+      source,
+      content: after,
+      ranges: ranges.map(({ start, end }): ResultRange => ({
+        start: { lineNumber: start, column: 0 },
+        end:
+          end < lines.length || after.endsWith("\n")
+            ? { lineNumber: end + 1, column: 0 }
+            : { lineNumber: end, column: lines[end - 1]?.length ?? 0 },
+      })),
+    });
+  }
   const allowedSyntaxHints = new Set<DiagnosticHint>(selectedSyntaxHints);
   const result = [path];
 

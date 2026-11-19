@@ -72,7 +72,7 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
     }
 
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const span = anchorSpanRange(context, starts, ends, "start", "end");
+    const span = await anchorSpanRange(context, starts, ends, "start", "end");
     return {
       edits: new Map([[span.source, { changes: [deleteAnchorSpan(span)], action: "edited" }]]),
     };

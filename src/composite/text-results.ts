@@ -14,6 +14,7 @@ import {
   connectResultImages,
   connectResultTargets,
   ResourceError,
+  retainFileTextWindows,
   resultValueId,
   resultValueReference,
   TempResourceStore,
@@ -436,14 +437,17 @@ export function createIdeTextResults(
         saveFullOutput,
         { limitText },
       );
-      const text = limited.text + limited.metadataSuffix;
+      const block = {
+        type: "text" as const,
+        text:
+          limited.text +
+          limited.metadataSuffix +
+          (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
+      };
       return {
         ...result,
         content: [
-          {
-            type: "text",
-            text: text + (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
-          },
+          limited.textTruncated ? block : retainFileTextWindows(result.content, block),
           ...limited.images,
         ],
       };
@@ -736,9 +740,10 @@ export function createIdeTextResults(
         if (value === null || (scriptFailed && value === undefined))
           nullNested.add(event.toolCallId);
       }
+      const block = { type: "text" as const, text: failed ? reason : shown };
       return {
         content: [
-          { type: "text" as const, text: failed ? reason : shown },
+          parent === undefined && !failed ? retainFileTextWindows(event.content, block) : block,
           ...event.content.filter((block) => block.type !== "text"),
         ],
         // Keep private records hidden; only the declared public script value survives. A direct

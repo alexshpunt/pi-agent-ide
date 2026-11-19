@@ -1033,6 +1033,7 @@ export function createMutationContext(
   texts: ReadonlyMap<string, string>,
   resolveResourceAnchor: ResolveResourceTextAnchor,
   publishAnchorRenderState?: (field: string, state: ToolCallAnchorRenderState) => void,
+  checkSpan?: TextEditorCore["checkSpan"],
 ): MutationExecutionContext {
   const documents = new Map(
     [...texts].map(([source, text]) => [source, new TextChangeDocument(text)]),
@@ -1288,6 +1289,10 @@ export function createMutationContext(
     cwd: invocation.cwd,
     ...(invocation.signal !== undefined && { signal: invocation.signal }),
     sourceDocument: documentFor(sourceFor(definition.source.field)),
+    ...(checkSpan !== undefined && {
+      checkSpan: ({ source, from, to }) =>
+        checkSpan(source, invocation.cwd, documentFor(source), from, to),
+    }),
     sourceFor,
     documentFor,
     targetDocument(field): TextChangeDocument {
@@ -1418,6 +1423,8 @@ export async function previewTextMutation(
           sources,
           texts,
           resolveAnchor,
+          undefined,
+          core.checkSpan,
         );
         await preflightMutationAnchors(definition, request.input, mutationContext);
         if (semanticHandler !== undefined) {
@@ -1635,6 +1642,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
             texts,
             resolveAnchor,
             publishAnchorRenderState,
+            core.checkSpan,
           );
           await preflightMutationAnchors(definition, state.input, mutationContext);
           const mutation = canonicalizeContextEdits(

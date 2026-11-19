@@ -814,8 +814,9 @@ class NativeTextEditBatchCoordinator {
         .filter((result) => result.ok && script.completedWrites.has(result))
         .flatMap(completedWriteNotices);
       if (writeNotices.length > 0) content.push({ type: "text", text: writeNotices.join("\n") });
-      if (parentResults.length > 0)
+      if (parentResults.length > 0) {
         content.push(new FileMutationAgentResult(parentResults).toTextContent());
+      }
       const details =
         typeof event.details === "object" && event.details !== null ? event.details : {};
       return {
@@ -977,6 +978,8 @@ class NativeTextEditBatchCoordinator {
               context,
               signal,
               () => {},
+              undefined,
+              this.core.checkSpan,
             );
             const own = plan.failures.find((failure) => failure.callId === id);
             if (own !== undefined) throw own.error;
@@ -992,6 +995,7 @@ class NativeTextEditBatchCoordinator {
               signal,
               () => {},
               batch.plan,
+              this.core.checkSpan,
             );
           return { changes: planning.plan.changes, result: planning.plan };
         } catch (error) {

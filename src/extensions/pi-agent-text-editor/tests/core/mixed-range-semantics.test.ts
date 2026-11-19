@@ -31,7 +31,7 @@ const map = (anchor: TextAnchor, file = source) => new Map([[file, anchor]]);
 
 test.each(["\n", "\r\n"])(
   "empty replacement matches deletion without adding a line (%j)",
-  (eol) => {
+  async (eol) => {
     for (const content of [
       `A${eol}BLOCK${eol}${eol}B${eol}`,
       `A${eol}BLOCK`,
@@ -48,7 +48,7 @@ test.each(["\n", "\r\n"])(
       const line = content.startsWith("A") ? 2 : 1;
       const anchors = map(new Position("block", line));
       for (const end of [undefined, anchors]) {
-        const span = anchorSpanRange(ctx, anchors, end, "start", "end");
+        const span = await anchorSpanRange(ctx, anchors, end, "start", "end");
         const replacement = replaceAnchorSpan(ctx, span, "");
         expect(replacement).toEqual(deleteAnchorSpan(span));
         const actual =
@@ -69,19 +69,19 @@ const match = (line: number, column: number, endLine: number, endColumn: number)
     { start: { lineNumber: line, column }, end: { lineNumber: endLine, column: endColumn } },
   ]);
 
-test("mixed endpoints keep the exact start and the whole-line end", () => {
+test("mixed endpoints keep the exact start and the whole-line end", async () => {
   const start = map(match(1, 5, 1, 10));
   const end = map(new Position("end", 3));
-  expect(document.text(anchorSpanRange(context, start, end, "start", "end"))).toBe(
+  expect(document.text(await anchorSpanRange(context, start, end, "start", "end"))).toBe(
     "START right\r\nmiddle\r\nleft END right\r\n",
   );
   expect(document.text(singleAnchorSpan(context, start, "start"))).toBe("START");
 });
 
-test("mixed endpoints keep the whole-line start and exact end", () => {
+test("mixed endpoints keep the whole-line start and exact end", async () => {
   const start = map(new Position("start", 1));
   const end = map(match(3, 5, 3, 8));
-  const span = anchorSpanRange(context, start, end, "start", "end");
+  const span = await anchorSpanRange(context, start, end, "start", "end");
   expect(document.text(span)).toBe("left START right\r\nmiddle\r\nleft END");
   expect(replaceAnchorSpan(context, span, "NEW").insert).toBe("NEW");
 });
@@ -91,20 +91,22 @@ test("multiline match ending at column zero does not include the next line", () 
   expect(document.text(span)).toBe("START right\r\nmiddle\r\n");
 });
 
-test("reversed, cross-resource and plural endpoints are rejected", () => {
+test("reversed, cross-resource and plural endpoints are rejected", async () => {
   const first = map(match(1, 5, 1, 10));
   const later = map(match(1, 11, 1, 16));
-  expect(() => anchorSpanRange(context, later, first, "start", "end")).toThrow(
-    "must not come after",
-  );
-  expect(() =>
+  await expect(anchorSpanRange(context, later, first, "start", "end")).rejects.toMatchObject({
+    code: "ANCHOR_RANGE_REVERSED",
+  });
+  await expect(
     anchorSpanRange(context, first, map(new Position("end", 3), "other"), "start", "end"),
-  ).toThrow("one resource");
+  ).rejects.toMatchObject({ code: "ANCHOR_RANGE_CROSS_RESOURCE" });
   const plural = new TextSelectionAnchor("many", source, [
     { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 4 } },
     { start: { lineNumber: 1, column: 5 }, end: { lineNumber: 1, column: 10 } },
   ]);
-  expect(() => anchorSpanRange(context, map(plural), first, "start", "end")).toThrow("one match");
+  await expect(anchorSpanRange(context, map(plural), first, "start", "end")).rejects.toMatchObject({
+    code: "ANCHOR_NOT_SINGLE_MATCH",
+  });
 });
 
 test("all-match insertions keep each distinct selection boundary", () => {

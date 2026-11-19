@@ -2214,7 +2214,7 @@ add(
   [
     {
       tool: "write",
-      args: { path: "silent.txt" },
+      args: { path: "silent.txt", content: "SILENT_WRITE_BODY\n" },
       parentExcludes: "SILENT_WRITE_BODY",
     },
   ],
@@ -3491,6 +3491,31 @@ add(
     files: { "task.txt": "before\nBEGIN\nBODY OLD\nEND\nafter\n" },
     expected: { "task.txt": "before\nBEGIN\nBODY NEW\nEND\nafter\n" },
   },
+);
+const wideRangeFixture = `BEGIN\n${Array.from({ length: 500 }, (_, index) => `body ${index}\n`).join("")}END\nkeep\n`;
+add(
+  "unseen-edit-span",
+  ["edit.unseen-edit-span"],
+  "Read only line 1 and line 502 of task.txt in separate calls. Then call Replace on task.txt with literal start BEGIN, literal end END, and text NEW. It must refuse because only the endpoints were read. After the refusal, Read all of task.txt and retry the same Replace. The file should contain NEW and keep, each on its own line.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
+    { tool: "read", args: { path: "task.txt", offset: 502, limit: 1 } },
+    {
+      tool: "replace",
+      args: { path: "task.txt", start: "BEGIN", end: "END" },
+      exactText: ["start", "end"],
+      error: true,
+      after: [0, 1],
+    },
+    { tool: "read", args: { path: "task.txt" }, after: [2] },
+    {
+      tool: "replace",
+      args: { path: "task.txt", start: "BEGIN", end: "END" },
+      exactText: ["start", "end"],
+      after: [3],
+    },
+  ],
+  { files: { "task.txt": wideRangeFixture }, expected: { "task.txt": "NEW\nkeep\n" } },
 );
 add(
   // Agent-facing scope refusals are unchanged; native anchor-rejection cards have scripted Pi coverage.

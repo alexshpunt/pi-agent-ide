@@ -94,6 +94,7 @@ import {
   applyTextChanges,
   type TextChange,
   type TextChangeResult,
+  type TextChangeDocument,
 } from "#src/core/text-change-engine.ts";
 import { previewTextMutation } from "#src/core/text-mutation.ts";
 import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.ts";
@@ -392,6 +393,13 @@ export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
 export interface TextEditorCore {
+  readonly checkSpan?: (
+    source: string,
+    cwd: string,
+    document: TextChangeDocument,
+    from: number,
+    to: number,
+  ) => Promise<void>;
   /** Run whole-object deletion policies in registration order; denial and errors block removal. */
   beforeDelete(event: BeforeDeleteEvent): Promise<void>;
   /** Capture the prior destination before a whole-file publication, then finalize its saved text. */
@@ -500,6 +508,7 @@ export function createTextEditorCore(
     core: TextEditorCore,
   ) => void,
   resultTargets?: ResultTargetStore,
+  observation: Pick<TextEditorCore, "checkSpan"> = {},
 ): TextEditorCore {
   const projectConfig = loadTextEditorConfig(process.cwd());
   const resolvers: RegisteredResolver[] = [];
@@ -655,6 +664,7 @@ export function createTextEditorCore(
     );
   };
   const core: TextEditorCore = {
+    ...observation,
     async beforeDelete(event) {
       for (const registration of [...deleteGuards]) {
         event.signal?.throwIfAborted();
