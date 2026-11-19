@@ -198,7 +198,7 @@ test("a pending edit result used as an anchor remains a commit boundary", async 
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-pending-result-anchor", [
       `const changed = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
-await tools.replace({path:"note.txt",start:changed,text:"FINAL"+String.fromCharCode(10)});
+await tools.replace({path:"note.txt",start:changed,text:"FINAL"});
 await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});`,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -639,7 +639,7 @@ await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
 const shown = await tools.read({path:"note.txt"});
 if (!shown.text.includes("ALPHA")) throw Error("Read did not see the committed edit");
 const changed = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
-await tools.replace({path:changed,text:"FINAL"+String.fromCharCode(10)});
+await tools.replace({path:changed,text:"FINAL"});
 text(await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"}));`,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(

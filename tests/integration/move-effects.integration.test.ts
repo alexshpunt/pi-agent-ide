@@ -219,7 +219,8 @@ test("text Move failure keeps uncertainty after receipt creation fails", async (
       conversation: [
         move("text-move", {
           path: ".tmp/move-effects/text-source.txt",
-          start: "MOVE-ME",
+          // A literal selects only its characters; include the break to move the whole line.
+          start: "MOVE-ME\n",
           target: ".tmp/move-effects/text-target.txt",
           // Edit results present lines, and so build their receipt, only for line anchor edits.
           targetStart: formatLineHashAnchor("head\ntail\n", 1),

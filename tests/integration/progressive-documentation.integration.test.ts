@@ -253,7 +253,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
   expect(output("nested-again")).not.toContain("# Guide:");
   expect(output("nested-again")).toContain("changed");
   expect(await readFile(path.join(workspace, "example.ts"), "utf8")).toBe(
-    "export const marker = 1;\n// changed",
+    "export const marker = 1;\n// changed\n",
   );
 });
 function expectGuideAttachment(result: Awaited<ReturnType<typeof run>>, id: string): void {

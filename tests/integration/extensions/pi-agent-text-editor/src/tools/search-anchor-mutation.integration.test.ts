@@ -703,7 +703,8 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target",
+                // A literal selects only its characters; the line break puts the copy after it.
+                targetStart: "target\n",
               },
             }),
           ],
@@ -746,7 +747,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target",
+                targetStart: "target\n",
               },
             }),
           ],

@@ -344,7 +344,8 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));
               name: "copy",
               arguments: {
                 path: "source.txt",
-                start: "alpha",
+                // A literal selects only its characters; the line break makes the copy a no-op.
+                start: "alpha\n",
                 target,
                 targetStart: "alpha\n",
                 targetEnd: "alpha\n",
@@ -384,9 +385,10 @@ test.each([false, true])(
           name: "copy",
           arguments: {
             path: "source.txt",
-            start: "alpha",
+            // Literals select only their characters; the line breaks copy a whole line after head.
+            start: "alpha\n",
             target: "target.txt",
-            targetStart: "head",
+            targetStart: "head\n",
           },
         }),
       ];
@@ -452,7 +454,7 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));`,
               name: "copy",
               arguments: {
                 path: "source.txt",
-                start: "alpha",
+                start: "alpha\n",
                 target: "target.txt",
                 targetStart: "alpha\n",
                 targetEnd: "alpha\n",
@@ -735,9 +737,9 @@ check(state.effects.find(item=>item.target==="c07-probe:unrestored")?.effect==="
               name: "copy",
               arguments: {
                 path: "rollback-source.txt",
-                start: "alpha",
+                start: "alpha\n",
                 target: "rollback-restored.txt",
-                targetStart: "head",
+                targetStart: "head\n",
               },
             }),
             toolCall({
@@ -745,9 +747,9 @@ check(state.effects.find(item=>item.target==="c07-probe:unrestored")?.effect==="
               name: "copy",
               arguments: {
                 path: "rollback-source.txt",
-                start: "alpha",
+                start: "alpha\n",
                 target: "rollback-unrestored.txt",
-                targetStart: "head",
+                targetStart: "head\n",
               },
             }),
           ],
@@ -1229,7 +1231,8 @@ test.each(["copy", "move"] as const)(
       await writeFile(path.join(cwd, "source.txt"), "😀 ONE\r\nneighbor");
       await writeFile(path.join(cwd, "destination.txt"), "anchor\r\nONE outside");
       const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
-        `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:"anchor"});
+        // A line anchor puts the transferred text on its own line; a literal would select only its text.
+        `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:${JSON.stringify(formatLineHashAnchor("anchor\r\nONE outside", 1))}});
 if (typeof changed !== "string" || !changed) throw Error("Legacy transfer did not return a reusable result");
 const found = await tools.search({path:changed,query:"ONE"});
 if (found === null || found.matches.length !== 1 || found.matches[0].path !== "destination.txt") throw Error("Pending output included removals or neighbors");
@@ -1786,7 +1789,8 @@ test("a saved Insert explains why formatting removed its reusable target", async
             toolCall({
               id: "insert",
               name: "insert",
-              arguments: { path: "format.txt", anchor: "old body", text: "format_me" },
+              // A literal selects only its characters; the line breaks keep format_me on its own line.
+              arguments: { path: "format.txt", anchor: "old body\n", text: "format_me\n" },
             }),
           ],
           { stopReason: "toolUse" },
