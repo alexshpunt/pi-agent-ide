@@ -174,6 +174,35 @@ test("uses a reference inside the scope to seed navigation without mixing same-n
   expect(result.hits.every((hit) => hit.symbol.source === path.join(cwd, "a.ts"))).toBe(true);
 });
 
+test("leaves out declarations and references in a deleted file and names that file", async () => {
+  const { cwd, manager, sendRequest } = await fixture();
+  const kept = await searchSymbols("same", cwd, 100, undefined, { path: "." }, manager);
+  // The server's index still holds a copy of a.ts that another session deleted.
+  const copy = path.join(cwd, "copy.ts");
+  const place = {
+    uri: pathToFileURL(copy).href,
+    range: { start: { line: 1, character: 0 }, end: { line: 1, character: 4 } },
+  };
+  const answer = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters, signal) => {
+    const result: unknown = await answer?.(method, parameters, signal);
+    if (method === "workspace/symbol")
+      return [...(result as unknown[]), { name: "same", kind: 12, location: place }];
+    if (method === "textDocument/references") return [...(result as unknown[]), place];
+    return result;
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, { path: "." }, manager);
+  const scoped = await searchSymbols("same", cwd, 100, undefined, { path: "a.ts" }, manager);
+
+  expect(result.hits).toEqual(kept.hits);
+  expect(result.complete).toBe(kept.complete);
+  expect(result.missing).toEqual([copy]);
+  // A file outside the searched path could not have been listed, so it is not named.
+  expect(scoped.hits.length).toBeGreaterThan(0);
+  expect(scoped.missing).toBeUndefined();
+});
+
 test("uses a provider selectionRange when workspace symbols span a whole declaration", async () => {
   const { cwd, manager, sendRequest } = await fixture();
   const source = "export function same() { same(); }\r\n";
