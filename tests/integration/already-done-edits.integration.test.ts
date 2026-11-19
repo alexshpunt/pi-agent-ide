@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   testArtifactsDir,
   text,
@@ -55,7 +56,7 @@ function codemode(id: string, code: string) {
   });
 }
 
-test("a direct replace whose target already has the text succeeds without a write", async () => {
+test("a direct replace with the text it selects is refused without a write", async () => {
   await withTempWorkspace(async (cwd) => {
     const result = await run(cwd, "already-done-direct", [
       toolCall({
@@ -65,10 +66,12 @@ test("a direct replace whose target already has the text succeeds without a writ
       }),
     ]);
     const output = getToolResultText(result, "same");
-    expect(getToolExecution(result, "same").isError, output).toBe(false);
-    expect(output).toContain("No changes: every target already has this text.");
-    expect(output).toContain("Already had this text, left as is: 1 target at line:column 2:1.");
-    expect(result.tuiRenderedOutput).toContain("No changes: every target already has this text.");
+    const execution = getToolExecution(result, "same");
+    expect(execution.isError, output).toBe(true);
+    expect(getToolExecutionDetails(execution)).toMatchObject({
+      effect: "not-applied",
+      results: [{ data: { errors: [{ code: "REPLACEMENT_IDENTICAL" }] } }],
+    });
     expect(await readFile(path.join(cwd, "names.cpp"), "utf8")).toBe(SOURCE);
   });
 });
@@ -85,13 +88,9 @@ check(anchors.length===4,"Expected four name anchors: "+JSON.stringify(found));
 text(await tools.replace({path:anchors,text:"FuncA"}));`,
       ),
       codemode(
-        "all-done",
+        "rename-all",
         `const found = await tools.search({path:"names.cpp",query:"FuncA"});
-const done = await tools.replace({path:found.matches,text:"FuncA"});
-// An edit whose targets already have the text succeeds and selects that text.
-check(typeof done==="string" && done.startsWith("RESULT#"),"Expected the id of the unchanged text: "+done);
-const renamed = await tools.replace({path:done,text:"FuncB"});
-text(renamed);`,
+text(await tools.replace({path:found.matches,text:"FuncB"}));`,
       ),
     ]);
     const partial = getToolResultText(result, "partial");
@@ -99,8 +98,8 @@ text(renamed);`,
     expect(partial).toContain(
       "Already had this text, left as is: 2 targets at line:column 2:1, 3:1.",
     );
-    const allDone = getToolResultText(result, "all-done");
-    expect(getToolExecution(result, "all-done").isError, allDone).toBe(false);
+    const allDone = getToolResultText(result, "rename-all");
+    expect(getToolExecution(result, "rename-all").isError, allDone).toBe(false);
     expect(await readFile(path.join(cwd, "names.cpp"), "utf8")).toBe(
       "FuncB(x);\nFuncB(y);\nFuncB(z); FuncB(w);\n",
     );
@@ -126,7 +125,7 @@ text(await tools.move({path:source,target}));`,
   });
 });
 
-test("a symbol rename to its current name succeeds without a write", async () => {
+test("a symbol rename to its current name is refused without a write", async () => {
   await withTempWorkspace(async (cwd) => {
     const library =
       "export function alpha(): number {\n  return 1;\n}\nexport const value = alpha();\n";
@@ -148,8 +147,12 @@ test("a symbol rename to its current name succeeds without a write", async () =>
       ["ide.lint"],
     );
     const output = getToolResultText(result, "rename");
-    expect(getToolExecution(result, "rename").isError, output).toBe(false);
-    expect(output).toContain("No changes: every target already has this text.");
+    const execution = getToolExecution(result, "rename");
+    expect(execution.isError, output).toBe(true);
+    expect(getToolExecutionDetails(execution)).toMatchObject({
+      effect: "not-applied",
+      results: [{ data: { errors: [{ code: "REPLACEMENT_IDENTICAL" }] } }],
+    });
     expect(await readFile(path.join(cwd, "lib.ts"), "utf8")).toBe(library);
   });
 });

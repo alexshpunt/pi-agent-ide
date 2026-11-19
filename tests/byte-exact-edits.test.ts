@@ -513,6 +513,23 @@ function randomOperation(
   }
 }
 
+/**
+ * A replace whose text equals the selected bytes changes nothing, so the tool refuses it. The
+ * reference model predicts that case as a no-op result.
+ */
+function refuseIdenticalReplace(
+  operation: Operation | undefined,
+  main: string,
+  other: string,
+): Operation | undefined {
+  if (operation === undefined || !operation.name.startsWith("replace ")) return operation;
+  const { expected } = operation;
+  if (expected === undefined) return operation;
+  const unchanged =
+    (expected["main.txt"] ?? main) === main && (expected["other.txt"] ?? other) === other;
+  return unchanged ? { ...operation, expected: undefined } : operation;
+}
+
 /** The kinds of operation the seeds ran, so a generator change cannot silently drop one. */
 const covered = new Set<string>();
 
@@ -529,7 +546,11 @@ describe("byte-exact edits on bomb files", () => {
       let near: number | undefined;
       let applied = 0;
       for (let step = 0; step < 40; step += 1) {
-        const operation = randomOperation(rng, h, main, other, near);
+        const operation = refuseIdenticalReplace(
+          randomOperation(rng, h, main, other, near),
+          main,
+          other,
+        );
         if (operation === undefined) continue;
         const label = `seed ${String(seed)} step ${String(step)}: ${operation.name} on ${JSON.stringify(main)}`;
         const outcome = await operation.run();
@@ -702,5 +723,106 @@ describe("byte-exact regressions", () => {
     });
     expect(result.details.effect).toBe("not-applied");
     expect((await bytes("main.txt")).toString("utf8")).toBe(content);
+  });
+
+  describe("a replacement identical to the selected text", () => {
+    /** The refusal code of a result that applied nothing and left every byte alone. */
+    async function expectRefused(
+      result: { isError?: boolean; details: unknown },
+      content: string,
+    ): Promise<void> {
+      expect(result.isError).toBe(true);
+      expect(result.details).toMatchObject({
+        effect: "not-applied",
+        results: [{ data: { errors: [{ code: "REPLACEMENT_IDENTICAL" }] } }],
+      });
+      expect((await bytes("main.txt")).toString("utf8")).toBe(content);
+    }
+
+    test("a single selector refuses text equal to its characters", async () => {
+      const h = await harness();
+      const content = "  { id: 1,\u00a0retries: 3 },\r\nnext\r\n";
+      await put("main.txt", content);
+      const { result } = await h.run(replaceMutationTool, {
+        path: "main.txt",
+        start: "  { id: 1,\u00a0retries: 3 },",
+        text: "  { id: 1,\u00a0retries: 3 },",
+      });
+      await expectRefused(result, content);
+    });
+
+    test("a single selector still replaces text that differs by one byte", async () => {
+      const h = await harness();
+      const content = "  { id: 1, retries: 3 },\r\nnext\r\n";
+      await put("main.txt", content);
+      const { result } = await h.run(replaceMutationTool, {
+        path: "main.txt",
+        start: "  { id: 1, retries: 3 },",
+        text: "  { id: 1, retries: 3 }",
+      });
+      expect(result.isError).not.toBe(true);
+      expect((await bytes("main.txt")).toString("utf8")).toBe(
+        "  { id: 1, retries: 3 }\r\nnext\r\n",
+      );
+    });
+
+    test("a start-to-end range refuses text equal to the whole span", async () => {
+      const h = await harness();
+      const content = "head\nalpha\nbeta\ngamma\ntail\n";
+      await put("main.txt", content);
+      const { result } = await h.run(replaceMutationTool, {
+        path: "main.txt",
+        start: "alpha",
+        end: "gamma",
+        text: "alpha\nbeta\ngamma",
+      });
+      await expectRefused(result, content);
+    });
+
+    test("a line anchor refuses its own line with the line break", async () => {
+      const h = await harness();
+      const content = "one\r\ntwo\r\nthree\r\n";
+      await put("main.txt", content);
+      const anchor = textLineAnchors(file("main.txt"), content)[1];
+      const { result } = await h.run(replaceMutationTool, {
+        path: "main.txt",
+        start: anchor,
+        text: "two\r\n",
+      });
+      await expectRefused(result, content);
+    });
+
+    test("a selection refuses when every target already equals the text", async () => {
+      const h = await harness();
+      const content = "beta alpha beta\n";
+      await put("main.txt", content);
+      const reference = h.select(file("main.txt"), content, [
+        { start: position(content, 0), end: position(content, 4) },
+        { start: position(content, 11), end: position(content, 15) },
+      ]);
+      const { result } = await h.run(replaceMutationTool, {
+        path: "main.txt",
+        start: reference,
+        text: "beta",
+      });
+      await expectRefused(result, content);
+    });
+
+    test("a selection edits its targets when only some already equal the text", async () => {
+      const h = await harness();
+      const content = "beta alpha beta\n";
+      await put("main.txt", content);
+      const reference = h.select(file("main.txt"), content, [
+        { start: position(content, 0), end: position(content, 4) },
+        { start: position(content, 5), end: position(content, 10) },
+      ]);
+      const { result, text } = await h.run(replaceMutationTool, {
+        path: "main.txt",
+        start: reference,
+        text: "beta",
+      });
+      expect(result.isError, text).not.toBe(true);
+      expect((await bytes("main.txt")).toString("utf8")).toBe("beta beta beta\n");
+    });
   });
 });
