@@ -14,6 +14,7 @@ import {
   DEFAULT_MODELS,
   harnesses,
   ignoredPaths,
+  passed,
   renderReport,
   runJob,
   sandboxExecutor,
@@ -216,7 +217,7 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   }
   console.log(`Results: ${results}`);
-  if (abort.signal.aborted || rows.some((row) => row.grade.result !== "pass")) process.exitCode = 1;
+  if (abort.signal.aborted || !rows.every(passed)) process.exitCode = 1;
 }
 
 await main();

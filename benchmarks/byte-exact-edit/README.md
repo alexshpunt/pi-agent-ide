@@ -14,7 +14,7 @@ pnpm bench:byte-exact-edit --run --auth-dir /path/to/private-pi-auth \
   --models openai-codex/gpt-6-luna --harnesses stock,ide --variants bom --runs 1
 ```
 
-No model calls occur without `--run`. With `--run` and no other options, the command runs every variant with both harnesses on `openai-codex/gpt-6-luna`, `openai-codex/gpt-5.6-luna` and `openai-codex/gpt-6.1-terra` at thinking `low`, two runs each: 48 runs, four at a time. It prints a table of passes per model, harness and variant, followed by one line per run, and exits with 1 unless every run passed.
+No model calls occur without `--run`. With `--run` and no other options, the command runs every variant with both harnesses on `openai-codex/gpt-6-luna`, `openai-codex/gpt-5.6-luna` and `openai-codex/gpt-6.1-terra` at thinking `low`, two runs each: 48 runs, four at a time. It prints a table of passes per model, harness and variant, followed by one line per run, and exits with 1 unless every run passed. A run passes when its status is `ok` and its file passes.
 
 | Option          | Default                               | Meaning                                 |
 | --------------- | ------------------------------------- | --------------------------------------- |

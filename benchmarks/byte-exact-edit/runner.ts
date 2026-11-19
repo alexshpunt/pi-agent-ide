@@ -314,6 +314,9 @@ export function sandboxExecutor(options: {
   };
 }
 
+/** A run passes only when it completed as requested and its file matches byte for byte. */
+export const passed = (row: Row) => row.status === "ok" && row.grade.result === "pass";
+
 function cell(text: string): string {
   return text.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
@@ -325,9 +328,7 @@ export function renderReport(rows: readonly Row[], variants: readonly Variant[])
     const [model = "", harness = ""] = group.split("|");
     const own = rows.filter((row) => `${row.model} ${row.thinking}|${row.harness}` === group);
     const score = (list: readonly Row[]) =>
-      list.length
-        ? `${list.filter((row) => row.grade.result === "pass").length}/${list.length}`
-        : "-";
+      list.length ? `${list.filter(passed).length}/${list.length}` : "-";
     const cells = variants.map((variant) => score(own.filter((row) => row.variant === variant.id)));
     return `| ${model} | ${harness} | ${cells.join(" | ")} | ${score(own)} |`;
   });

@@ -218,7 +218,8 @@ async function checkRunner(scratch: string): Promise<void> {
   const kept = await readFile(path.join(results, rows[3]?.id ?? "", FIXTURE_FILE), "utf8");
   assert.ok(!kept.startsWith(BOM), "the final file of a run is kept with its results");
   const report = renderReport(rows, variants);
-  assert.ok(report.includes("| provider/model low | stock | - | 2/3 | - | - | 2/3 |"));
+  // Stock run 3 leaves the expected file, but its undeclared bash keeps it from passing.
+  assert.ok(report.includes("| provider/model low | stock | - | 1/3 | - | - | 1/3 |"));
   assert.ok(report.includes("| provider/model low | ide | - | 0/3 | - | - | 0/3 |"));
 }
 
