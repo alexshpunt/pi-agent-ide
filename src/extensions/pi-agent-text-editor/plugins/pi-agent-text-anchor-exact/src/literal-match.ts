@@ -15,7 +15,6 @@ export interface LiteralSpan {
  * that finds the literal decides, so an exact match always wins over a tolerant one.
  */
 export interface LiteralMatcher {
-  readonly id: string;
   /** Up to `limit` accepted spans in file order. Each span covers whole source characters. */
   find(
     content: string,
@@ -30,7 +29,6 @@ export interface LiteralMatcher {
  * at its LF or ends after its CR covers the whole CRLF.
  */
 const exactMatcher: LiteralMatcher = {
-  id: "exact",
   find(content, value, accept, limit) {
     return scan(
       content,
@@ -53,7 +51,6 @@ const exactMatcher: LiteralMatcher = {
  * the LF of a CRLF covers the whole CRLF.
  */
 const lineEndingMatcher: LiteralMatcher = {
-  id: "line-endings",
   find(content, value, accept, limit) {
     const { bom, text } = splitBom(content);
     const query = normalizeToLF(splitBom(value).text);
@@ -78,7 +75,6 @@ const lineEndingMatcher: LiteralMatcher = {
  * into several, such as a ligature, is not a match.
  */
 const fuzzyMatcher: LiteralMatcher = {
-  id: "fuzzy",
   find(content, value, accept, limit) {
     const query = normalizeForFuzzyMatch(normalizeToLF(splitBom(value).text));
     if (query.length === 0) return [];
@@ -117,8 +113,8 @@ export const LITERAL_MATCHERS: readonly LiteralMatcher[] = [
 ];
 
 export type LiteralMatch =
-  | { readonly kind: "unique"; readonly span: LiteralSpan; readonly matcher: string }
-  | { readonly kind: "ambiguous"; readonly matcher: string }
+  | { readonly kind: "unique"; readonly span: LiteralSpan }
+  | { readonly kind: "ambiguous" }
   | { readonly kind: "missing" };
 
 /** Finds the one span the literal selects: the first matcher that finds it decides. */
@@ -130,8 +126,8 @@ export function matchLiteral(
   if (value.length === 0) return { kind: "missing" };
   for (const matcher of LITERAL_MATCHERS) {
     const [first, second] = matcher.find(content, value, accept, 2);
-    if (second !== undefined) return { kind: "ambiguous", matcher: matcher.id };
-    if (first !== undefined) return { kind: "unique", span: first, matcher: matcher.id };
+    if (second !== undefined) return { kind: "ambiguous" };
+    if (first !== undefined) return { kind: "unique", span: first };
   }
   return { kind: "missing" };
 }
@@ -226,13 +222,10 @@ function fuzzyUnits(
       const mapped = fuzzyLine(text.slice(textStart, textEnd));
       lines.set(line, mapped?.text === folded.slice(foldedStart, foldedEnd) ? mapped : undefined);
     }
-    const mapped = lines.get(line);
-    const column = offset - foldedStart;
-    const from = mapped?.starts[column];
-    const to = mapped?.ends[column];
-    return from === undefined || to === undefined
+    const unit = lines.get(line)?.unitAt(offset - foldedStart);
+    return unit === undefined
       ? undefined
-      : { from: textStart + from, to: textStart + to };
+      : { from: textStart + unit.from, to: textStart + unit.to };
   };
 }
 
@@ -248,11 +241,18 @@ function lineStarts(text: string): number[] {
   return starts;
 }
 
-/** A line's fuzzy text with the range of the line each of its code units came from. */
+/**
+ * A line of Latin text, special spaces, dashes and quotes: BMP characters that NFKC never
+ * composes with a neighbour. When NFKC keeps the length of such a line, no character expanded,
+ * so every character maps to exactly one code unit.
+ */
+const ONE_TO_ONE_LINE =
+  /^[\0-\u02FF\u2002-\u200A\u2010-\u2015\u2018-\u201F\u202F\u205F\u2212\u3000]*$/u;
+
+/** A line's fuzzy text and the range of the line each of its code units came from. */
 interface FuzzyLine {
   readonly text: string;
-  readonly starts: readonly number[];
-  readonly ends: readonly number[];
+  unitAt(column: number): LiteralSpan | undefined;
 }
 
 /**
@@ -261,6 +261,15 @@ interface FuzzyLine {
  * replacements change the length, so units would no longer line up with their source.
  */
 function fuzzyLine(line: string): FuzzyLine | undefined {
+  // Most lines hold only characters that stand alone and that NFKC keeps or maps to one code
+  // unit; there each unit of the fuzzy text comes from the unit at the same column.
+  if (ONE_TO_ONE_LINE.test(line) && line.normalize("NFKC").length === line.length) {
+    const text = normalizeForFuzzyMatch(line);
+    return {
+      text,
+      unitAt: (column) => (column < text.length ? { from: column, to: column + 1 } : undefined),
+    };
+  }
   const units: string[] = [];
   const starts: number[] = [];
   const ends: number[] = [];
@@ -279,9 +288,16 @@ function fuzzyLine(line: string): FuzzyLine | undefined {
   const trimmed = units.join("").trimEnd();
   const text = normalizeForFuzzyMatch(trimmed);
   if (text.length !== trimmed.length) return undefined;
-  starts.length = text.length;
-  ends.length = text.length;
-  return { text, starts, ends };
+  return {
+    text,
+    unitAt: (column) => {
+      const from = starts[column];
+      const to = ends[column];
+      return column >= text.length || from === undefined || to === undefined
+        ? undefined
+        : { from, to };
+    },
+  };
 }
 
 function codePointLength(text: string, at: number): number {
