@@ -1051,6 +1051,9 @@ function wholeFileFailureCause(code: string): string {
     case "COPIED_LINE_ANCHOR": {
       return "replacement contains a copied line prefix; remove it and retry";
     }
+    case "REPLACEMENT_IDENTICAL": {
+      return "replacement is identical to the selected text; send the changed text";
+    }
     case "EMPTY_SELECTOR": {
       return "a required selector is empty";
     }

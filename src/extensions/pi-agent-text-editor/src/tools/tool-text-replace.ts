@@ -16,6 +16,7 @@ import {
 
 import {
   TextMutationInputError,
+  type TextMutationContext,
   type TextMutationToolRegistration,
 } from "#src/api/mutation-tool.ts";
 
@@ -83,6 +84,12 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
     const selections = textSelections(starts, "start");
     if (parameters.end === undefined && selections !== undefined) {
       const changes = selectionChanges(context, selections, parameters.text);
+      refuseIdenticalReplacement(
+        context,
+        [...changes].flatMap(([source, sourceChanges]) =>
+          sourceChanges.map((change) => ({ source, ...change })),
+        ),
+      );
       return {
         edits: new Map(
           [...changes].map(([source, sourceChanges]) => [
@@ -95,6 +102,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
 
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const span = await anchorSpanRange(context, starts, ends, "start", "end");
+    refuseIdenticalReplacement(context, [{ ...span, insert: parameters.text }]);
     return {
       edits: new Map([
         [span.source, { changes: [replaceAnchorSpan(span, parameters.text)], action: "edited" }],
@@ -102,3 +110,25 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
     };
   },
 };
+
+/**
+ * Refuses a call whose replacement equals every selected target byte for byte. When only some
+ * targets already hold the text, the others are edited as usual.
+ */
+function refuseIdenticalReplacement(
+  context: TextMutationContext,
+  targets: readonly {
+    readonly source: string;
+    readonly from: number;
+    readonly to: number;
+    readonly insert: string;
+  }[],
+): void {
+  if (targets.length === 0) return;
+  if (targets.some((target) => context.documentFor(target.source).text(target) !== target.insert))
+    return;
+  throw new TextMutationInputError(
+    "REPLACEMENT_IDENTICAL",
+    "The replacement text is identical to the selected text, so nothing would change. replace writes text in place of the selection: send the changed text.",
+  );
+}

@@ -22,9 +22,7 @@ id(await tools.insert({path:"a.txt",anchor:"gamma",text:" delta"}), "Insert");
 // The id of an edit still pending in the batch: the next call commits the batch first.
 const found = await tools.search({path:replaced,query:"ALPHA"});
 check(found.matches.length===1 && found.complete===true, "Search lost the pending replacement: "+JSON.stringify(found));
-const chained = id(await tools.replace({path:replaced,text:"OMEGA"}), "Chained Replace");
-// An edit whose target already has the text succeeds and still selects it.
-id(await tools.replace({path:chained,text:"OMEGA"}), "Already-done Replace");
+id(await tools.replace({path:replaced,text:"OMEGA"}), "Chained Replace");
 check(await tools.delete({path:"a.txt",start:"beta "})===null, "Delete selected text");
 const written = id(await tools.write({path:"b.txt",content:"one\\ntwo\\n"}), "Write");
 check((await tools.read({path:written})).text==="one\\ntwo\\n", "Write id lost the whole file");
