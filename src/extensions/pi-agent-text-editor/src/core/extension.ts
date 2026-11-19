@@ -63,21 +63,27 @@ export default async function registerTextEditorCore(
   const resultTargets = connectResultTargets(pi);
   const resultImages = connectResultImages(pi);
   const mutationTools = new Set<string>();
-  const core = createTextEditorCore((registration, editor) => {
-    mutationTools.add(registration.name);
-    pi.registerTool(
-      createTextTool(
-        editor,
-        registration,
-        interceptionRendering,
-        () => getLastResolvedResource(pi)?.source,
-        resultTargets,
-        pi.events,
-        resultImages,
-        observations,
-      ),
-    );
-  }, resultTargets);
+  const core = createTextEditorCore(
+    (registration, editor) => {
+      mutationTools.add(registration.name);
+      pi.registerTool(
+        createTextTool(
+          editor,
+          registration,
+          interceptionRendering,
+          () => getLastResolvedResource(pi)?.source,
+          resultTargets,
+          pi.events,
+          resultImages,
+          observations,
+        ),
+      );
+    },
+    resultTargets,
+    {
+      checkSpan: observations.checkSpan.bind(observations),
+    },
+  );
   pi.on("before_agent_start", (event) => {
     const enabled = pi
       .getAllTools()
@@ -115,6 +121,10 @@ export default async function registerTextEditorCore(
       return { details: persist(details), ...(isError ? { isError: true } : {}) };
     }
     if (isError) return { isError: true };
+  });
+  pi.on("message_end", async ({ message }, context) => {
+    if (message.role === "toolResult" && message.toolName !== "write")
+      await observations.presented(message.content, context.cwd);
   });
   let readApi: ReadPluginApi | undefined;
   await connectReadPlugin(pi, {

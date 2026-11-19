@@ -123,7 +123,7 @@ function ownedReader(
   };
 }
 
-function intersectRange(seed: ResultRange, window: ResultRange): ResultRange[] {
+export function intersectRange(seed: ResultRange, window: ResultRange): ResultRange[] {
   const compare = (a: ResultRange["start"], b: ResultRange["start"]) =>
     a.lineNumber - b.lineNumber || a.column - b.column;
   const start = compare(seed.start, window.start) >= 0 ? seed.start : window.start;

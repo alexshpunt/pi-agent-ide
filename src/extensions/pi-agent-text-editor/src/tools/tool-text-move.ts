@@ -73,7 +73,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
   mutate: async (context, parameters: MoveParameters) => {
     const starts = await context.resolveAnchors("start");
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const sourceSpan = anchorSpanRange(context, starts, ends, "start", "end");
+    const sourceSpan = await anchorSpanRange(context, starts, ends, "start", "end");
     const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
     const deletion = {
       ...deleteAnchorSpan(sourceSpan),
@@ -87,7 +87,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
       [target, targetChange] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
     } else {
       const targetEnds = await context.resolveAnchors("targetEnd");
-      const targetSpan = anchorSpanRange(
+      const targetSpan = await anchorSpanRange(
         context,
         targetStarts,
         targetEnds,

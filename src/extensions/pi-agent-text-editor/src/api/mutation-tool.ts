@@ -36,6 +36,11 @@ export interface TextMutationContext {
   readonly cwd: string;
   readonly signal?: AbortSignal;
   readonly sourceDocument: TextChangeDocument;
+  checkSpan?(span: {
+    readonly source: string;
+    readonly from: number;
+    readonly to: number;
+  }): Promise<void>;
   targetDocument(field: string): TextChangeDocument;
   sourceFor(field: string): string;
   documentFor(source: string): TextChangeDocument;

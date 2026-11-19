@@ -117,13 +117,14 @@ export interface ReadToolContributions {
   readonly fragments?: readonly FragmentResolverRegistration[];
 }
 
+type ReadObserver = (result: ReadToolResult, cwd: string, nested: boolean) => Promise<void>;
 export interface ReadTool {
   /** Shares the read runtime's temporary resource store with composed operations. */
   saveTemporary(text: string): Promise<string>;
   /** Sets the saver used before agent-facing text is truncated. */
   setOutputSaver(saver: (text: string) => Promise<string>): void;
   /** Observe only tool calls, never internal rereads. */
-  setReadObserver(observer: (result: ReadToolResult, cwd: string) => Promise<void>): void;
+  setReadObserver(observer: ReadObserver): void;
   readonly tool: ToolDefinition<typeof readToolParameters, ReadResultDetails>;
   execute(
     request: ReadPipelineContext["request"],
@@ -154,7 +155,7 @@ export function createReadTool(
 ): ReadTool {
   const temporaryResources = new TempResourceStore();
   let outputSaver: ((text: string) => Promise<string>) | undefined;
-  let readObserver: ((result: ReadToolResult, cwd: string) => Promise<void>) | undefined;
+  let readObserver: ReadObserver | undefined;
   const resolvers: RegisteredResolver[] = [
     {
       resolver: temporaryResources.resolver,
@@ -265,8 +266,9 @@ export function createReadTool(
               nested ? "none" : "model",
             );
             const checked = withReadCancellation(result, request.path, signal);
-            if (!checked.isError) await readObserver?.(checked, context.cwd);
-            return withoutScriptData(structuredRead(checked, { complete: nested }));
+            const structured = structuredRead(checked, { complete: nested });
+            if (!structured.isError) await readObserver?.(checked, context.cwd, nested);
+            return withoutScriptData(structured);
           } catch (error) {
             if (signal?.aborted) throw error;
             return structuredRead(

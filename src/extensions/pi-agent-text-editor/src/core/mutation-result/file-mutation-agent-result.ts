@@ -1,6 +1,7 @@
 import { renderAgentDiff } from "./agent-diff.ts";
 import { groupReplacements, renderGroupedReplacements } from "./grouped-replacements.ts";
 import { renderFinalStateFragment } from "./final-state-fragment.ts";
+import { attachFileTextWindows, type FileTextWindow } from "pi-agent-resource";
 import { type FileMutationResult } from "./file-mutation-result.ts";
 import { describeAlreadyDone, describeAlreadyDoneFile } from "#src/core/already-done.ts";
 
@@ -25,9 +26,13 @@ export class FileMutationAgentResult {
    * Returned string is suitable for content[0].text in a tool response.
    */
   public toText(): string {
+    return this.format();
+  }
+
+  private format(shown?: (window: FileTextWindow) => void): string {
     const grouped = groupReplacements(this.results);
     if (grouped !== undefined) return renderGroupedReplacements(grouped);
-    const parts: string[] = Array.from(this.results, (fmr) => this.formatSingle(fmr));
+    const parts = this.results.map((fmr) => this.formatSingle(fmr, shown));
 
     return parts.join("\n\n");
   }
@@ -37,10 +42,13 @@ export class FileMutationAgentResult {
    * Returns { type: "text", text } suitable for content[] in tool response.
    */
   public toTextContent(): { type: "text"; text: string } {
-    return { type: "text", text: this.toText() };
+    const windows: FileTextWindow[] = [];
+    const block = { type: "text" as const, text: this.format((window) => windows.push(window)) };
+    attachFileTextWindows(block, windows);
+    return block;
   }
 
-  private formatSingle(fmr: FileMutationResult): string {
+  private formatSingle(fmr: FileMutationResult, shown?: (window: FileTextWindow) => void): string {
     if (fmr.isPartial) {
       return "gate progress";
     }
@@ -56,7 +64,7 @@ export class FileMutationAgentResult {
         : "<empty-result>";
     }
 
-    return this.formatSuccess(fmr);
+    return this.formatSuccess(fmr, shown);
   }
 
   // ── Failure formatting ────────────────────────────────────────────────
@@ -284,7 +292,7 @@ export class FileMutationAgentResult {
     }
   }
 
-  private formatSuccess(fmr: FileMutationResult): string {
+  private formatSuccess(fmr: FileMutationResult, shown?: (window: FileTextWindow) => void): string {
     const operations = fmr.data.operations ?? [];
     const verbs: Record<string, string> = {
       replace: "Replaced selected text",
@@ -321,7 +329,7 @@ export class FileMutationAgentResult {
     }
     for (const diff of fmr.diffs) {
       const path = /^--- (.+)$/m.exec(diff)?.[1] ?? fmr.path ?? "<unknown file>";
-      blocks.push(renderFinalStateFragment(fmr, path).join("\n"));
+      blocks.push(renderFinalStateFragment(fmr, path, shown).join("\n"));
     }
 
     if (fmr.diffs.length === 0) {

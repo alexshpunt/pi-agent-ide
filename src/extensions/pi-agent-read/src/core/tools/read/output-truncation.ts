@@ -19,6 +19,39 @@ export const READ_OUTPUT_MAX_BYTES = DEFAULT_MAX_BYTES;
 
 export const READ_OUTPUT_MAX_LINES = DEFAULT_MAX_LINES;
 
+/** Last source line present in a head-truncated, single-window projection. */
+export function lastShownReadLine(
+  script: Extract<NonNullable<ReadToolResult["script"]>, { kind: "text" }>,
+  truncation: TruncationResult,
+) {
+  if (truncation.outputLines === 0) return;
+  if (!(script.presented ?? script.content).startsWith(truncation.content)) return;
+
+  // Pi counts LF-delimited rows. Annotations can add rows and bare CR does not end a row.
+  const countLf = (text: string | undefined) => text?.match(/\n/gu)?.length ?? 0;
+  const annotationRows = (
+    rows: NonNullable<(typeof script.lines)[number]["presentation"]>["before"],
+  ) =>
+    (rows ?? []).reduce(
+      (count, row) => count + 1 + countLf(row.prefix) + countLf(row.content) + countLf(row.suffix),
+      0,
+    );
+  const fullRows = truncation.outputLines - (truncation.lastLinePartial ? 1 : 0);
+  let row = 0;
+  let last: (typeof script.lines)[number] | undefined;
+  for (const line of script.lines) {
+    const presentation = script.presented === undefined ? undefined : line.presentation;
+    row += annotationRows(presentation?.before) + countLf(presentation?.prefix);
+    if (row >= fullRows) break;
+    last = line;
+    row +=
+      countLf(presentation?.suffix) +
+      annotationRows(presentation?.after) +
+      countLf(line.lineEnding);
+  }
+  return last;
+}
+
 export async function limitReadOutput(
   result: ReadToolResult,
   request: ReadRequest,

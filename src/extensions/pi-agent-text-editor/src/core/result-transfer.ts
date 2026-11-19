@@ -151,7 +151,7 @@ export async function prepareResultTransfer(
           ? [
               input.start === undefined
                 ? { source: context.sourceFor("path"), from: 0, to: context.sourceDocument.length }
-                : anchorSpanRange(
+                : await anchorSpanRange(
                     context,
                     await context.resolveAnchors("start"),
                     input.end === undefined ? undefined : await context.resolveAnchors("end"),
@@ -194,7 +194,7 @@ export async function prepareResultTransfer(
             change,
           });
         } else {
-          const target = anchorSpanRange(
+          const target = await anchorSpanRange(
             context,
             starts,
             await context.resolveAnchors("targetEnd"),

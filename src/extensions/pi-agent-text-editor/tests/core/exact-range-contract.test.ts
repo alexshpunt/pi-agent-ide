@@ -57,11 +57,11 @@ function fixture(
 for (const eol of ["\n", "\r\n"]) {
   test.each([`keep${eol}`, `keep${eol}${eol}`, ""])(
     "line deletion owns no preceding separator (%j)",
-    (prefix) => {
+    async (prefix) => {
       const content = `${prefix}尾🙂`;
       const line = prefix.split(eol).length;
       const f = fixture({ source: content }, { start: ["source", line] });
-      const span = anchorSpanRange(f.context, f.resolve("start"), undefined, "start", "end");
+      const span = await anchorSpanRange(f.context, f.resolve("start"), undefined, "start", "end");
       const expected = { from: prefix.length, to: content.length, insert: "" };
       expect(f.documentFor("source").deleteLines(line, line)).toEqual(expected);
       expect(f.documentFor("source").replaceLines(line, line, "")).toEqual(expected);
