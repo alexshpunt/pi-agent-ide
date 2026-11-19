@@ -200,11 +200,12 @@
   },
   "scripts": {
     "prepare": "husky install",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:imports && pnpm check:catalog && pnpm check:capabilities && pnpm check:package",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm check:paths && pnpm check:boundaries && pnpm check:imports && pnpm check:catalog && pnpm check:capabilities && pnpm check:byte-exact-edit && pnpm check:package",
     "check:boundaries": "oxnode scripts/check-package-boundaries.ts",
     "check:imports": "oxnode scripts/check-import-extensions.ts",
     "check:catalog": "oxnode scripts/generate-tool-catalog.ts --check",
     "check:capabilities": "node benchmarks/tool-capabilities/cli.ts --check",
+    "check:byte-exact-edit": "node benchmarks/byte-exact-edit/cli.ts --check",
     "check:package": "oxnode scripts/build-public-package.ts",
     "check:paths": "oxnode scripts/check-no-machine-paths.ts && node --experimental-strip-types scripts/check-no-task-evidence.ts",
     "dev:export-agent-interface": "oxnode scripts/dev/export-agent-interface.ts",
@@ -228,7 +229,8 @@
     "typecheck": "oxlint -A all --type-aware --type-check src packages scripts benchmarks tests",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "bench:tool-load": "node benchmarks/tool-load/cli.ts"
+    "bench:tool-load": "node benchmarks/tool-load/cli.ts",
+    "bench:byte-exact-edit": "node benchmarks/byte-exact-edit/cli.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.9",
