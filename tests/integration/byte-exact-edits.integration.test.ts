@@ -25,6 +25,7 @@ const BOMB = [
   '  { id: "cart\u200B", retries: 2 },\t\n',
   '  { id: "checkout", retries: 3 }, // keep\rthis\r\n',
   '  { id: "search\u202F", retries: 4 },\n',
+  '  { id: "promo",\u00A0retries: 6 },  \n',
   "];\r\n",
   "export default routes;",
 ].join("");
@@ -70,11 +71,27 @@ test("edits through the real tools change exactly the selected bytes", async () 
         name: "replace",
         arguments: { path: "routes.ts", start: "default routes;", text: "default routeTable;" },
       },
-      // A selector with LF where the file has CRLF is refused and changes nothing.
+      // A selector with LF matches CRLF text; sent line breaks take the CRLF of that line.
+      {
+        id: "normalized",
+        name: "replace",
+        arguments: { path: "routes.ts", start: "];\nexport", text: "];\n\nexport" },
+      },
+      // A plain space matches the no-break space; trailing spaces outside the match stay.
+      {
+        id: "fuzzy",
+        name: "replace",
+        arguments: {
+          path: "routes.ts",
+          start: 'id: "promo", retries',
+          text: 'id: "sale", retries',
+        },
+      },
+      // A literal that is not in the file is refused and changes nothing.
       {
         id: "refused",
         name: "replace",
-        arguments: { path: "routes.ts", start: "];\nexport", text: "BAD" },
+        arguments: { path: "routes.ts", start: 'id: "nowhere"', text: "BAD" },
       },
       // The first line keeps its BOM when the text after it changes.
       {
@@ -124,7 +141,8 @@ test("edits through the real tools change exactly the selected bytes", async () 
       '\t{ id: "home", retries: 1 },\n',
       '  { id: "checkout", retries: 5 }, // keep\rthis\r\n',
       '  { id: "find", retries: 4 },\n',
-      "];\r\n",
+      '  { id: "sale", retries: 6 },  \n',
+      "];\r\n\r\n",
       "export default routeTable;",
     ].join("");
     expect((await readFile(file)).equals(Buffer.from(expected))).toBe(true);

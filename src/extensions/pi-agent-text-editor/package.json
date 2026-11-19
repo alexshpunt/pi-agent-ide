@@ -40,6 +40,10 @@
       "types": "./src/api/text-selection-anchor.ts",
       "default": "./src/api/text-selection-anchor.ts"
     },
+    "./api/pi-edit-text": {
+      "types": "./src/api/pi-edit-text.ts",
+      "default": "./src/api/pi-edit-text.ts"
+    },
     "./api/post-edit": {
       "types": "./src/api/post-edit.ts",
       "default": "./src/api/post-edit.ts"
