@@ -6,6 +6,8 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 # Direct Node execution must retain the local Pi CLI normally added by pnpm exec.
 export PATH="$root/node_modules/.bin:$PATH"
+# Finished test workspaces free their language servers instead of keeping them for 10 minutes.
+export PI_AGENT_IDE_LSP_LINGER_MS="${PI_AGENT_IDE_LSP_LINGER_MS:-5000}"
 command -v pi >/dev/null || { echo "Local Pi CLI is unavailable; install dependencies first." >&2; exit 1; }
 mode="${1:?Supply a shard such as 1/4, or namespaces}"
 namespace_files=(

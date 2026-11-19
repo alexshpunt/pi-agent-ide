@@ -28,6 +28,7 @@ import {
 import { sourceChanged } from "./source-changes.ts";
 import {
   DEFAULT_SHARED_SERVER_LINGER_MS,
+  sharedServerLingerOverride,
   type LspSharedServer,
   type LspSharedServers,
 } from "./shared-servers.ts";
@@ -725,7 +726,10 @@ export class LspClient {
         ),
         settings: this._settings,
         initialize,
-        lingerMs: this._idleTimeoutMs ?? DEFAULT_SHARED_SERVER_LINGER_MS,
+        lingerMs:
+          sharedServerLingerOverride(process.env) ??
+          this._idleTimeoutMs ??
+          DEFAULT_SHARED_SERVER_LINGER_MS,
         timeoutMs: this._timeoutMs,
         ...(signal && { signal }),
       });

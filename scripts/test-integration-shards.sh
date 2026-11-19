@@ -8,6 +8,9 @@ set -uo pipefail
 root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 cd "$root"
 shards="${SHARDS:-4}"
+# Each test workspace gets its own language-server host; stop it soon after its Pi exits, or
+# finished workspaces keep their servers for the default 10 minutes and fill memory.
+export PI_AGENT_IDE_LSP_LINGER_MS="${PI_AGENT_IDE_LSP_LINGER_MS:-5000}"
 log_parent="${LOG_DIR:-.tmp}"
 mkdir -p "$log_parent"
 log_dir="$(mktemp -d "$log_parent/integration-shards.XXXXXX")"
@@ -22,8 +25,10 @@ for shard in $(seq 1 "$shards"); do
   if [[ -n "$report_dir" ]]; then
     report_args=(--reporter=default --reporter=junit "--outputFile.junit=${report_dir}/integration-${shard}.xml")
   fi
-  env -u PI_INTEGRATION_TEST_RUNNER pnpm exec \
-    vitest run --config vitest.integration.config.mjs "--shard=${shard}/${shards}" "${report_args[@]}" "$@" \
+  # Run Vitest directly: a pnpm exec wrapper stays alive for the whole shard and costs about
+  # 150 MB of memory each.
+  env -u PI_INTEGRATION_TEST_RUNNER PATH="$root/node_modules/.bin:$PATH" node node_modules/vitest/vitest.mjs \
+    run --config vitest.integration.config.mjs "--shard=${shard}/${shards}" "${report_args[@]}" "$@" \
     > "${log_dir}/integration-shard-${shard}.log" 2>&1 &
   pids+=($!)
 done
