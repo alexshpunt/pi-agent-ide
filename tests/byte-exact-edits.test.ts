@@ -337,7 +337,7 @@ function randomOperation(
         run: call(kind === 1 ? deleteMutationTool : replaceMutationTool, {
           path: "main.txt",
           start: main.slice(span.from, span.to),
-          ...(kind === 1 ? {} : { text: insert }),
+          ...(kind === 1 ? {} : { newText: insert }),
         }),
         expected: { "main.txt": splice(main, span.from, span.to, insert) },
       };
@@ -359,7 +359,7 @@ function randomOperation(
           path: "main.txt",
           start: main.slice(first.from, first.to),
           end: main.slice(second.from, second.to),
-          text,
+          newText: text,
         }),
         expected: { "main.txt": splice(main, first.from, second.to, text) },
       };
@@ -378,7 +378,7 @@ function randomOperation(
           path: "main.txt",
           start: anchors[low],
           ...(low === high ? {} : { end: anchors[high] }),
-          ...(kind === 4 ? {} : { text: insert }),
+          ...(kind === 4 ? {} : { newText: insert }),
         }),
         expected: {
           "main.txt": splice(main, lines[low]?.from ?? 0, lines[high]?.to ?? main.length, insert),
@@ -394,7 +394,7 @@ function randomOperation(
       ]);
       return {
         name: `replace match ${JSON.stringify(main.slice(span.from, span.to))}`,
-        run: call(replaceMutationTool, { path: "main.txt", start: reference, text }),
+        run: call(replaceMutationTool, { path: "main.txt", start: reference, newText: text }),
         expected: { "main.txt": splice(main, span.from, span.to, text) },
       };
     }
@@ -412,7 +412,7 @@ function randomOperation(
       ]);
       return {
         name: `replace line selection ${String(low + 1)}-${String(high + 1)}`,
-        run: call(replaceMutationTool, { path: "main.txt", start: reference, text }),
+        run: call(replaceMutationTool, { path: "main.txt", start: reference, newText: text }),
         expected: {
           "main.txt": splice(main, lines[low]?.from ?? 0, lines[high]?.to ?? 0, text),
         },
@@ -484,7 +484,7 @@ function randomOperation(
       if (variant === undefined || variant.length === 0 || main.includes(variant)) return undefined;
       return {
         name: `refuse variant ${JSON.stringify(variant)}`,
-        run: call(replaceMutationTool, { path: "main.txt", start: variant, text: "BAD" }),
+        run: call(replaceMutationTool, { path: "main.txt", start: variant, newText: "BAD" }),
         expected: undefined,
       };
     }
@@ -494,7 +494,7 @@ function randomOperation(
       if (repeated === undefined) return undefined;
       return {
         name: `refuse ambiguous ${JSON.stringify(repeated)}`,
-        run: call(replaceMutationTool, { path: "main.txt", start: repeated, text: "BAD" }),
+        run: call(replaceMutationTool, { path: "main.txt", start: repeated, newText: "BAD" }),
         expected: undefined,
       };
     }
@@ -612,7 +612,7 @@ describe("byte-exact regressions", () => {
   test("a replace keeps the BOM of the file", async () => {
     const h = await harness();
     await put("main.txt", `${BOM}const a = 1;\r\nexport const b = 2;`);
-    await h.run(replaceMutationTool, { path: "main.txt", start: "1", text: "3" });
+    await h.run(replaceMutationTool, { path: "main.txt", start: "1", newText: "3" });
     expect((await bytes("main.txt")).toString("utf8")).toBe(
       `${BOM}const a = 3;\r\nexport const b = 2;`,
     );
@@ -623,7 +623,7 @@ describe("byte-exact regressions", () => {
     const content = "one\r\ntwo\nthree\r\n";
     await put("main.txt", content);
     const anchor = textLineAnchors(file("main.txt"), content)[1];
-    await h.run(replaceMutationTool, { path: "main.txt", start: anchor, text: "TWO\n" });
+    await h.run(replaceMutationTool, { path: "main.txt", start: anchor, newText: "TWO\n" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("one\r\nTWO\nthree\r\n");
   });
 
@@ -632,7 +632,7 @@ describe("byte-exact regressions", () => {
     const content = "one\ntwo\nthree\n";
     await put("main.txt", content);
     const anchor = textLineAnchors(file("main.txt"), content)[1];
-    await h.run(replaceMutationTool, { path: "main.txt", start: anchor, text: "TWO" });
+    await h.run(replaceMutationTool, { path: "main.txt", start: anchor, newText: "TWO" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("one\nTWOthree\n");
   });
 
@@ -643,7 +643,7 @@ describe("byte-exact regressions", () => {
     const { result, text } = await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "d\re\nlast",
-      text: "X",
+      newText: "X",
     });
     expect(result.isError, text).not.toBe(true);
     expect((await bytes("main.txt")).toString("utf8")).toBe("a\rb\rc\nX line\r");
@@ -662,7 +662,7 @@ describe("byte-exact regressions", () => {
   test("sent CRLF and LF are written as sent, whatever the file uses", async () => {
     const h = await harness();
     await put("main.txt", "one\r\ntwo\r\n");
-    await h.run(replaceMutationTool, { path: "main.txt", start: "one", text: "1\n1\r\n1" });
+    await h.run(replaceMutationTool, { path: "main.txt", start: "one", newText: "1\n1\r\n1" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\n1\r\n1\r\ntwo\r\n");
     await h.run(insertMutationTool, { path: "main.txt", anchor: "two", text: "\nmore" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\n1\r\n1\r\ntwo\nmore\r\n");
@@ -675,7 +675,7 @@ describe("byte-exact regressions", () => {
     const { result } = await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "one\ntwo",
-      text: "X",
+      newText: "X",
     });
     expect(result.details.effect).toBe("not-applied");
     expect((await bytes("main.txt")).toString("utf8")).toBe(content);
@@ -694,10 +694,14 @@ describe("byte-exact regressions", () => {
     const { text } = await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "two",
-      text: "2",
+      newText: "2",
     });
     expect(shownFinalLines(text).get(3)).toBe("\\ No newline at end of file");
-    const ended = await h.run(replaceMutationTool, { path: "main.txt", start: "2", text: "2\n" });
+    const ended = await h.run(replaceMutationTool, {
+      path: "main.txt",
+      start: "2",
+      newText: "2\n",
+    });
     expect([...shownFinalLines(ended.text).values()]).toEqual(["one", "2"]);
   });
 
@@ -707,7 +711,7 @@ describe("byte-exact regressions", () => {
     const { text } = await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "one",
-      text: "1",
+      newText: "1",
     });
     expect([...shownFinalLines(text).values()]).toEqual(["1\r", "two\rx"]);
   });
@@ -719,7 +723,7 @@ describe("byte-exact regressions", () => {
     const { result } = await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "function alpha() {\n  return 1;\n}",
-      text: "X",
+      newText: "X",
     });
     expect(result.details.effect).toBe("not-applied");
     expect((await bytes("main.txt")).toString("utf8")).toBe(content);
@@ -746,7 +750,7 @@ describe("byte-exact regressions", () => {
       const { result } = await h.run(replaceMutationTool, {
         path: "main.txt",
         start: "  { id: 1,\u00a0retries: 3 },",
-        text: "  { id: 1,\u00a0retries: 3 },",
+        newText: "  { id: 1,\u00a0retries: 3 },",
       });
       await expectRefused(result, content);
     });
@@ -758,7 +762,7 @@ describe("byte-exact regressions", () => {
       const { result } = await h.run(replaceMutationTool, {
         path: "main.txt",
         start: "  { id: 1, retries: 3 },",
-        text: "  { id: 1, retries: 3 }",
+        newText: "  { id: 1, retries: 3 }",
       });
       expect(result.isError).not.toBe(true);
       expect((await bytes("main.txt")).toString("utf8")).toBe(
@@ -774,7 +778,7 @@ describe("byte-exact regressions", () => {
         path: "main.txt",
         start: "alpha",
         end: "gamma",
-        text: "alpha\nbeta\ngamma",
+        newText: "alpha\nbeta\ngamma",
       });
       await expectRefused(result, content);
     });
@@ -787,7 +791,7 @@ describe("byte-exact regressions", () => {
       const { result } = await h.run(replaceMutationTool, {
         path: "main.txt",
         start: anchor,
-        text: "two\r\n",
+        newText: "two\r\n",
       });
       await expectRefused(result, content);
     });
@@ -803,7 +807,7 @@ describe("byte-exact regressions", () => {
       const { result } = await h.run(replaceMutationTool, {
         path: "main.txt",
         start: reference,
-        text: "beta",
+        newText: "beta",
       });
       await expectRefused(result, content);
     });
@@ -819,7 +823,7 @@ describe("byte-exact regressions", () => {
       const { result, text } = await h.run(replaceMutationTool, {
         path: "main.txt",
         start: reference,
-        text: "beta",
+        newText: "beta",
       });
       expect(result.isError, text).not.toBe(true);
       expect((await bytes("main.txt")).toString("utf8")).toBe("beta beta beta\n");

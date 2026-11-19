@@ -122,7 +122,7 @@ test("delete of a line anchor still removes the line with its break", async () =
 
 test("replace of a literal that covers a whole line replaces only its characters", async () => {
   expect(
-    await run(replaceMutationTool, { source: file }, { start: "body line" }, { text: "" }),
+    await run(replaceMutationTool, { source: file }, { start: "body line" }, { newText: "" }),
   ).toEqual({ source: "// PREFIX\n// BEGIN block\n\n// END block\n// SUFFIX\n" });
 });
 

@@ -84,7 +84,7 @@ async function renameWithWindowWrite(
   const result = await executeTextMutation(
     core,
     replaceMutationTool,
-    { path: source, text: "delta" },
+    { path: source, newText: "delta" },
     undefined,
     { cwd: process.cwd() } as ExtensionContext,
   );

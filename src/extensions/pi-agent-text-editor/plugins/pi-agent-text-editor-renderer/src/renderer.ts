@@ -778,9 +778,11 @@ function previewIdentity(tool: string, input: Readonly<Record<string, unknown>>)
 function generatedField(tool: string): string | undefined {
   return tool === "write"
     ? "content"
-    : tool === "insert" || tool === "replace"
+    : tool === "insert"
       ? "text"
-      : undefined;
+      : tool === "replace"
+        ? "newText"
+        : undefined;
 }
 
 function generatedText(tool: string, input: Readonly<Record<string, unknown>>): string | undefined {

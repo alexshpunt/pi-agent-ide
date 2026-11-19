@@ -46,7 +46,7 @@ function validate(name: string, parameters: TSchema, input: JsonObject): unknown
 const required: Record<string, JsonObject> = {
   search: { query: "a" },
   ast_search: { pattern: "a" },
-  replace: { text: "a" },
+  replace: { newText: "a" },
   insert: { text: "a" },
   write: { content: "a" },
   undo: { change: "last" },

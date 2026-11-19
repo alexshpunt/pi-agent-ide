@@ -985,6 +985,9 @@
               }
             ]
           },
+          "newText": {
+            "type": "string"
+          },
           "path": {
             "anyOf": [
               {
@@ -1035,12 +1038,9 @@
                 "type": "object"
               }
             ]
-          },
-          "text": {
-            "type": "string"
           }
         },
-        "required": ["text"],
+        "required": ["newText"],
         "type": "object"
       }
     },
