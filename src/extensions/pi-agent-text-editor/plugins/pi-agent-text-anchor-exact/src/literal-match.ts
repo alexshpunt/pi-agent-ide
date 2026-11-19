@@ -83,20 +83,25 @@ const fuzzyMatcher: LiteralMatcher = {
     const query = normalizeForFuzzyMatch(normalizeToLF(splitBom(value).text));
     if (query.length === 0) return [];
     const { bom, text } = splitBom(content);
-    const fuzzy = fuzzyText(normalizeToLF(text));
-    if (fuzzy === undefined) return [];
+    const normalized = normalizeToLF(text);
+    const folded = normalizeForFuzzyMatch(normalized);
+    if (!folded.includes(query)) return [];
+    const unitAt = fuzzyUnits(normalized, folded);
+    if (unitAt === undefined) return [];
     const toSource = sourceOffsets(text, bom.length);
-    const { starts, ends } = fuzzy;
     return scan(
-      fuzzy.text,
+      folded,
       query,
       (start) => {
         const end = start + query.length;
-        const from = starts[start] ?? 0;
-        const to = ends[end - 1] ?? 0;
-        const cutsStart = start > 0 && starts[start - 1] === from;
-        const cutsEnd = end < starts.length && starts[end] === starts[end - 1];
-        return cutsStart || cutsEnd ? undefined : { from: toSource(from), to: toSource(to) };
+        const first = unitAt(start);
+        const last = unitAt(end - 1);
+        if (first === undefined || last === undefined) return undefined;
+        const cutsStart = start > 0 && unitAt(start - 1)?.from === first.from;
+        const cutsEnd = end < folded.length && unitAt(end)?.from === last.from;
+        return cutsStart || cutsEnd
+          ? undefined
+          : { from: toSource(first.from), to: toSource(last.to) };
       },
       accept,
       limit,
@@ -189,50 +194,94 @@ function sourceOffsets(text: string, base: number): (offset: number) => number {
 }
 
 /**
- * `normalizeForFuzzyMatch(text)` with the range of `text` each of its code units came from.
- * Text is normalized one character at a time, a character being a code point with the marks
- * that can compose with it. Returns undefined when that differs from normalizing the whole
- * text, so a fuzzy match never maps to the wrong source.
+ * Maps each code unit of `folded`, `normalizeForFuzzyMatch(text)`, to the span of `text` it
+ * came from. Lines are mapped only when asked for, since only the lines of a match are needed.
+ * Returns undefined for a unit of a line whose mapping differs from `folded`, so a fuzzy match
+ * never maps to the wrong source.
  */
-function fuzzyText(
+function fuzzyUnits(
   text: string,
-): { readonly text: string; readonly starts: number[]; readonly ends: number[] } | undefined {
+  folded: string,
+): ((offset: number) => LiteralSpan | undefined) | undefined {
+  // Fuzzy normalization works within lines, so line N of `folded` comes from line N of `text`.
+  const textLines = lineStarts(text);
+  const foldedLines = lineStarts(folded);
+  if (textLines.length !== foldedLines.length) return undefined;
+  const lines = new Map<number, FuzzyLine | undefined>();
+  return (offset) => {
+    let line = 0;
+    let high = foldedLines.length - 1;
+    while (line < high) {
+      const middle = (line + high + 1) >>> 1;
+      if ((foldedLines[middle] ?? 0) <= offset) line = middle;
+      else high = middle - 1;
+    }
+    const textStart = textLines[line] ?? 0;
+    const textEnd = (textLines[line + 1] ?? text.length + 1) - 1;
+    const foldedStart = foldedLines[line] ?? 0;
+    const foldedEnd = (foldedLines[line + 1] ?? folded.length + 1) - 1;
+    // The LF that ends the line.
+    if (offset === foldedEnd) return { from: textEnd, to: textEnd + 1 };
+    if (!lines.has(line)) {
+      const mapped = fuzzyLine(text.slice(textStart, textEnd));
+      lines.set(line, mapped?.text === folded.slice(foldedStart, foldedEnd) ? mapped : undefined);
+    }
+    const mapped = lines.get(line);
+    const column = offset - foldedStart;
+    const from = mapped?.starts[column];
+    const to = mapped?.ends[column];
+    return from === undefined || to === undefined
+      ? undefined
+      : { from: textStart + from, to: textStart + to };
+  };
+}
+
+/** The offsets where the lines of `text` start. */
+function lineStarts(text: string): number[] {
+  const starts = [0];
+  for (
+    let lineFeed = text.indexOf("\n");
+    lineFeed !== -1;
+    lineFeed = text.indexOf("\n", lineFeed + 1)
+  )
+    starts.push(lineFeed + 1);
+  return starts;
+}
+
+/** A line's fuzzy text with the range of the line each of its code units came from. */
+interface FuzzyLine {
+  readonly text: string;
+  readonly starts: readonly number[];
+  readonly ends: readonly number[];
+}
+
+/**
+ * `normalizeForFuzzyMatch(line)`, normalized one character at a time, a character being a code
+ * point with the marks that can compose with it. Undefined when the quote, dash and space
+ * replacements change the length, so units would no longer line up with their source.
+ */
+function fuzzyLine(line: string): FuzzyLine | undefined {
   const units: string[] = [];
   const starts: number[] = [];
   const ends: number[] = [];
-  let lineStart = 0;
-  for (;;) {
-    const lineFeed = text.indexOf("\n", lineStart);
-    const lineEnd = lineFeed === -1 ? text.length : lineFeed;
-    const lineUnits = units.length;
-    let from = lineStart;
-    while (from < lineEnd) {
-      let to = from + codePointLength(text, from);
-      while (to < lineEnd && !startsCharacter(text, to)) to += codePointLength(text, to);
-      const normalized = text.slice(from, to).normalize("NFKC");
-      for (const unit of normalized.split("")) {
-        units.push(unit);
-        starts.push(from);
-        ends.push(to);
-      }
-      from = to;
+  for (let from = 0; from < line.length;) {
+    let to = from + codePointLength(line, from);
+    while (to < line.length && !startsCharacter(line, to)) to += codePointLength(line, to);
+    const normalized = line.slice(from, to).normalize("NFKC");
+    for (const unit of normalized.split("")) {
+      units.push(unit);
+      starts.push(from);
+      ends.push(to);
     }
-    // Pi strips trailing whitespace from each line.
-    const kept = lineUnits + units.slice(lineUnits).join("").trimEnd().length;
-    units.length = kept;
-    starts.length = kept;
-    ends.length = kept;
-    if (lineFeed === -1) break;
-    units.push("\n");
-    starts.push(lineFeed);
-    ends.push(lineFeed + 1);
-    lineStart = lineFeed + 1;
+    from = to;
   }
-  const mapped = units.join("");
-  // Quotes, dashes and spaces are replaced one code unit for one.
-  const folded = normalizeForFuzzyMatch(mapped);
-  if (folded.length !== mapped.length || folded !== normalizeForFuzzyMatch(text)) return undefined;
-  return { text: folded, starts, ends };
+  // Pi strips trailing whitespace from each line.
+  const trimmed = units.join("").trimEnd();
+  const text = normalizeForFuzzyMatch(trimmed);
+  if (text.length !== trimmed.length) return undefined;
+  starts.length = text.length;
+  ends.length = text.length;
+  return { text, starts, ends };
 }
 
 function codePointLength(text: string, at: number): number {
