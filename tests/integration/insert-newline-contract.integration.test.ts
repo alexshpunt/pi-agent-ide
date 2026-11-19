@@ -46,7 +46,7 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
                   ? `left ANCHOR right${separator}SECOND`
                   : `SEARCH#RUNTIME:${index + 1}:1:${kind === "search-line" ? "line" : "match"}`;
           conversation.push(
-            call(`insert-${index}`, "insert", { path: file, anchor, before, text: payload }),
+            call(`insert-${index}`, "insert", { path: file, anchor, before, newText: payload }),
           );
           // Literal text and :match select only their characters, even complete lines.
           if (kind === "exact" || kind === "multiline" || kind === "search-match") {

@@ -120,7 +120,7 @@ const replace = (args: Record<string, unknown>) => [
   start("replace", "replace", args),
   end("replace"),
 ];
-const replacement = { tool: "replace", args: { text: "NEW" } };
+const replacement = { tool: "replace", args: { newText: "NEW" } };
 
 describe("issued whole-line replacement equivalence", () => {
   test.each(["\n", "\r\n"])(
@@ -128,12 +128,12 @@ describe("issued whole-line replacement equivalence", () => {
     (eol) => {
       // Replace writes its text as sent: a replacement without the separator joins the next line.
       const files = { "task.txt": `keep${eol}OLD${eol}last${eol}` };
-      const kept = { tool: "replace", args: { text: `NEW${eol}` } };
+      const kept = { tool: "replace", args: { newText: `NEW${eol}` } };
       for (const selector of [hash, `${hash}|OLD`, `${hash}|OLD${eol}`]) {
         expect(
           validateRoute(
             { files, steps: [kept] },
-            [...read(), ...replace({ path: "task.txt", start: selector, text: `NEW${eol}` })],
+            [...read(), ...replace({ path: "task.txt", start: selector, newText: `NEW${eol}` })],
             "direct",
           ),
         ).toEqual({ passed: true, reasons: [] });
@@ -156,7 +156,7 @@ describe("issued whole-line replacement equivalence", () => {
     expect(
       validateRoute(
         { steps: [replacement] },
-        replace({ path: "task.txt", start: hash, text: "NEW" }),
+        replace({ path: "task.txt", start: hash, newText: "NEW" }),
         "direct",
       ).passed,
     ).toBe(true);

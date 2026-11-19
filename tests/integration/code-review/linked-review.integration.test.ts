@@ -84,7 +84,7 @@ test.skipIf(!stereo).each(["rows", "columns"])(
         conversation: [
           call("direct-edit", "write", { path: "direct.ts", content: "return null;\n" }),
           call("nested-root", "codemode", {
-            code: 'await tools.read({path:"nested.ts"}); const edited = await tools.replace({path:"nested.ts",start:"throw nestedError;",text:"return false;"}); await tools.replace({path:edited,text:"return null;"});',
+            code: 'await tools.read({path:"nested.ts"}); const edited = await tools.replace({path:"nested.ts",start:"throw nestedError;",newText:"return false;"}); await tools.replace({path:edited,newText:"return null;"});',
           }),
           call("unrelated-read", "read", { path: "direct.ts" }),
           call("release", "wait_review", {}),

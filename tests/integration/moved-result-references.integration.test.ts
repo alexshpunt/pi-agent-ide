@@ -197,7 +197,7 @@ store("matches", found.matches);`,
           id: "replace",
           name: "codemode",
           arguments: {
-            code: `const result = await tools.replace({ path: load("matches"), text: "${replacement}" });
+            code: `const result = await tools.replace({ path: load("matches"), newText: "${replacement}" });
 if (result === null) throw Error("Replace rejected the original matches");`,
           },
         }),

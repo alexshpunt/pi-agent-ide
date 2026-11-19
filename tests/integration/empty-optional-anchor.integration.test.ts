@@ -65,7 +65,7 @@ test("empty optional anchors act as omitted on single, batched and Codemode call
               id: "script",
               name: "codemode",
               arguments: {
-                code: 'text(await tools.replace({path:"script.txt",start:"beta",end:"",text:"BETA"}));',
+                code: 'text(await tools.replace({path:"script.txt",start:"beta",end:"",newText:"BETA"}));',
               },
             }),
           ],

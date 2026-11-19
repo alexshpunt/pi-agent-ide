@@ -50,7 +50,7 @@ for (const mode of ["default", "config", "flags"] as const) {
         tools: ["diagnostics", "read", "replace", "runtime_options_probe"],
         rawMode: false,
         conversation: [
-          call("edit", "replace", { path: "example.fixture", start: "old", text: "new   " }),
+          call("edit", "replace", { path: "example.fixture", start: "old", newText: "new   " }),
           call("before", "runtime_options_probe", {}),
           call("diagnostics", "diagnostics", { path: "example.fixture" }),
           call("after", "runtime_options_probe", {}),

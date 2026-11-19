@@ -267,13 +267,13 @@ for (const mode of ["direct", "codemode"]) {
       ),
     );
     assert.ok(
-      !passed(files, route, [read, { ...replace, args: { ...replace.args, text: "Wrong" } }], mode),
+      !passed(files, route, [read, { ...replace, args: { ...replace.args, newText: "Wrong" } }], mode),
     );
     assert.ok(
       !passed(
         files,
         route,
-        [read, { tool: "replace", args: { path: "source.txt", start: "Last", text: "Final" } }],
+        [read, { tool: "replace", args: { path: "source.txt", start: "Last", newText: "Final" } }],
         mode,
       ),
     );
@@ -286,7 +286,7 @@ for (const mode of ["direct", "codemode"]) {
     const partial = { ...read, value: [null, { id: matchId, text: "765ABCD|Last" }] };
     const targetRoute: RouteStep[] = [
       { tool: "read" },
-      { tool: "replace", args: { path: "target.txt", start: "Last", text: "Final" } },
+      { tool: "replace", args: { path: "target.txt", start: "Last", newText: "Final" } },
     ];
     const targetEdit: Call = {
       tool: "replace",
@@ -323,7 +323,7 @@ for (const mode of ["direct", "codemode"]) {
         !passed(
           { "task.txt": "OLD\r\n" },
           route,
-          [read, { tool: "replace", args: { path: "task.txt", start: anchor, text: "NEW" } }],
+          [read, { tool: "replace", args: { path: "task.txt", start: anchor, newText: "NEW" } }],
           mode,
         ),
       );
@@ -651,7 +651,7 @@ for (const mode of ["direct", "codemode"]) {
       text: "123ABCD|OLD\n",
       value: { id },
     };
-    const edit: Call = { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } };
+    const edit: Call = { tool: "replace", args: { path: "task.txt", start: "OLD", newText: "NEW" } };
     const old: Call = { tool: "read", args: { path: { id } }, error: true };
     const fresh: Call = { tool: "read", args: { path: "task.txt" }, text: "NEW" };
     assert.ok(validateRoute(task, events([read, edit, fresh, old], mode), mode).passed);
@@ -712,7 +712,7 @@ for (const mode of ["direct", "codemode"]) {
       { ...declaration, text: "" },
     ]) {
       for (const reference of forms(nameId)) {
-        const edit = { tool: "replace", args: { path: reference, text: "total" } };
+        const edit = { tool: "replace", args: { path: reference, newText: "total" } };
         assert.ok(passed({}, route, [issuer, edit], mode));
         assert.ok(!passed({}, route, [{ ...issuer, error: true }, edit], mode));
         assert.ok(!passed({}, route, [edit, issuer], mode));
@@ -725,7 +725,7 @@ for (const mode of ["direct", "codemode"]) {
           !passed(
             {},
             route,
-            [issuer, { tool: "replace", args: { path: reference, text: "total" } }],
+            [issuer, { tool: "replace", args: { path: reference, newText: "total" } }],
             mode,
           ),
         );

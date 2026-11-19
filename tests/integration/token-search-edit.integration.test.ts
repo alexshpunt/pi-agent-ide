@@ -80,20 +80,20 @@ const result = await tools.search({path:"words.txt",query:"const x = await f"});
 const found = result.fallback;
 check(found.mode === "words" && found.matches.length > 1,"word fallback");
 check(Object.keys(found).sort().join() === "complete,id,matches,mode", "compact fallback value");
-check(await tools.replace({path:found,text:"BAD"}) === null,"whole value must fail");
-check(await tools.replace({path:found.id,text:"BAD"}) === null,"whole id must fail");
+check(await tools.replace({path:found,newText:"BAD"}) === null,"whole value must fail");
+check(await tools.replace({path:found.id,newText:"BAD"}) === null,"whole id must fail");
 check(await tools.read({path:found}) !== null,"whole selection is readable");
 check(await tools.copy({path:found,target:"literal.txt",targetStart:"end"}) === null,"bulk transfer must fail");
 const scoped = await tools.search({path:found,query:"const"});
 check(scoped.matches.length === 1,"read-only search scope");
-check(await tools.replace({path:found.matches[0],text:"CONST"}) === null,"word hint match must fail");
-check(await tools.replace({path:"words.txt",start:found.matches[0],text:"BAD"}) === null,"word hint anchor must fail");
+check(await tools.replace({path:found.matches[0],newText:"CONST"}) === null,"word hint match must fail");
+check(await tools.replace({path:"words.txt",start:found.matches[0],newText:"BAD"}) === null,"word hint anchor must fail");
 const bool = await tools.search({path:"boolean.txt",query:"red AND blue"});
-check(await tools.replace({path:bool,text:"BAD"}) === null,"boolean bulk");
-check(await tools.replace({path:bool,start:bool.matches[0],end:bool.matches[0],text:"RED"}) !== null,"boolean scoped match");
+check(await tools.replace({path:bool,newText:"BAD"}) === null,"boolean bulk");
+check(await tools.replace({path:bool,start:bool.matches[0],end:bool.matches[0],newText:"RED"}) !== null,"boolean scoped match");
 const literal = await tools.search({path:"literal.txt",query:'call("a b", 1);'});
 check(literal.matches.length === 1 && literal.matches[0].text === 'call("a b", 1);',"quotes stay literal");
-check(await tools.replace({path:literal,text:"replaced"}) !== null,"literal result");
+check(await tools.replace({path:literal,newText:"replaced"}) !== null,"literal result");
 text("done");`;
     const run = await new PiIntegrationTest({
       testName: "token-search-edit",

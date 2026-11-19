@@ -352,7 +352,7 @@ describe("text mutation renderer", () => {
       const result = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
         start: uniqueLineAnchor("const value20 = 20;"),
-        text: "const value20 = computeValue();\n",
+        newText: "const value20 = computeValue();\n",
       });
       const rendered = result.tuiRenderedOutput;
       const [panel] = mutationPanels(rendered, "replace post-edit-viewport.ts · ");
@@ -383,7 +383,7 @@ describe("text mutation renderer", () => {
       const firstRun = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
         start: uniqueLineAnchor("const value20 = 20;"),
-        text: "const value20 = computeValue();\n",
+        newText: "const value20 = computeValue();\n",
       });
       const sessionData = await readSessionArtifact(firstRun.artifacts.run);
       const sessionFile = path.join(directory, "persisted-mutation-session.jsonl");

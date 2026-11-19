@@ -117,7 +117,7 @@ test("keeps deferred processing complete when its handler finishes after a scrip
               id: "interrupted",
               name: "codemode",
               arguments: {
-                code: `// @options: {"timeout_ms":2000}\nconst source = await tools.read({path:${JSON.stringify(source)}}); text(await tools.replace({path:source,text:"changed\\n"})); while(true){}`,
+                code: `// @options: {"timeout_ms":2000}\nconst source = await tools.read({path:${JSON.stringify(source)}}); text(await tools.replace({path:source,newText:"changed\\n"})); while(true){}`,
               },
             }),
           ],

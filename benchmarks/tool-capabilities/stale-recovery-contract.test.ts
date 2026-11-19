@@ -27,7 +27,7 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
       error: true,
       finalDetails: { effect: "not-applied" },
     },
-    { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|OLD", text: "NEW" } },
+    { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|OLD", newText: "NEW" } },
     {
       tool: "insert",
       args: { path: "task.txt", anchor: "D07BBXQ", text: "BLOCKED" },

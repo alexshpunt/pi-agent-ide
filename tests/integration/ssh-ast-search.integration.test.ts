@@ -127,7 +127,7 @@ const hit = await tools.search({path:outline,query:"greet"});
 if (hit.matches.length !== 1 || hit.matches[0].path !== ${JSON.stringify(outlineFile)}) throw Error(JSON.stringify(hit));
 const hidden = await tools.search({path:outline,query:"const count"});
 if (hidden.matches.length !== 0) throw Error("Outline exposed a hidden body");
-text(await tools.replace({path:hit.matches[0],text:"welcome"}));`,
+text(await tools.replace({path:hit.matches[0],newText:"welcome"}));`,
             },
           }),
         ]),

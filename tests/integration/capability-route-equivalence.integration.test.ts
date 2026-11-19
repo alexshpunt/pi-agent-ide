@@ -214,7 +214,7 @@ const targetStart = line(target, "top");
 const finalLine = line(last, "Last");
 if (!start || !targetStart || !finalLine) throw Error("Missing issued line");
 text(await tools.move({path:{id:source.id},start:start+"\\n",target:{id:target.id},targetStart:targetStart+"\\n"}));
-text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),text:"Final"}));`,
+text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),newText:"Final"}));`,
               },
             }),
           ],
@@ -355,7 +355,7 @@ test.each(["all", "allSettled"] as const)(
                   code: `const result = await tools.read({path:"task.txt",views:["anchors"]});
 const anchor = result.text.match(/^([0-9A-HJKMNP-TV-Z]{7})\\|OLD$/m)?.[1];
 if (!anchor) throw Error("Read did not issue the OLD line anchor");
-text(await tools.replace({path:"task.txt",start:anchor,text:"NEW\\n"}));
+text(await tools.replace({path:"task.txt",start:anchor,newText:"NEW\\n"}));
 text(await Promise.${aggregation}([
   tools.copy({path:"source.txt",target:"first.txt"}),
   tools.copy({path:"source.txt",target:"second.txt"})
@@ -385,7 +385,7 @@ text(await Promise.${aggregation}([
             steps: [
               { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
               // A line anchor selects the line with its LF; Replace writes exactly its text.
-              { tool: "replace", args: { text: "NEW\n" }, after: [0] },
+              { tool: "replace", args: { newText: "NEW\n" }, after: [0] },
               { tool: "copy", args: { path: "source.txt", target: "first.txt" } },
               {
                 tool: "copy",

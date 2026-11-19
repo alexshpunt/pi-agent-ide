@@ -188,7 +188,7 @@ test.each([
   const f = await tokenFixture();
   const { result, text } = await f.run(tool, {
     path: { id: f.whole },
-    ...(tool.name === "insert" ? { anchor: f.matches[0], text: "NEW" } : { start: f.matches[0] }),
+    ...(tool.name === "insert" ? { anchor: f.matches[0], newText: "NEW" } : { start: f.matches[0] }),
     ...(["copy", "move"].includes(tool.name) && {
       target: "target.txt",
       targetStart: "SLOT",

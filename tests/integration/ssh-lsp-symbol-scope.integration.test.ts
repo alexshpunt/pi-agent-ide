@@ -131,7 +131,7 @@ if(${JSON.stringify(mode)} === "scope") {
  if(absent.matches.length!==0) throw Error("Partial name widened: "+JSON.stringify(absent));
  text({strict,name,navigation,absent});
 } else {
- text(await tools.replace({path:name,text:"renamed"}));
+ text(await tools.replace({path:name,newText:"renamed"}));
  // A refused call resolves to null; the Codemode result lists its reason.
  const stale = await tools.lsp_search({query:"label",path:seed});
  if(stale !== null) throw Error("Changed snapshot was accepted: "+JSON.stringify(stale));

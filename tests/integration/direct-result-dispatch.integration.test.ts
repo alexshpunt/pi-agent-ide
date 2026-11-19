@@ -72,15 +72,15 @@ for (const [form, token] of tokens) {
           name: "replace",
           arguments: { path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" },
         },
-        { id: "inside", name: "replace", arguments: { path: token, start: "bet", text: "BET" } },
-        { id: "stale", name: "replace", arguments: { path: token, text: "STALE\n" } },
+        { id: "inside", name: "replace", arguments: { path: token, start: "bet", newText: "BET" } },
+        { id: "stale", name: "replace", arguments: { path: token, newText: "STALE\n" } },
         {
           id: "path",
           name: "replace",
           arguments: { path: "note.txt", start: "gamma", text: "GAMMA" },
         },
         { id: "again", name: "read", arguments: { path: "note.txt", offset: 2, limit: 1 } },
-        { id: "outside", name: "replace", arguments: { path: again, start: "GAMMA", text: "BAD" } },
+        { id: "outside", name: "replace", arguments: { path: again, start: "GAMMA", newText: "BAD" } },
         {
           id: "outside-range",
           name: "replace",
@@ -138,7 +138,7 @@ for (const kind of ["whole", "match", "capture"]) {
     if (!actual || actual.text !== expected.text) throw Error("Reference form changed selected text");
     const searched = await tools.search({ path: source, query: "count" });
     if (!searched || searched.matches.length !== 1) throw Error("Reference form lost its search scope");
-    const changed = await tools.replace({ path: source, ...(kind === "capture" ? {} : { start: "count" }), text: "renamed" + index });
+    const changed = await tools.replace({ path: source, ...(kind === "capture" ? {} : { start: "count" }), newText: "renamed" + index });
     if (changed === null) throw Error("Reference form lost edit authority");
     index += 1;
   }
@@ -182,17 +182,17 @@ for (const [index, form] of ["uuid", "value", "prefix"].entries()) {
     .map((line) => line.split("|")[0]);
   // A refused call resolves to null; the Codemode result lists each reason. Only line 2 is inside.
   for (const selector of [{ start: anchors[2] }, { start: anchors[0], end: anchors[1] }])
-    if ((await tools.replace({ path: source, ...selector, text: "BAD\n" })) !== null)
+    if ((await tools.replace({ path: source, ...selector, newText: "BAD\n" })) !== null)
       throw Error("A selector outside the result was not rejected");
-  if ((await tools.replace({ path: source, start: anchors[1], text: "BETA" + index + "\n" })) === null)
+  if ((await tools.replace({ path: source, start: anchors[1], newText: "BETA" + index + "\n" })) === null)
     throw Error("A selector inside the result was rejected");
   await tools.read({ path: "note.txt" });
-  if ((await tools.replace({ path: source, text: "STALE" })) !== null)
+  if ((await tools.replace({ path: source, newText: "STALE" })) !== null)
     throw Error("A changed snapshot still authorized an edit");
 }
-if ((await tools.replace({ path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" })) !== null)
+if ((await tools.replace({ path: "00000000-0000-0000-0000-000000000000", newText: "UNKNOWN" })) !== null)
   throw Error("An unknown reference authorized an edit");
-await tools.replace({ path: "note.txt", start: "gamma", text: "GAMMA" });
+await tools.replace({ path: "note.txt", start: "gamma", newText: "GAMMA" });
 text("Reference boundaries verified");
 `,
           },

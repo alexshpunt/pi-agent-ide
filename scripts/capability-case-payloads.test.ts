@@ -32,7 +32,7 @@ function trace(text = "BETA\n"): RunEvent[] {
     end("search", searchText),
     start("read", "read", { path: ".pi/issued-search.txt" }),
     end("read", searchText),
-    start("insert", "insert", { path: "task.txt", anchor: "alpha", before: true, text: "added\n" }),
+    start("insert", "insert", { path: "task.txt", anchor: "alpha", before: true, newText: "added\n" }),
     start("replace", "replace", { start: reference(1), text }),
     start("delete", "delete", { start: reference(2) }),
     end("insert"),

@@ -82,7 +82,7 @@ text("View warnings verified");
       String.raw`
 const saved = load("readViewWarning");
 const beta = await tools.search({path:saved,query:"beta"});
-await tools.replace({path:beta,text:"BETA"});
+await tools.replace({path:beta,newText:"BETA"});
 const unknown = await tools.read({path:"pixel.png",views:["ghost"]});
 if(unknown?.type !== "image" || "note" in unknown) throw new Error(JSON.stringify(unknown).slice(0, 300));
 text("Unknown image view preserved");
@@ -208,7 +208,7 @@ const shown = await tools.read({path:"note.txt"});
 if (shown?.text !== "alpha\\nbeta\\ngamma\\n") throw Error("Read did not return file text");
 text(shown.text);
 const found = await tools.search({path:shown, query:"beta"});
-const accepted = await tools.replace({path:found, text:"BETA"});
+const accepted = await tools.replace({path:found, newText:"BETA"});
 const after = await tools.read({path:accepted});
 if (!after.text.includes("BETA")) throw Error("Pending mutation did not compose");
 return after.text;
@@ -237,7 +237,7 @@ for (const result of [empty, zero, pastEnd]) {
   const found = await tools.search({path:result,query:"regex:Empty|No lines|Offset|alpha"});
   if (found.matches.length !== 0) throw Error("Empty selection searched a notice or neighboring text: "+JSON.stringify(found));
 }
-await tools.replace({path:zero,text:"BAD"});
+await tools.replace({path:zero,newText:"BAD"});
 store("emptyWindow",pastEnd);
 `,
       String.raw`
@@ -367,8 +367,8 @@ test("pending result strings confirm at dependent boundaries without invalidatin
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "pending-text-result-peers", [
       `
-const first=await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
-const second=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+const first=await tools.replace({path:"note.txt",start:"alpha",newText:"ALPHA"});
+const second=await tools.replace({path:"note.txt",start:"beta",newText:"BETA"});
 const shown=await tools.read({path:first});
 const found=await tools.search({path:second,query:"BETA"});
 if(!shown.text.includes("ALPHA")||found.matches.map(match=>match.text).join()!=="BETA") throw Error("A peer result expired at the common commit");
@@ -386,8 +386,8 @@ test("store/load retains text and UUID composition; Search reads a changed file'
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "text-result-store", [
       `store("source", await tools.read({path:"note.txt"}));`,
-      `const source=load("source"); const uuid=source.id.slice("RESULT#".length); const found=await tools.search({path:uuid,query:"beta"}); text(await tools.replace({path:found,text:"BETA"}));`,
-      `const current=await tools.search({path:load("source"),query:"alpha"}); if(current.matches.map(match=>match.line+":"+match.text).join()!=="1:alpha") throw Error("Search did not read the changed result's current text: "+JSON.stringify(current)); if((await tools.replace({path:load("source"),text:"ALPHA\\nBETA\\n"}))!==null) throw Error("An edit on the stored old result survived a write"); text("Old result searched, edit rejected");`,
+      `const source=load("source"); const uuid=source.id.slice("RESULT#".length); const found=await tools.search({path:uuid,query:"beta"}); text(await tools.replace({path:found,newText:"BETA"}));`,
+      `const current=await tools.search({path:load("source"),query:"alpha"}); if(current.matches.map(match=>match.line+":"+match.text).join()!=="1:alpha") throw Error("Search did not read the changed result's current text: "+JSON.stringify(current)); if((await tools.replace({path:load("source"),newText:"ALPHA\\nBETA\\n"}))!==null) throw Error("An edit on the stored old result survived a write"); text("Old result searched, edit rejected");`,
     ]);
     for (let i = 0; i < 3; i++)
       expect(
@@ -419,7 +419,7 @@ const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|second marker/m.exec(current.text)?
 if (!anchor) throw Error("Read did not issue an anchor for the intended destination");
 await tools.move({path:"note.txt",start:"move this\n",targetStart:anchor});`
           : `await tools.move({path:"note.txt",start:"move this\\n",targetStart:"second marker\\n"});`,
-        `await tools.replace({path:"note.txt",start:"keep this",text:"kept"});`,
+        `await tools.replace({path:"note.txt",start:"keep this",newText:"kept"});`,
       ]);
       for (const id of ["script-0", "script-1", "script-2"]) {
         expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
@@ -484,11 +484,11 @@ test("a registered Search selection can recover an edit after an exact-text miss
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runText(cwd, "text-result-search-recovery", [
       String.raw`
-const failed=(await tools.replace({path:"note.txt",start:"missing",text:"BAD"}))===null;
+const failed=(await tools.replace({path:"note.txt",start:"missing",newText:"BAD"}))===null;
 if(!failed) throw Error("Expected exact-text failure");
 const found=await tools.search({path:"note.txt",query:"beta"});
-await tools.replace({path:found,text:"BETA"});
-await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
+await tools.replace({path:found,newText:"BETA"});
+await tools.replace({path:"note.txt",start:"gamma",newText:"GAMMA"});
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -509,11 +509,11 @@ if(!started.session) throw Error("Missing shell session");
 // Terminal input selects no text; a failure would be listed at the end of the result.
 const written=await tools.write({path:started.session,content:"hello"});
 if(written!==null) throw Error("Terminal Write was treated as a file: "+written);
-const entered=await tools.insert({path:started.session,text:"Enter"});
+const entered=await tools.insert({path:started.session,newText:"Enter"});
 if(entered!==null) throw Error("Terminal Insert was treated as a file: "+entered);
 const shown=await tools.read({path:started.session});
 if(!shown.text.includes("resource:hello")) throw Error("Shell output lost: "+shown.text);
-const rejected=(await tools.replace({path:shown,start:"hello",text:"BAD"}))===null;
+const rejected=(await tools.replace({path:shown,start:"hello",newText:"BAD"}))===null;
 if(!rejected) throw Error("Shell output granted text-edit authority");
 if((await tools.delete({path:shown}))!==null) throw Error("Terminal Delete selected text");
 `,

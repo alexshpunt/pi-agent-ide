@@ -88,7 +88,7 @@ for (const input of [window, window.id]) {
   for (const query of ["outsideBefore","outsideAfter","regex:Code overview|scope-begin|Some source text|requested text|…"]) {
     const empty = await tools.search({path:input,query});
     if (empty.matches.length !== 0) throw Error(JSON.stringify(empty));
-    await tools.replace({path:empty,text:"BAD"});
+    await tools.replace({path:empty,newText:"BAD"});
   }
 }
 const bounded = await tools.read({path:window,offset:102,limit:1});
@@ -96,7 +96,7 @@ if (!onlyNeedle(await tools.search({path:bounded,query:"NEEDLE"}))) throw Error(
 const small = await tools.read({path:"large.ts",offset:103,limit:1});
 if (!onlyNeedle(await tools.search({path:small,query:"NEEDLE"}))) throw Error("Small Read composition regressed");
 const selected = await tools.search({path:window,query:"NEEDLE"});
-await tools.replace({path:selected,text:"FOUND"});
+await tools.replace({path:selected,newText:"FOUND"});
 text("Only the original window was searched and edited");
 `,
           }),

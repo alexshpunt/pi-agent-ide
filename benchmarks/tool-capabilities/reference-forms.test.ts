@@ -65,7 +65,7 @@ for (const mode of ["direct", "codemode"]) {
         args: { path: "task.txt", start: "D07BBXQ|", text: "D07BBXQ|NEW" },
         error: true,
       },
-      { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|", text: "NEW" } },
+      { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|", newText: "NEW" } },
     ];
     assert.ok(validateRoute(task, events(calls, mode), mode).passed);
     for (const start of ["123ABCD|", "D07BBXQ|WRONG"])

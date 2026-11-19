@@ -71,7 +71,7 @@ function calls(root: string, prefix: string, encoded: boolean): Call[] {
     call("insert", "insert", {
       path: at("edit.txt"),
       anchor: ref("beta"),
-      text: "inserted\n",
+      newText: "inserted\n",
       before: true,
     }),
     call("replace-beta", "search", { path: at("edit.txt"), query: "beta" }),
@@ -79,7 +79,7 @@ function calls(root: string, prefix: string, encoded: boolean): Call[] {
       path: at("edit.txt"),
       start: ref("replace-beta"),
       end: ref("replace-beta"),
-      text: "BETA",
+      newText: "BETA",
     }),
     call("gamma", "search", { path: at("edit.txt"), query: "gamma" }),
     call("delete", "delete", { path: composite([{ id: `$issued-uuid:${prefix}-gamma` }]) }),
@@ -256,8 +256,8 @@ test("JSON-text references survive streaming guards and parallel edit planning",
 const one = await tools.read({ path: "script.txt", offset: 2, limit: 1 });
 const two = await tools.read({ path: "script.txt", offset: 4, limit: 1 });
 await Promise.all([
-  tools.replace({ path: JSON.stringify({ id: one.id }), text: "ONE\\n" }),
-  tools.replace({ path: JSON.stringify({ id: two.id }), text: "TWO\\n" }),
+  tools.replace({ path: JSON.stringify({ id: one.id }), newText: "ONE\\n" }),
+  tools.replace({ path: JSON.stringify({ id: two.id }), newText: "TWO\\n" }),
 ]);
 text((await tools.read({ path: "script.txt" })).text);`,
             },

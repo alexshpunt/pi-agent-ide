@@ -47,7 +47,7 @@ const required: Record<string, JsonObject> = {
   search: { query: "a" },
   ast_search: { pattern: "a" },
   replace: { newText: "a" },
-  insert: { text: "a" },
+  insert: { newText: "a" },
   write: { content: "a" },
   undo: { change: "last" },
 };

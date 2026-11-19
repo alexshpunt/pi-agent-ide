@@ -35,15 +35,15 @@ export default function debuggerStateFixture(pi: ExtensionAPI): void {
             new RegExp(`(?:^|\\n)(${line}#[A-F\\d]+)\\|`, "u").exec(sourceText)?.[1] ??
             sourceText.split("\n")[line - 1];
           if (anchor === undefined) throw new Error(`Source returned no line-${line} anchor`);
-          return call("insert", { path: `${source}/source`, anchor, text: "breakpoint" });
+          return call("insert", { path: `${source}/source`, anchor, newText: "breakpoint" });
         };
         const pending = await addBreakpoint(phase === "late" ? 2 : 4);
         if (phase === "late") await addBreakpoint(4);
-        const started = await call("insert", { path: source, text: "start" });
+        const started = await call("insert", { path: source, newText: "start" });
         if (phase === "late") {
           const interrupted = await ctx.executeTool(
             "insert",
-            { path: source, text: "continue" },
+            { path: source, newText: "continue" },
             {
               signal: AbortSignal.any([
                 ...(signal === undefined ? [] : [signal]),
@@ -57,7 +57,7 @@ export default function debuggerStateFixture(pi: ExtensionAPI): void {
         const read = await call("read", { path: source });
         const evaluated = await call("insert", {
           path: source,
-          text: phase === "evaluate" ? "evaluate (subtotal := subtotal + 1)" : "evaluate subtotal",
+          newText: phase === "evaluate" ? "evaluate (subtotal := subtotal + 1)" : "evaluate subtotal",
         });
         return {
           content: evaluated.content,

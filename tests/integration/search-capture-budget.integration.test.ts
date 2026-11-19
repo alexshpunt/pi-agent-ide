@@ -45,7 +45,7 @@ const refused = await tools.search(${JSON.stringify(request)});
 if (refused !== null) throw Error("Oversized capture was accepted");
 const found = await tools.search({path:"task.txt",query:"before",limit:1});
 if (found.complete !== true || found.matches.length !== 1) throw Error("Search did not recover");
-if (await tools.replace({path:found.matches[0].id,text:"after"}) === null) throw Error("Edit failed");
+if (await tools.replace({path:found.matches[0].id,newText:"after"}) === null) throw Error("Edit failed");
 text({refused:refused === null, count:found.matches.length, complete:found.complete});`,
               },
             }),

@@ -653,12 +653,12 @@
               }
             ]
           },
-          "text": {
+          "newText": {
             "minLength": 1,
             "type": "string"
           }
         },
-        "required": ["text"],
+        "required": ["newText"],
         "type": "object"
       }
     },

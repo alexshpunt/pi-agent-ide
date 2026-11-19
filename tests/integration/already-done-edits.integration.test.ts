@@ -85,12 +85,12 @@ test("a list of anchors applies the remaining targets and names the already-done
         `const found = await tools.search({path:"names.cpp",query:"regex:call_a|FuncA"});
 const anchors = found.matches.map((match) => match.id);
 check(anchors.length===4,"Expected four name anchors: "+JSON.stringify(found));
-text(await tools.replace({path:anchors,text:"FuncA"}));`,
+text(await tools.replace({path:anchors,newText:"FuncA"}));`,
       ),
       codemode(
         "rename-all",
         `const found = await tools.search({path:"names.cpp",query:"FuncA"});
-text(await tools.replace({path:found.matches,text:"FuncB"}));`,
+text(await tools.replace({path:found.matches,newText:"FuncB"}));`,
       ),
     ]);
     const partial = getToolResultText(result, "partial");

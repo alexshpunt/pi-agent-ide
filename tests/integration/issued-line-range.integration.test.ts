@@ -72,7 +72,7 @@ test.each(["delete", "replace", "move"] as const)(
       const issued = rangeAnchors(initial.replace(copySlot, block), block);
       await writeFile(source, initial);
       const runResult = await run(cwd, tool, [
-        call("copy", "replace", { path: file, start: copySlot.trimEnd(), text: block.trimEnd() }),
+        call("copy", "replace", { path: file, start: copySlot.trimEnd(), newText: block.trimEnd() }),
         call("ambiguous", "delete", { path: file, start: block.trimEnd() }),
         peerWrite(
           `text.replace(${JSON.stringify(prototype)}, '').replace(${JSON.stringify(slot)}, ${JSON.stringify(prototype)})`,
@@ -80,7 +80,7 @@ test.each(["delete", "replace", "move"] as const)(
         call("edit", tool, {
           path: file,
           ...issued,
-          ...(tool === "replace" ? { text: "REPLACED" } : {}),
+          ...(tool === "replace" ? { newText: "REPLACED" } : {}),
           ...(tool === "move" ? { target: file, targetStart: "int keep_last;" } : {}),
         }),
       ]);

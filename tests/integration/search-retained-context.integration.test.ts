@@ -66,7 +66,7 @@ text(match.lineText);`,
               arguments: {
                 code: `
 const match = load("retained");
-if (await tools.replace({path:match.id,text:"NEW"}) === null) throw Error("Retained match is unusable");
+if (await tools.replace({path:match.id,newText:"NEW"}) === null) throw Error("Retained match is unusable");
 text("NEW");`,
               },
             }),

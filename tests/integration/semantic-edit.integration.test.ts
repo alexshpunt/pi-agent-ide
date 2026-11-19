@@ -282,7 +282,7 @@ test("AST search selections edit duplicate multiline nodes without text ambiguit
                 arguments: {
                   code:
                     textResultChecks +
-                    'const found=await tools.ast_search({pattern:"console.log($ARG)",path:"nodes.ts"}); check(found.matches.length===2 && found.matches[0].text===found.matches[1].text,"Duplicate AST nodes lost"); const edited=await tools.replace({path:found.matches[1],text:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
+                    'const found=await tools.ast_search({pattern:"console.log($ARG)",path:"nodes.ts"}); check(found.matches.length===2 && found.matches[0].text===found.matches[1].text,"Duplicate AST nodes lost"); const edited=await tools.replace({path:found.matches[1],newText:"logger.info(42)"}); check(typeof edited==="string","Expected readable edit"); text(edited);',
                 },
               }),
             ],
@@ -323,10 +323,10 @@ test("native AST edits use fresh selections after automatic commits", async () =
 const check=result=>{if(typeof result!=="string")throw Error("Expected readable result");return result;};
 const first=(found)=>{if(found===null||found.matches.length!==1)throw Error("Expected one AST match: "+JSON.stringify(found));return found.matches[0].id;};
 const firstSearch=first(await tools.ast_search({pattern:"console.log($ARG)",path:"nodes.ts"}));
-check(await tools.replace({path:firstSearch,text:'logger.info("same")'}));
-check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
+check(await tools.replace({path:firstSearch,newText:'logger.info("same")'}));
+check(await tools.replace({path:"nodes.ts",start:"emoji",newText:"symbol"}));
 const secondSearch=first(await tools.ast_search({pattern:"logger.info($ARG)",path:"nodes.ts"}));
-check(await tools.replace({path:secondSearch,text:"done()"}));
+check(await tools.replace({path:secondSearch,newText:"done()"}));
 `,
                 },
               }),

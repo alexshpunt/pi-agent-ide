@@ -57,12 +57,12 @@ const calls =
           arguments: {
             code: `const declaration = await tools.lsp_search({declaration:"task.ts#count"});
 const name = declaration.matches[0].captures.name[0];
-if (await tools.replace({path:{id:name.id.replace(/^RESULT#/, "")},text:""}) !== null) throw Error("Invalid rename succeeded");
+if (await tools.replace({path:{id:name.id.replace(/^RESULT#/, "")},newText:""}) !== null) throw Error("Invalid rename succeeded");
 for (const args of ${JSON.stringify(invalidRequests.map(({ arguments: args }) => args))}) {
   if (await tools.replace({path:name,...args}) !== null) throw Error("Invalid rename succeeded");
 }
 text(await tools.read({path:"task.ts"}));
-text(await tools.replace({path:name,text:"total"}));`,
+text(await tools.replace({path:name,newText:"total"}));`,
           },
         }),
       ];

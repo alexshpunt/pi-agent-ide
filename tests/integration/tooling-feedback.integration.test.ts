@@ -292,7 +292,7 @@ test("same-file selection batches reject overlaps and later reuse without losing
         ],
         { stopReason: "toolUse" },
       ),
-      call("expired", "replace", { path: "$issued-uuid:last", text: "BAD\n" }),
+      call("expired", "replace", { path: "$issued-uuid:last", newText: "BAD\n" }),
     ]);
     expect(
       getToolExecution(result, "accepted").isError,
@@ -485,7 +485,7 @@ test("direct references reject a changed snapshot without deleting its file", as
     await writeFile(path.join(cwd, "note.txt"), "first\nOLD\nlast\n");
     const result = await run(cwd, "direct-issued-stale", [
       call("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
-      call("change", "replace", { path: "note.txt", start: "OLD", text: "NEW" }),
+      call("change", "replace", { path: "note.txt", start: "OLD", newText: "NEW" }),
       call("stale", "delete", { path: "$issued-uuid:selection" }),
     ]);
     expect(getToolExecution(result, "change").isError).toBe(false);
@@ -499,7 +499,7 @@ test("three sequential replacements report one file through native Codemode", as
     await writeFile(path.join(cwd, "note.txt"), "OLD\nOLD\nOLD\n");
     const result = await run(cwd, "grouped-one-file", [
       call("script", "codemode", {
-        code: `for (const line of [1,2,3]) { const selected = await tools.read({path:"note.txt",offset:line,limit:1}); await tools.replace({path:selected,text:"NEW\\n"}); } text("done");`,
+        code: `for (const line of [1,2,3]) { const selected = await tools.read({path:"note.txt",offset:line,limit:1}); await tools.replace({path:selected,newText:"NEW\\n"}); } text("done");`,
       }),
     ]);
     expect(getToolExecution(result, "script").isError, getToolResultText(result, "script")).toBe(
@@ -519,7 +519,7 @@ test.each([false, true])(
       const payload = 'text":"BLOCKED"}';
       const result = await run(cwd, `streamed-insert-before-payload-${queuedPayload}`, [
         call("original", "read", { path: "note.txt", views: ["anchors"] }),
-        call("shift", "replace", { path: "note.txt", start: "gamma", text: "gamma2\nadded" }),
+        call("shift", "replace", { path: "note.txt", start: "gamma", newText: "gamma2\nadded" }),
         assistantMessage(
           [
             toolCall({
@@ -536,7 +536,7 @@ test.each([false, true])(
         call("recovery", "insert", {
           path: "note.txt",
           anchor: "$issued-anchor:current:4",
-          text: "recovered",
+          newText: "recovered",
         }),
       ]);
       expect(getToolExecution(result, "shift").isError).toBe(false);

@@ -102,7 +102,7 @@ test("keeps missing sources, explicit paths, invalid anchors, and batch inherita
     await writeFile(notes, "HEADER\nBODY\nTAIL\n");
     await writeFile(other, "HEADER\nBODY\nTAIL\n");
     const calls = [
-      { id: "no-history", name: "replace", arguments: { start: "HEADER", text: "BAD" } },
+      { id: "no-history", name: "replace", arguments: { start: "HEADER", newText: "BAD" } },
       { id: "read", name: "read", arguments: { path: "notes.txt" } },
       {
         id: "invalid-anchor",

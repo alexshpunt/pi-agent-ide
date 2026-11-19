@@ -227,7 +227,7 @@ test.each(["alone", "before", "after"] as const)(
           : [
               'const local = await tools.read({path: "local.txt"});',
               'await refused(() => tools.demo_replace({path: local, text: "wrong"}));',
-              'await refused(() => tools.replace({path: sibling, text: "wrong"}));',
+              'await refused(() => tools.replace({path: sibling, newText: "wrong"}));',
             ]),
         'text("Isolation checks passed");',
       ].join("\n");

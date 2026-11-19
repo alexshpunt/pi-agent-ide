@@ -115,7 +115,7 @@ test("real Pi receives immediate findings during edits while empty and stale rep
   const call = (id: string, name: string, args: Record<string, unknown>) =>
     assistantMessage([toolCall({ id, name, arguments: args })], { stopReason: "toolUse" });
   const edit = (id: string, start: string, value: string) =>
-    call(id, "replace", { path: "example.ts", start, text: `${value}   ` });
+    call(id, "replace", { path: "example.ts", start, newText: `${value}   ` });
   try {
     const result = await new PiIntegrationTest({
       testName: "background-diagnostics",

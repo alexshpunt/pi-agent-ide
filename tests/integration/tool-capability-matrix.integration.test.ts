@@ -27,8 +27,8 @@ test.each(["direct", "codemode"] as const)(
         await writeFile(path.join(cwd, file), content);
       // A literal selects only its characters, so a whole line includes its line break.
       const steps = [
-        { tool: "insert", args: { path: "insert.txt", anchor: "middle\n", text: "NEW\n" } },
-        { tool: "replace", args: { path: "replace.txt", start: "middle\n", text: "NEW\n" } },
+        { tool: "insert", args: { path: "insert.txt", anchor: "middle\n", newText: "NEW\n" } },
+        { tool: "replace", args: { path: "replace.txt", start: "middle\n", newText: "NEW\n" } },
         { tool: "delete", args: { path: "delete.txt", start: "middle\n" } },
       ];
       const requests =
@@ -173,18 +173,18 @@ test("the capability validator checks Search values and unchanged result provena
               arguments: {
                 code: `const empty = await tools.search({path:"task.txt",query:"regex:^ABSENT$"});
 if (empty.matches.length !== 0 || empty.complete !== true) throw Error("Empty value missing");
-if (await tools.replace({path:empty,text:"BAD"}) === null) throw Error("Empty no-op failed");
+if (await tools.replace({path:empty,newText:"BAD"}) === null) throw Error("Empty no-op failed");
 const limited = await tools.ast_search({path:"scope.ts",pattern:"probe($ARG)",limit:1});
 if (limited.matches.length !== 1 || limited.complete !== false) throw Error("Incomplete value missing");
 const zero = await tools.search({path:limited,query:"regex:^ABSENT$"});
 if (zero.matches.length !== 0 || zero.complete !== false) throw Error("Incomplete empty value missing");
-if (await tools.replace({path:zero,text:"BAD"}) !== null) throw Error("Incomplete result accepted");
-if (await tools.replace({path:"task.txt",start:empty.id,text:"BAD"}) !== null) throw Error("Empty endpoint accepted");
+if (await tools.replace({path:zero,newText:"BAD"}) !== null) throw Error("Incomplete result accepted");
+if (await tools.replace({path:"task.txt",start:empty.id,newText:"BAD"}) !== null) throw Error("Empty endpoint accepted");
 const failed = (await tools.search({path:"task.txt",query:"regex:("})) === null;
 if (!failed) throw Error("Invalid Search did not fail");
 const found = await tools.search({path:"task.txt",query:"OLD",limit:1000});
 if (found.matches.length !== 2 || found.complete !== true) throw Error("Complete value missing");
-await tools.replace({path:found,text:"NEW"});
+await tools.replace({path:found,newText:"NEW"});
 text("Search values verified");`,
               },
             }),
@@ -243,7 +243,7 @@ test("the native TUI public event mirror is usable by the unchanged capability v
               id: "mirror-compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
+                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,newText:"NEW"}));',
               },
             }),
           ],
@@ -310,7 +310,7 @@ test("the AST boundary case produces usable scope anchors from its fixture", asy
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.text.match(/scope-begin-[0-9A-Z]+/)[0]; const end = source.text.match(/scope-end-[0-9A-Z]+/)[0]; text(await tools.replace({path:"task.ts", start, end, text:"function renamed() { return 8; }\\n"}));',
+                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.text.match(/scope-begin-[0-9A-Z]+/)[0]; const end = source.text.match(/scope-end-[0-9A-Z]+/)[0]; text(await tools.replace({path:"task.ts", start, end, newText:"function renamed() { return 8; }\\n"}));',
               },
             }),
           ],
@@ -352,7 +352,7 @@ test("the capability validator preserves real IDE provenance through a transpare
               id: "compose-alias",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.mcp__fixture__read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
+                code: 'const source = await tools.mcp__fixture__read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,newText:"NEW"}));',
               },
             }),
           ],
@@ -407,7 +407,7 @@ test("the capability validator follows real nested tool results instead of names
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
+                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,newText:"NEW"}));',
               },
             }),
           ],
