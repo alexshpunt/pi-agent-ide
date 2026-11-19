@@ -45,6 +45,8 @@ Mutation tools describe each change as inserted text over a half-open range in t
 
 For one edit, the editor snapshots the ordered anchor and target registries once. It expands typed targets before reading any Resource, then resolves explicit anchors independently against each selected current snapshot with the same cwd, signal, and registry snapshot. Compatible path ranges and explicit anchor ranges are unioned. Different Resource sets, incompatible selection shapes, ambiguous or overlapping ranges, and invalid spans are rejected before persistence.
 
+For files, matching two endpoints does not authorize a large unseen interior. Replace, Delete, Move, and Copy check the chosen range against the text returned to this session by Read, Search, and edit results. Move and Copy also check a destination selected by two endpoints. A range is refused if more than 200 lines or 128 Ki characters are unseen. Observation follows unchanged lines when another session shifts the file; new or changed lines are not covered. Use narrower endpoints, or read the intended range (in pages if necessary) before retrying.
+
 A resolver may recover its own rejected value. Recovery is non-mutating: core validates candidate line/column spans, renders current context through the primary presenter, and keeps the original mutation blocked. Batch recovery recomputes candidates after successful writes and post-edit work.
 
 ## Resource mutation
