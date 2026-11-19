@@ -64,7 +64,7 @@ test("whole-file Delete keeps its filesystem route beside a text edit batch", as
       {
         id: "edit",
         name: "insert",
-        arguments: { path: "note.txt", anchor: "keep", text: "ADDED\n" },
+        arguments: { path: "note.txt", anchor: "keep", text: "\nADDED" },
       },
       ...removed.map((file, index) => ({
         id: `remove${index}`,

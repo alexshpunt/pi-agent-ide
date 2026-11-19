@@ -183,7 +183,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-insert",
       "insert",
       { anchor: "bravo", text: "!" },
-      ["alpha", "bravo", "!", "charlie", "delta", "echo"].join("\n"),
+      content.replace("bravo", "bravo!"),
     );
   });
 
@@ -195,7 +195,8 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-delete-lines",
       "delete",
-      { start: "bravo\ncharlie" },
+      // Literal text selects only its characters, so the selection includes the last line break.
+      { start: "bravo\ncharlie\n" },
       ["alpha", "delta", "echo"].join("\n"),
     );
   });
@@ -205,7 +206,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-copy",
       "copy",
       { start: "bravo", targetStart: "delta" },
-      ["alpha", "bravo", "charlie", "delta", "bravo", "echo"].join("\n"),
+      content.replace("delta", "deltabravo"),
     );
   });
 
@@ -214,7 +215,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-move",
       "move",
       { start: "bravo", targetStart: "delta" },
-      ["alpha", "charlie", "delta", "bravo", "echo"].join("\n"),
+      content.replace("bravo", "").replace("delta", "deltabravo"),
     );
   });
 

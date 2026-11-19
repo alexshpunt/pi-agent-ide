@@ -66,7 +66,7 @@ test.each(["inside", "outside", "changed"] as const)(
       await writeFile(path.join(cwd, "note.txt"), content);
       const run = await runScripts(cwd, "native-read-scope-" + scenario, [
         `const found = await tools.read({path:"note.txt",offset:2,limit:2,views:["anchors"]});
-await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
 const result = await tools.replace({path:found,start:${JSON.stringify(scenario === "outside" ? "omega" : scenario === "changed" ? "gamma" : "beta")},text:${JSON.stringify(scenario === "changed" ? "RACE_REMOVE_GAMMA" : "BETA")}});
 if (${scenario === "outside" ? "result !== null" : "result === null"}) throw Error("Unexpected scoped edit result");`,
       ]);
@@ -103,9 +103,9 @@ test.each(["value", "match", "numbered"] as const)(
       const run = await runScripts(cwd, "native-search-scoped-" + selection, [
         `const found = await tools.search({path:"note.txt",query:"beta tail"});
 const session = (await tools.read({path:"search-selection.txt"})).text.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
-await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
 await tools.replace({path:${selected},start:"tail",text:"TAIL"});
-await tools.delete({path:"note.txt",start:"gamma"});`,
+await tools.delete({path:"note.txt",start:"gamma\\n"});`,
       ]);
       expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
         false,
@@ -126,7 +126,7 @@ test.each(["outside", "separate-ranges"] as const)(
       await writeFile(path.join(cwd, "note.txt"), content);
       const run = await runScripts(cwd, "native-search-scope-rejection-" + scenario, [
         `const found = await tools.search({path:"note.txt",query:${JSON.stringify(scenario === "outside" ? "beta" : "regex:beta|gamma")}});
-await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
 const rejected = await tools.replace({path:found,start:${JSON.stringify(scenario === "outside" ? "gamma" : "beta")},${scenario === "separate-ranges" ? 'end:"gamma",' : ""}text:"WRONG"});
 if (rejected !== null) throw Error("Source scope was broadened");`,
       ]);
@@ -153,9 +153,9 @@ test.each(["value-source", "match-source", "match-anchor", "id-anchor"] as const
               : "start: found.matches[0].id";
       const run = await runScripts(cwd, "native-search-value-" + selection, [
         `const found = await tools.search({path:"note.txt",query:"beta"});
-await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
 await tools.replace({${argument},text:"BETA"});
-await tools.delete({path:"note.txt",start:"gamma"});`,
+await tools.delete({path:"note.txt",start:"gamma\\n"});`,
       ]);
       expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
         false,
@@ -249,9 +249,9 @@ test("the paid Search fixture works without a project config directory", async (
                 code: `await tools.search({path:"note.txt",query:"beta"});
 const shown = (await tools.read({path:".pi/issued-search.txt"})).text;
 const session = shown.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
-await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
 await tools.replace({start:"SEARCH#"+session+":1:line",text:"BETA"});
-await tools.delete({path:"note.txt",start:"gamma"});`,
+await tools.delete({path:"note.txt",start:"gamma\\n"});`,
               },
             }),
           ],
@@ -280,9 +280,9 @@ test.each(["numbered", "numbered-path", "all", "all-path"] as const)(
 const shown = (await tools.read({path:"search-selection.txt"})).text;
 const session = shown.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
 const selected = "SEARCH#" + session + ${selection.startsWith("all") ? '":all:line"' : '":1:line"'};
-await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
 await tools.replace(${selection.endsWith("-path") ? '{path:selected,text:"BETA"}' : '{start:selected,text:"BETA"}'});
-await tools.delete({path:"note.txt",start:"gamma"});`,
+await tools.delete({path:"note.txt",start:"gamma\\n"});`,
       ]);
       expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
         false,
@@ -359,7 +359,7 @@ test("local Search typed sources retain their implicit selection alongside expli
     const run = await runScripts(cwd, "native-search-source-union", [
       searchRefs("session", "note.txt", "beta") +
         `
-await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"});
+await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"});
 await tools.replace({path:"SEARCH#"+session+":all:line",start:"gamma",text:"changed"});
 `,
     ]);
@@ -382,7 +382,7 @@ test("multi-file Search all selections remain a commit boundary", async () => {
         `
 await tools.replace({path:"a.txt",start:"alpha",text:"ALPHA"});
 await tools.replace({start:"SEARCH#"+session+":all:line",text:"BETA"});
-await tools.insert({path:"a.txt",anchor:"ALPHA",before:true,text:"added"});
+await tools.insert({path:"a.txt",anchor:"ALPHA",before:true,text:"added\\n"});
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -923,7 +923,7 @@ test("an ordinary error after deadline-like script output keeps accepted edits",
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-deadline-like-output", [
-      'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"}); text("Script error:\\nScript timed out: script output only"); throw new Error("ordinary failure");',
+      'await tools.insert({path:"note.txt",anchor:"alpha",text:"\\nKEPT"}); text("Script error:\\nScript timed out: script output only"); throw new Error("ordinary failure");',
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
@@ -939,7 +939,7 @@ test.each([false, true])(
       await writeFile(path.join(cwd, "note.txt"), initial);
       const run = await runScripts(cwd, `native-codemode-marker-in-error-${clipped}`, [
         (clipped ? '// @options: {"max_output_tokens":1000}\n' : "") +
-          'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT"});' +
+          'await tools.insert({path:"note.txt",anchor:"alpha",text:"\\nKEPT"});' +
           (clipped ? 'text("x".repeat(100000));' : "") +
           'throw new Error("Script error:\\nScript timed out: copied failure");',
       ]);
@@ -956,11 +956,11 @@ test("five text operations share a multi-file snapshot batch before immediate Wr
     await writeFile(path.join(cwd, "note.txt"), initial);
     await writeFile(path.join(cwd, "target.txt"), "head\nmid\ntail\n");
     const run = await runScripts(cwd, "native-codemode-six-tools", [
-      'text(await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added"}));\n' +
+      'text(await tools.insert({path:"note.txt",anchor:"alpha",before:true,text:"added\\n"}));\n' +
         'text(await tools.replace({path:"note.txt",start:"beta",text:"BETA"}));\n' +
-        'text(await tools.delete({path:"note.txt",start:"gamma"}));\n' +
-        'text(await tools.copy({path:"note.txt",start:"alpha",target:"target.txt",targetStart:"head"}));\n' +
-        'text(await tools.move({path:"note.txt",start:"omega",target:"target.txt",targetStart:"tail"}));\n' +
+        'text(await tools.delete({path:"note.txt",start:"gamma\\n"}));\n' +
+        'text(await tools.copy({path:"note.txt",start:"alpha\\n",target:"target.txt",targetStart:"head\\n"}));\n' +
+        'text(await tools.move({path:"note.txt",start:"omega\\n",target:"target.txt",targetStart:"tail\\n"}));\n' +
         'text(await tools.write({path:"new.txt",content:"created\\n"}));',
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -1044,7 +1044,7 @@ test.each([
     await writeFile(path.join(cwd, "target.txt"), "head\ntail\n");
     const run = await runScripts(cwd, `copy-interruption-${scenario.name}`, [
       `${scenario.deadline ? '// @options: {"timeout_ms":2000}\n' : ""}
-text(await tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}));
+text(await tools.copy({path:"source.txt",start:"alpha\\n",target:"target.txt",targetStart:"head\\n"}));
 ${scenario.committed ? 'await tools.read({path:"target.txt"});' : ""}
 ${scenario.deadline ? "while(true) {}" : 'throw Error("ordinary Copy script error");'}`,
     ]);

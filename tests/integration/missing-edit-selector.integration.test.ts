@@ -17,33 +17,36 @@ import {
 
 type Call = Parameters<typeof toolCall>[0];
 const original = "alpha\nbeta\nomega\n";
+// Literal selectors select only their characters, so whole-line edits include the line break.
+const line = "beta\n";
+const target = "omega\n";
 const cases = [
-  { id: "insert", name: "insert", missing: { text: "NEW" }, selector: { anchor: "beta" } },
+  { id: "insert", name: "insert", missing: { text: "NEW\n" }, selector: { anchor: line } },
   { id: "replace", name: "replace", missing: { text: "BETA" }, selector: { start: "beta" } },
-  { id: "delete", name: "delete", missing: { end: "beta" }, selector: { start: "beta" } },
+  { id: "delete", name: "delete", missing: { end: line }, selector: { start: line } },
   {
     id: "copy-start",
     name: "copy",
-    missing: { end: "beta", targetStart: "omega" },
-    selector: { start: "beta" },
+    missing: { end: line, targetStart: target },
+    selector: { start: line },
   },
   {
     id: "move-start",
     name: "move",
-    missing: { end: "beta", targetStart: "omega" },
-    selector: { start: "beta" },
+    missing: { end: line, targetStart: target },
+    selector: { start: line },
   },
   {
     id: "copy-target",
     name: "copy",
-    missing: { start: "beta" },
-    selector: { targetStart: "omega" },
+    missing: { start: line },
+    selector: { targetStart: target },
   },
   {
     id: "move-target",
     name: "move",
-    missing: { start: "beta" },
-    selector: { targetStart: "omega" },
+    missing: { start: line },
+    selector: { targetStart: target },
   },
 ];
 

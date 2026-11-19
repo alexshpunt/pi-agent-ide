@@ -174,7 +174,7 @@ const found=await tools.search({path:file,query:"regex:^int block_b[^\\n]*\\n",m
 const ref=found.matches[0]?.id;
 check(found.matches.length===1&&ref,"No line reference: "+JSON.stringify(found).slice(0,400));
 await window({prepend:"// peer\n"});
-await tools.move({path:ref,target:file,targetStart:"// slot",targetEnd:"// slot"});`,
+await tools.move({path:ref,target:file,targetStart:"// slot\n",targetEnd:"// slot\n"});`,
     );
     expect(final).toBe("// peer\nint block_b() { return 1; }\nint keep_a;\nint keep_c;\n");
   });
