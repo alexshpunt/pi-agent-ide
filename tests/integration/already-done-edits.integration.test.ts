@@ -125,7 +125,7 @@ text(await tools.move({path:source,target}));`,
   });
 });
 
-test("a symbol rename to its current name is refused without a write", async () => {
+test("a symbol rename to its current name succeeds without a write", async () => {
   await withTempWorkspace(async (cwd) => {
     const library =
       "export function alpha(): number {\n  return 1;\n}\nexport const value = alpha();\n";
@@ -147,12 +147,8 @@ test("a symbol rename to its current name is refused without a write", async () 
       ["ide.lint"],
     );
     const output = getToolResultText(result, "rename");
-    const execution = getToolExecution(result, "rename");
-    expect(execution.isError, output).toBe(true);
-    expect(getToolExecutionDetails(execution)).toMatchObject({
-      effect: "not-applied",
-      results: [{ data: { errors: [{ code: "REPLACEMENT_IDENTICAL" }] } }],
-    });
+    expect(getToolExecution(result, "rename").isError, output).toBe(false);
+    expect(output).toContain("No changes: every target already has this text.");
     expect(await readFile(path.join(cwd, "lib.ts"), "utf8")).toBe(library);
   });
 });
