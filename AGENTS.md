@@ -7,7 +7,7 @@ Never commit task evidence or run artifacts to Git, including summaries, reports
 
 CI may run automatically on `develop`, but it is not a merge requirement. Do not trigger extra CI or wait for optional checks before merging a feature PR. If repository protection unexpectedly blocks the merge, report the blocker instead of bypassing it. Required promotion and release CI checks still apply.
 
-During feature development, run only relevant unit tests, typecheck/lint, a targeted integration case, or a small live smoke check locally. Full integration suites and other broad, heavy test runs belong only in CI/CD. Do not run them locally, including through an umbrella check command. Keep live tool and TUI verification for changed behavior; it is an internal check, not a separate user acceptance gate.
+Before you run any test, read the running-tests skill: it says which machine each run goes to. During feature development, run only relevant unit tests, typecheck/lint, a targeted integration case, or a small live smoke check. Full integration suites and other broad, heavy test runs belong only in CI/CD, including through an umbrella check command. Keep live tool and TUI verification for changed behavior; it is an internal check, not a separate user acceptance gate.
 
 Do not test prose: tool descriptions, prompts, skills, documentation, or human-readable log, UI, and error wording. Delete any test found to pin that wording immediately; do not weaken its assertion or leave it for later. Machine-parsed protocol and file-format contracts are exempt.
 
