@@ -1,6 +1,10 @@
 import { Box, Container } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 
+import {
+  NOTICE_OUTPUT_CHARS,
+  noticeSnapshot,
+} from "#src/plugins/pi-agent-ide-terminal/src/output-limits.ts";
 import { renderTerminalResult } from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
 import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/src/session-manager.ts";
 import type {
@@ -143,12 +147,13 @@ export class TerminalUi {
     this.pi.appendEntry("terminal-stale-display", { ...snapshot, ...this.#visibleOwner(snapshot) });
   }
 
+  /** Snapshot for a notice. It is persisted in the session, so it keeps only the shown excerpt. */
   #snapshot(session: TerminalSession): TerminalSessionSnapshot {
     // The process manager can be an instance retained from before origin metadata existed.
-    return {
+    return noticeSnapshot({
       ...this.manager.snapshot(session),
       ...(session.origin === undefined ? {} : { origin: session.origin }),
-    };
+    });
   }
   #visibleOwner(snapshot: TerminalSessionSnapshot): { readonly parentToolCallId?: string } {
     const origin = snapshot.origin;
@@ -247,13 +252,13 @@ function formatCompletionMessage(sessions: readonly TerminalSessionSnapshot[]): 
       const exit = session.exitCode === undefined ? "" : `, exit ${session.exitCode}`;
       const reason =
         session.completionReason === undefined ? "" : `, reason ${session.completionReason}`;
-      const excerpt = session.output.trimEnd().slice(-2_000);
+      const excerpt = session.output.trimEnd().slice(-NOTICE_OUTPUT_CHARS);
       return `- ${session.source}: ${session.status}${exit}${reason}, ${formatElapsed(session.elapsedMs)}\n${excerpt || "(no output)"}`;
     })
     .join("\n")}`;
 }
 function formatStaleMessage(session: TerminalSessionSnapshot): string {
-  const excerpt = session.output.trimEnd().slice(-2_000);
+  const excerpt = session.output.trimEnd().slice(-NOTICE_OUTPUT_CHARS);
   return `Background terminal ${session.source} has produced no output for ${formatElapsed(session.idleMs)}. Inspect it with read. If it is healthy, keep waiting; otherwise send input or stop it.\n${excerpt || "(no output)"}`;
 }
 

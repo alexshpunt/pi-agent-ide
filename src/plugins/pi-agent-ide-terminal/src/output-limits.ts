@@ -16,6 +16,28 @@ export function terminalOutputTail(output: string): TruncationResult {
   });
 }
 
+/** Characters of trailing output that a terminal notice shows the agent and stores in the session. */
+export const NOTICE_OUTPUT_CHARS = 2_000;
+
+/**
+ * Bound a snapshot that is persisted in the session by a terminal notice.
+ *
+ * The session keeps only the excerpt the agent saw; the complete output stays in the log file at
+ * `fullOutputPath`. `outputStart`, `outputEnd` and `truncated` describe the stored excerpt.
+ */
+export function noticeSnapshot(snapshot: TerminalSessionSnapshot): TerminalSessionSnapshot {
+  const end = snapshot.output.trimEnd().length;
+  const start = Math.max(0, end - NOTICE_OUTPUT_CHARS);
+  if (start === 0 && end === snapshot.output.length) return snapshot;
+  return {
+    ...snapshot,
+    output: snapshot.output.slice(start, end),
+    outputStart: snapshot.outputStart + start,
+    outputEnd: snapshot.outputStart + end,
+    truncated: snapshot.truncated || start > 0,
+  };
+}
+
 /** Format one terminal snapshot for the agent without exposing unbounded output. */
 export function formatAgentTerminalSnapshot(snapshot: TerminalSessionSnapshot): string {
   const truncation = terminalOutputTail(snapshot.output);
