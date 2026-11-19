@@ -8,6 +8,9 @@ set -uo pipefail
 root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 cd "$root"
 shards="${SHARDS:-4}"
+# Each test workspace gets its own language-server host; stop it soon after its Pi exits, or
+# finished workspaces keep their servers for the default 10 minutes and fill memory.
+export PI_AGENT_IDE_LSP_LINGER_MS="${PI_AGENT_IDE_LSP_LINGER_MS:-5000}"
 log_parent="${LOG_DIR:-.tmp}"
 mkdir -p "$log_parent"
 log_dir="$(mktemp -d "$log_parent/integration-shards.XXXXXX")"
