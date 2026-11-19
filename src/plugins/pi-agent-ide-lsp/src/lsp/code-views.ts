@@ -27,6 +27,7 @@ import {
   type ClangCoverage,
   type ClangReachProvider,
 } from "./clang-coverage.ts";
+import { isMissingSource, missingSourcesNotes } from "./missing-sources.ts";
 import { withinScope } from "./symbol-search.ts";
 import {
   normalizeDocumentSymbols,
@@ -164,6 +165,8 @@ export interface LspGraph {
   readonly complete: boolean;
   /** The text of each source that the locations' ranges belong to. */
   readonly contents: ReadonlyMap<string, string>;
+  /** Files the server reported places in that no longer exist; their places are left out. */
+  readonly missing: readonly string[];
 }
 
 /** A declaration's relations, with every position in the reported text of its file. */
@@ -182,6 +185,8 @@ interface SymbolRelations {
   readonly referenceReplyMissing: boolean;
   /** Why C/C++ references and callers can be missing. */
   readonly coverage: ClangCoverage | undefined;
+  /** Sources the server reported places in that no longer exist. */
+  readonly missing: readonly string[];
 }
 
 /** Diagnostics, opened files and reported texts shared by the queries of one graph. */
@@ -285,7 +290,12 @@ async function graphOf(
         !relation.referenceReplyMissing,
     ),
     contents,
+    missing: missingOf(relations),
   };
+}
+
+function missingOf(relations: readonly SymbolRelations[]): string[] {
+  return [...new Set(relations.flatMap((relation) => relation.missing))].sort();
 }
 
 /**
@@ -378,6 +388,7 @@ export async function readLspFileGraph(
       ...coverageNotes(mergeCoverage(found.map((relations) => relations.coverage)), (source) =>
         locations.display(source),
       ),
+      ...missingSourcesNotes(missingOf(found), (source) => locations.display(source)),
     );
 
     return graphOf(lines.join("\n"), found, context.texts);
@@ -473,7 +484,7 @@ async function queryRelations(
   // The coverage check opens the file again, which publishes it as it is on disk now.
   const served = document.client.documentContent(document.uri);
   const position = servedPosition(document, symbol, served, texts);
-  const [references, calls] = await Promise.all([
+  const [reported, calls] = await Promise.all([
     requestReferences(document.client, document.uri, position, signal),
     requestCallHierarchy(document.client, document.uri, position, signal),
   ]);
@@ -482,13 +493,26 @@ async function queryRelations(
   if (document.client.documentContent(document.uri) !== served)
     throw sourceChanged("The server's text changed while it answered a call graph request.");
   if (context.reachOf !== undefined && CLANG_LANGUAGES.has(document.languageId))
-    requireReferenceReply(symbol.name, references);
+    requireReferenceReply(symbol.name, reported);
+  // The server's index can keep places in files deleted since, such as another session's scratch
+  // copy of a source. The graph leaves them out and names their files.
+  const missing = await missingFiles(
+    [
+      ...reported.map((location) => location.uri),
+      ...calls.incoming.map((call) => call.from.uri),
+      ...calls.outgoing.map((call) => call.to.uri),
+    ].filter((uri) => uri !== document.uri),
+    texts,
+  );
+  const references = reported.filter((location) => !missing.has(location.uri));
+  const incomingCalls = calls.incoming.filter((call) => !missing.has(call.from.uri));
+  const outgoingCalls = calls.outgoing.filter((call) => !missing.has(call.to.uri));
   // The text each answer belongs to, taken before later diagnostics reads open its file again.
   const answered = new Map<string, string | undefined>([[document.uri, served]]);
   for (const uri of [
     ...references.map((location) => location.uri),
-    ...calls.incoming.map((call) => call.from.uri),
-    ...calls.outgoing.map((call) => call.to.uri),
+    ...incomingCalls.map((call) => call.from.uri),
+    ...outgoingCalls.map((call) => call.to.uri),
   ])
     if (!answered.has(uri)) answered.set(uri, document.client.documentContent(uri));
   const contentOf = async (uri: string) => answered.get(uri) ?? texts.snapshot(uri);
@@ -517,7 +541,7 @@ async function queryRelations(
           )
         ).map(({ item }) => item);
   const incoming = await Promise.all(
-    calls.incoming.map(async (call) => ({
+    incomingCalls.map(async (call) => ({
       ...call,
       fromRanges: await named(call.fromRanges, (range) => ({ uri: call.from.uri, range })),
     })),
@@ -545,7 +569,7 @@ async function queryRelations(
         [
           document.uri,
           ...references.map((location) => location.uri),
-          ...calls.incoming.map((call) => call.from.uri),
+          ...incomingCalls.map((call) => call.from.uri),
         ],
         errorsOf,
         fileOf,
@@ -555,20 +579,36 @@ async function queryRelations(
         // A caller is listed for the places it calls the symbol; one left without any is not.
         .filter(
           (call, index) =>
-            call.fromRanges.length > 0 || calls.incoming[index]?.fromRanges.length === 0,
+            call.fromRanges.length > 0 || incomingCalls[index]?.fromRanges.length === 0,
         )
         .map((call) => site(call.from, call.fromRanges[0] ?? call.from.selectionRange)),
     ),
-    outgoing: await Promise.all(
-      calls.outgoing.map((call) => site(call.to, call.to.selectionRange)),
-    ),
+    outgoing: await Promise.all(outgoingCalls.map((call) => site(call.to, call.to.selectionRange))),
     unsupported: calls.unsupported,
     callItemMissing:
       calls.items.length === 0 &&
       calls.unsupported.length === 0 &&
       CALLABLE_SYMBOL_KINDS.has(symbol.kind),
-    referenceReplyMissing: reach !== undefined && references.length === 0,
+    // The server answered; places it reported only in deleted files are still an answer.
+    referenceReplyMissing: reach !== undefined && reported.length === 0,
+    missing: [...missing].map(fileOf).sort(),
   };
+}
+
+/** The URIs among `uris` whose files no longer exist, found by reading each file's snapshot. */
+async function missingFiles(uris: readonly string[], texts: ReportedTexts): Promise<Set<string>> {
+  const missing = new Set<string>();
+  await Promise.all(
+    [...new Set(uris)].map(async (uri) => {
+      try {
+        await texts.snapshot(uri);
+      } catch (error) {
+        if (!isMissingSource(error)) throw error;
+        missing.add(uri);
+      }
+    }),
+  );
+  return missing;
 }
 
 /**
@@ -606,6 +646,7 @@ async function formatSymbolGraph(
     `Definition: ${document.displayPath} ${definitionAnchor} (${symbolKindName(symbol.kind)})`,
     `Source: calls ${callsReference(document.displayPath, symbol.selector)}`,
     ...coverageNotes(relations.coverage, (source) => locations.display(source)),
+    ...missingSourcesNotes(relations.missing, (source) => locations.display(source)),
     "",
     ...(await formatReferences(relations.references, locations)),
     "",

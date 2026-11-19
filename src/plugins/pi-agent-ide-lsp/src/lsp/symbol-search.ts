@@ -17,6 +17,7 @@ import type { LspClient } from "./client.ts";
 import { requireReferenceReply, requestReferences, type LspLocation } from "./navigation.ts";
 import { lspRangeMatch } from "./range-match.ts";
 import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
+import { isMissingSource } from "./missing-sources.ts";
 import type { LspPosition } from "./types.ts";
 import {
   clangCoverage,
@@ -122,6 +123,11 @@ export interface SymbolSearchResult {
   readonly complete: boolean;
   /** Why C/C++ references can be missing; present only when they can. */
   readonly coverage?: ClangCoverage;
+  /**
+   * Files the server reported places in that no longer exist and that the search could have
+   * listed; their places are left out. Present only when there are such files.
+   */
+  readonly missing?: readonly string[];
 }
 
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
@@ -300,18 +306,32 @@ async function searchSymbolsOnce(
     signal,
   );
   // A search with references can leave its scope; without them it lists only hits inside it.
+  const listable = (source: string) =>
+    scope.navigation === "references"
+      ? withinScope(source, cwd, {})
+      : withinScope(source, cwd, scope) &&
+        (resultScope === undefined ||
+          resultScope.targets.some((target) => target.source === source));
   const reachOf = createClangReach({
     manager,
     cwd,
     errorsOf,
-    accepts: (source) =>
-      scope.navigation === "references"
-        ? withinScope(source, cwd, {})
-        : withinScope(source, cwd, scope) &&
-          (resultScope === undefined ||
-            resultScope.targets.some((target) => target.source === source)),
+    accepts: listable,
     ...(signal && { signal }),
   });
+  // The server's index can keep places in files deleted since, such as another session's scratch
+  // copy of a source. The search leaves them out and names the files it could have listed.
+  const missing = new Set<string>();
+  const exists = async (source: string): Promise<boolean> => {
+    try {
+      await snapshotOf(source);
+      return true;
+    } catch (error) {
+      if (!isMissingSource(error)) throw error;
+      if (listable(source)) missing.add(source);
+      return false;
+    }
+  };
   const coverages: (ClangCoverage | undefined)[] = [];
   // Declarations already listed, by file and the name position of their first entry.
   const listed = new Set<string>();
@@ -335,6 +355,7 @@ async function searchSymbolsOnce(
     for (const definition of definitions) {
       signal?.throwIfAborted();
       if (!withinScope(sourceOf(definition.location.uri, cwd), cwd, {})) continue;
+      if (!(await exists(sourceOf(definition.location.uri, cwd)))) continue;
       const workspaceMatch = await toMatch(definition.location, client).catch((error: unknown) => {
         if ((error as { code?: unknown } | null)?.code === "SOURCE_CHANGED") return undefined;
         throw error;
@@ -414,6 +435,7 @@ async function searchSymbolsOnce(
         const reported: { location: LspLocation; reference: SearchSelectionMatch }[] = [];
         for (const location of references) {
           if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
+          if (!(await exists(sourceOf(location.uri, cwd)))) continue;
           const reference = await toMatch(location, opened.client);
           if (
             reference.source === declared.source &&
@@ -474,12 +496,21 @@ async function searchSymbolsOnce(
   const mappedOnto = new Map<string, string>();
   for (const source of new Set(hits.map((hit) => hit.source))) {
     const snapshot = requiredValue(contents.get(source));
-    const current = await manager.readSourceSnapshot(source, signal);
+    const current = await manager.readSourceSnapshot(source, signal).catch((error: unknown) => {
+      if (!isMissingSource(error)) throw error;
+      return undefined;
+    });
+    // A file deleted during the search has no text left for its hits.
+    if (current === undefined) {
+      if (listable(source)) missing.add(source);
+      continue;
+    }
     mappedOnto.set(source, current.content);
     if (current.version !== snapshot.version && current.content !== snapshot.document.content)
       moved.set(source, LinePositionMap.between(snapshot.document.content, current.content));
   }
-  for (const [index, hit] of hits.entries()) {
+  const kept = hits.filter((hit) => mappedOnto.has(hit.source));
+  for (const [index, hit] of kept.entries()) {
     const map = moved.get(hit.source);
     if (map === undefined) continue;
     const range = map.mapRange({
@@ -487,9 +518,9 @@ async function searchSymbolsOnce(
       end: { line: (hit.endLineNumber ?? hit.lineNumber) - 1, character: hit.endColumn },
     });
     if (range === undefined) throw sourceChanged("LSP source changed during search.");
-    hits[index] = { ...hit, lineNumber: range.start.line + 1, endLineNumber: range.end.line + 1 };
+    kept[index] = { ...hit, lineNumber: range.start.line + 1, endLineNumber: range.end.line + 1 };
   }
-  hits.sort(
+  kept.sort(
     (left, right) =>
       left.source.localeCompare(right.source) ||
       left.lineNumber - right.lineNumber ||
@@ -497,14 +528,15 @@ async function searchSymbolsOnce(
       left.endColumn - right.endColumn ||
       left.symbol.id.localeCompare(right.symbol.id),
   );
-  const returned = hits.slice(0, limit);
+  const returned = kept.slice(0, limit);
   const coverage = mergeCoverage(coverages);
   return {
     hits: returned,
     contents: new Map(
       returned.map((hit) => [hit.source, requiredValue(mappedOnto.get(hit.source))]),
     ),
-    complete: (resultScope?.complete ?? true) && hits.length <= limit && coverageComplete(coverage),
+    complete: (resultScope?.complete ?? true) && kept.length <= limit && coverageComplete(coverage),
     ...(coverage !== undefined && !coverageComplete(coverage) && { coverage }),
+    ...(missing.size > 0 && { missing: [...missing].sort() }),
   };
 }

@@ -182,6 +182,7 @@ test("registers a call graph's references, callers and callees as selections", a
     outgoing: [{ source, range: range(6, 0, 6, 22) }],
     complete: true,
     contents: new Map([[source, content]]),
+    missing: [],
   };
   backend.readLspSymbolGraph.mockResolvedValue(graph);
   backend.readLspFileGraph.mockResolvedValue(graph);
