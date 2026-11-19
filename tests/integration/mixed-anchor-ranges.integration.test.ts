@@ -74,7 +74,8 @@ const cases: {
   { name: "delete", args: { start: "prefix", end: anchor }, expected: original, error: true },
   {
     name: "replace",
-    args: { start: "LINE#RUNTIME:1", end: anchor, text: "NEW" },
+    // Two line endpoints select whole lines with their LFs; the text keeps one line.
+    args: { start: "LINE#RUNTIME:1", end: anchor, text: "NEW\n" },
     expected: original.replace(selected, "NEW\n"),
   },
   {

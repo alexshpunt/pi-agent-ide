@@ -23,10 +23,11 @@ export interface LineMap {
   readonly newLines: readonly string[];
 }
 
-/** Split like the editors do (`\n` ends a line), keeping each line ending so endings compare too. */
+/**
+ * Split like every tool does (only `\n` ends a line; CR is ordinary text), keeping each line ending
+ * so endings compare too.
+ */
 function lineTokens(content: string): string[] | undefined {
-  // A lone CR ends a line for some readers and not for others, so line numbers would be ambiguous.
-  if (/\r(?!\n)/u.test(content)) return undefined;
   const lines = content.split("\n");
   return lines.map((line, index) => (index < lines.length - 1 ? `${line}\n` : line));
 }
@@ -204,7 +205,7 @@ function hunkAround(map: LineMap, line: number): LineHunk | undefined {
 }
 
 function withoutEnding(token: string): string {
-  return token.replace(/\r?\n$/u, "");
+  return token.endsWith("\n") ? token.slice(0, -1) : token;
 }
 
 function lineText(lines: readonly string[], line: number): string {

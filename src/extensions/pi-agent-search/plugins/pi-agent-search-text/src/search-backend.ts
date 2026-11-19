@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { open, stat } from "node:fs/promises";
 import path from "node:path";
 import { splitGlobList, type SearchEnvironment } from "pi-agent-search/api/search";
 import { createInterface } from "node:readline";
@@ -44,6 +44,70 @@ function assertSupportedPattern(request: TextSearchRequest): void {
   }
   if (/\r|\n/u.test(request.query))
     throw new Error("A pattern with line breaks requires multiline: true.");
+}
+
+/**
+ * Ripgrep's BOM sniffing drops a UTF-8 BOM: line 1's text and offsets start after it. The editor
+ * keeps the BOM as line 1's first character, so line-1 matches of such a text get it back here.
+ * Other encodings stay transcoded, so UTF-16 files are still found.
+ */
+function withUtf8Bom(match: TextSearchMatch): TextSearchMatch {
+  if (match.lineNumber !== 1) return match;
+  return {
+    ...match,
+    lineText: `\uFEFF${match.lineText}`,
+    startColumn: match.startColumn + 1,
+    endColumn: (match.endLineNumber ?? 1) === 1 ? match.endColumn + 1 : match.endColumn,
+  };
+}
+
+/** Restores the BOM of every matched file that starts with one; only files with a line-1 match are read. */
+async function withUtf8Boms(
+  result: TextSearchBackendResult,
+  signal?: AbortSignal,
+  environment?: SearchEnvironment,
+): Promise<TextSearchBackendResult> {
+  const sources = new Set(
+    result.matches.filter((match) => match.lineNumber === 1).map((match) => match.source),
+  );
+  if (sources.size === 0) return result;
+  const withBom = new Set<string>();
+  await Promise.all(
+    [...sources].map(async (source) => {
+      if (await startsWithUtf8Bom(source, signal, environment)) withBom.add(source);
+    }),
+  );
+  if (withBom.size === 0) return result;
+  return {
+    ...result,
+    matches: result.matches.map((match) =>
+      withBom.has(match.source) ? withUtf8Bom(match) : match,
+    ),
+  };
+}
+
+async function startsWithUtf8Bom(
+  source: string,
+  signal?: AbortSignal,
+  environment?: SearchEnvironment,
+): Promise<boolean> {
+  signal?.throwIfAborted();
+  try {
+    // The owner has no ranged read; its text keeps a BOM as its first character.
+    if (environment !== undefined)
+      return (await environment.readText(source, signal)).startsWith("\uFEFF");
+    const file = await open(source, "r");
+    try {
+      const { buffer, bytesRead } = await file.read(Buffer.alloc(3), 0, 3, 0);
+      return bytesRead === 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
+    } finally {
+      await file.close();
+    }
+  } catch {
+    signal?.throwIfAborted();
+    // An unreadable file cannot register its matches anyway; its registration reports why.
+    return false;
+  }
 }
 
 function multilineArguments(request: TextSearchRequest): string[] {
@@ -222,10 +286,14 @@ export async function searchTextContent(
       // An empty source still has one position. Ripgrep excludes the record delimiter from matches.
       content.length === 0 ? "\n" : content,
     );
-  const result =
+  const found =
     request.regex === true
       ? await withRegexEngineFallback(search, signal)
       : await search(["--fixed-strings"]);
+  // The text is at hand: a BOM is its first character.
+  const result = content.startsWith("\uFEFF")
+    ? { ...found, matches: found.matches.map(withUtf8Bom) }
+    : found;
   return content.length === 0
     ? {
         ...result,
@@ -259,31 +327,32 @@ async function searchPattern(
     scope.target,
   ];
 
-  if (request.regex !== true) {
-    return runRipgrep(
-      ["--fixed-strings", ...commonArguments],
-      searchCwd,
-      signal,
-      onLine,
-      budget,
-      undefined,
-      environment,
-    );
-  }
-
-  return withRegexEngineFallback(
-    (engine) =>
-      runRipgrep(
-        [...engine, ...commonArguments],
-        searchCwd,
-        signal,
-        onLine,
-        budget,
-        undefined,
-        environment,
-      ),
-    signal,
-  );
+  const found =
+    request.regex !== true
+      ? await runRipgrep(
+          ["--fixed-strings", ...commonArguments],
+          searchCwd,
+          signal,
+          onLine,
+          budget,
+          undefined,
+          environment,
+        )
+      : await withRegexEngineFallback(
+          (engine) =>
+            runRipgrep(
+              [...engine, ...commonArguments],
+              searchCwd,
+              signal,
+              onLine,
+              budget,
+              undefined,
+              environment,
+            ),
+          signal,
+        );
+  // Line collection for Boolean conditions reports line numbers only, which a BOM does not move.
+  return onLine === undefined ? withUtf8Boms(found, signal, environment) : found;
 }
 
 /**
@@ -609,7 +678,8 @@ function* matchesFromEvent(
   }
 
   // Multiline mode reports every line a match touches in one event; offsets count from its start.
-  const lines = rawLine.split("\n").map((line) => line.replace(/\r$/u, ""));
+  // Only LF ends a line, as in the editor: a CRLF line's text keeps its CR.
+  const lines = rawLine.split("\n");
   const lineBuffer = Buffer.from(rawLine);
   const position = (byteOffset: number) => {
     const prefix = lineBuffer.subarray(0, byteOffset).toString("utf8");

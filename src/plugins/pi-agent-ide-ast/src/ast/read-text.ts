@@ -21,7 +21,8 @@ export async function readTextFile(filePath: string): Promise<TextFileSnapshot> 
     throw new Error(`File appears to be binary and cannot be read as text: ${filePath}`);
   }
 
-  const content = buffer.toString("utf8").replaceAll("\r\n", "\n");
+  // Only LF ends a line: a CRLF line keeps its CR, so line anchors match the editor's.
+  const content = buffer.toString("utf8");
   const withoutFinalNewline = content.endsWith("\n") ? content.slice(0, -1) : content;
   const lines = withoutFinalNewline.length === 0 ? [] : withoutFinalNewline.split("\n");
 

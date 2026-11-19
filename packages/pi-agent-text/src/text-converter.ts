@@ -43,7 +43,8 @@ function convertText(
   }
 
   try {
-    const text = new TextDecoder("utf8", { fatal: true }).decode(input.bytes);
+    // Keep a UTF-8 BOM as the first character: the text is the file's exact content.
+    const text = new TextDecoder("utf8", { fatal: true, ignoreBOM: true }).decode(input.bytes);
     return { kind: "converted", content: [{ type: "text", text }] };
   } catch (error) {
     if (!isTextualMediaType(input.mediaType)) {

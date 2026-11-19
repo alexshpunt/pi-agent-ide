@@ -13,13 +13,6 @@ import { quoteAnchorExcerpt } from "pi-agent-text-editor/api/anchor-excerpt";
 import type { ExactTextRecoveryConfig } from "./config.ts";
 import { recoverExactText } from "./recovery.ts";
 
-/** Text with CRLF and CR line breaks normalized to LF, and a map back to source offsets. */
-interface NormalizedText {
-  readonly text: string;
-  /** Maps an offset in `text` to the matching offset in the source. */
-  readonly sourceOffset: (offset: number) => number;
-}
-
 /** Creates the catch-all resolver for unique exact text spans. */
 export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): TextAnchorResolver {
   return {
@@ -41,7 +34,10 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
   };
 }
 
-/** Resolves a unique EOL-normalized text value without changing the source. */
+/**
+ * Resolves the one place where the file holds exactly the characters of `value`. Nothing is
+ * normalized: CR, CRLF, a BOM and every other character match only themselves.
+ */
 export function resolveExactTextAnchor(
   value: string,
   context: TextAnchorResolverContext,
@@ -50,42 +46,30 @@ export function resolveExactTextAnchor(
     return rejected("invalid", "exact text anchor must be non-empty");
   }
 
-  const source = normalizeText(stripInitialBom(context.content));
-  const query = normalizeText(stripInitialBom(value)).text;
-  const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
-  const span = (start: number, length = query.length) => ({
-    start: bomOffset + source.sourceOffset(start),
-    end: bomOffset + source.sourceOffset(start + length),
-  });
-  const scope = context.scope?.map((range) => scopeOffsets(context.content, range));
+  const content = context.content;
+  const scope = context.scope?.map((range) => scopeOffsets(content, range));
   // In a scope, only matches inside it count: text that occurs elsewhere in the file too is
   // still unique there. Diagnostic candidates must respect the same character boundaries.
   const matchesFor = (candidate: string, limit: number) =>
     overlappingMatches(
-      source.text,
+      content,
       candidate,
       limit,
       scope === undefined
         ? undefined
-        : (start) => {
-            const match = span(start, candidate.length);
-            return scope.some((range) => match.start >= range.from && match.end <= range.to);
-          },
+        : (start) =>
+            scope.some((range) => start >= range.from && start + candidate.length <= range.to),
     );
-  const matches = matchesFor(query, 2);
+  const matches = matchesFor(value, 2);
 
   if (matches.length === 0) {
-    const outsideScope = scope !== undefined && query.length > 0 && source.text.includes(query);
+    const outsideScope = scope !== undefined && content.includes(value);
     // Interpret only single backslash control escapes, and only to explain a refusal.
     // Never resolve or edit the decoded candidate, or reinterpret escaped backslashes.
     const decoded = value.replace(/(?<!\\)\\[nrt]/gu, (escape) =>
       escape === "\\n" ? "\n" : escape === "\\r" ? "\r" : "\t",
     );
-    if (
-      !outsideScope &&
-      decoded !== value &&
-      matchesFor(normalizeText(stripInitialBom(decoded)).text, 1).length > 0
-    ) {
+    if (!outsideScope && decoded !== value && matchesFor(decoded, 1).length > 0) {
       return rejected(
         "missing",
         `Exact-text selector ${quoteAnchorExcerpt(value)} contains literal backslash escapes; the character form ${quoteAnchorExcerpt(decoded)} matches text inside the ${scope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
@@ -108,39 +92,35 @@ export function resolveExactTextAnchor(
     );
   }
 
-  const normalizedStart = matches[0];
-  if (normalizedStart === undefined) {
+  const start = matches[0];
+  if (start === undefined) {
     return { kind: "failed", error: new Error("Exact match index is missing") };
   }
 
   // Literal text selects exactly its characters, even when they form complete lines.
-  const { start, end } = span(normalizedStart);
   return {
     kind: "resolved",
     anchor: new TextSelectionAnchor(value, context.source, [
-      { start: positionAt(context.content, start), end: positionAt(context.content, end) },
+      { start: positionAt(content, start), end: positionAt(content, start + value.length) },
     ]),
   };
 }
 
-/** Finds exact matches and maps their spans to the original source positions. */
+/** Finds exact matches and returns their source positions. */
 export function findExactTextMatches(
   value: string,
   context: TextAnchorResolverContext,
   limit: number,
 ): { readonly ranges: readonly TextAnchorRecoveryCandidateRange[]; readonly total: number } {
-  const source = normalizeText(stripInitialBom(context.content));
-  const query = normalizeText(stripInitialBom(value)).text;
-  if (query.length === 0) {
+  if (value.length === 0) {
     return { ranges: [], total: 0 };
   }
-  const matches = scanMatches(source.text, query, limit);
-  const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
+  const matches = scanMatches(context.content, value, limit);
   return {
     total: matches.total,
     ranges: matches.starts.map((start) => ({
-      start: positionAt(context.content, bomOffset + source.sourceOffset(start)),
-      end: positionAt(context.content, bomOffset + source.sourceOffset(start + query.length)),
+      start: positionAt(context.content, start),
+      end: positionAt(context.content, start + value.length),
     })),
   };
 }
@@ -150,51 +130,6 @@ function rejected(
   reason: string,
 ): TextAnchorResolutionAttempt {
   return { kind: "rejected", rejection: { code, reason } };
-}
-
-function stripInitialBom(value: string): string {
-  return value.startsWith("\uFEFF") ? value.slice(1) : value;
-}
-
-function normalizeText(value: string): NormalizedText {
-  if (!value.includes("\r")) {
-    return { text: value, sourceOffset: (offset) => checkedOffset(offset, value.length) };
-  }
-
-  // Each CRLF becomes one LF, so a normalized offset maps back by adding the CRLFs before it.
-  const collapsed: number[] = [];
-  let removed = 0;
-  for (let crlf = value.indexOf("\r\n"); crlf !== -1; crlf = value.indexOf("\r\n", crlf + 2)) {
-    collapsed.push(crlf - removed);
-    removed += 1;
-  }
-  const text = value.replace(/\r\n?/gu, "\n");
-  return {
-    text,
-    sourceOffset: (offset) => checkedOffset(offset, text.length) + countBefore(collapsed, offset),
-  };
-}
-
-function checkedOffset(offset: number, length: number): number {
-  if (offset < 0 || offset > length) {
-    throw new RangeError("Exact text match is outside normalized source boundaries");
-  }
-  return offset;
-}
-
-/** Counts sorted positions lower than `offset`. */
-function countBefore(positions: readonly number[], offset: number): number {
-  let low = 0;
-  let high = positions.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if ((positions[middle] ?? Infinity) < offset) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  return low;
 }
 
 function overlappingMatches(
@@ -221,25 +156,25 @@ function overlappingMatches(
 
 /**
  * Source offsets of a scope range. A range that ends at the end of a line also covers that line's
- * break, so text that ends with the break still counts as inside.
+ * LF, or the CRLF when it stops before a CRLF line's CR, so text that ends with the break still
+ * counts as inside. A lone CR is ordinary text.
  */
 function scopeOffsets(
   content: string,
   range: TextAnchorRecoveryCandidateRange,
 ): { readonly from: number; readonly to: number } {
   const to = offsetAt(content, range.end);
-  const lineBreak = content.startsWith("\r\n", to) ? 2 : /[\r\n]/u.test(content[to] ?? "") ? 1 : 0;
+  const lineBreak = content.startsWith("\r\n", to) ? 2 : content[to] === "\n" ? 1 : 0;
   return { from: offsetAt(content, range.start), to: to + lineBreak };
 }
 
+/** The offset of a position. Only LF ends a line; CR is an ordinary character. */
 function offsetAt(content: string, position: TextSelectionPosition): number {
-  const lineBreak = /\r\n|\r|\n/gu;
   let offset = 0;
   for (let line = 1; line < position.lineNumber; line++) {
-    lineBreak.lastIndex = offset;
-    const next = lineBreak.exec(content);
-    if (next === null) return content.length;
-    offset = next.index + next[0].length;
+    const next = content.indexOf("\n", offset);
+    if (next === -1) return content.length;
+    offset = next + 1;
   }
   return Math.min(content.length, offset + position.column);
 }
@@ -269,27 +204,17 @@ function scanMatches(
   return { starts, total };
 }
 
+/** The position of an offset. Only LF ends a line; CR is an ordinary character. */
 function positionAt(content: string, offset: number): TextSelectionPosition {
   let lineNumber = 1;
   let lineStart = 0;
-  let nextCr = content.indexOf("\r");
-  let nextLf = content.indexOf("\n");
-  for (;;) {
-    const lineBreak = nextCr === -1 ? nextLf : nextLf === -1 ? nextCr : Math.min(nextCr, nextLf);
-    if (lineBreak === -1 || lineBreak >= offset) {
-      break;
-    }
-    lineStart =
-      content[lineBreak] === "\r" && content[lineBreak + 1] === "\n"
-        ? lineBreak + 2
-        : lineBreak + 1;
+  for (
+    let lineBreak = content.indexOf("\n");
+    lineBreak !== -1 && lineBreak < offset;
+    lineBreak = content.indexOf("\n", lineStart)
+  ) {
+    lineStart = lineBreak + 1;
     lineNumber += 1;
-    if (nextCr !== -1 && nextCr < lineStart) {
-      nextCr = content.indexOf("\r", lineStart);
-    }
-    if (nextLf !== -1 && nextLf < lineStart) {
-      nextLf = content.indexOf("\n", lineStart);
-    }
   }
-  return { lineNumber, column: Math.max(0, offset - lineStart) };
+  return { lineNumber, column: offset - lineStart };
 }

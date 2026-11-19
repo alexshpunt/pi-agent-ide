@@ -282,7 +282,8 @@ test("AST matches map to UTF-16 columns and lines, and a refresh returns the tex
     endLineNumber: 1,
     startColumn: firstLine.indexOf("const b"),
     endColumn: firstLine.length,
-    lineText: firstLine,
+    // Only LF ends a line: a CRLF line's text keeps its CR.
+    lineText: `${firstLine}\r`,
   });
   const [declaration] = await search("function $N() { $$$B }");
   expect(declaration).toMatchObject({
@@ -290,7 +291,7 @@ test("AST matches map to UTF-16 columns and lines, and a refresh returns the tex
     endLineNumber: 4,
     startColumn: 0,
     endColumn: 1,
-    lineText: "function f() {",
+    lineText: "function f() {\r",
   });
 
   const refresh = refreshes[0];

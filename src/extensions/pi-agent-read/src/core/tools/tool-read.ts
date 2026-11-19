@@ -1155,7 +1155,9 @@ async function resolveSource(
     let sourceText: string | undefined;
     if (resource.sourceBytes !== undefined) {
       try {
-        sourceText = new TextDecoder("utf8", { fatal: true }).decode(resource.sourceBytes);
+        sourceText = new TextDecoder("utf8", { fatal: true, ignoreBOM: true }).decode(
+          resource.sourceBytes,
+        );
       } catch {
         /* Non-text source bytes never grant text-edit authority. */
       }

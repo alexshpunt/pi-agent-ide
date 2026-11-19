@@ -384,7 +384,8 @@ text(await Promise.${aggregation}([
             files,
             steps: [
               { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-              { tool: "replace", args: { text: "NEW" }, after: [0] },
+              // A line anchor selects the line with its LF; Replace writes exactly its text.
+              { tool: "replace", args: { text: "NEW\n" }, after: [0] },
               { tool: "copy", args: { path: "source.txt", target: "first.txt" } },
               {
                 tool: "copy",

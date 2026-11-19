@@ -138,7 +138,7 @@ add(
 add(
   "codemode-search-anchor-batch",
   ["compose.codemode-search-anchor-batch"],
-  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in one script run these three independent edits concurrently with Promise.all, without Read/Search or another tool between them: Insert a new line added before the alpha line in task.txt; Replace beta using its issued SEARCH reference as start, omitting path, with BETA; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
+  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in one script run these three independent edits concurrently with Promise.all, without Read/Search or another tool between them: Insert a new line added before the alpha line in task.txt; Replace the beta line using its issued SEARCH reference as start, omitting path, with BETA followed by a newline; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
   [
     { tool: "search", args: { path: "task.txt", query: "regex:beta|gamma" } },
     { tool: "read", args: { path: ".pi/issued-search.txt" } },
@@ -1337,7 +1337,7 @@ for (const operation of ["insert", "replace", "delete"] as const) {
   add(
     `${operation}-list-selectors-refused`,
     [`edit.${operation}-list-selectors-refused`],
-    `Search task.txt for OLD, then separately search task.txt for TAIL. Call ${operation} with path as an array of the first issued :line reference from each search, AND ${selector} as the first search's same :line reference.${operation === "delete" ? "" : " Use text NEW."}${operation === "insert" ? " Set before: true on this first call." : ""} This ambiguous combination must fail without changing either target. After that failure, retry once with the same path array but omit ${selector}; ${operation === "insert" ? "insert NEW before both selected lines with text NEW and before: true" : operation === "replace" ? "replace both selected lines with NEW" : "delete both selected lines, keeping the file"}. Do not retype the file path, reread or search again. Keep every other byte.`,
+    `Search task.txt for OLD, then separately search task.txt for TAIL. Call ${operation} with path as an array of the first issued :line reference from each search, AND ${selector} as the first search's same :line reference.${operation === "delete" ? "" : " Use text NEW."}${operation === "insert" ? " Set before: true on this first call." : ""} This ambiguous combination must fail without changing either target. After that failure, retry once with the same path array but omit ${selector}; ${operation === "insert" ? "insert NEW before both selected lines with text NEW and before: true" : operation === "replace" ? "replace each of both selected lines with NEW followed by a newline" : "delete both selected lines, keeping the file"}. Do not retype the file path, reread or search again. Keep every other byte.`,
     [
       { tool: "search", args: { path: "task.txt", query: "OLD" } },
       { tool: "search", args: { path: "task.txt", query: "TAIL" } },
@@ -1934,7 +1934,7 @@ add(
 add(
   "read-anchor-replace",
   ["read.anchors", "edit.replace-range"],
-  "Read task.txt with anchors. Using both returned line anchors as start and end, replace the inclusive first two lines with one line READY. Use the file path or omit path for this anchored edit, not a result scope. Keep last unchanged.",
+  "Read task.txt with anchors. Using both returned line anchors as start and end, replace the inclusive first two lines with one line READY followed by a newline. Use the file path or omit path for this anchored edit, not a result scope. Keep last unchanged.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -3274,7 +3274,7 @@ add(
 add(
   "read-ast-boundary",
   ["read.ast-view", "edit.scope-anchors"],
-  "Read task.ts with the ast view. Use the returned begin/end scope anchors for the first function to replace that complete function with function renamed() { return 8; }. Keep the second function unchanged. Use ordinary file path plus scope anchors, not a result scope combined with start/end.",
+  "Read task.ts with the ast view. Use the returned begin/end scope anchors for the first function to replace that complete function, including its line break, with function renamed() { return 8; } followed by a line break. Keep the second function unchanged. Use ordinary file path plus scope anchors, not a result scope combined with start/end.",
   [
     { tool: "read", args: { path: "task.ts", views: ["ast"] }, contains: "scope-begin-" },
     {
@@ -3323,7 +3323,7 @@ add(
 add(
   "copied-line-prefix-recovery",
   ["edit.copied-line-prefix-refusal"],
-  "Read task.txt with anchors and wait for its result. Attempt Replace of line 2 using its issued line anchor as start and text consisting of that same 7-character anchor followed by |NEW. This deliberately copied display prefix must be refused without writes. Wait for the refusal, then retry Replace with the same start anchor and text NEW only. Keep keep and last unchanged. In Codemode, continue after the refused call and keep its failure visible.",
+  "Read task.txt with anchors and wait for its result. Attempt Replace of line 2 using its issued line anchor as start and text consisting of that same 7-character anchor followed by |NEW. This deliberately copied display prefix must be refused without writes. Wait for the refusal, then retry Replace with the same start anchor and text NEW followed by a newline, without the prefix. Keep keep and last unchanged. In Codemode, continue after the refused call and keep its failure visible.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -3346,7 +3346,7 @@ add(
 add(
   "stale-line-anchor-literal-collision",
   ["edit.stale-line-anchor-literal-collision", "edit.anchor-shaped-literal-search"],
-  "Read task.txt with anchors and wait for its result. Replace OLD with NEW using the issued line-2 anchor and wait for success. After that successful change, attempt both Insert BLOCKED using the old line-2 anchor and Replace with that same stale anchor as start and text BLOCKED. Both must fail without writes even though the anchor bytes occur literally elsewhere. The guard may intentionally stop streaming before text arrives; that is the stale refusal, not a missing-payload mistake. Do not retry an already refused call. Independently, Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. The two stale checks and the Search chain need not wait for each other. The Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
+  "Read task.txt with anchors and wait for its result. Replace the OLD line with NEW followed by a newline using the issued line-2 anchor and wait for success. After that successful change, attempt both Insert BLOCKED using the old line-2 anchor and Replace with that same stale anchor as start and text BLOCKED. Both must fail without writes even though the anchor bytes occur literally elsewhere. The guard may intentionally stop streaming before text arrives; that is the stale refusal, not a missing-payload mistake. Do not retry an already refused call. Independently, Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. The two stale checks and the Search chain need not wait for each other. The Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", args: { path: "task.txt" }, reuse: reuse(0, "start", "anchor") },

@@ -223,7 +223,7 @@ export async function attachWriteTarget(
     return result;
   try {
     const content = file.afterContent;
-    const lines = content.split(/\r\n|\r|\n/u);
+    const lines = content.split("\n");
     const targets: ResultSourceTarget[] = [
       {
         source: file.path.startsWith("ssh://")

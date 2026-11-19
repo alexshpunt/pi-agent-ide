@@ -74,8 +74,8 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
     const first = path.join(directory, "first.txt");
     const second = path.join(directory, "second.txt");
     const header = "header line\n";
-    await writeFile(first, `${header}needle first\ntail one\n`, "utf8");
-    await writeFile(second, `${header}needle second\ntail two\n`, "utf8");
+    await writeFile(first, `${header}needle first\nkeep one\ntail one\n`, "utf8");
+    await writeFile(second, `${header}needle second\nkeep two\ntail two\n`, "utf8");
     const result = await new PiIntegrationTest({
       testName: "search-anchor-compatible-union",
       cwd: directory,
@@ -111,7 +111,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "search-first", name: "search", arguments: { query: "first" } })],
+          [toolCall({ id: "search-first", name: "search", arguments: { query: "keep one" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
@@ -125,7 +125,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "search-second", name: "search", arguments: { query: "second" } })],
+          [toolCall({ id: "search-second", name: "search", arguments: { query: "keep two" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
@@ -145,8 +145,10 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
     expect(getToolExecution(result, "replace-union").isError).toBe(false);
     expect(getToolExecution(result, "replace-begin").isError).toBe(false);
     expect(getToolExecution(result, "replace-end").isError).toBe(false);
-    await expect(readFile(first, "utf8")).resolves.toBe("top\nchanged top\ntail one\n");
-    await expect(readFile(second, "utf8")).resolves.toBe("changed\nchanged bottom\nbottom\n");
+    // One text replaces every selected range exactly: a line range with its line break, a match
+    // only its characters. So the line selected by the anchor joins the line after it.
+    await expect(readFile(first, "utf8")).resolves.toBe("toptop\ntail one\n");
+    await expect(readFile(second, "utf8")).resolves.toBe("changedchanged second\nbottom\nbottom");
   });
 }, 180_000);
 

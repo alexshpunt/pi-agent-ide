@@ -133,10 +133,11 @@ describe("exact text anchors through real text editor tools", () => {
               cwd: directory,
               testName: `exact-${tool}-terminated-${eolName}-${boundary}`,
               tool,
+              // Literals match exactly: the selector and the text use the file's line breaks.
               arguments: {
                 path: filename,
-                start: entry,
-                ...(tool === "replace" ? { text: replacement } : {}),
+                start: entry.replaceAll("\n", eol),
+                ...(tool === "replace" ? { text: replacement.replaceAll("\n", eol) } : {}),
               },
             });
             expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -257,7 +258,7 @@ describe("exact text anchors through real text editor tools", () => {
           path: "source.txt",
           start: "alpha\nbravo\n",
           target: "target.txt",
-          targetStart: "one\n",
+          targetStart: "one\r\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);

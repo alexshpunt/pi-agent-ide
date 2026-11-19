@@ -45,7 +45,8 @@ test("retained multiline Search matches keep full context and remain editable af
 const first = await tools.search({path:"task.txt",query:"regex:first\\\\r\\\\nlast",multiline:true});
 if (first.complete !== true || first.matches.length !== 1) throw Error("Unexpected matches");
 const match = first.matches[0];
-if (match.text !== "first\\r\\nlast" || match.lineText !== "prefix first\\r\\nlast suffix") throw Error("Lost context");
+// Only LF ends a line, so the last spanned line keeps its CR.
+if (match.text !== "first\\r\\nlast" || match.lineText !== "prefix first\\r\\nlast suffix\\r") throw Error("Lost context");
 store("retained", match);
 for (let index = 0; index < 5; index++) {
   const later = await tools.search({path:"task.txt",query:"keep"});

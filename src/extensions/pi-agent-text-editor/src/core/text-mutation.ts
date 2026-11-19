@@ -938,7 +938,7 @@ function deduplicateRanges(ranges: readonly TextSelectionRange[]): readonly Text
 }
 
 function naturalLineSelection(content: string, lineNumber: number): TextSelectionRange {
-  const lines = content.split(/\r\n|\r|\n/u);
+  const lines = content.split("\n");
   const line = lines[lineNumber - 1];
   if (line === undefined) {
     throw new Error(`Position anchor line ${lineNumber} is outside the source.`);

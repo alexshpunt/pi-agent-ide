@@ -22,7 +22,8 @@ const tempRoot = path.resolve(".agents/tmp/source-inheritance");
 test.each([
   {
     name: "replace",
-    arguments: { start: formatLineHashAnchor("HEADER\nBODY\nTAIL\n", 1), text: "CHANGED" },
+    // A line selection includes its line break, so the replacement sends one to keep the line.
+    arguments: { start: formatLineHashAnchor("HEADER\nBODY\nTAIL\n", 1), text: "CHANGED\n" },
     expected: "CHANGED\nBODY\nTAIL\n",
   },
   {
@@ -54,7 +55,7 @@ test.each([
   },
   {
     name: "replace",
-    arguments: { start: "begin", text: "CHANGED" },
+    arguments: { start: "begin", text: "CHANGED\n" },
     expected: "CHANGED\nBODY\nTAIL\n",
   },
 ])(

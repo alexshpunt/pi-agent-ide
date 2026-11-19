@@ -21,7 +21,8 @@ for (const mode of ["standalone", "codemode"] as const) {
     {
       name: "presenter.txt",
       tool: "replace",
-      edit: { start: formatLineHashAnchor("before\n", 1), text: "changed" },
+      // A line anchor selects the line with its line break; the text keeps it.
+      edit: { start: formatLineHashAnchor("before\n", 1), text: "changed\n" },
       effect: "applied",
       status: "Saved · post-write step failed",
     },

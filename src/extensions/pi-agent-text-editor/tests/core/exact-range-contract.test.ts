@@ -36,7 +36,7 @@ function fixture(
     const resolved = resolveExactTextAnchor(value, {
       source,
       content,
-      lines: content.split(/\r\n|\r|\n/u),
+      lines: content.split("\n"),
       cwd: process.cwd(),
     });
     if (resolved.kind !== "resolved") throw new Error(`Fixture anchor ${field} did not resolve`);
@@ -66,7 +66,7 @@ for (const eol of ["\n", "\r\n"]) {
       expect(f.documentFor("source").deleteLines(line, line)).toEqual(expected);
       expect(f.documentFor("source").replaceLines(line, line, "")).toEqual(expected);
       expect(deleteAnchorSpan(span)).toEqual(expected);
-      expect(replaceAnchorSpan(f.context, span, "")).toEqual(expected);
+      expect(replaceAnchorSpan(span, "")).toEqual(expected);
       expect(applyTextChanges(content, [deleteAnchorSpan(span)]).content).toBe(prefix);
     },
   );
@@ -165,9 +165,9 @@ for (const before of [false, true]) {
   });
   test(`multiline exact insertion does not widen the selection (before=${before})`, async () => {
     const content = "pre α\r\nβ end\r\n";
-    const f = fixture({ source: content }, { anchor: ["source", "α\nβ"] });
+    const f = fixture({ source: content }, { anchor: ["source", "α\r\nβ"] });
     const result = await insertMutationTool.mutate(f.context, {
-      anchor: "α\nβ",
+      anchor: "α\r\nβ",
       text: "+",
       before,
     });

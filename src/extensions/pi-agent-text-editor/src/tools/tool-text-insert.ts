@@ -8,7 +8,6 @@ import {
   insertionBeforeAnchor,
   insertionChanges,
   textSelections,
-  targetText,
 } from "#src/tools/text-selection.ts";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
@@ -96,7 +95,7 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
       context,
       anchors,
       "anchor",
-      targetText(context, context.sourceFor("path"), parameters.text),
+      parameters.text,
       parameters.separation,
     );
     return {

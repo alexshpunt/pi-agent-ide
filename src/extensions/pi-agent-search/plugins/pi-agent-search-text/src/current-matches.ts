@@ -199,18 +199,17 @@ async function matchesInCapturedText(
     if (content === undefined) continue;
     const found = await searchTextContent(options.request, content, searchCwd, options.signal);
     const document = createTextDocument(source, content);
-    const searchedLines = lineFeedStarts(content);
-    const documentLines = documentStarts(document);
+    const lines = lineStarts(content);
     for (const match of found.matches) {
       if (options.accept?.(match) === false) continue;
       current.push(
         inDocument(
           source,
           document,
-          documentLines,
+          lines,
           content,
-          (searchedLines[match.lineNumber - 1] ?? 0) + match.startColumn,
-          (searchedLines[(match.endLineNumber ?? match.lineNumber) - 1] ?? 0) + match.endColumn,
+          (lines[match.lineNumber - 1] ?? 0) + match.startColumn,
+          (lines[(match.endLineNumber ?? match.lineNumber) - 1] ?? 0) + match.endColumn,
         ),
       );
     }
@@ -220,11 +219,8 @@ async function matchesInCapturedText(
 }
 
 /**
- * A match of the captured text, placed on the lines the registration splits that text into.
- *
- * Ripgrep ends a line at a line feed; a text document also ends one at a lone carriage return,
- * which a file can hold anywhere. Describing a found match by its position in the text, instead
- * of by the line ripgrep counted, keeps the two from disagreeing about such a file.
+ * A match of the captured text, described by its offsets in that text, so its matched text is
+ * exactly the captured characters. Ripgrep and the text document both end a line at LF only.
  */
 function inDocument(
   source: string,
@@ -247,19 +243,11 @@ function inDocument(
   };
 }
 
-/** Offset each line-feed-separated line starts at, as ripgrep counts the lines of this text. */
-function lineFeedStarts(content: string): number[] {
+/** Offset each line starts at: only LF ends a line, a CR is part of its line's text. */
+function lineStarts(content: string): number[] {
   const starts = [0];
   for (let index = content.indexOf("\n"); index !== -1; index = content.indexOf("\n", index + 1))
     starts.push(index + 1);
-  return starts;
-}
-
-/** Offset each document line starts at. */
-function documentStarts(document: TextDocument): number[] {
-  const starts = [0];
-  for (const line of document.lines)
-    starts.push((starts.at(-1) ?? 0) + line.content.length + line.lineEnding.length);
   return starts;
 }
 

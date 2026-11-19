@@ -38,7 +38,6 @@ export interface TextAnchorSpan {
   readonly from: number;
   readonly to: number;
   readonly selection: boolean;
-  readonly preservesTrailingLineBreak: boolean;
 }
 
 /** Resolves one anchor to one character span, converting line anchors to whole-line spans. */
@@ -68,23 +67,13 @@ export function singleAnchorSpan(
     const endLine = linewiseSelectionEndLine(selectedRange);
     if (endLine !== undefined) {
       const range = document.lineRange(selectedRange.start.lineNumber, endLine);
-      return {
-        source,
-        ...range,
-        selection: false,
-        preservesTrailingLineBreak: true,
-      };
+      return { source, ...range, selection: false };
     }
-    return { source, ...exactRange, selection: true, preservesTrailingLineBreak: false };
+    return { source, ...exactRange, selection: true };
   }
 
   const range = context.documentFor(source).lineRange(anchor.lineNumber, anchor.lineNumber);
-  return {
-    source,
-    ...range,
-    selection: false,
-    preservesTrailingLineBreak: true,
-  };
+  return { source, ...range, selection: false };
 }
 
 /** Whether an endpoint selects complete lines: a line anchor or a line selection. */
@@ -137,33 +126,15 @@ export async function anchorSpanRange(
     from: start.from,
     to: end.to,
     selection: start.selection || end.selection,
-    preservesTrailingLineBreak: end.preservesTrailingLineBreak,
   };
 }
 
-/** Converts inserted line endings to the target document's style. */
-export function targetText(context: TextMutationContext, source: string, text: string): string {
-  const separator = context.documentFor(source).content.includes("\r\n") ? "\r\n" : "\n";
-  return text.replace(/\r\n|\r|\n/gu, separator);
-}
-
-/** Empty text deletes the selection; nonempty text preserves a line endpoint's separator. */
+/** Replaces exactly the resolved extent with exactly `text`; empty text deletes it. */
 export function replaceAnchorSpan(
-  context: TextMutationContext,
-  span: TextAnchorSpan,
+  span: Pick<TextAnchorSpan, "from" | "to">,
   text: string,
 ): { readonly from: number; readonly to: number; readonly insert: string } {
-  if (text === "") return deleteAnchorSpan(span);
-  const document = context.documentFor(span.source);
-  let insert = targetText(context, span.source, text);
-  const selected = document.text(span);
-  if (span.preservesTrailingLineBreak && !/(?:\r\n|\r|\n)$/u.test(insert)) {
-    const ending = /(?:\r\n|\r|\n)$/u.exec(selected)?.[0];
-    if (ending !== undefined) {
-      insert += ending;
-    }
-  }
-  return { from: span.from, to: span.to, insert };
+  return { from: span.from, to: span.to, insert: text };
 }
 
 /** Deletes exactly the resolved extent, including only its own line separator. */
@@ -247,19 +218,7 @@ export function selectionChanges(
     [...selections].map(([source, anchor]) => [
       source,
       (insert.length === 0 ? coalesceAdjacentLinewiseRanges(anchor.ranges) : anchor.ranges).map(
-        (range) => {
-          const span = selectionRange(context, source, range);
-          return replaceAnchorSpan(
-            context,
-            {
-              source,
-              ...span,
-              selection: range.linewise !== true,
-              preservesTrailingLineBreak: range.linewise === true,
-            },
-            insert,
-          );
-        },
+        (range) => replaceAnchorSpan(selectionRange(context, source, range), insert),
       ),
     ]),
   );
@@ -283,7 +242,7 @@ export function insertionChanges(
         insertionAtSpan(
           context,
           { source, ...selectionRange(context, source, range), selection: range.linewise !== true },
-          targetText(context, source, insert),
+          insert,
           before,
           separation,
         ),

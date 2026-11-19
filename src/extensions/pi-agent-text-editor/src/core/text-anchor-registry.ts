@@ -389,7 +389,7 @@ function isSelectionWithinContext(
       endLine === undefined &&
       range.end.lineNumber === context.lines.length + 1 &&
       range.end.column === 0 &&
-      /(?:\r\n|\r|\n)$/u.test(context.content);
+      context.content.endsWith("\n");
     return (
       startLine !== undefined &&
       (endLine !== undefined || virtualTrailingLine) &&

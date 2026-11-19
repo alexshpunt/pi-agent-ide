@@ -51,7 +51,7 @@ export async function attachFileMutationTargets(
         if (reader === undefined)
           throw new Error("Remote destination requires its guarded Read owner.");
         const fresh = await reader(file, cwd, signal);
-        const lines = fresh.expectedContent.split(/\r\n|\r|\n/u);
+        const lines = fresh.expectedContent.split("\n");
         targets.push({
           ...fresh,
           ranges: [
@@ -75,7 +75,7 @@ export async function attachFileMutationTargets(
         throw new NoTextTargetError();
       }
       if (content.includes("\0")) throw new NoTextTargetError();
-      const lines = content.split(/\r\n|\r|\n/u);
+      const lines = content.split("\n");
       targets.push({
         source: file,
         expectedContent: content,

@@ -18,7 +18,8 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
       const cwd = await mkdtemp(path.join(root, "case-"));
       const separator = before ? "\r\n" : "\n";
       const original = ["BEFORE", "left ANCHOR right", "SECOND", "AFTER", ""].join(separator);
-      const payloads = ["NEW", "\nNEW", "NEW\n\n"];
+      // Inserted text is written as sent, so the payloads use the file's own line breaks.
+      const payloads = ["NEW", `${separator}NEW`, `NEW${separator}${separator}`];
       const expected: string[] = [];
       const conversation = [];
       const call = (id: string, name: string, args: Record<string, unknown>) =>
@@ -49,18 +50,17 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
           );
           // Literal text and :match select only their characters, even complete lines.
           if (kind === "exact" || kind === "multiline" || kind === "search-match") {
-            const normalized = payload.replace(/\n/gu, separator);
             const selected = kind === "multiline" ? anchor : "ANCHOR";
             expected.push(
               original.replace(
                 selected,
-                before ? `${normalized}${selected}` : `${selected}${normalized}`,
+                before ? `${payload}${selected}` : `${selected}${payload}`,
               ),
             );
           } else {
             const lines = original.split(separator);
             const at = before ? 1 : 2;
-            const inserted = payload.split("\n");
+            const inserted = payload.split(separator);
             if (inserted.at(-1) === "") inserted.pop();
             lines.splice(at, 0, ...inserted);
             expected.push(lines.join(separator));

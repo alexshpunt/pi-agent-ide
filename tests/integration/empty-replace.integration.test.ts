@@ -20,7 +20,8 @@ test("empty replacements remove lines and keep unselected separators in real Pi"
     {
       content: "A\r\nSTART\r\nmiddle\r\nEND\r\n\r\nB\r\n",
       start: "START",
-      end: "END\n",
+      // A literal matches only the file's own line breaks: CRLF in a CRLF file.
+      end: "END\r\n",
       expected: "A\r\n\r\nB\r\n",
     },
     { content: "A\nBLOCK", start: "end", expected: "A\n" },

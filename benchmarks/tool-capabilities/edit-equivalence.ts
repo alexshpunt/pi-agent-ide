@@ -51,12 +51,11 @@ export function equivalentLineArguments(
     withoutEnding(required) !== withoutEnding(text)
   )
     return normalized;
-  // Replace preserves the selected line's own separator; Insert adds it before following text.
+  // Insert adds the separator before following text. Replace writes exactly its text, so a
+  // replacement without the line's separator joins the next line and is not equivalent.
   const equivalent =
-    tool === "replace"
-      ? ending.test(selected.content.slice(selected.from, selected.to))
-      : tool === "insert" &&
-        (actual.before === true ? selected.from : selected.to) < selected.content.length;
+    tool === "insert" &&
+    (actual.before === true ? selected.from : selected.to) < selected.content.length;
   if (equivalent) normalized.text = required;
   return normalized;
 }

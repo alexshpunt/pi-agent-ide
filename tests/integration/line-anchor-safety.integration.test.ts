@@ -121,7 +121,8 @@ test.each(["direct", "codemode"] as const)(
           },
           error: true,
         },
-        { id: "retry", tool: "replace", args: { path: "retry.txt", start: anchor, text: "NEW" } },
+        // A line anchor selects the line with its LF; the text keeps the line by ending with one.
+        { id: "retry", tool: "replace", args: { path: "retry.txt", start: anchor, text: "NEW\n" } },
       );
       await writeFile(path.join(cwd, "literal-prefix.txt"), initial);
       await writeFile(path.join(cwd, "other-prefix.txt"), initial);
@@ -141,7 +142,7 @@ test.each(["direct", "codemode"] as const)(
           args: {
             path: "other-prefix.txt",
             start: anchor,
-            text: "ZZZZZZZ|NEW",
+            text: "ZZZZZZZ|NEW\n",
           },
         },
       );
@@ -174,7 +175,7 @@ test.each(["direct", "codemode"] as const)(
           {
             id: `change-${tool}`,
             tool: "replace",
-            args: { path: file, start: anchor, text: "NEW" },
+            args: { path: file, start: anchor, text: "NEW\n" },
           },
           {
             id: `stale-${tool}`,

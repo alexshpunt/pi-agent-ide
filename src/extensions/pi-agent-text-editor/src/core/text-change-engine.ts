@@ -84,9 +84,9 @@ export class TextChangeDocument {
     return this.content.slice(range.from, range.to);
   }
 
+  /** Replaces the lines with their LFs by exactly `text`; no line break is added. */
   public replaceLines(firstLine: number, lastLine: number, text: string): TextChange {
-    const range = this.lineRange(firstLine, lastLine);
-    return { ...range, insert: this.#replacementText(range, text) };
+    return { ...this.lineRange(firstLine, lastLine), insert: text };
   }
 
   public deleteLines(firstLine: number, lastLine: number): TextChange {
@@ -125,13 +125,6 @@ export class TextChangeDocument {
 
   public replaceAll(text: string): TextChange {
     return { from: 0, to: this.content.length, insert: text };
-  }
-
-  #replacementText(range: TextRange, text: string): string {
-    const selected = this.text(range);
-    return text.length > 0 && endsWithLineBreak(selected) && !endsWithLineBreak(text)
-      ? text + requiredValue(lineBreakOf(selected))
-      : text;
   }
 
   #lineInsertion(
@@ -176,12 +169,9 @@ export class TextChangeDocument {
     const next = this.#lineStarts[lineNumber];
     let end = next ?? this.content.length;
 
+    // Only LF ends a line: a CRLF line's CR is its last character.
     if (next !== undefined) {
       end -= 1;
-
-      if (this.content[end - 1] === "\r") {
-        end -= 1;
-      }
     }
 
     if (start + column > end) {
@@ -283,8 +273,4 @@ function findLineStarts(text: string): number[] {
 
 function endsWithLineBreak(text: string): boolean {
   return text.endsWith("\n");
-}
-
-function lineBreakOf(text: string): "\n" | "\r\n" | undefined {
-  return text.endsWith("\r\n") ? "\r\n" : text.endsWith("\n") ? "\n" : undefined;
 }

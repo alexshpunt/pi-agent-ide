@@ -1571,7 +1571,8 @@ test("composes inserted text without searching identical neighbors", async () =>
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "inserted.txt"), "same before\r\nanchor\r\nsame after");
     const run = await runComposition(cwd, "insert-result-search-replace", [
-      `const changed = await tools.insert({path:"inserted.txt",anchor:"anchor",text:"\\nsame new"});
+      // Insert writes its text as sent; CRLF here keeps the file's own line breaks.
+      `const changed = await tools.insert({path:"inserted.txt",anchor:"anchor",text:"\\r\\nsame new"});
 if (typeof changed !== "string") throw Error("Expected pending insert");
 const found = await tools.search({path:changed,query:"same"});
 if (found === null || found.matches.length !== 1 || found.matches[0].line !== 3) throw Error("Lost inserted scope");

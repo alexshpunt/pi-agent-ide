@@ -31,7 +31,11 @@ function fixture(lineCount: number) {
   const edits = Array.from({ length: 12 }, (_, index) => {
     const line = 3 + index * 4;
     return index % 2 === 0
-      ? { name: "replace", args: { path: file, start: anchor(line), text: `replacement-${line}` } }
+      ? // A line anchor selects the line with its line break; the text keeps it.
+        {
+          name: "replace",
+          args: { path: file, start: anchor(line), text: `replacement-${line}\n` },
+        }
       : { name: "delete", args: { path: file, start: anchor(line) } };
   });
   const expected = [...lines];

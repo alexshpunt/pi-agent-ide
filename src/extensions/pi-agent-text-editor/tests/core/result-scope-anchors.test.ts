@@ -388,7 +388,7 @@ test.each([
   { content: "keep\nOLD\nlast\n", query: "last" },
   { content: "last\nOLD\nlast\n", query: "last" },
   { content: "keep\nOLD\nlast\n", query: "OLD\nlast" },
-  { content: "\uFEFFkeep\r\nOLD\r\nlast\r\n", query: "\uFEFFlast\n" },
+  { content: "\uFEFFkeep\r\nOLD\r\nlast\r\n", query: "last\r\n" },
 ])(
   "an exact selector that crosses or lies outside the selection fails: $query",
   async ({ content, query }) => {

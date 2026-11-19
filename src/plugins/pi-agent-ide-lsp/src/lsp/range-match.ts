@@ -2,6 +2,7 @@ import { requiredValue } from "pi-agent-invariant";
 import type { SearchSelectionMatch } from "pi-agent-search/api/search";
 import type { TextDocument } from "pi-agent-text";
 
+import { assertLspLines } from "./line-breaks.ts";
 import { sourceChanged } from "./source-changes.ts";
 import type { LspRange } from "./types.ts";
 
@@ -14,6 +15,8 @@ export function lspRangeMatch(
   document: TextDocument,
   range: LspRange,
 ): SearchSelectionMatch {
+  // LSP lines equal the editor's LF-only lines unless the text holds a lone CR.
+  assertLspLines(document.content);
   const { start, end } = range;
   for (const position of [start, end]) {
     const line = document.lines[position.line];
@@ -22,7 +25,8 @@ export function lspRangeMatch(
       !Number.isInteger(position.character) ||
       line === undefined ||
       position.character < 0 ||
-      position.character > line.content.length
+      // A CRLF line's CR is part of its line ending in the protocol, so no position follows it.
+      position.character > line.content.length - (line.content.endsWith("\r") ? 1 : 0)
     )
       throw sourceChanged("LSP range does not match its source snapshot.");
   }

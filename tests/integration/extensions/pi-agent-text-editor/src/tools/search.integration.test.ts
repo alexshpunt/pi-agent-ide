@@ -647,7 +647,8 @@ async function runExplicitSearchReplacement(
               name: "replace",
               arguments: {
                 start: selector.replace("SEARCH_SELECTOR", `SEARCH#${searchId}`),
-                text: "UPDATED",
+                // A :line selection includes its line break, so its replacement sends one.
+                text: selector.endsWith(":line") ? "UPDATED\n" : "UPDATED",
               },
             }),
           ],
@@ -670,8 +671,9 @@ async function runExplicitSearchDeletion(
 ): Promise<void> {
   await withTempWorkspace(async (directory) => {
     const source = path.join(directory, "anchors.txt");
-    const lines = sourceText.split(/\r?\n/u);
-    const lineNumber = lines[0] === "legacyName first" ? 1 : 2;
+    // Only LF ends a line: a CRLF line's Search text keeps its CR.
+    const lines = sourceText.split("\n");
+    const lineNumber = lines[0]?.startsWith("legacyName") === true ? 1 : 2;
     const lineText = lines[lineNumber - 1] ?? "";
     await writeFile(source, sourceText, "utf8");
     const matches = [searchMatch(source, lineNumber, lineText, "legacyName")];

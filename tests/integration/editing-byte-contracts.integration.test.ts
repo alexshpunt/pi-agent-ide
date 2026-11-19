@@ -92,7 +92,8 @@ test.each(["direct", "codemode"] as const)(
             return {
               file: `delete-${index}.txt`,
               before: `First${eol}Last${eol}Block${ending}`,
-              start: `Last\nBlock${ending === "" ? "" : "\n"}`,
+              // A literal matches only the file's own line breaks: CRLF text in a CRLF file.
+              start: `Last${eol}Block${ending}`,
               after: `First${eol}`,
             };
           }),

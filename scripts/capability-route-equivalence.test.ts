@@ -123,17 +123,34 @@ const replace = (args: Record<string, unknown>) => [
 const replacement = { tool: "replace", args: { text: "NEW" } };
 
 describe("issued whole-line replacement equivalence", () => {
-  test.each(["\n", "\r\n"])("accepts one optional terminal separator on a %j line", (eol) => {
-    const files = { "task.txt": `keep${eol}OLD${eol}last${eol}` };
-    for (const selector of [hash, `${hash}|OLD`, `${hash}|OLD${eol}`])
-      expect(
-        validateRoute(
-          { files, steps: [replacement] },
-          [...read(), ...replace({ path: "task.txt", start: selector, text: `NEW${eol}` })],
-          "direct",
-        ),
-      ).toEqual({ passed: true, reasons: [] });
-  });
+  test.each(["\n", "\r\n"])(
+    "requires the line's separator exactly as the case spells it on a %j line",
+    (eol) => {
+      // Replace writes its text as sent: a replacement without the separator joins the next line.
+      const files = { "task.txt": `keep${eol}OLD${eol}last${eol}` };
+      const kept = { tool: "replace", args: { text: `NEW${eol}` } };
+      for (const selector of [hash, `${hash}|OLD`, `${hash}|OLD${eol}`]) {
+        expect(
+          validateRoute(
+            { files, steps: [kept] },
+            [...read(), ...replace({ path: "task.txt", start: selector, text: `NEW${eol}` })],
+            "direct",
+          ),
+        ).toEqual({ passed: true, reasons: [] });
+        for (const [steps, text] of [
+          [[replacement], `NEW${eol}`],
+          [[kept], "NEW"],
+        ] as const)
+          expect(
+            validateRoute(
+              { files, steps: [...steps] },
+              [...read(), ...replace({ path: "task.txt", start: selector, text })],
+              "direct",
+            ).passed,
+          ).toBe(false);
+      }
+    },
+  );
 
   test("preserves exact arguments without fixture evidence", () => {
     expect(

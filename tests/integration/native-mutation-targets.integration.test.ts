@@ -40,7 +40,7 @@ test("pending native results gain exact authority only after their original-snap
             arguments: {
               code: `
 text(await tools.read({path:"note.txt"}));
-const first = await tools.replace({path:"note.txt",start:"alpha",text:"first\\nalpha"});
+const first = await tools.replace({path:"note.txt",start:"alpha",text:"first\\r\\nalpha"});
 const second = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
 
 if(typeof first!=="string" || typeof second!=="string") throw Error("Accepted edits need public result handles");

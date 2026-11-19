@@ -49,7 +49,7 @@ test.each(["\n", "\r\n"])(
       const anchors = map(new Position("block", line));
       for (const end of [undefined, anchors]) {
         const span = await anchorSpanRange(ctx, anchors, end, "start", "end");
-        const replacement = replaceAnchorSpan(ctx, span, "");
+        const replacement = replaceAnchorSpan(span, "");
         expect(replacement).toEqual(deleteAnchorSpan(span));
         const actual =
           content.slice(0, replacement.from) + replacement.insert + content.slice(replacement.to);
@@ -83,7 +83,7 @@ test("mixed endpoints keep the whole-line start and exact end", async () => {
   const end = map(match(3, 5, 3, 8));
   const span = await anchorSpanRange(context, start, end, "start", "end");
   expect(document.text(span)).toBe("left START right\r\nmiddle\r\nleft END");
-  expect(replaceAnchorSpan(context, span, "NEW").insert).toBe("NEW");
+  expect(replaceAnchorSpan(span, "NEW").insert).toBe("NEW");
 });
 
 test("multiline match ending at column zero does not include the next line", () => {
@@ -119,6 +119,7 @@ test("all-match insertions keep each distinct selection boundary", () => {
       source,
     );
     expect(changes?.map((change) => change.from)).toEqual(before ? [0, 5] : [4, 10]);
-    expect(changes?.map((change) => change.insert)).toEqual(["NEW\r\n", "NEW\r\n"]);
+    // The sent text is inserted as it is, without converting its LF to the file's CRLF.
+    expect(changes?.map((change) => change.insert)).toEqual(["NEW\n", "NEW\n"]);
   }
 });
