@@ -267,7 +267,12 @@ for (const mode of ["direct", "codemode"]) {
       ),
     );
     assert.ok(
-      !passed(files, route, [read, { ...replace, args: { ...replace.args, newText: "Wrong" } }], mode),
+      !passed(
+        files,
+        route,
+        [read, { ...replace, args: { ...replace.args, newText: "Wrong" } }],
+        mode,
+      ),
     );
     assert.ok(
       !passed(
@@ -651,7 +656,10 @@ for (const mode of ["direct", "codemode"]) {
       text: "123ABCD|OLD\n",
       value: { id },
     };
-    const edit: Call = { tool: "replace", args: { path: "task.txt", start: "OLD", newText: "NEW" } };
+    const edit: Call = {
+      tool: "replace",
+      args: { path: "task.txt", start: "OLD", newText: "NEW" },
+    };
     const old: Call = { tool: "read", args: { path: { id } }, error: true };
     const fresh: Call = { tool: "read", args: { path: "task.txt" }, text: "NEW" };
     assert.ok(validateRoute(task, events([read, edit, fresh, old], mode), mode).passed);

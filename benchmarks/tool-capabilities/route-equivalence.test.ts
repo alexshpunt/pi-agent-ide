@@ -624,7 +624,10 @@ for (const mode of ["direct", "codemode"]) {
       }));
       const calls = [
         { tool: "search", args: { path: "task.txt", query: "OLD" }, text: "SEARCH#ABCD:1:match" },
-        { tool: "replace", args: { path: "task.txt", start: "SEARCH#ABCD:1:match", newText: "NEW" } },
+        {
+          tool: "replace",
+          args: { path: "task.txt", start: "SEARCH#ABCD:1:match", newText: "NEW" },
+        },
         { tool: "undo", args: { change: "last" } },
         { tool: "read", args: { path: "task.txt" }, text: "OLD" },
       ] as const satisfies readonly Call[];
@@ -1106,7 +1109,11 @@ for (const mode of ["direct", "codemode"]) {
       !edit("replace", { start: "middle", newText: "NEW" }, { start: "middle", newText: "NEW\n" }),
     );
     assert.ok(
-      !edit("replace", { start: "middle\n", newText: "NEW\n" }, { start: "middle", newText: "NEW" }),
+      !edit(
+        "replace",
+        { start: "middle\n", newText: "NEW\n" },
+        { start: "middle", newText: "NEW" },
+      ),
     );
     assert.ok(!edit("delete", { start: "fir", end: "middle" }, { start: "fir", end: "middle\n" }));
     assert.ok(
@@ -1157,14 +1164,21 @@ void test("Search :line replacement keeps the line only with its sent separator,
       ...task,
       steps: [
         { tool: "search" },
-        { ...task.steps[1], tool: "replace", args: { start: "SEARCH#ABCD:1:match", newText: "BETA" } },
+        {
+          ...task.steps[1],
+          tool: "replace",
+          args: { start: "SEARCH#ABCD:1:match", newText: "BETA" },
+        },
       ],
     };
     assert.ok(
       !validateRoute(
         matchTask,
         events(
-          [search, { ...replace, args: { start: "SEARCH#ABCD:1:match", newText: "BETA" + ending } }],
+          [
+            search,
+            { ...replace, args: { start: "SEARCH#ABCD:1:match", newText: "BETA" + ending } },
+          ],
           "codemode",
         ),
         "codemode",
@@ -1529,7 +1543,10 @@ void test("debug source Read accepts a path list only with the source and anchor
       args: { path: ["debug:abcd", "debug:abcd/source"], views: ["anchors"] },
       text: "ABCDEFG|print(value)",
     },
-    { tool: "insert", args: { path: "debug:abcd/source", anchor: "ABCDEFG", newText: "breakpoint" } },
+    {
+      tool: "insert",
+      args: { path: "debug:abcd/source", anchor: "ABCDEFG", newText: "breakpoint" },
+    },
     { tool: "insert", args: { path: "debug:abcd", newText: "start" } },
     { tool: "insert", args: { path: "debug:abcd", newText: "evaluate value" }, text: "42" },
     { tool: "delete", args: { path: "debug:abcd" } },
@@ -1766,7 +1783,9 @@ void test("whole Search scopes preserve individual-match route equivalence", () 
       { path: { id: uuid }, start: "SEARCH#ABCD:1:match", end: "SEARCH#ABCD:2:match" },
       { path: { id: uuid }, start: "SEARCH#ABCD:1:match", end: "SEARCH#FFFF:1:match" },
     ])
-      assert.ok(!check(route, [search, { tool: "replace", args: { ...args, newText: "RED" } }], mode));
+      assert.ok(
+        !check(route, [search, { tool: "replace", args: { ...args, newText: "RED" } }], mode),
+      );
   }
 });
 void test("multiline replacement must reuse the first search, in path or start", () => {

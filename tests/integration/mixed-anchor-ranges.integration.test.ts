@@ -93,7 +93,11 @@ const cases: {
     args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination },
     expected: original.replace(selected, "").replace("TAIL", selected + "TAIL"),
   },
-  { name: "insert", args: { anchor, newText: "NEW" }, expected: original.replace("GAP", "NEW\nGAP") },
+  {
+    name: "insert",
+    args: { anchor, newText: "NEW" },
+    expected: original.replace("GAP", "NEW\nGAP"),
+  },
   {
     name: "insert",
     args: { anchor, text: "NEW", before: true },

@@ -244,7 +244,10 @@ for (const mode of ["direct", "codemode"]) {
       const edits: Call[] = [
         { tool: "replace", args: { path: "last.txt", start: "Last", newText: "Final" } },
         { tool: "delete", args: { path: "block.txt", start: `${eol}Last${eol}Block` } },
-        { tool: "replace", args: { path: "empty.txt", start: `${eol}Last${eol}Block`, newText: "" } },
+        {
+          tool: "replace",
+          args: { path: "empty.txt", start: `${eol}Last${eol}Block`, newText: "" },
+        },
         { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
       ];
       const representations: Call[] = [

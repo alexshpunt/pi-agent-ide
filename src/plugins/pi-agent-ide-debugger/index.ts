@@ -369,7 +369,7 @@ export async function registerDebuggerWithOwner(
             );
           },
           renderCall(arguments_, theme, context) {
-            const input = arguments_ as { readonly path?: string; readonly text?: string };
+            const input = arguments_ as { readonly path?: string; readonly newText?: string };
             const session = input.path === undefined ? undefined : manager.get(input.path);
             const deletedSnapshot =
               input.path === undefined ? undefined : deletedSnapshots.get(input.path);
@@ -583,7 +583,8 @@ export async function registerDebuggerWithOwner(
       insert: {
         parameters: {
           path: "debug:<session> controls the debugger; debug:<session>/source with a line anchor sets a breakpoint.",
-          newText: "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
+          newText:
+            "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
           anchor: "Omit for debug:<session>.",
         },
         promptGuidelines: [editingGuideline],

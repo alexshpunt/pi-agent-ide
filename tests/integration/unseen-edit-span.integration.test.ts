@@ -218,7 +218,7 @@ test("the visible edit receipt covers the next wide selection without a Read", a
         replace("collapse", {
           start: "int receipt_0;",
           end: "int receipt_300;",
-          text: "int collapsed;",
+          newText: "int collapsed;",
         }),
         assistantMessage([text("Done.")]),
       ],

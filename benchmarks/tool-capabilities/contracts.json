@@ -606,6 +606,10 @@
           "before": {
             "type": "boolean"
           },
+          "newText": {
+            "minLength": 1,
+            "type": "string"
+          },
           "path": {
             "anyOf": [
               {
@@ -652,10 +656,6 @@
                 "type": "string"
               }
             ]
-          },
-          "newText": {
-            "minLength": 1,
-            "type": "string"
           }
         },
         "required": ["newText"],

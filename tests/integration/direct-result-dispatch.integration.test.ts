@@ -80,7 +80,11 @@ for (const [form, token] of tokens) {
           arguments: { path: "note.txt", start: "gamma", text: "GAMMA" },
         },
         { id: "again", name: "read", arguments: { path: "note.txt", offset: 2, limit: 1 } },
-        { id: "outside", name: "replace", arguments: { path: again, start: "GAMMA", newText: "BAD" } },
+        {
+          id: "outside",
+          name: "replace",
+          arguments: { path: again, start: "GAMMA", newText: "BAD" },
+        },
         {
           id: "outside-range",
           name: "replace",

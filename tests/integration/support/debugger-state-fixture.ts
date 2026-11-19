@@ -57,7 +57,8 @@ export default function debuggerStateFixture(pi: ExtensionAPI): void {
         const read = await call("read", { path: source });
         const evaluated = await call("insert", {
           path: source,
-          newText: phase === "evaluate" ? "evaluate (subtotal := subtotal + 1)" : "evaluate subtotal",
+          newText:
+            phase === "evaluate" ? "evaluate (subtotal := subtotal + 1)" : "evaluate subtotal",
         });
         return {
           content: evaluated.content,

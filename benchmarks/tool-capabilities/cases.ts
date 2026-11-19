@@ -3746,9 +3746,19 @@ add(
     },
     { tool: "insert", args: { newText: "start" }, reuse: reuse(0, "path", "debug"), after: [2] },
     { tool: "read", reuse: reuse(0, "path", "debug"), after: [4] },
-    { tool: "insert", args: { newText: "step into" }, reuse: reuse(0, "path", "debug"), after: [5] },
+    {
+      tool: "insert",
+      args: { newText: "step into" },
+      reuse: reuse(0, "path", "debug"),
+      after: [5],
+    },
     { tool: "read", reuse: reuse(0, "path", "debug"), after: [6] },
-    { tool: "insert", args: { newText: "step over" }, reuse: reuse(0, "path", "debug"), after: [7] },
+    {
+      tool: "insert",
+      args: { newText: "step over" },
+      reuse: reuse(0, "path", "debug"),
+      after: [7],
+    },
     { tool: "read", reuse: reuse(0, "path", "debug"), after: [8] },
     {
       tool: "insert",

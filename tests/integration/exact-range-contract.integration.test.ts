@@ -77,7 +77,10 @@ for (const route of ["direct", "codemode"] as const) {
         files[file] = "pre α\r\nβ end\r\n";
         expected[file] = before ? "pre +α\r\nβ end\r\n" : "pre α\r\nβ+ end\r\n";
         // A literal matches only the file's own line breaks: CRLF in a CRLF file.
-        edits.push({ tool: "insert", args: { path: file, anchor: "α\r\nβ", newText: "+", before } });
+        edits.push({
+          tool: "insert",
+          args: { path: file, anchor: "α\r\nβ", newText: "+", before },
+        });
       }
       await Promise.all(
         Object.entries(files).map(([file, content]) => writeFile(path.join(cwd, file), content)),
