@@ -12,7 +12,7 @@ import type {
   SearchContext,
 } from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
-import { SearchCaptureGuard } from "#src/search-capture.ts";
+import { SearchCaptureGuard } from "pi-agent-search/api/search";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SearchEnvironment } from "pi-agent-search/api/search";

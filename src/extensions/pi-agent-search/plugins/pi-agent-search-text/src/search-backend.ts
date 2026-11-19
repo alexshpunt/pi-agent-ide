@@ -14,7 +14,7 @@ import {
 
 import { type SearchCondition, satisfiesSearchCondition } from "#src/search-query.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
-import { SearchCaptureGuard, SearchCaptureLimitError } from "#src/search-capture.ts";
+import { SearchCaptureGuard, SearchCaptureLimitError } from "pi-agent-search/api/search";
 
 export interface TextSearchRequest {
   readonly query: string;

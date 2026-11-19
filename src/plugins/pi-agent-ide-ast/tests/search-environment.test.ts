@@ -32,8 +32,9 @@ test("structural search keeps its executor, snapshots and presentation on the re
       return {
         code: 0,
         stderr: "",
-        stdout: JSON.stringify([
-          {
+        // `--json=stream` prints one match object per line.
+        stdout:
+          JSON.stringify({
             text,
             file: "note.ts",
             lines: content.trim(),
@@ -43,8 +44,7 @@ test("structural search keeps its executor, snapshots and presentation on the re
               start: { line: 0, column: start },
               end: { line: 0, column: start + Buffer.byteLength(text) },
             },
-          },
-        ]),
+          }) + "\n",
       };
     },
   };
