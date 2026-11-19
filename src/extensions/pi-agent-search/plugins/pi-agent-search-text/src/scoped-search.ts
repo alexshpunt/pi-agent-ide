@@ -4,7 +4,7 @@ import { searchTextContent } from "#src/search-backend.ts";
 import type { TextSearchBackendResult } from "#src/search-backend.ts";
 import { fallbackNotice, type SearchRecipe, type SearchFallback } from "#src/search-recipe.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
-import { SearchCaptureGuard } from "#src/search-capture.ts";
+import { SearchCaptureGuard } from "pi-agent-search/api/search";
 
 /**
  * Run each real source range separately; gaps and neighboring text are never searched. The
