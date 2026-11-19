@@ -211,7 +211,7 @@ text("Search values verified");`,
     expect(validateRoute(task, missingFacts, "codemode").passed).toBe(false);
     const bypass = events.map((event) =>
       event.type === "tool_execution_start" && event.toolName === "replace"
-        ? { ...event, args: { path: "task.txt", text: "NEW" } }
+        ? { ...event, args: { path: "task.txt", newText: "NEW" } }
         : event,
     );
     expect(validateRoute(task, bypass, "codemode").passed).toBe(false);

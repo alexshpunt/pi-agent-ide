@@ -38,7 +38,7 @@ function trace(text = "BETA\n"): RunEvent[] {
       before: true,
       newText: "added\n",
     }),
-    start("replace", "replace", { start: reference(1), text }),
+    start("replace", "replace", { start: reference(1), newText: text }),
     start("delete", "delete", { start: reference(2) }),
     end("insert"),
     end("replace"),
@@ -80,7 +80,7 @@ test.each(["BETA", "BETA\n"])(
           };
         }
         if (event.toolCallId === "replace" && event.type === "tool_execution_start")
-          return { ...event, args: { path: { id }, text } };
+          return { ...event, args: { path: { id }, newText: text } };
         if (event.toolCallId === "delete" && event.type === "tool_execution_start")
           return { ...event, args: { path: "task.txt", start: "gamma" } };
         return event;

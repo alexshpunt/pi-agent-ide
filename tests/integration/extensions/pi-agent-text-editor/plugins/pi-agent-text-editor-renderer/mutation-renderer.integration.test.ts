@@ -163,7 +163,7 @@ describe("text mutation renderer", () => {
                   path: "inherited-path.ts",
                   start: uniqueLineAnchor("const value4 = 4;"),
                   // A line anchor selects the line with its line break; the text keeps it.
-                  text: "const value4 = loadPrimaryValue();\n",
+                  newText: "const value4 = loadPrimaryValue();\n",
                 },
                 delayMs: 0,
               }),
@@ -172,7 +172,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   start: uniqueLineAnchor("const value18 = 18;"),
-                  text: "const value18 = loadStreamedInheritedValue();\n",
+                  newText: "const value18 = loadStreamedInheritedValue();\n",
                 },
                 chunks: { kind: "fixed", size: 3 },
                 delayMs: 25,
@@ -220,7 +220,7 @@ describe("text mutation renderer", () => {
                   path: "post-edit-viewport.ts",
                   start: uniqueLineAnchor("const value7 = 7;"),
                   // A line anchor selects the line with its line break; the text keeps it.
-                  text: "const value7 = loadPrimaryValue();\n",
+                  newText: "const value7 = loadPrimaryValue();\n",
                 },
               }),
               toolCall({
@@ -229,7 +229,7 @@ describe("text mutation renderer", () => {
                 arguments: {
                   path: "post-edit-viewport.ts",
                   start: uniqueLineAnchor("const value25 = 25;"),
-                  text: "const value25 = loadSecondaryValue();\n",
+                  newText: "const value25 = loadSecondaryValue();\n",
                 },
               }),
             ],
@@ -283,7 +283,7 @@ describe("text mutation renderer", () => {
         start: uniqueLineAnchor("    const retries = resolveRetries();"),
         end: uniqueLineAnchor("    const service = new Service(transport);"),
         // The line range ends with its line break; the replacement keeps it.
-        text: ["    const retryLimit = 3;", "    const timeoutMs = 5_000;", ""].join("\n"),
+        newText: ["    const retryLimit = 3;", "    const timeoutMs = 5_000;", ""].join("\n"),
       };
       const argumentsJson = JSON.stringify(arguments_);
       const textStart = argumentsJson.indexOf('"text":') + '"text":"'.length;
@@ -294,9 +294,9 @@ describe("text mutation renderer", () => {
         argumentsJson.slice(textStart + 42),
       ];
       const argumentSnapshots = [
-        { ...arguments_, text: "" },
-        { ...arguments_, text: "    const retry" },
-        { ...arguments_, text: "    const retryLimit = 3;\n    const" },
+        { ...arguments_, newText: "" },
+        { ...arguments_, newText: "    const retry" },
+        { ...arguments_, newText: "    const retryLimit = 3;\n    const" },
         arguments_,
       ];
       const result = await new PiIntegrationTest({
@@ -481,7 +481,7 @@ describe("text mutation renderer", () => {
       arguments: {
         path: "subject.ts",
         anchor: uniqueLineAnchor("    return value;"),
-        text: "    audit(value);",
+        newText: "    audit(value);",
       },
       stats: "+1 ~0 -0",
       row: /4\s+\+\s+audit\(value\);/u,
@@ -671,7 +671,7 @@ describe("exact anchor header rendering", () => {
                   path: "service.txt",
                   start:
                     "function buildService() {\n  const endpoint = resolveEndpoint();\n  return endpoint;\n}",
-                  text: "function buildService() {\n  return resolveEndpoint();\n}",
+                  newText: "function buildService() {\n  return resolveEndpoint();\n}",
                 },
               }),
             ],

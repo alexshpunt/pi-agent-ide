@@ -90,7 +90,7 @@ test("a formatter's syntax rejection keeps the successful edit saved", async () 
             toolCall({
               id: "invalid",
               name: "replace",
-              arguments: { path: "example.ts", start: "initial", text: "SYNTAX_INVALID   " },
+              arguments: { path: "example.ts", start: "initial", newText: "SYNTAX_INVALID   " },
             }),
           ],
           { stopReason: "toolUse" },

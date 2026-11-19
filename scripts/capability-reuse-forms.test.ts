@@ -230,7 +230,7 @@ describe("shell-roundtrip", () => {
     {
       id: "insert",
       tool: "insert",
-      args: { path: shell, text: "Enter" },
+      args: { path: shell, newText: "Enter" },
       uuid: uuid("3"),
       value: null,
     },
@@ -246,7 +246,7 @@ describe("shell-roundtrip", () => {
     {
       id: "replace",
       tool: "replace",
-      args: { path: { id: `RESULT#${reread}` }, start: "hello", text: "BAD" },
+      args: { path: { id: `RESULT#${reread}` }, start: "hello", newText: "BAD" },
       text: task.steps.find((step) => step.tool === "replace")?.contains,
       error: true,
     },
@@ -444,7 +444,7 @@ describe("selection-batch-insert", () => {
       call({
         id: `insert-${String(index)}`,
         tool: "insert",
-        args: { path: { id: uuid(String(index + 1)) }, text, before: true },
+        args: { path: { id: uuid(String(index + 1)) }, newText: text, before: true },
         details: receipt,
       }),
     );

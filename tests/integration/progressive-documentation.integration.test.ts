@@ -68,12 +68,12 @@ test("attaches each relevant guide once and keeps guides independent", async () 
       {
         id: "insert-first",
         name: "insert",
-        arguments: { path: "example.ts", anchor: "export const marker = 1;", text: "// a" },
+        arguments: { path: "example.ts", anchor: "export const marker = 1;", newText: "// a" },
       },
       {
         id: "insert-again",
         name: "insert",
-        arguments: { path: "example.ts", anchor: "export const marker = 1;", text: "// b" },
+        arguments: { path: "example.ts", anchor: "export const marker = 1;", newText: "// b" },
       },
       { id: "search-first", name: "search", arguments: { query: "marker", path: "example.ts" } },
       { id: "search-again", name: "search", arguments: { query: "marker", path: "example.ts" } },

@@ -429,7 +429,7 @@ function randomOperation(
         run: call(insertMutationTool, {
           path: "main.txt",
           anchor: main.slice(span.from, span.to),
-          text,
+          newText: text,
           before,
         }),
         expected: { "main.txt": splice(main, at, at, text) },
@@ -506,7 +506,7 @@ function randomOperation(
       const at = lines[line]?.to ?? 0;
       return {
         name: `insert after line ${String(line + 1)}`,
-        run: call(insertMutationTool, { path: "main.txt", anchor: anchors[line], text: insert }),
+        run: call(insertMutationTool, { path: "main.txt", anchor: anchors[line], newText: insert }),
         expected: { "main.txt": splice(main, at, at, insert) },
       };
     }
@@ -664,7 +664,7 @@ describe("byte-exact regressions", () => {
     await put("main.txt", "one\r\ntwo\r\n");
     await h.run(replaceMutationTool, { path: "main.txt", start: "one", newText: "1\n1\r\n1" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\n1\r\n1\r\ntwo\r\n");
-    await h.run(insertMutationTool, { path: "main.txt", anchor: "two", text: "\nmore" });
+    await h.run(insertMutationTool, { path: "main.txt", anchor: "two", newText: "\nmore" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\n1\r\n1\r\ntwo\nmore\r\n");
   });
 
@@ -684,7 +684,7 @@ describe("byte-exact regressions", () => {
   test("an edit between CR and LF splits the CRLF exactly", async () => {
     const h = await harness();
     await put("main.txt", "a\r\nb");
-    await h.run(insertMutationTool, { path: "main.txt", anchor: "a\r", text: "|" });
+    await h.run(insertMutationTool, { path: "main.txt", anchor: "a\r", newText: "|" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("a\r|\nb");
   });
 

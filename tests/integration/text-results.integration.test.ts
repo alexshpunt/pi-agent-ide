@@ -464,7 +464,7 @@ test("direct tools accept unchanged results and UUIDs without Codemode", async (
             toolCall({
               id: "edit-uuid",
               name: "replace",
-              arguments: { path: "$previous-uuid", text: "BETA" },
+              arguments: { path: "$previous-uuid", newText: "BETA" },
             }),
           ],
           { stopReason: "toolUse" },

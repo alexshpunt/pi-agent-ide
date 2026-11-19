@@ -34,7 +34,7 @@ function fixture(lineCount: number) {
       ? // A line anchor selects the line with its line break; the text keeps it.
         {
           name: "replace",
-          args: { path: file, start: anchor(line), text: `replacement-${line}\n` },
+          args: { path: file, start: anchor(line), newText: `replacement-${line}\n` },
         }
       : { name: "delete", args: { path: file, start: anchor(line) } };
   });

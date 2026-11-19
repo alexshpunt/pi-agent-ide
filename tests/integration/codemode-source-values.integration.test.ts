@@ -124,7 +124,7 @@ const pair = async (a, c) => [
 const [search, window] = await pair("a.txt", "c.txt");
 const byValue = await tools.replace({
   path: [search, { ...window, text: "x" }],
-  text: "done",
+  newText: "done",
 });
 const [searchId, windowId] = await pair("a-id.txt", "c-id.txt");
 const byId = await tools.replace({ path: [searchId.id, windowId.id], newText: "done" });

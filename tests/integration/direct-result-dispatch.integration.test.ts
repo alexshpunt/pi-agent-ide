@@ -70,14 +70,14 @@ for (const [form, token] of tokens) {
         {
           id: "unknown",
           name: "replace",
-          arguments: { path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" },
+          arguments: { path: "00000000-0000-0000-0000-000000000000", newText: "UNKNOWN" },
         },
         { id: "inside", name: "replace", arguments: { path: token, start: "bet", newText: "BET" } },
         { id: "stale", name: "replace", arguments: { path: token, newText: "STALE\n" } },
         {
           id: "path",
           name: "replace",
-          arguments: { path: "note.txt", start: "gamma", text: "GAMMA" },
+          arguments: { path: "note.txt", start: "gamma", newText: "GAMMA" },
         },
         { id: "again", name: "read", arguments: { path: "note.txt", offset: 2, limit: 1 } },
         {
@@ -88,12 +88,12 @@ for (const [form, token] of tokens) {
         {
           id: "outside-range",
           name: "replace",
-          arguments: { path: again, start: "alpha", end: "BETa", text: "BAD" },
+          arguments: { path: again, start: "alpha", end: "BETa", newText: "BAD" },
         },
         {
           id: "bad-anchor",
           name: "replace",
-          arguments: { path: "note.txt", start: "ZZZZZZZ", text: "DAMAGED" },
+          arguments: { path: "note.txt", start: "ZZZZZZZ", newText: "DAMAGED" },
         },
       ]);
       expect(run.state?.model).toMatchObject({ provider: "scripted", id: "scripted-model" });

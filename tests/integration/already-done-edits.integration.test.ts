@@ -62,7 +62,7 @@ test("a direct replace with the text it selects is refused without a write", asy
       toolCall({
         id: "same",
         name: "replace",
-        arguments: { path: "names.cpp", start: "FuncA(y)", text: "FuncA(y)" },
+        arguments: { path: "names.cpp", start: "FuncA(y)", newText: "FuncA(y)" },
       }),
     ]);
     const output = getToolResultText(result, "same");
@@ -141,7 +141,7 @@ test("a symbol rename to its current name succeeds without a write", async () =>
         toolCall({
           id: "rename",
           name: "replace",
-          arguments: { path: "fixture:declaration:lib.ts#alpha#name", text: "alpha" },
+          arguments: { path: "fixture:declaration:lib.ts#alpha#name", newText: "alpha" },
         }),
       ],
       ["ide.lint"],

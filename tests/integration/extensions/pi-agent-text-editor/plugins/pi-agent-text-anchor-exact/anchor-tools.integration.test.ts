@@ -77,7 +77,7 @@ describe("exact text anchors through real text editor tools", () => {
         arguments: {
           path: relativeFile,
           start: 'const privateFiles = new Set(["CONTEXT.md", "lefthook.yml"]);',
-          text: replacement,
+          newText: replacement,
         },
       });
       const expectedContent = policyFixture.replace(

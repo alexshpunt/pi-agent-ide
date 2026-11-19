@@ -299,9 +299,7 @@ test.each([insertMutationTool, replaceMutationTool, deleteMutationTool])(
         const { result } = await f.run(tool, {
           path: objectValues ? [{ id: first }, { id: second }] : [first, second],
           ...(tool.name === "insert" ? { anchor: selector } : { start: selector, end: selector }),
-          ...(tool.name === "delete"
-            ? {}
-            : { [tool.name === "replace" ? "newText" : "text"]: "CHANGED\n" }),
+          ...(tool.name === "delete" ? {} : { newText: "CHANGED\n" }),
         });
         expect(result.details.effect).toBe("not-applied");
         expect(await f.content("one.txt")).toBe(original);
@@ -321,7 +319,7 @@ test.each([
   const last = await f.lines("one.txt", 3, 3);
   const { result } = await f.run(tool, {
     path: [first, last],
-    ...(tool.name === "delete" ? {} : { [tool.name === "replace" ? "newText" : "text"]: "NEW\n" }),
+    ...(tool.name === "delete" ? {} : { newText: "NEW\n" }),
   });
   expect(result.details.effect).not.toBe("not-applied");
   expect(await f.content("one.txt")).toBe(expected);
@@ -334,7 +332,7 @@ test("a single-element result list still scopes its selector", async () => {
   const { result } = await f.run(insertMutationTool, {
     path: [scope],
     anchor: lineAnchor("one.txt", original, 2),
-    text: "NEW\n",
+    newText: "NEW\n",
   });
   expect(result.details.effect).not.toBe("not-applied");
   expect(await f.content("one.txt")).toBe("first\nmiddle\nNEW\nlast\n");
@@ -470,7 +468,7 @@ test("insert places text at an anchor inside the result", async () => {
   const content = "one\ntwo\nthree\n";
   const f = await fixture({ "task.txt": content });
   const read = await f.lines("task.txt", 1, 3);
-  await f.run(insertMutationTool, { path: read, anchor: "two", text: "\nADDED" });
+  await f.run(insertMutationTool, { path: read, anchor: "two", newText: "\nADDED" });
   expect(await f.content("task.txt")).toBe("one\ntwo\nADDED\nthree\n");
 });
 

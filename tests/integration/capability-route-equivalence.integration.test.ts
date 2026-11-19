@@ -143,7 +143,7 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             toolCall({
               id: `insert-${String(index)}`,
               name: "insert",
-              arguments: { path: "task.txt", anchor, text: "ADDED\n", before: true },
+              arguments: { path: "task.txt", anchor, newText: "ADDED\n", before: true },
               chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
             }),
           ),
@@ -170,7 +170,7 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
             ...anchors.map((anchor, index) => ({
               tool: "insert",
-              args: { path: "task.txt", anchor, text: "ADDED", before: true },
+              args: { path: "task.txt", anchor, newText: "ADDED", before: true },
               after: [0],
               ...(index > 0 && { sameAssistantWith: 1 }),
             })),
@@ -253,7 +253,7 @@ text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),newText:"
             },
             {
               tool: "replace",
-              args: { path: "last.txt", start: "Last", text: "Final" },
+              args: { path: "last.txt", start: "Last", newText: "Final" },
               reuse: { from: 0, field: "start", kind: "anchor" },
             },
           ],

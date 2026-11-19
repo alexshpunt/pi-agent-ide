@@ -48,7 +48,7 @@ test.each([false, true])(
                   path: { id: "$issued-uuid:search" },
                   start: "$issued-searchmatch:search:1",
                   ...(paired && { end: "$issued-searchmatch:search:1" }),
-                  text: "RED",
+                  newText: "RED",
                 },
               }),
             ],

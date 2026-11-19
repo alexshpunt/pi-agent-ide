@@ -160,7 +160,7 @@ describe("undo last text transaction", () => {
             toolCall({
               id: "direct-edit",
               name: "insert",
-              arguments: { path: fileName, anchor: "end", text: "gamma" },
+              arguments: { path: fileName, anchor: "end", newText: "gamma" },
             }),
           ),
           toolMessage(
@@ -205,12 +205,12 @@ describe("undo last text transaction", () => {
             toolCall({
               id: "same-batch-first",
               name: "replace",
-              arguments: { path: firstName, start: "begin", text: "A1" },
+              arguments: { path: firstName, start: "begin", newText: "A1" },
             }),
             toolCall({
               id: "same-batch-second",
               name: "replace",
-              arguments: { start: "end", text: "A2" },
+              arguments: { start: "end", newText: "A2" },
             }),
           ),
           toolMessage(
@@ -224,12 +224,12 @@ describe("undo last text transaction", () => {
             toolCall({
               id: "multi-batch-first",
               name: "insert",
-              arguments: { path: firstName, anchor: "end", text: "first batch change" },
+              arguments: { path: firstName, anchor: "end", newText: "first batch change" },
             }),
             toolCall({
               id: "multi-batch-second",
               name: "insert",
-              arguments: { path: secondName, anchor: "end", text: "second batch change" },
+              arguments: { path: secondName, anchor: "end", newText: "second batch change" },
             }),
           ),
           toolMessage(
@@ -289,14 +289,14 @@ describe("undo last text transaction", () => {
             toolCall({
               id: "latest-first",
               name: "insert",
-              arguments: { path: latestName, anchor: "end", text: "first" },
+              arguments: { path: latestName, anchor: "end", newText: "first" },
             }),
           ),
           toolMessage(
             toolCall({
               id: "latest-second",
               name: "insert",
-              arguments: { path: latestName, anchor: "end", text: "second" },
+              arguments: { path: latestName, anchor: "end", newText: "second" },
             }),
           ),
           toolMessage(
@@ -317,7 +317,7 @@ describe("undo last text transaction", () => {
             toolCall({
               id: "stale-edit",
               name: "insert",
-              arguments: { path: staleName, anchor: "end", text: "editor change" },
+              arguments: { path: staleName, anchor: "end", newText: "editor change" },
             }),
           ),
           toolMessage(
@@ -383,7 +383,7 @@ describe("undo last text transaction", () => {
             toolCall({
               id: "selective-source-edit",
               name: "insert",
-              arguments: { path: fileName, anchor: "end", text: "gamma" },
+              arguments: { path: fileName, anchor: "end", newText: "gamma" },
             }),
           ),
           toolMessage(

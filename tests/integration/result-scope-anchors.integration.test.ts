@@ -68,7 +68,7 @@ test.each(["direct", "codemode"] as const)(
               ...(name === "insert"
                 ? { anchor: "$issued-search:first:1" }
                 : { start: "$issued-search:first:1", end: "$issued-search:first:1" }),
-              ...(name === "delete" ? {} : { text: "BAD\n" }),
+              ...(name === "delete" ? {} : { newText: "BAD\n" }),
             },
           });
         }
@@ -77,7 +77,7 @@ test.each(["direct", "codemode"] as const)(
           name: "insert",
           arguments: {
             path: [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }],
-            text: "NEW\n",
+            newText: "NEW\n",
           },
         });
       } else {
@@ -140,7 +140,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "$issued-searchmatch:scope:1",
-                  text: "ONE",
+                  newText: "ONE",
                 },
               },
               {
@@ -148,7 +148,7 @@ test.each(["direct", "codemode"] as const)(
                 name: "replace",
                 arguments: {
                   path: ["$issued-searchmatch:scope:1", "$issued-searchmatch:scope:2"],
-                  text: "BAD",
+                  newText: "BAD",
                 },
               },
               {
@@ -157,7 +157,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "$issued-searchmatch:scope:1",
-                  text: "BAD",
+                  newText: "BAD",
                 },
               },
               {
@@ -165,7 +165,7 @@ test.each(["direct", "codemode"] as const)(
                 name: "replace",
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
-                  text: "BAD",
+                  newText: "BAD",
                 },
               },
               {
@@ -174,7 +174,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "keep2",
-                  text: "BAD",
+                  newText: "BAD",
                 },
               },
               {
@@ -183,7 +183,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "$issued-searchmatch:scope:2",
-                  text: "TWO",
+                  newText: "TWO",
                 },
               },
             ]
@@ -252,12 +252,12 @@ test.each(["direct", "codemode"] as const)(
               {
                 id: "miss",
                 name: "replace",
-                arguments: { path: "$issued-uuid:scope", start: "last", text: "BAD" },
+                arguments: { path: "$issued-uuid:scope", start: "last", newText: "BAD" },
               },
               {
                 id: "retry",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", text: "fixed" },
+                arguments: { path: "task.txt", start: "last", newText: "fixed" },
               },
             ]
           : [
@@ -307,22 +307,26 @@ test.each(["direct", "codemode"] as const)(
               {
                 id: "miss",
                 name: "replace",
-                arguments: { path: "$issued-uuid:scope", start: "absent", text: "BAD" },
+                arguments: { path: "$issued-uuid:scope", start: "absent", newText: "BAD" },
               },
               {
                 id: "blocked",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", text: "BAD" },
+                arguments: { path: "task.txt", start: "last", newText: "BAD" },
               },
               {
                 id: "recover",
                 name: "replace",
-                arguments: { path: "task.txt", start: "$issued-anchor:anchors:2", text: "NEW\n" },
+                arguments: {
+                  path: "task.txt",
+                  start: "$issued-anchor:anchors:2",
+                  newText: "NEW\n",
+                },
               },
               {
                 id: "retry",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", text: "fixed" },
+                arguments: { path: "task.txt", start: "last", newText: "fixed" },
               },
             ]
           : [

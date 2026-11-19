@@ -65,7 +65,7 @@ test.runIf(process.platform !== "win32")(
             toolCall({
               id: "replace-terminal",
               name: "replace",
-              arguments: { path: "shell:abcdef123456", start: "terminal input", text: "no" },
+              arguments: { path: "shell:abcdef123456", start: "terminal input", newText: "no" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -85,7 +85,7 @@ test.runIf(process.platform !== "win32")(
             toolCall({
               id: "insert-enter",
               name: "insert",
-              arguments: { path: "shell:abcdef123456", text: "Enter" },
+              arguments: { path: "shell:abcdef123456", newText: "Enter" },
             }),
           ],
           { stopReason: "toolUse" },

@@ -96,7 +96,7 @@ test.each(cases)(
                     toolCall({
                       id: "change",
                       name: "replace",
-                      arguments: { path: "note.txt", start: "OLD", text: "CHANGED" },
+                      arguments: { path: "note.txt", start: "OLD", newText: "CHANGED" },
                     }),
                   ],
                   { stopReason: "toolUse" },

@@ -23,23 +23,23 @@ test.each([
   {
     name: "replace",
     // A line selection includes its line break, so the replacement sends one to keep the line.
-    arguments: { start: formatLineHashAnchor("HEADER\nBODY\nTAIL\n", 1), text: "CHANGED\n" },
+    arguments: { start: formatLineHashAnchor("HEADER\nBODY\nTAIL\n", 1), newText: "CHANGED\n" },
     expected: "CHANGED\nBODY\nTAIL\n",
   },
   {
     name: "replace",
-    arguments: { start: "HEADER", end: "BODY", text: "CHANGED" },
+    arguments: { start: "HEADER", end: "BODY", newText: "CHANGED" },
     expected: "CHANGED\nTAIL\n",
   },
   {
     name: "replace",
-    arguments: { start: "HEADER", text: "CHANGED" },
+    arguments: { start: "HEADER", newText: "CHANGED" },
     expected: "CHANGED\nBODY\nTAIL\n",
   },
   // Literal selectors select only their characters, so whole-line edits include the line break.
   {
     name: "insert",
-    arguments: { anchor: "HEADER\n", text: "ADDED\n" },
+    arguments: { anchor: "HEADER\n", newText: "ADDED\n" },
     expected: "HEADER\nADDED\nBODY\nTAIL\n",
   },
   { name: "delete", arguments: { start: "HEADER\n" }, expected: "BODY\nTAIL\n" },
@@ -55,7 +55,7 @@ test.each([
   },
   {
     name: "replace",
-    arguments: { start: "begin", text: "CHANGED\n" },
+    arguments: { start: "begin", newText: "CHANGED\n" },
     expected: "CHANGED\nBODY\nTAIL\n",
   },
 ])(
@@ -107,17 +107,17 @@ test("keeps missing sources, explicit paths, invalid anchors, and batch inherita
       {
         id: "invalid-anchor",
         name: "replace",
-        arguments: { start: "SEARCH#DEADBEEF:1:match", text: "BAD" },
+        arguments: { start: "SEARCH#DEADBEEF:1:match", newText: "BAD" },
       },
       {
         id: "empty-source",
         name: "replace",
-        arguments: { path: "", start: "HEADER", text: "BAD" },
+        arguments: { path: "", start: "HEADER", newText: "BAD" },
       },
       {
         id: "explicit-source",
         name: "replace",
-        arguments: { path: "other.txt", start: "HEADER", text: "EXPLICIT" },
+        arguments: { path: "other.txt", start: "HEADER", newText: "EXPLICIT" },
       },
       { id: "read-again", name: "read", arguments: { path: "notes.txt" } },
     ];
@@ -135,12 +135,12 @@ test("keeps missing sources, explicit paths, invalid anchors, and batch inherita
             toolCall({
               id: "batch-first",
               name: "replace",
-              arguments: { path: "other.txt", start: "BODY", text: "BATCH" },
+              arguments: { path: "other.txt", start: "BODY", newText: "BATCH" },
             }),
             toolCall({
               id: "batch-inherited",
               name: "replace",
-              arguments: { start: "TAIL", text: "INHERITED" },
+              arguments: { start: "TAIL", newText: "INHERITED" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -174,7 +174,7 @@ test("keeps typed source and destination ownership separate from the last read",
       {
         id: "typed-source",
         name: "replace",
-        arguments: { start: "SEARCH#RUNTIME:1:all:match", text: "changed" },
+        arguments: { start: "SEARCH#RUNTIME:1:all:match", newText: "changed" },
       },
       { id: "search-target", name: "search", arguments: { query: "changed", path: "first.txt" } },
       { id: "read-source", name: "read", arguments: { path: "notes.txt" } },

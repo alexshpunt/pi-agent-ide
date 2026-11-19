@@ -1963,7 +1963,7 @@ add(
       tool: "replace",
       args: {
         path: "credit.txt",
-        text: "",
+        newText: "",
       },
       exactText: ["start", "end"],
     },
@@ -3949,7 +3949,7 @@ add(
       tool: "replace",
       args: {
         path: { id: /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u },
-        text: "",
+        newText: "",
       },
       contains: "INVALID_REQUEST",
       excludes: "PLUGIN_FAILED",

@@ -25,17 +25,17 @@ const read = toolCall({
 const rename = toolCall({
   id: "rename",
   name: "replace",
-  arguments: { path: "fixture:declaration:task.ts#count#name", text: "total" },
+  arguments: { path: "fixture:declaration:task.ts#count#name", newText: "total" },
 });
 const rejected = toolCall({
   id: "rejected-rename",
   name: "replace",
-  arguments: { path: { id: "fixture:declaration:task.ts#count#name" }, text: "" },
+  arguments: { path: { id: "fixture:declaration:task.ts#count#name" }, newText: "" },
 });
 const invalidRequests = [
-  { id: "whitespace-rename", arguments: { text: " \t" } },
-  { id: "malformed-rename", arguments: { start: "count", text: "total" } },
-  { id: "end-rename", arguments: { end: "count", text: "total" } },
+  { id: "whitespace-rename", arguments: { newText: " \t" } },
+  { id: "malformed-rename", arguments: { start: "count", newText: "total" } },
+  { id: "end-rename", arguments: { end: "count", newText: "total" } },
 ];
 const invalidCalls = invalidRequests
   .filter(({ id }) => id === "whitespace-rename")

@@ -77,7 +77,12 @@ const file = "// PREFIX\n// BEGIN block\nbody line\n// END block\n// SUFFIX\n";
 
 test("insert after a literal that covers a whole line adds the text right after it", async () => {
   expect(
-    await run(insertMutationTool, { source: file }, { anchor: "// END block" }, { text: "// X" }),
+    await run(
+      insertMutationTool,
+      { source: file },
+      { anchor: "// END block" },
+      { newText: "// X" },
+    ),
   ).toEqual({ source: file.replace("// END block", "// END block// X") });
 });
 
@@ -87,13 +92,15 @@ test("insert before a literal that covers a whole line adds the text right befor
       insertMutationTool,
       { source: file },
       { anchor: "// END block" },
-      { text: "// X", before: true },
+      { newText: "// X", before: true },
     ),
   ).toEqual({ source: file.replace("// END block", "// X// END block") });
 });
 
 test("insert after a line anchor still puts the text on its own line", async () => {
-  expect(await run(insertMutationTool, { source: file }, { anchor: 4 }, { text: "// X" })).toEqual({
+  expect(
+    await run(insertMutationTool, { source: file }, { anchor: 4 }, { newText: "// X" }),
+  ).toEqual({
     source: file.replace("// END block\n", "// END block\n// X\n"),
   });
 });

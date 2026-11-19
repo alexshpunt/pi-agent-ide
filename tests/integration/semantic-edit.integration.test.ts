@@ -140,7 +140,7 @@ test("standalone declaration edits and moves preserve earlier effects", async ()
                 name: "replace",
                 arguments: {
                   path: "fixture:declaration:source.ts#first",
-                  text: "export function first() { return 3; }\n",
+                  newText: "export function first() { return 3; }\n",
                 },
               }),
             ],
@@ -200,7 +200,7 @@ test("standalone replace renames cross-file references without replacing unrelat
               toolCall({
                 id: "rename",
                 name: "replace",
-                arguments: { path: "fixture:declaration:source.ts#greet#name", text: "welcome" },
+                arguments: { path: "fixture:declaration:source.ts#greet#name", newText: "welcome" },
               }),
             ],
             { stopReason: "toolUse" },

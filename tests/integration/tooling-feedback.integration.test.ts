@@ -64,7 +64,7 @@ test("whole-file Delete keeps its filesystem route beside a text edit batch", as
       {
         id: "edit",
         name: "insert",
-        arguments: { path: "note.txt", anchor: "keep", text: "\nADDED" },
+        arguments: { path: "note.txt", anchor: "keep", newText: "\nADDED" },
       },
       ...removed.map((file, index) => ({
         id: `remove${index}`,
@@ -101,7 +101,7 @@ const sameFileEdits = [
   {
     tool: "replace",
     kind: "searchmatch",
-    args: { text: "NEW" },
+    args: { newText: "NEW" },
     after: "keep1\nNEW\nkeep2\nNEW\nkeep3\nNEW\n",
   },
   { tool: "delete", kind: "uuid", args: {}, after: "keep1\nkeep2\nkeep3\n" },
@@ -109,13 +109,13 @@ const sameFileEdits = [
   {
     tool: "insert",
     kind: "search",
-    args: { text: "ADDED", before: true },
+    args: { newText: "ADDED", before: true },
     after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
   },
   {
     tool: "insert",
     kind: "uuid",
-    args: { text: "ADDED", before: true },
+    args: { newText: "ADDED", before: true },
     after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
   },
 ] as const;
@@ -281,13 +281,13 @@ test("same-file selection batches reject overlaps and later reuse without losing
           toolCall({
             id: "accepted",
             name: "replace",
-            arguments: { path: "$issued-uuid:first", text: "FIRST\n" },
+            arguments: { path: "$issued-uuid:first", newText: "FIRST\n" },
           }),
           toolCall({ id: "overlap", name: "delete", arguments: { path: "$issued-uuid:first" } }),
           toolCall({
             id: "peer",
             name: "replace",
-            arguments: { path: "$issued-uuid:last", text: "LAST\n" },
+            arguments: { path: "$issued-uuid:last", newText: "LAST\n" },
           }),
         ],
         { stopReason: "toolUse" },
@@ -379,14 +379,14 @@ const consumers = [
     name: "replace-uuid",
     tool: "replace",
     kind: "uuid",
-    extra: { text: "NEW\n" },
+    extra: { newText: "NEW\n" },
     after: "first\nNEW\nlast\n",
   },
   {
     name: "insert-uuid",
     tool: "insert",
     kind: "uuid",
-    extra: { text: "BEFORE", before: true },
+    extra: { newText: "BEFORE", before: true },
     after: "first\nBEFORE\nOLD\nlast\n",
   },
 ] as const;
@@ -558,7 +558,7 @@ test.each([false, true])(
   },
 );
 
-test.each([{}, { text: "" }])(
+test.each([{}, { newText: "" }])(
   "a complete Insert with invalid payload %j still fails validation",
   async (payload) => {
     await withTempWorkspace(async (cwd) => {

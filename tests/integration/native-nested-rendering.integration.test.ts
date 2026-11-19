@@ -32,7 +32,7 @@ test("direct IDE mutations keep the same custom renderer in an isolated runtime"
             toolCall({
               id: "direct",
               name: "replace",
-              arguments: { path: "note.txt", start: "alpha", text: "ALPHA" },
+              arguments: { path: "note.txt", start: "alpha", newText: "ALPHA" },
             }),
           ],
           { stopReason: "toolUse" },

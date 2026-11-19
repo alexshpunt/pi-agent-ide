@@ -447,7 +447,7 @@ text(await tools.replace({path:copied,newText:"NEW\\n"}));`,
             toolCall({
               id: "replace-direct",
               name: "replace",
-              arguments: { path: "target.txt", start: "old", text: "new" },
+              arguments: { path: "target.txt", start: "old", newText: "new" },
             }),
             toolCall({
               id: "copy-direct",
@@ -1737,7 +1737,7 @@ test.each([false, true])(
               toolCall({
                 id: "standalone",
                 name: "replace",
-                arguments: { path: "format.txt", start: "old", text: "format_me" },
+                arguments: { path: "format.txt", start: "old", newText: "format_me" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -1791,7 +1791,7 @@ test("a saved Insert explains why formatting removed its reusable target", async
               id: "insert",
               name: "insert",
               // A literal selects only its characters; the line breaks keep format_me on its own line.
-              arguments: { path: "format.txt", anchor: "old body\n", text: "format_me\n" },
+              arguments: { path: "format.txt", anchor: "old body\n", newText: "format_me\n" },
             }),
           ],
           { stopReason: "toolUse" },

@@ -239,12 +239,12 @@ test("JSON-text references survive streaming guards and parallel edit planning",
           toolCall({
             id: "replace-one",
             name: "replace",
-            arguments: { path: '{"id":"$issued-uuid:one"}', text: "ONE\n" },
+            arguments: { path: '{"id":"$issued-uuid:one"}', newText: "ONE\n" },
           }),
           toolCall({
             id: "replace-two",
             name: "replace",
-            arguments: { path: '{"id":"$issued-uuid:two"}', text: "TWO\n" },
+            arguments: { path: '{"id":"$issued-uuid:two"}', newText: "TWO\n" },
           }),
         ]),
         assistantMessage([

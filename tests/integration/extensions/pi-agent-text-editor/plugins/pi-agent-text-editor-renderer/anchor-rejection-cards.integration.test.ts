@@ -43,23 +43,23 @@ test("keeps all anchor rejection codes and private recovery details separate fro
         arguments: {
           path: "$issued-uuid:scope",
           start: formatLineHashAnchor(fixtures["scope.txt"], 2),
-          text: "changed",
+          newText: "changed",
         },
       },
       {
         id: "missing",
         name: "replace",
-        arguments: { path: "missing.txt", start: "absent", text: "changed" },
+        arguments: { path: "missing.txt", start: "absent", newText: "changed" },
       },
       {
         id: "ambiguous",
         name: "replace",
-        arguments: { path: "ambiguous.txt", start: "same", text: "changed" },
+        arguments: { path: "ambiguous.txt", start: "same", newText: "changed" },
       },
       {
         id: "stale",
         name: "replace",
-        arguments: { path: "stale.txt", start: formatLineHashAnchor("old", 1), text: "changed" },
+        arguments: { path: "stale.txt", start: formatLineHashAnchor("old", 1), newText: "changed" },
       },
     ];
     const result = await new PiIntegrationTest({

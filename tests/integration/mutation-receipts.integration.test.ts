@@ -35,17 +35,17 @@ test("batched receipts describe successful operations without counting rejected 
             toolCall({
               id: "replace",
               name: "replace",
-              arguments: { path: "example.txt", start: "first", text: "updated" },
+              arguments: { path: "example.txt", start: "first", newText: "updated" },
             }),
             toolCall({
               id: "insert",
               name: "insert",
-              arguments: { path: "example.txt", anchor: "third", text: "\nfourth" },
+              arguments: { path: "example.txt", anchor: "third", newText: "\nfourth" },
             }),
             toolCall({
               id: "rejected",
               name: "replace",
-              arguments: { path: "example.txt", start: "absent", text: "bad" },
+              arguments: { path: "example.txt", start: "absent", newText: "bad" },
             }),
           ],
           { stopReason: "toolUse" },

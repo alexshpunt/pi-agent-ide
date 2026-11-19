@@ -37,7 +37,7 @@ for (const route of ["direct", "codemode"] as const) {
           // written as sent, so it uses the file's own line break.
           {
             tool: "insert",
-            args: { path: file, anchor: "base", before: true, text: `correct${eol}` },
+            args: { path: file, anchor: "base", before: true, newText: `correct${eol}` },
           },
         );
         expected[file] = `correct${eol}base${eol}`;

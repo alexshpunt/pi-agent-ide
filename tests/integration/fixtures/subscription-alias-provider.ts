@@ -36,7 +36,7 @@ export default function subscriptionAliasProvider(pi: ExtensionAPI): void {
               type: "toolCall",
               id: "subscription-direct-alias",
               name: "mcp__agent_ide__replace",
-              arguments: { path: "note.txt", start: "OLD", text: "DIRECT" },
+              arguments: { path: "note.txt", start: "OLD", newText: "DIRECT" },
             },
           ]
         : turn === 2

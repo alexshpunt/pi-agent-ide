@@ -26,7 +26,7 @@ test("empty optional anchors act as omitted on single, batched and Codemode call
       toolCall({
         id,
         name: "replace",
-        arguments: { path: `${file}.txt`, start: "beta", end: "", text: "BETA" },
+        arguments: { path: `${file}.txt`, start: "beta", end: "", newText: "BETA" },
       });
     const result = await new PiIntegrationTest({
       testName: "empty-optional-anchor",
