@@ -129,6 +129,6 @@ function refuseIdenticalReplacement(
     return;
   throw new TextMutationInputError(
     "REPLACEMENT_IDENTICAL",
-    "The replacement text is identical to the selected text, so nothing would change. replace writes text in place of the selection: send the changed text. Nothing was changed.",
+    "The replacement text is identical to the selected text, so nothing would change. replace writes text in place of the selection: send the changed text.",
   );
 }
