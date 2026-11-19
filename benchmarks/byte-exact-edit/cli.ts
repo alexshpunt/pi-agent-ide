@@ -126,6 +126,7 @@ async function main(): Promise<void> {
       "Paid runs need an installed Pi inside the read-only system toolchain mounts. Use --pi to select it.",
     );
 
+  const source = sourceIdentity(repository);
   const results = path.resolve(
     values.results ??
       path.join(
@@ -144,7 +145,6 @@ async function main(): Promise<void> {
   process.once("SIGTERM", stop);
   let rows: Row[] = [];
   let stoppedFor: string | undefined;
-  const source = sourceIdentity(repository);
   try {
     const manifest = {
       ...source,
