@@ -254,6 +254,11 @@ export { searchSchema } from "#src/api/search-parameters.ts";
 export { renderSearchMatches } from "./presentation.ts";
 export { containsSearchMatch, currentScope, SearchScopeChangedError } from "./search-scope.ts";
 export { splitGlobList } from "./glob-list.ts";
+export {
+  SearchCaptureGuard,
+  SearchCaptureLimitError,
+  type CapturedSearchMatch,
+} from "./search-capture.ts";
 export { markNullFields, nullFieldsMessage } from "./null-fields.ts";
 export {
   describePathArgument,

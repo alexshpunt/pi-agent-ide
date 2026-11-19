@@ -24,6 +24,7 @@ import {
   type LspGraph,
 } from "./lsp/code-views.ts";
 import { coverageNotes, mergeCoverage, type ClangCoverage } from "./lsp/clang-coverage.ts";
+import { missingSourcesNotes } from "./lsp/missing-sources.ts";
 import type { LspManager } from "./lsp/manager.ts";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
@@ -54,6 +55,8 @@ type Payload =
       readonly complete: boolean;
       /** Why C/C++ references can be missing. */
       readonly coverage?: ClangCoverage;
+      /** Files the server reported places in that no longer exist. */
+      readonly missing?: readonly string[];
       readonly references: boolean;
       readonly data: unknown;
     }
@@ -335,6 +338,7 @@ export function createLspSearchResolver(
           const conflicting = new Set<string>();
           let complete = scope?.complete ?? true;
           const coverages: (ClangCoverage | undefined)[] = [];
+          const missing = new Set<string>();
           for (const [manager, { targets, paths }] of groups) {
             const found = await backend.searchSymbols(
               query,
@@ -361,6 +365,7 @@ export function createLspSearchResolver(
             }
             complete = complete && found.complete;
             coverages.push(found.coverage);
+            for (const source of found.missing ?? []) missing.add(source);
           }
           for (const source of conflicting) contents.delete(source);
           // The search session keeps these hits and its refresh closure for as long as its anchors
@@ -372,6 +377,7 @@ export function createLspSearchResolver(
               hits: hits.slice(0, limit),
               complete: complete && hits.length <= limit,
               ...(coverage && { coverage }),
+              ...(missing.size > 0 && { missing: [...missing].sort() }),
             }),
             contents,
           };
@@ -404,6 +410,7 @@ export function createLspSearchResolver(
             hits: found.hits,
             complete: found.complete,
             ...(found.coverage && { coverage: found.coverage }),
+            ...(found.missing && { missing: found.missing }),
             references,
             data: {
               ...data,
@@ -450,6 +457,7 @@ export function createLspSearchResolver(
         [
           ...(data.references ? ["LSP reference navigation · may leave input scope"] : []),
           ...coverageNotes(data.coverage, (source) => displaySource(source, data.cwd)),
+          ...missingSourcesNotes(data.missing ?? [], (source) => displaySource(source, data.cwd)),
         ],
         data.hits.map((hit) => `${hit.role} ${hit.symbol.name}`),
       );
@@ -505,6 +513,7 @@ export function createLspSearchResolver(
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
       lines.push(...coverageNotes(result.coverage, display));
+      lines.push(...missingSourcesNotes(result.missing ?? [], display));
       return {
         content: [{ type: "text", text: [heading, ...lines].join("\n") }],
         details: { ...result, cwd: context.cwd },

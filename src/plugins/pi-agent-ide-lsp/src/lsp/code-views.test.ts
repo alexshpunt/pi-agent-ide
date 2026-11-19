@@ -250,6 +250,71 @@ test("a file graph lists every relation while another session writes the file", 
   expect(lines(places.outgoing)).toEqual([first]);
 });
 
+/**
+ * A server whose index still holds a copy of the file that another session deleted: each answer
+ * also names places in that copy.
+ */
+function withDeletedCopy(file: Awaited<ReturnType<typeof writtenFile>>) {
+  const copy = path.join(file.cwd, "copy.cpp");
+  const uri = pathToFileURL(copy).href;
+  const range = { start: { line: 2, character: 4 }, end: { line: 2, character: 10 } };
+  const item = { name: "copied", kind: 12, uri, range, selectionRange: range };
+  const answer = file.sendRequest.getMockImplementation();
+  file.sendRequest.mockImplementation(async (method, parameters, signal) => {
+    const answered: unknown = await answer?.(method, parameters, signal);
+    if (!Array.isArray(answered) || answered.length === 0) return answered;
+    const result: unknown[] = answered;
+    switch (method) {
+      case "textDocument/references": {
+        return [...result, { uri, range }];
+      }
+      case "callHierarchy/incomingCalls": {
+        return [...result, { from: item, fromRanges: [range] }];
+      }
+      case "callHierarchy/outgoingCalls": {
+        return [...result, { to: item, fromRanges: [range] }];
+      }
+      default: {
+        return result;
+      }
+    }
+  });
+  return copy;
+}
+
+test("a call graph leaves out places in a deleted file and names that file", async () => {
+  const file = await writtenFile();
+  const copy = withDeletedCopy(file);
+
+  const graph = await readLspSymbolGraph(file.manager, "a.cpp", ["handle"], file.cwd);
+
+  const [handle, helper, first, second] = await Promise.all(
+    ["handle", "helper", "first", "second"].map((name) => file.lineOf(name)),
+  );
+  const lines = (list: readonly LspGraphLocation[]) =>
+    list.map((location) => location.range.start.line + 1);
+  expect(lines(graph.references)).toEqual([handle, first, second]);
+  expect(lines(graph.incoming)).toEqual([first, second]);
+  expect(lines(graph.outgoing)).toEqual([helper]);
+  expect(graph.missing).toEqual([copy]);
+  expect([...graph.contents.keys()]).toEqual([path.join(file.cwd, "a.cpp")]);
+  expect(graph.complete).toBe(true);
+  expect(graph.text).toContain("copy.cpp");
+});
+
+test("a file graph leaves out places in a deleted file and names that file", async () => {
+  const file = await writtenFile();
+  const copy = withDeletedCopy(file);
+
+  const graph = await readLspFileGraph(file.manager, "a.cpp", file.cwd);
+
+  expect(graph.references).toHaveLength(3);
+  expect(graph.incoming).toHaveLength(2);
+  expect(graph.outgoing).toHaveLength(1);
+  expect(graph.missing).toEqual([copy]);
+  expect(graph.text).toContain("copy.cpp");
+});
+
 test("an empty reference reply for a known function is retried", async () => {
   const file = await writtenFile();
   const answer = file.sendRequest.getMockImplementation();

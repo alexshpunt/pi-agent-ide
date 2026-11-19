@@ -182,6 +182,7 @@ test("registers a call graph's references, callers and callees as selections", a
     outgoing: [{ source, range: range(6, 0, 6, 22) }],
     complete: true,
     contents: new Map([[source, content]]),
+    missing: [],
   };
   backend.readLspSymbolGraph.mockResolvedValue(graph);
   backend.readLspFileGraph.mockResolvedValue(graph);
@@ -247,6 +248,24 @@ test("registers a call graph's references, callers and callees as selections", a
     cwd,
     expect.any(AbortSignal),
   );
+});
+
+test("names the deleted files whose places a symbol search left out", async () => {
+  const copy = path.join(cwd, "src", "copy.ts");
+  backend.searchSymbols.mockResolvedValue({
+    hits: [],
+    contents: new Map(),
+    complete: true,
+    missing: [copy],
+  });
+
+  const result = await resolver.tryResolve(request({ query: "label" }), { cwd });
+
+  if (result.kind !== "resolved") throw Error("search failed");
+  expect(result.payload).toMatchObject({ complete: true, missing: [copy] });
+  const formatted = await resolver.format(result.payload, { cwd });
+  const text = formatted.content.map((block) => (block.type === "text" ? block.text : "")).join("");
+  expect(text).toContain("src/copy.ts");
 });
 
 test("follows references only when requested", async () => {

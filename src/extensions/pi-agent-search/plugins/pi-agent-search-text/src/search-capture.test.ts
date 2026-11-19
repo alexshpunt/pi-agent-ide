@@ -5,7 +5,7 @@ import { afterEach, expect, test } from "vitest";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
 import { searchText, searchTextContent } from "#src/search-backend.ts";
 
-import { SearchCaptureGuard, SearchCaptureLimitError } from "#src/search-capture.ts";
+import { SearchCaptureGuard, SearchCaptureLimitError } from "pi-agent-search/api/search";
 
 test.each(["wire", "expanded"])("enforces the inclusive %s byte boundary", (kind) => {
   const capture = new SearchCaptureGuard();

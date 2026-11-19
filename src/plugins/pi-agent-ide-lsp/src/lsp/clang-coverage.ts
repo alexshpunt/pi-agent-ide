@@ -221,8 +221,11 @@ export function coverageNotes(
   return notes;
 }
 
-/** Keep coverage notes short when a name appears in a large workspace. */
-function displayFiles(sources: readonly string[], display: (source: string) => string): string {
+/** Keep notes short when a name appears in a large workspace. */
+export function displayFiles(
+  sources: readonly string[],
+  display: (source: string) => string,
+): string {
   const limit = 8;
   const names = sources.slice(0, limit).map(display).join(", ");
   return sources.length > limit ? `${names} (and ${sources.length - limit} more)` : names;
