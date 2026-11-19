@@ -26,7 +26,7 @@ export const insertSchema = Type.Object(
     text: Type.String({
       minLength: 1,
       description:
-        "Non-empty text to insert. A selection of whole lines, including exact text of a complete line, puts the text on its own line and adds needed line breaks; a partial-line selection inserts the text exactly.",
+        "Non-empty text to insert. A line selection, such as a line anchor, SEARCH :line or a Read result, puts the text on its own line and adds needed line breaks; exact text and SEARCH :match insert it exactly at their boundary.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {

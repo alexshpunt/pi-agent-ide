@@ -91,7 +91,7 @@ for (const eol of ["\n", "\r\n"]) {
 
 for (const operation of [copyMutationTool, moveMutationTool]) {
   for (const ending of ["", "\n", "\r\n"]) {
-    test(`${operation.name} transfers the same whole-line source into an exact destination (${JSON.stringify(ending)})`, async () => {
+    test(`${operation.name} transfers only the characters of a whole-line literal (${JSON.stringify(ending)})`, async () => {
       const content = `keep\r\n段🙂${ending}`;
       const f = fixture(
         { source: content, target: "left TARGET right\n" },
@@ -109,12 +109,12 @@ for (const operation of [copyMutationTool, moveMutationTool]) {
       const target = result.edits.get("target");
       expect(target).toBeDefined();
       expect(applyTextChanges("left TARGET right\n", requiredValue(target).changes).content).toBe(
-        `left 段🙂${ending} right\n`,
+        "left 段🙂 right\n",
       );
       const deletion = result.edits.get("source");
       expect(
         deletion === undefined ? content : applyTextChanges(content, deletion.changes).content,
-      ).toBe(operation.name === "copy" ? content : "keep\r\n");
+      ).toBe(operation.name === "copy" ? content : `keep\r\n${ending}`);
     });
   }
 }
@@ -137,7 +137,7 @@ for (const operation of [copyMutationTool, moveMutationTool]) {
     expect(
       applyTextChanges("before\nTARGET\nafter\n", requiredValue(result.edits.get("target")).changes)
         .content,
-    ).toBe("before\nTAILafter\n");
+    ).toBe("before\nTAIL\nafter\n");
   });
 }
 for (const before of [false, true]) {

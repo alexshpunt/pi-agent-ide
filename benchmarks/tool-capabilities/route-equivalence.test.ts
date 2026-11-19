@@ -1073,7 +1073,7 @@ void test("Codemode skips every discovery step without changing later reuse indi
 });
 
 for (const mode of ["direct", "codemode"]) {
-  void test(`whole-line edit arguments share effect-based terminal-newline matching in ${mode}`, () => {
+  void test(`literal edit selectors and text match exactly, even on whole lines, in ${mode}`, () => {
     const files = { "task.txt": "first\nmiddle\nlast\n" };
     function edit(
       tool: string,
@@ -1090,40 +1090,27 @@ for (const mode of ["direct", "codemode"]) {
         mode,
       ).passed;
     }
+    // A literal selects only its characters, so a terminal newline changes the edit's effect.
     for (const tool of ["insert", "delete", "replace", "copy", "move"]) {
       const selector = tool === "insert" ? "anchor" : "start";
       const extra = tool === "insert" || tool === "replace" ? { text: "NEW\n" } : {};
       const required = { [selector]: /^middle$/u, ...extra };
-      assert.ok(edit(tool, required, { [selector]: "middle\n", ...extra }), tool);
-      assert.ok(!edit(tool, required, { [selector]: "middle\n\n", ...extra }), tool);
-      assert.ok(!edit(tool, required, { [selector]: "other\n", ...extra }), tool);
+      assert.ok(edit(tool, required, { [selector]: "middle", ...extra }), tool);
+      assert.ok(!edit(tool, required, { [selector]: "middle\n", ...extra }), tool);
+      assert.ok(!edit(tool, required, { [selector]: "other", ...extra }), tool);
     }
     assert.ok(
-      edit("insert", { anchor: "middle", text: "NEW" }, { anchor: "middle", text: "NEW\n" }),
+      !edit("insert", { anchor: "middle", text: "NEW" }, { anchor: "middle", text: "NEW\n" }),
     );
     assert.ok(
-      edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text: "NEW\n" }),
+      !edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text: "NEW\n" }),
     );
     assert.ok(
-      edit("replace", { start: "middle\n", text: "NEW\n" }, { start: "middle", text: "NEW" }),
+      !edit("replace", { start: "middle\n", text: "NEW\n" }, { start: "middle", text: "NEW" }),
     );
-    for (const text of ["NEW\n\n", "NEW ", "OTHER\n"]) {
-      assert.ok(!edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text }));
-    }
     assert.ok(!edit("delete", { start: "fir", end: "middle" }, { start: "fir", end: "middle\n" }));
-    // Match/partial spans and EOF cannot silently acquire a line break.
-    assert.ok(!edit("replace", { start: "midd", text: "NEW" }, { start: "midd", text: "NEW\n" }));
     assert.ok(
       !edit(
-        "replace",
-        { start: "last", text: "NEW" },
-        { start: "last", text: "NEW\n" },
-        "first\nlast",
-      ),
-    );
-    assert.ok(!edit("insert", { anchor: "last", text: "NEW\n" }, { anchor: "last", text: "NEW" }));
-    assert.ok(
-      edit(
         "insert",
         { anchor: "last", before: true, text: "NEW" },
         { anchor: "last", before: true, text: "NEW\n" },

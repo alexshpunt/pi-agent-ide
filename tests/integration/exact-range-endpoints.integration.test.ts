@@ -174,15 +174,15 @@ test("typed source merging pairs a whole-line start with an EOF line endpoint", 
         call("end", "search", { path: "fixture.txt", query: "END" }),
         call("delete", "delete", {
           path: "SEARCH#RUNTIME:1:1:line",
-          start: "START",
+          start: "START\n",
           end: "SEARCH#RUNTIME:2:1:line",
         }),
         assistantMessage([text("Done")]),
       ],
     }).run("Delete the START line through the END line at the end of the file.");
     expect(getToolExecution(result, "delete").isError).toBe(false);
-    // START matches its whole line and END is a line reference, so the pair deletes both lines.
-    // The separator before START belongs to KEEP and stays outside the deleted range.
+    // The literal START line with its break equals the typed source's line selection, and END is a
+    // line reference, so the pair deletes both lines. The separator before START belongs to KEEP.
     expect(await readFile(path.join(cwd, "fixture.txt"), "utf8")).toBe("KEEP\n");
   } finally {
     await rm(cwd, { recursive: true, force: true });

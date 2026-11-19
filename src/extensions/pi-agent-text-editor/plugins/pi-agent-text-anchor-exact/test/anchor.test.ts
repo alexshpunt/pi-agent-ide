@@ -24,18 +24,15 @@ test("selects one partial-line exact match", () => {
   ]);
 });
 
-test("marks a complete line as linewise", () => {
+test("selects exactly a literal that covers a complete line", () => {
   const result = resolve("bravo", "alpha\nbravo\ncharlie");
   if (result.kind !== "resolved" || !TextSelectionAnchor.is(result.anchor)) {
     throw new Error("Expected a text selection anchor");
   }
   expect(result.anchor.ranges).toEqual([
-    {
-      start: { lineNumber: 2, column: 0 },
-      end: { lineNumber: 3, column: 0 },
-      linewise: true,
-    },
+    { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
   ]);
+  expect(result.anchor.endpointRanges).toBeUndefined();
 });
 
 test.each(["\n", "\r\n", "\r"])(
@@ -46,11 +43,7 @@ test.each(["\n", "\r\n", "\r"])(
       throw new Error("Expected a text selection anchor");
     }
     expect(result.anchor.ranges).toEqual([
-      {
-        start: { lineNumber: 1, column: 0 },
-        end: { lineNumber: 3, column: 0 },
-        linewise: true,
-      },
+      { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 3, column: 0 } },
     ]);
   },
 );
@@ -63,11 +56,7 @@ test.each(["\n", "\r\n", "\r"])(
       throw new Error("Expected a text selection anchor");
     }
     expect(result.anchor.ranges).toEqual([
-      {
-        start: { lineNumber: 1, column: 0 },
-        end: { lineNumber: 2, column: 0 },
-        linewise: true,
-      },
+      { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 2, column: 0 } },
     ]);
   },
 );
@@ -78,11 +67,7 @@ test("maps LF query boundaries back to CRLF source positions", () => {
     throw new Error("Expected a text selection anchor");
   }
   expect(result.anchor.ranges).toEqual([
-    {
-      start: { lineNumber: 2, column: 0 },
-      end: { lineNumber: 4, column: 0 },
-      linewise: true,
-    },
+    { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 3, column: 7 } },
   ]);
 });
 

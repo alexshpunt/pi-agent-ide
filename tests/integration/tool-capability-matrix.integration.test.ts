@@ -15,7 +15,7 @@ import { parseEvents, validateRoute, type RunEvent } from "#capabilities/validat
 import { capabilityCases } from "#capabilities/cases.ts";
 
 test.each(["direct", "codemode"] as const)(
-  "whole-line route equivalence agrees with real edit bytes (%s)",
+  "literal whole-line routes match exact selectors and real edit bytes (%s)",
   async (mode) => {
     await withTempWorkspace(async (cwd) => {
       const files = {
@@ -25,23 +25,15 @@ test.each(["direct", "codemode"] as const)(
       };
       for (const [file, content] of Object.entries(files))
         await writeFile(path.join(cwd, file), content);
+      // A literal selects only its characters, so a whole line includes its line break.
       const steps = [
-        { tool: "insert", args: { path: "insert.txt", anchor: "middle", text: "NEW" } },
-        { tool: "replace", args: { path: "replace.txt", start: "middle", text: "NEW" } },
-        { tool: "delete", args: { path: "delete.txt", start: "middle" } },
+        { tool: "insert", args: { path: "insert.txt", anchor: "middle\n", text: "NEW\n" } },
+        { tool: "replace", args: { path: "replace.txt", start: "middle\n", text: "NEW\n" } },
+        { tool: "delete", args: { path: "delete.txt", start: "middle\n" } },
       ];
-      const actual = steps.map((step) => ({
-        ...step,
-        args: Object.fromEntries(
-          Object.entries(step.args).map(([key, value]) => [
-            key,
-            ["anchor", "start", "text"].includes(key) ? value + "\n" : value,
-          ]),
-        ),
-      }));
       const requests =
         mode === "direct"
-          ? actual.map((step, index) =>
+          ? steps.map((step, index) =>
               assistantMessage(
                 [toolCall({ id: `edit-${index}`, name: step.tool, arguments: step.args })],
                 { stopReason: "toolUse" },
@@ -54,7 +46,7 @@ test.each(["direct", "codemode"] as const)(
                     id: "edits",
                     name: "codemode",
                     arguments: {
-                      code: `await Promise.all(${JSON.stringify(actual)}.map(step => tools[step.tool](step.args)));`,
+                      code: `await Promise.all(${JSON.stringify(steps)}.map(step => tools[step.tool](step.args)));`,
                     },
                   }),
                 ],
@@ -62,7 +54,7 @@ test.each(["direct", "codemode"] as const)(
               ),
             ];
       const run = await new PiIntegrationTest({
-        testName: `capability-linewise-equivalence-${mode}`,
+        testName: `capability-literal-line-equivalence-${mode}`,
         transport: "rpc",
         artifactsDir: testArtifactsDir(import.meta.filename),
         rawMode: false,
@@ -83,6 +75,11 @@ test.each(["direct", "codemode"] as const)(
           : [],
       );
       expect(validateRoute({ files, steps }, events, mode)).toEqual({ passed: true, reasons: [] });
+      // The same calls without the line break would select only "middle", a different edit.
+      const stripped = JSON.parse(
+        JSON.stringify(events).replaceAll("middle\\n", "middle"),
+      ) as RunEvent[];
+      expect(validateRoute({ files, steps }, stripped, mode).passed).toBe(false);
     });
   },
 );

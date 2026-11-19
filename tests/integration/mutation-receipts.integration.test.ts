@@ -40,7 +40,7 @@ test("batched receipts describe successful operations without counting rejected 
             toolCall({
               id: "insert",
               name: "insert",
-              arguments: { path: "example.txt", anchor: "third", text: "fourth" },
+              arguments: { path: "example.txt", anchor: "third", text: "\nfourth" },
             }),
             toolCall({
               id: "rejected",
@@ -54,7 +54,7 @@ test("batched receipts describe successful operations without counting rejected 
       ],
     }).run("Apply the supplied independent edits.");
     expect(await readFile(path.join(cwd, "example.txt"), "utf8")).toBe(
-      "updated\nsecond\nthird\nfourth",
+      "updated\nsecond\nthird\nfourth\n",
     );
     expect(getToolExecution(result, "rejected").isError).toBe(true);
     for (const operation of ["replace", "insert"]) {

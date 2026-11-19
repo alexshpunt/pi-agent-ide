@@ -183,7 +183,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-insert",
       "insert",
       { anchor: "bravo", text: "!" },
-      ["alpha", "bravo", "!", "charlie", "delta", "echo"].join("\n"),
+      content.replace("bravo", "bravo!"),
     );
   });
 
@@ -195,7 +195,8 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-delete-lines",
       "delete",
-      { start: "bravo\ncharlie" },
+      // Literal text selects only its characters, so the selection includes the last line break.
+      { start: "bravo\ncharlie\n" },
       ["alpha", "delta", "echo"].join("\n"),
     );
   });
@@ -205,7 +206,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-copy",
       "copy",
       { start: "bravo", targetStart: "delta" },
-      ["alpha", "bravo", "charlie", "delta", "bravo", "echo"].join("\n"),
+      content.replace("delta", "deltabravo"),
     );
   });
 
@@ -214,7 +215,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-move",
       "move",
       { start: "bravo", targetStart: "delta" },
-      ["alpha", "charlie", "delta", "bravo", "echo"].join("\n"),
+      content.replace("bravo", "").replace("delta", "deltabravo"),
     );
   });
 
@@ -244,23 +245,24 @@ describe("exact text anchors through real text editor tools", () => {
 
   test("preserves source line endings when copying into another file", async () => {
     await withTempWorkspace(async (directory) => {
-      const source = await createFixture(directory, "source.txt", "alpha\nbravo");
+      const source = await createFixture(directory, "source.txt", "alpha\nbravo\n");
       const target = await createFixture(directory, "target.txt", "one\r\ntwo");
       const scenario = await runTextToolScenario({
         extensions: extensions.paths,
         cwd: directory,
         testName: "exact-copy-crlf",
         tool: "copy",
+        // Literals select only their characters, so both include the line break of their line.
         arguments: {
           path: "source.txt",
-          start: "alpha\nbravo",
+          start: "alpha\nbravo\n",
           target: "target.txt",
-          targetStart: "one",
+          targetStart: "one\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
-      await expect(readFile(target, "utf8")).resolves.toBe("one\r\nalpha\nbravo\r\ntwo");
-      await expect(readFile(source, "utf8")).resolves.toBe("alpha\nbravo");
+      await expect(readFile(target, "utf8")).resolves.toBe("one\r\nalpha\nbravo\ntwo");
+      await expect(readFile(source, "utf8")).resolves.toBe("alpha\nbravo\n");
     });
   });
 });

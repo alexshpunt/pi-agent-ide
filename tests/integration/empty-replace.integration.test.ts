@@ -15,11 +15,12 @@ test("empty replacements remove lines and keep unselected separators in real Pi"
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "case-"));
   const cases = [
-    { content: "A\nSTART\nmiddle\nEND\n\nB\n", start: "START", end: "END", expected: "A\n\nB\n" },
+    // Literal endpoints select only their characters; the end includes the line break to remove.
+    { content: "A\nSTART\nmiddle\nEND\n\nB\n", start: "START", end: "END\n", expected: "A\n\nB\n" },
     {
       content: "A\r\nSTART\r\nmiddle\r\nEND\r\n\r\nB\r\n",
       start: "START",
-      end: "END",
+      end: "END\n",
       expected: "A\r\n\r\nB\r\n",
     },
     { content: "A\nBLOCK", start: "end", expected: "A\n" },

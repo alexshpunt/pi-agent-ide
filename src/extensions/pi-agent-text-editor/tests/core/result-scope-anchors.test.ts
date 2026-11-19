@@ -466,7 +466,7 @@ test("insert places text at an anchor inside the result", async () => {
   const content = "one\ntwo\nthree\n";
   const f = await fixture({ "task.txt": content });
   const read = await f.lines("task.txt", 1, 3);
-  await f.run(insertMutationTool, { path: read, anchor: "two", text: "ADDED\n" });
+  await f.run(insertMutationTool, { path: read, anchor: "two", text: "\nADDED" });
   expect(await f.content("task.txt")).toBe("one\ntwo\nADDED\nthree\n");
 });
 

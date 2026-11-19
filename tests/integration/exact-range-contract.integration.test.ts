@@ -33,7 +33,8 @@ for (const route of ["direct", "codemode"] as const) {
         edits.push(
           { tool: "insert", args: { path: file, anchor: "base", text: "added" } },
           { tool: "delete", args: { path: file, start: "added" } },
-          { tool: "insert", args: { path: file, anchor: "base", before: true, text: "correct" } },
+          // A literal selects only its characters; the line break comes from the inserted text.
+          { tool: "insert", args: { path: file, anchor: "base", before: true, text: "correct\n" } },
         );
         expected[file] = `correct${eol}base${eol}`;
         for (const tool of ["delete", "replace"]) {
@@ -58,7 +59,8 @@ for (const route of ["direct", "codemode"] as const) {
             tool,
             args: {
               path: source,
-              start: "段🙂",
+              // Include the line break in the literal to transfer the whole line.
+              start: ending === "" ? "段🙂" : "段🙂\n",
               target,
               targetStart: "TARGET",
               targetEnd: "TARGET",

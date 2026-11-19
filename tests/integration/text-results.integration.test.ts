@@ -409,7 +409,7 @@ test.each(["missing", "ambiguous"] as const)(
       await writeFile(path.join(cwd, "note.txt"), initial);
       const destination = state === "missing" ? "second makrer" : "marker";
       const run = await runText(cwd, `move-retry-${state}`, [
-        `const failed = await tools.move({path:"note.txt",start:"move this",targetStart:${JSON.stringify(destination)}});
+        `const failed = await tools.move({path:"note.txt",start:"move this\\n",targetStart:${JSON.stringify(destination)}});
 if (failed !== null) throw Error("The invalid destination was accepted");
 const current = await tools.read({path:"note.txt"});
 if (current.text !== ${JSON.stringify(initial)}) throw Error("Failed Move changed the file");`,
@@ -417,8 +417,8 @@ if (current.text !== ${JSON.stringify(initial)}) throw Error("Failed Move change
           ? String.raw`const current = await tools.read({path:"note.txt",views:["anchors"]});
 const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|second marker/m.exec(current.text)?.[1];
 if (!anchor) throw Error("Read did not issue an anchor for the intended destination");
-await tools.move({path:"note.txt",start:"move this",targetStart:anchor});`
-          : `await tools.move({path:"note.txt",start:"move this",targetStart:"second marker"});`,
+await tools.move({path:"note.txt",start:"move this\n",targetStart:anchor});`
+          : `await tools.move({path:"note.txt",start:"move this\\n",targetStart:"second marker\\n"});`,
         `await tools.replace({path:"note.txt",start:"keep this",text:"kept"});`,
       ]);
       for (const id of ["script-0", "script-1", "script-2"]) {

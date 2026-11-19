@@ -55,5 +55,4 @@ describe("pi-agent-text-editor stale anchor", () => {
       await expect(readFile(file, "utf8")).resolves.toBe("alpha\ninserted\nbeta");
     });
   });
-
 });

@@ -11,6 +11,7 @@ import {
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const extension = path.resolve("src/pi-agent-ide.ts");
 
@@ -38,7 +39,8 @@ for (const [name, original, payload, mode, expected] of [
                 name: "insert",
                 arguments: {
                   path: "standalone.txt",
-                  anchor: original.startsWith("anchor") ? "anchor" : "A",
+                  // A line anchor selects the whole first line; a literal would select only its text.
+                  anchor: formatLineHashAnchor(original, 1),
                   text: payload,
                   separation: mode,
                 },

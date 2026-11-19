@@ -92,7 +92,7 @@ test.each(["direct", "codemode"] as const)(
             return {
               file: `delete-${index}.txt`,
               before: `First${eol}Last${eol}Block${ending}`,
-              start: "Last\nBlock",
+              start: `Last\nBlock${ending === "" ? "" : "\n"}`,
               after: `First${eol}`,
             };
           }),
@@ -138,12 +138,12 @@ test.each(["all", "allSettled"] as const)(
           ? 'for (const result of results) { if (result.status !== "fulfilled") throw result.reason; text(result.value); }'
           : "for (const result of results) text(result);";
       const code = `const results = await Promise.${method}([
-        tools.insert({path:"insert.txt",anchor:"first",text:"FIRST\\n"}),
-        tools.insert({path:"./insert.txt",anchor:"middle",text:"MIDDLE\\n"}),
-        tools.insert({path:"insert.txt",anchor:"last",text:"LAST\\n"}),
-        tools.delete({path:"delete.txt",start:"first"}),
-        tools.delete({path:"./delete.txt",start:"middle"}),
-        tools.delete({path:"delete.txt",start:"last"})
+        tools.insert({path:"insert.txt",anchor:"first\\n",text:"FIRST\\n"}),
+        tools.insert({path:"./insert.txt",anchor:"middle\\n",text:"MIDDLE\\n"}),
+        tools.insert({path:"insert.txt",anchor:"last\\n",text:"LAST\\n"}),
+        tools.delete({path:"delete.txt",start:"first\\n"}),
+        tools.delete({path:"./delete.txt",start:"middle\\n"}),
+        tools.delete({path:"delete.txt",start:"last\\n"})
       ]); ${collect}`;
       const result = await run(cwd, `parallel-byte-effects-${method}`, [
         message("script", "codemode", { code }),

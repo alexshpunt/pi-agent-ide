@@ -8,7 +8,10 @@ export interface LineSelection {
 const ending = /(?:\r\n|\n)$/u;
 const withoutEnding = (text: string) => text.replace(ending, "");
 
-/** Resolve unique exact text only when both boundaries select complete lines. */
+/**
+ * The whole-line extent of a unique line text, such as the line a Read anchor shows. Literal
+ * edit selectors never use it: they select only their own characters.
+ */
 export function wholeLineSelection(content: string, selector: unknown): LineSelection | undefined {
   if (typeof selector !== "string" || selector.length === 0) return undefined;
   const eol = content.includes("\r\n") ? "\r\n" : "\n";
@@ -25,37 +28,18 @@ export function wholeLineSelection(content: string, selector: unknown): LineSele
 }
 
 /**
- * Normalize only terminal separators whose omission has the same whole-line edit effect.
- * Missing fixture/selection evidence stays strict; final file bytes are checked separately.
+ * Normalize only a terminal separator of new text whose omission has the same effect on a line
+ * selection, such as a line anchor. Selectors stay strict: a literal selects only its
+ * characters, so a terminal newline in it changes the edit. Final file bytes are checked
+ * separately.
  */
 export function equivalentLineArguments(
   tool: string,
   expected: Record<string, unknown>,
   actual: Record<string, unknown>,
-  content: string | undefined,
   selected: LineSelection | undefined,
-  matches: (expected: unknown, actual: unknown) => boolean,
 ): Record<string, unknown> {
   const normalized = { ...actual };
-  if (
-    content !== undefined &&
-    (actual.end === undefined ||
-      (wholeLineSelection(content, actual.start) && wholeLineSelection(content, actual.end)))
-  ) {
-    for (const field of ["anchor", "start", "end"]) {
-      const selector = actual[field];
-      const required = expected[field];
-      if (typeof selector !== "string" || required === undefined) continue;
-      const span = wholeLineSelection(content, selector);
-      if (!span) continue;
-      if (typeof required === "string") {
-        const other = wholeLineSelection(content, required);
-        if (other?.from === span.from && other.to === span.to) normalized[field] = required;
-      } else if (ending.test(selector) && matches(required, withoutEnding(selector))) {
-        normalized[field] = withoutEnding(selector);
-      }
-    }
-  }
   const required = expected.text;
   const text = actual.text;
   if (

@@ -51,9 +51,10 @@ for (const operation of ["copy", "move"] as const) {
           name: "copy",
           arguments: {
             path: "peer-source.txt",
-            start: "peer",
+            // Literals select only their characters; include line breaks to copy a whole line.
+            start: "peer\n",
             target: "peer.txt",
-            targetStart: "ANCHOR",
+            targetStart: "ANCHOR\n",
           },
           delayMs: 0,
         });

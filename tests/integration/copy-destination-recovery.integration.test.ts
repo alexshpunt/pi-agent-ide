@@ -18,7 +18,8 @@ const initial = "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n";
 const copy = {
   path: "same.txt",
   start: "alpha",
-  end: "beta",
+  // Literals select only their characters; the end includes its line break to copy whole lines.
+  end: "beta\n",
   targetStart: "});",
 };
 
@@ -47,8 +48,8 @@ test.each([
       const rejectCopy = `await rejects(()=>tools.copy(${JSON.stringify(request)}));`;
       const corrected =
         field === "targetStart"
-          ? '{path:"same.txt",start:"alpha",end:"beta",targetStart:destination}'
-          : '{path:"same.txt",start:"alpha",end:"beta",targetStart:"gap",targetEnd:destination}';
+          ? '{path:"same.txt",start:"alpha",end:"beta\\n",targetStart:destination}'
+          : '{path:"same.txt",start:"alpha",end:"beta\\n",targetStart:"gap",targetEnd:destination}';
       const run = await new PiIntegrationTest({
         testName: `copy-destination-recovery-${surface}-${field}`,
         artifactsDir: testArtifactsDir(import.meta.filename),

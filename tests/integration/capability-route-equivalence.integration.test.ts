@@ -31,9 +31,10 @@ test.each(["direct", "codemode"])(
       const argumentsList = [
         { path: "valid.txt", start: "\nLast\nBlock" },
         { path: "invalid.txt", start: "First\nLast\nBlock" },
-        { path: "lowercase.txt", start: "abcdefg" },
-        { path: "collision.txt", start: "PACKAGE" },
-        { path: "constant-like.txt", start: "END" },
+        // A literal selects only its characters; whole-line deletions include the line break.
+        { path: "lowercase.txt", start: "abcdefg\n" },
+        { path: "collision.txt", start: "PACKAGE\n" },
+        { path: "constant-like.txt", start: "END\n" },
       ];
       const calls =
         mode === "direct"
@@ -73,7 +74,7 @@ test.each(["direct", "codemode"])(
         ],
       }).run("Perform the supplied exact-text deletions");
       expect(await readFile(path.join(cwd, "valid.txt"), "utf8")).toBe("First\n");
-      expect(await readFile(path.join(cwd, "invalid.txt"), "utf8")).toBe("");
+      expect(await readFile(path.join(cwd, "invalid.txt"), "utf8")).toBe("\n");
       const step = capabilityCases.find((task) => task.id === "exact-eof-lf")?.steps[1];
       if (!step) throw new Error("Missing exact EOF capability");
       const events = run.traceEvents.flatMap((entry) =>
@@ -244,9 +245,9 @@ text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),text:"Fin
               tool: "move",
               args: {
                 path: "source.txt",
-                start: "move-me",
+                start: "move-me\n",
                 target: "target.txt",
-                targetStart: "top",
+                targetStart: "top\n",
               },
               reuse: { from: 0, field: "path" },
             },
@@ -285,7 +286,7 @@ test("a native Search result supplies Move's implicit source selector", async ()
               chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
               arguments: {
                 code: `const source = await tools.search({path:"source.txt",query:"regex:move-me\\\\n",multiline:true});
-text(await tools.move({path:source,target:"target.txt",targetStart:"top"}));`,
+text(await tools.move({path:source,target:"target.txt",targetStart:"top\\n"}));`,
               },
             }),
           ],
@@ -315,7 +316,7 @@ text(await tools.move({path:source,target:"target.txt",targetStart:"top"}));`,
                 path: "source.txt",
                 start: /move-me|[A-Z]+#/u,
                 target: "target.txt",
-                targetStart: "top",
+                targetStart: "top\n",
               },
               reuse: { from: 0, field: ["path", "start"] },
             },

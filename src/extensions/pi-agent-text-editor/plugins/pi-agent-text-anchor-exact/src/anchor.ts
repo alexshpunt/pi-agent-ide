@@ -113,26 +113,13 @@ export function resolveExactTextAnchor(
     return { kind: "failed", error: new Error("Exact match index is missing") };
   }
 
-  const { start: startOffset, end: endOffset } = span(normalizedStart);
-
-  const linewise = isWholeLineMatch(context.content, startOffset, endOffset);
-  const selectionEndOffset =
-    linewise && !query.endsWith("\n")
-      ? includeTrailingLineBreak(context.content, endOffset)
-      : endOffset;
-  const range = {
-    start: positionAt(context.content, startOffset),
-    end: positionAt(context.content, selectionEndOffset),
-    ...(linewise && { linewise: true }),
-  };
+  // Literal text selects exactly its characters, even when they form complete lines.
+  const { start, end } = span(normalizedStart);
   return {
     kind: "resolved",
-    anchor: new TextSelectionAnchor(
-      value,
-      context.source,
-      [range],
-      [{ start: range.start, end: positionAt(context.content, endOffset) }],
-    ),
+    anchor: new TextSelectionAnchor(value, context.source, [
+      { start: positionAt(context.content, start), end: positionAt(context.content, end) },
+    ]),
   };
 }
 
@@ -158,24 +145,6 @@ export function findExactTextMatches(
   };
 }
 
-function isWholeLineMatch(content: string, start: number, end: number): boolean {
-  const startsAtLineBoundary =
-    start === 0 || content[start - 1] === "\n" || content[start - 1] === "\r";
-  const endsAtLineBoundary =
-    end === content.length ||
-    content[end] === "\n" ||
-    content[end] === "\r" ||
-    content[end - 1] === "\n" ||
-    content[end - 1] === "\r";
-  return startsAtLineBoundary && endsAtLineBoundary;
-}
-
-function includeTrailingLineBreak(content: string, end: number): number {
-  if (content[end] === "\r" && content[end + 1] === "\n") {
-    return end + 2;
-  }
-  return content[end] === "\r" || content[end] === "\n" ? end + 1 : end;
-}
 function rejected(
   code: "invalid" | "missing" | "ambiguous" | "outside-scope",
   reason: string,

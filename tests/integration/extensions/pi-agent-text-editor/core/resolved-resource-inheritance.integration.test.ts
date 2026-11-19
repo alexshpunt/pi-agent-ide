@@ -35,20 +35,21 @@ test.each([
     arguments: { start: "HEADER", text: "CHANGED" },
     expected: "CHANGED\nBODY\nTAIL\n",
   },
+  // Literal selectors select only their characters, so whole-line edits include the line break.
   {
     name: "insert",
-    arguments: { anchor: "HEADER", text: "ADDED" },
+    arguments: { anchor: "HEADER\n", text: "ADDED\n" },
     expected: "HEADER\nADDED\nBODY\nTAIL\n",
   },
-  { name: "delete", arguments: { start: "HEADER" }, expected: "BODY\nTAIL\n" },
+  { name: "delete", arguments: { start: "HEADER\n" }, expected: "BODY\nTAIL\n" },
   {
     name: "copy",
-    arguments: { start: "HEADER", targetStart: "TAIL" },
+    arguments: { start: "HEADER\n", targetStart: "TAIL\n" },
     expected: "HEADER\nBODY\nTAIL\nHEADER\n",
   },
   {
     name: "move",
-    arguments: { start: "HEADER", targetStart: "TAIL" },
+    arguments: { start: "HEADER\n", targetStart: "TAIL\n" },
     expected: "BODY\nTAIL\nHEADER\n",
   },
   {
@@ -65,7 +66,7 @@ test.each([
     try {
       await writeFile(file, "HEADER\nBODY\nTAIL\n");
       const result = await new PiIntegrationTest({
-        testName: `read-inheritance-${name}-${args.start ?? "insert"}-${args.end ?? "single"}`,
+        testName: `read-inheritance-${name}-${(args.start ?? "insert").trim()}-${args.end ?? "single"}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
         isolateUserResources: true,
         cwd,
@@ -179,7 +180,7 @@ test("keeps typed source and destination ownership separate from the last read",
       {
         id: "typed-target",
         name: "copy",
-        arguments: { start: "HEADER", targetStart: "SEARCH#RUNTIME:2:1:line" },
+        arguments: { start: "HEADER\n", targetStart: "SEARCH#RUNTIME:2:1:line" },
       },
     ];
     await new PiIntegrationTest({

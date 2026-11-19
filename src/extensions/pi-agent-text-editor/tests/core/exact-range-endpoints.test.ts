@@ -68,18 +68,18 @@ test.each(["\n", "\r\n"])(
 );
 
 test.each(["\n", "\r\n"])(
-  "paired whole-line markers select their complete lines (%j)",
+  "paired whole-line literals select only their characters (%j)",
   async (eol) => {
     const { replace } = fixture(`before${eol}START${eol}body${eol}END${eol}after${eol}`);
     expect(await replace("START", "END", "NEW")).toBe(`before${eol}NEW${eol}after${eol}`);
-    expect(await replace("START", "END", "")).toBe(`before${eol}after${eol}`);
+    expect(await replace("START", "END", "")).toBe(`before${eol}${eol}after${eol}`);
     expect(await replace("START", undefined, "NEW")).toBe(
       `before${eol}NEW${eol}body${eol}END${eol}after${eol}`,
     );
   },
 );
 
-test("a whole-line marker paired with a partial endpoint keeps exact characters", async () => {
+test("a whole-line literal paired with a partial endpoint keeps exact characters", async () => {
   const { replace } = fixture("before\nSTART\nkeep the END here\n");
   expect(await replace("START", "END", "")).toBe("before\n here\n");
 });

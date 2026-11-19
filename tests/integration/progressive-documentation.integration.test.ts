@@ -221,7 +221,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-first",
             name: "codemode",
             arguments: {
-              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || JSON.stringify(found).includes("# Guide:")) throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
+              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || JSON.stringify(found).includes("# Guide:")) throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"\\n// changed"}));',
             },
           }),
         ],
@@ -253,7 +253,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
   expect(output("nested-again")).not.toContain("# Guide:");
   expect(output("nested-again")).toContain("changed");
   expect(await readFile(path.join(workspace, "example.ts"), "utf8")).toBe(
-    "export const marker = 1;\n// changed",
+    "export const marker = 1;\n// changed\n",
   );
 });
 function expectGuideAttachment(result: Awaited<ReturnType<typeof run>>, id: string): void {

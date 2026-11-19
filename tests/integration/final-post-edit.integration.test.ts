@@ -134,8 +134,8 @@ test.each(["path", "result"] as const)(
                   code: `
 ${input === "result" ? 'const selected = await tools.read({path:"a.note",offset:1,limit:1});' : ""}
 await Promise.all([
-  ${input === "result" ? 'tools.insert({path:selected,text:"A"})' : 'tools.insert({path:"a.note",anchor:"anchor",text:"A"})'},
-  tools.insert({path:"b.note",anchor:"anchor",text:"B"})
+  ${input === "result" ? 'tools.insert({path:selected,text:"A"})' : 'tools.insert({path:"a.note",anchor:"anchor",text:"\\nA"})'},
+  tools.insert({path:"b.note",anchor:"anchor",text:"\\nB"})
 ]);
 await tools.read({path:"a.note"});
 await tools.post_edit_external_change({path:"a.note",content:"EXTERNAL\\n"});

@@ -169,7 +169,13 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read" },
       {
         tool: "move",
-        args: { path: "source.txt", start: "Last", target: "target.txt", targetStart: "Top" },
+        // A literal Top would select only its characters, not the line the anchor selects.
+        args: {
+          path: "source.txt",
+          start: "Last",
+          target: "target.txt",
+          targetStart: /^765ABCD$/u,
+        },
       },
     ];
     const move: Call = {
@@ -437,11 +443,12 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read" },
       {
         tool: "copy",
+        // Literals equal to issued line selections include the line breaks those select.
         args: {
           path: "whole.txt",
-          start: "段🙂",
+          start: "段🙂\r\n",
           target: "target.txt",
-          targetStart: "ANCHOR",
+          targetStart: "ANCHOR\n",
           targetEnd: undefined,
         },
       },
@@ -476,7 +483,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
         tool: "delete",
-        args: { path: "line.txt", start: "Last" },
+        args: { path: "line.txt", start: "Last\r\n" },
         reuse: { from: 0, field: ["path", "start"], kind: "anchor" },
       },
     ];
@@ -558,7 +565,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read" },
       {
         tool: "copy",
-        args: { path: "task.txt", start: "Last", target: "target.txt" },
+        args: { path: "task.txt", start: "Last\n", target: "target.txt" },
         reuse: { from: 0, field: "start", kind: "anchor" },
       },
     ];

@@ -42,16 +42,17 @@ test("empty optional anchors act as omitted on single, batched and Codemode call
             toolCall({
               id: "delete",
               name: "delete",
-              arguments: { path: "delete.txt", start: "beta", end: "" },
+              // A literal selects only its characters; include the break to delete the line.
+              arguments: { path: "delete.txt", start: "beta\n", end: "" },
             }),
             toolCall({
               id: "copy",
               name: "copy",
               arguments: {
                 path: "copy.txt",
-                start: "alpha",
+                start: "alpha\n",
                 target: "copy.txt",
-                targetStart: "gamma",
+                targetStart: "gamma\n",
                 targetEnd: "",
               },
             }),

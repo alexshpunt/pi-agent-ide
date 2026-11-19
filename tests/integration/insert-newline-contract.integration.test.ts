@@ -47,14 +47,19 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
           conversation.push(
             call(`insert-${index}`, "insert", { path: file, anchor, before, text: payload }),
           );
-          if (kind === "exact" || kind === "search-match") {
+          // Literal text and :match select only their characters, even complete lines.
+          if (kind === "exact" || kind === "multiline" || kind === "search-match") {
             const normalized = payload.replace(/\n/gu, separator);
+            const selected = kind === "multiline" ? anchor : "ANCHOR";
             expected.push(
-              original.replace("ANCHOR", before ? `${normalized}ANCHOR` : `ANCHOR${normalized}`),
+              original.replace(
+                selected,
+                before ? `${normalized}${selected}` : `${selected}${normalized}`,
+              ),
             );
           } else {
             const lines = original.split(separator);
-            const at = before ? 1 : kind === "multiline" ? 3 : 2;
+            const at = before ? 1 : 2;
             const inserted = payload.split("\n");
             if (inserted.at(-1) === "") inserted.pop();
             lines.splice(at, 0, ...inserted);
