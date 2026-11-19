@@ -8,6 +8,7 @@ import {
   renderActiveTerminal,
   renderRunResult,
   renderTerminalActionResult,
+  renderTerminalResult,
   terminalCardLines,
 } from "#src/plugins/pi-agent-ide-terminal/src/renderer.ts";
 import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
@@ -52,6 +53,23 @@ describe("terminal renderer", () => {
 
     expect(lines.slice(0, 2)).toEqual(["bash · /workspace/project · background", "$ pnpm dev"]);
     expect(lines.slice(2)).toEqual(["  ready", "  latest", "● running · 12s"]);
+  });
+
+  test("a stored notice card marks omitted output and links the full log only when expanded", () => {
+    const stored = snapshot({ status: "completed", output: "tail\n", truncated: true });
+    const collapsed = renderTerminalResult(stored, false, theme).render(100);
+    const expanded = renderTerminalResult(stored, true, theme).render(100);
+
+    // Identity, prompt, omission marker, the excerpt, status.
+    expect(collapsed).toHaveLength(5);
+    expect(collapsed[3]).toContain("tail");
+    expect(collapsed.join("\n")).not.toContain(stored.fullOutputPath);
+    expect(expanded.slice(0, 5)).toEqual(collapsed);
+    expect(expanded.slice(5).join("\n")).toContain(stored.fullOutputPath);
+    // Complete output has nothing to point to.
+    expect(renderTerminalResult(snapshot(), true, theme).render(100).join("\n")).not.toContain(
+      stored.fullOutputPath,
+    );
   });
 
   test("freezes completed status with elapsed time and exit code", () => {

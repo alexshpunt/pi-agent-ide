@@ -92,6 +92,72 @@ describe("terminal completion UI", () => {
     }
   });
 
+  test("stores only the output excerpt the agent saw in notices and their cards", () => {
+    vi.useFakeTimers();
+    try {
+      const sendMessage = vi.fn();
+      const appendEntry = vi.fn();
+      const manager = fakeManager();
+      const ui = new TerminalUi(
+        extensionApi({
+          registerMessageRenderer: vi.fn(),
+          registerCommand: vi.fn(),
+          sendMessage,
+          appendEntry,
+        }),
+        manager.value,
+        100,
+      );
+      ui.bind({
+        isIdle: () => true,
+        sessionManager: { getSessionId: () => "session-a" },
+      } as ExtensionContext);
+      const output = `${"early line\n".repeat(100_000)}last line\n\n`;
+      const session = {
+        ...backgroundSession(),
+        output,
+        origin: { toolCallId: "child", parentToolCallId: "launch", sessionId: "session-a" },
+      };
+      manager.change(session);
+      vi.advanceTimersByTime(100);
+      ui.notifyWaitTransition(session);
+      manager.complete(session);
+      vi.advanceTimersByTime(120);
+
+      const end = output.trimEnd().length;
+      const stored = {
+        output: output.slice(end - 2_000, end),
+        outputStart: end - 2_000,
+        outputEnd: end,
+        truncated: true,
+        source: session.source,
+        origin: session.origin,
+        fullOutputPath: "/tmp/terminal-test.log",
+      };
+      const [stale, transition, completion] = (
+        sendMessage.mock.calls as [{ content: string }][]
+      ).map(([message]) => message);
+      expect(stale).toMatchObject({ customType: "terminal-stale", details: stored });
+      expect(transition).toMatchObject({ customType: "terminal-wait-transition", details: stored });
+      expect(completion).toMatchObject({
+        customType: "terminal-completion",
+        details: { sessions: [{ ...stored, status: "completed" }] },
+      });
+      // The agent still receives the same excerpt in the message content.
+      expect(completion?.content).toContain(stored.output);
+      expect(appendEntry.mock.calls).toMatchObject([
+        ["terminal-stale-display", stored],
+        ["terminal-completion-display", { sessions: [stored] }],
+      ]);
+      expect(JSON.stringify([sendMessage.mock.calls, appendEntry.mock.calls]).length).toBeLessThan(
+        20_000,
+      );
+      ui.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("stale and interrupted-wait notices retain the launch, not the latest context", () => {
     vi.useFakeTimers();
     try {
