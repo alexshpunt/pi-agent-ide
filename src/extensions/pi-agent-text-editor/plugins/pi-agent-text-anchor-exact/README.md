@@ -6,7 +6,7 @@ This plugin is the final text anchor fallback. A non-empty value that is not a s
 replace(path="src/store.ts", start="old call()", text="new call()")
 ```
 
-Exact text may cover part of a line, one complete line, or several complete lines. It always selects exactly its characters: a match that covers complete lines does not take their line breaks, so Insert adds text right at its boundary and Delete leaves the line break in place. Include the newline in the text to select it. LF text also matches the same CRLF source text. Copy and Move preserve the selected source text, including its line endings. New Replace and Insert payloads use the destination's line-ending style; unselected bytes, including the BOM, remain unchanged.
+Exact text may cover part of a line, one complete line, or several complete lines. Used alone, a match that covers complete lines selects those lines with their own terminators. An unterminated final line never selects the preceding separator. Partial-line matches remain exact character spans, including for insertion. LF text also matches the same CRLF source text. Copy and Move preserve the selected source text, including its line endings. New Replace and Insert payloads use the destination's line-ending style; unselected bytes, including the BOM, remain unchanged.
 
 A start and end may use different anchor formats:
 
