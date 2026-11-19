@@ -11,7 +11,7 @@ export interface Harness {
   id: string;
   /** Exactly the tools declared to the model; bash is in neither harness. */
   tools: readonly string[];
-  /** Extensions loaded from the frozen source, mounted at /source. */
+  /** Extensions loaded from the checkout, which the sandbox mounts read-only at /source. */
   extensions: readonly string[];
   args: readonly string[];
 }
@@ -118,17 +118,18 @@ export interface Row {
   toolErrors: number;
 }
 
-const fixture = Buffer.from(fixtureText());
+const fixture = fixtureText();
+const original = Buffer.from(fixture);
 const expected = new Map<string, Buffer>();
 
 /** Fixture and expected bytes of a variant, generated once per process. */
 export function variantFiles(variant: Variant): { original: Buffer; expected: Buffer } {
   let bytes = expected.get(variant.id);
   if (!bytes) {
-    bytes = Buffer.from(expectedText(fixtureText(), variant));
+    bytes = Buffer.from(expectedText(fixture, variant));
     expected.set(variant.id, bytes);
   }
-  return { original: fixture, expected: bytes };
+  return { original, expected: bytes };
 }
 
 function runStatus(job: Job, execution: Execution, events: RunEvent[], signal: AbortSignal) {
@@ -270,7 +271,9 @@ export function sandboxExecutor(options: {
       JSON.stringify({ retry: { enabled: false, maxRetries: 0 } }),
     );
     const sandbox = await sandboxArgs(options.source, trial.root);
-    // sandboxArgs ends with "--chdir DIR --"; hide ignored paths after the /source mount.
+    // Hide ignored paths after the /source mount, before the trailing "--chdir DIR --".
+    if (sandbox.at(-3) !== "--chdir" || sandbox.at(-1) !== "--")
+      throw Error("sandboxArgs no longer ends with --chdir DIR --");
     sandbox.splice(
       -3,
       0,
@@ -341,7 +344,7 @@ export function renderReport(rows: readonly Row[], variants: readonly Variant[])
     "",
     "## Runs",
     "",
-    "| Model | Harness | Variant | Run | Result | Tool calls | Tool errors | Run |",
+    "| Model | Harness | Variant | Run | Result | Tool calls | Tool errors | Status |",
     "|---|---|---|---|---|---|---|---|",
     ...runs,
     "",

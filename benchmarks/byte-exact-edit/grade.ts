@@ -1,16 +1,16 @@
-import type { Variant } from "./fixtures.ts";
+import { BOM, NBSP, NNBSP, SHY, WJ, ZWSP, type Variant } from "./fixtures.ts";
 
 /** Short names for the special characters the fixture uses; others print as U+XXXX. */
 const NAMES: Record<string, string> = {
-  "\ufeff": "BOM",
+  [BOM]: "BOM",
   "\r": "CR",
   "\n": "LF",
   "\t": "TAB",
-  "\u00a0": "NBSP",
-  "\u202f": "NNBSP",
-  "\u200b": "ZWSP",
-  "\u2060": "WJ",
-  "\u00ad": "SHY",
+  [NBSP]: "NBSP",
+  [NNBSP]: "NNBSP",
+  [ZWSP]: "ZWSP",
+  [WJ]: "WJ",
+  [SHY]: "SHY",
 };
 
 export function specialName(character: string): string {
