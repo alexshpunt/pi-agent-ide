@@ -38,7 +38,7 @@ test("runs hybrid matching and plain colon queries through the default IDE", asy
   const cwd = await workspace();
   await writeFile(
     path.join(cwd, "exact.txt"),
-    "foo.bar\nfooXbar\ncall(\ndocs:debugger\nstatus:\ncustom:   \nunknown:needle\n",
+    'foo.bar\nfooXbar\nsay "foo.bar"\ncall(\ndocs:debugger\nstatus:\ncustom:   \nunknown:needle\n',
   );
   await writeFile(
     path.join(cwd, "regex.txt"),
@@ -47,7 +47,7 @@ test("runs hybrid matching and plain colon queries through the default IDE", asy
   const queries = [
     { id: "literal", query: "foo.bar", path: "exact.txt" },
     { id: "regex", query: "foo.bar", path: "regex.txt" },
-    { id: "quoted", query: '"foo.bar"', path: "regex.txt" },
+    { id: "quoted", query: '"foo.bar"', path: "exact.txt" },
     { id: "invalid-present", query: "call(", path: "exact.txt" },
     { id: "invalid-absent", query: "call(", path: "regex.txt" },
     {
@@ -88,8 +88,11 @@ test("runs hybrid matching and plain colon queries through the default IDE", asy
   expect(getToolExecutionResult(result, "regex")).toMatchObject({
     structuredContent: { fallback: { mode: "regex", matches: [{ text: "fooXbar" }] } },
   });
+  expect(getToolExecutionResult(result, "quoted")).toMatchObject({
+    structuredContent: { complete: true, matches: [{ text: '"foo.bar"' }] },
+  });
   expect(getToolExecutionDetails(getToolExecution(result, "quoted"))).toMatchObject({
-    payload: { matchCount: 0, complete: true },
+    payload: { matchCount: 1, complete: true },
   });
   expect(output("invalid-present")).toContain("⟦call(⟧");
   expect(getToolExecutionResult(result, "invalid-absent")).toMatchObject({

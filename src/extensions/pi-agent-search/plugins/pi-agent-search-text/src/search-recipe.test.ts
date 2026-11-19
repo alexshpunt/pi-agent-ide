@@ -37,8 +37,7 @@ describe("hybrid search through ripgrep", () => {
   test("tries regex only after literal search finds nothing", async () => {
     const result = await search("foo.bar", "fooXbar\n");
     expect(result.matches.map((match) => match.matchedText)).toEqual(["fooXbar"]);
-    expect(result.notices.join(" ")).toContain("unquoted terms as regex");
-    expect(result.notices.join(" ")).toContain("location hints");
+    expect(result.fallback).toBe("regex");
   });
   test.each(["flags | MASK", "alpha AND beta", "alpha OR beta", "alpha NOT beta", "a || b"])(
     "explains Boolean parsing of %s",
@@ -52,10 +51,20 @@ describe("hybrid search through ripgrep", () => {
       expect(booleanQueryNotice(createSearchRecipe({ query }))).toBeUndefined();
     },
   );
-  test.each(['"foo.bar"', "'foo.bar'"])("keeps %s literal", async (query) => {
-    const result = await search(query, "fooXbar\n");
-    expect(result.matches).toEqual([]);
-    expect(result.notices).toEqual([]);
+  test.each(['"foo.bar"', "'foo.bar'"])(
+    "searches %s with its quotes as literal text",
+    async (query) => {
+      const result = await search(query, `foo.bar\nfooXbar\nx = ${query}\n`);
+      expect(result.matches.map((match) => [match.lineNumber, match.matchedText])).toEqual([
+        [3, query],
+      ]);
+    },
+  );
+  test("finds a whole code line with quotes as one literal match", async () => {
+    const query = '        ("checkout-5", "legacy\u200BCheckout", 3),';
+    const result = await search(query, `    {\n${query}\n        ("checkout-11", "other", 4),\n`);
+    expect(result.matches).toMatchObject([{ lineNumber: 2, startColumn: 0, matchedText: query }]);
+    expect(result.fallback).toBeUndefined();
   });
   test.each(["call(", "[broken", "(?<broken", "*flag"])(
     "skips invalid optional regex %s",
@@ -100,11 +109,16 @@ describe("hybrid search through ripgrep", () => {
   test("keeps the existing final word fallback", async () => {
     const result = await search("missing package", "package alone\n");
     expect(result.matches[0]?.matchedText).toBe("package");
-    expect(result.notices.join(" ")).toContain("separate words");
+    expect(result.fallback).toBe("words");
   });
-  test("does not broaden Boolean or quoted multi-word conditions into words", async () => {
+  test("does not broaden Boolean conditions into words", async () => {
     expect((await search("missing AND package", "package alone\n")).matches).toEqual([]);
-    expect((await search('"missing package"', "package alone\n")).matches).toEqual([]);
+    expect((await search('"missing package" OR absent', "package alone\n")).matches).toEqual([]);
+  });
+  test("broadens a quoted query without operators into words like other text", async () => {
+    const result = await search('"missing" package', "package alone\n");
+    expect(result.matches.map((match) => match.matchedText)).toEqual(["package"]);
+    expect(result.fallback).toBe("words");
   });
   test("uses limit as a presentation budget without stopping the search", async () => {
     const cwd = await fixture("Foo1\nfoo2\nfoo3\n");

@@ -11,7 +11,7 @@ export const searchSchema = Type.Object(
     query: Type.String({
       minLength: 1,
       description:
-        "Text to find or a Boolean expression. Quote text to keep it literal. Use regex:<pattern> for regular expressions.",
+        "Text to find, matched literally, quotes included. Uppercase AND, OR, NOT, || or a spaced | make it a Boolean expression, where quotes group literal text. Use regex:<pattern> for regular expressions.",
     }),
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {

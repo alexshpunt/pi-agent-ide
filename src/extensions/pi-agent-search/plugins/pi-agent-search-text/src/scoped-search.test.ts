@@ -45,7 +45,7 @@ test("scoped text search keeps gaps, remote identities and UTF-16 columns separa
     runScopedSearch({ query: "hello", include: "*.ts" }, selected, process.cwd()),
   ).rejects.toThrow("unsupported");
   const quoted = await runScopedSearch(
-    createSearchRecipe({ query: '"hello"' }),
+    createSearchRecipe({ query: '"hello" OR absent' }),
     selected,
     process.cwd(),
   );

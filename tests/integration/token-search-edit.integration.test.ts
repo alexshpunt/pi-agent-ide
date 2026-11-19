@@ -73,7 +73,7 @@ test("token search selections cannot silently rewrite every match", async () => 
     );
     await writeFile(path.join(cwd, "words.txt"), "const alpha\nawait beta\n");
     await writeFile(path.join(cwd, "boolean.txt"), "red blue\n");
-    await writeFile(path.join(cwd, "literal.txt"), "const x = await f\n");
+    await writeFile(path.join(cwd, "literal.txt"), 'call("a b", 1);\n');
     const code = `
 function check(v, message) { if (!v) throw Error(message); }
 const result = await tools.search({path:"words.txt",query:"const x = await f"});
@@ -86,12 +86,14 @@ check(await tools.read({path:found}) !== null,"whole selection is readable");
 check(await tools.copy({path:found,target:"literal.txt",targetStart:"end"}) === null,"bulk transfer must fail");
 const scoped = await tools.search({path:found,query:"const"});
 check(scoped.matches.length === 1,"read-only search scope");
-check(await tools.replace({path:found.matches[0],text:"CONST"}) !== null,"individual match");
+check(await tools.replace({path:found.matches[0],text:"CONST"}) === null,"word hint match must fail");
+check(await tools.replace({path:"words.txt",start:found.matches[0],text:"BAD"}) === null,"word hint anchor must fail");
 const bool = await tools.search({path:"boolean.txt",query:"red AND blue"});
 check(await tools.replace({path:bool,text:"BAD"}) === null,"boolean bulk");
 check(await tools.replace({path:bool,start:bool.matches[0],end:bool.matches[0],text:"RED"}) !== null,"boolean scoped match");
-const literal = await tools.search({path:"literal.txt",query:'"const x = await f"'});
-check(await tools.replace({path:literal,text:"replaced"}) !== null,"quoted literal");
+const literal = await tools.search({path:"literal.txt",query:'call("a b", 1);'});
+check(literal.matches.length === 1 && literal.matches[0].text === 'call("a b", 1);',"quotes stay literal");
+check(await tools.replace({path:literal,text:"replaced"}) !== null,"literal result");
 text("done");`;
     const run = await new PiIntegrationTest({
       testName: "token-search-edit",
@@ -120,7 +122,7 @@ text("done");`;
       ],
     }).run("Safely edit Search results");
     expect(getToolExecution(run, "compose").isError, getToolResultText(run, "compose")).toBe(false);
-    expect(await readFile(path.join(cwd, "words.txt"), "utf8")).toBe("CONST alpha\nawait beta\n");
+    expect(await readFile(path.join(cwd, "words.txt"), "utf8")).toBe("const alpha\nawait beta\n");
     expect(await readFile(path.join(cwd, "boolean.txt"), "utf8")).toBe("RED blue\n");
     expect(await readFile(path.join(cwd, "literal.txt"), "utf8")).toBe("replaced\n");
   });

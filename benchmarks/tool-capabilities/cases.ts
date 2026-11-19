@@ -842,7 +842,7 @@ add(
 add(
   "token-search-edit-guard",
   ["compose.token-search-edit-guard"],
-  'Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN: pass that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Finally search literal.txt for the quoted literal query "alpha beta" and replace that whole result with LITERAL. Preserve every other byte.',
+  "Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN: pass that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Finally search literal.txt for the same unquoted query alpha beta, which matches there as one phrase, and replace that whole result with LITERAL. Preserve every other byte.",
   [
     { tool: "search", args: { path: "split.txt", query: /^alpha beta$/u } },
     {
@@ -856,7 +856,7 @@ add(
       tool: "replace",
       reuse: reuse(2, ["path", "start"]),
     },
-    { tool: "search", args: { path: "literal.txt", query: /^"alpha beta"$/u } },
+    { tool: "search", args: { path: "literal.txt", query: /^alpha beta$/u } },
     {
       tool: "replace",
       reuse: reuse(4, ["path", "start", "anchor"], "whole-result"),
