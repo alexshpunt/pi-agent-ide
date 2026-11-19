@@ -40,15 +40,18 @@ import { SHARED_SERVER_PROTOCOL } from "./server-request-handlers.mjs";
 /** Stop a shared server this long after its last session disconnects, unless configured. */
 export const DEFAULT_SHARED_SERVER_LINGER_MS = 10 * 60_000;
 
-/** Overrides the linger in milliseconds; test runs set it so finished workspaces free their servers. */
+/**
+ * Overrides the linger in milliseconds, also over the lsp.idle-timeout setting. Test runs set it
+ * so finished workspaces free their servers.
+ */
 export const SHARED_SERVER_LINGER_ENVIRONMENT = "PI_AGENT_IDE_LSP_LINGER_MS";
 
-/** The linger time: a non-negative integer in the environment, otherwise the default. */
-export function sharedServerLingerMs(env: Readonly<Record<string, string | undefined>>): number {
+/** The linger the environment sets: a non-negative integer, otherwise undefined. */
+export function sharedServerLingerOverride(
+  env: Readonly<Record<string, string | undefined>>,
+): number | undefined {
   const value = env[SHARED_SERVER_LINGER_ENVIRONMENT];
-  return value !== undefined && /^\d+$/u.test(value)
-    ? Number(value)
-    : DEFAULT_SHARED_SERVER_LINGER_MS;
+  return value !== undefined && /^\d+$/u.test(value) ? Number(value) : undefined;
 }
 
 /** The host script and the local modules it imports, entry first. */
