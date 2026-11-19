@@ -18,11 +18,7 @@ import {
   type SelectionIssuer,
 } from "./selection-evidence.ts";
 import { isDeepStrictEqual } from "node:util";
-import {
-  equivalentLineArguments,
-  wholeLineSelection,
-  type LineSelection,
-} from "./edit-equivalence.ts";
+import { equivalentLineArguments, type LineSelection } from "./edit-equivalence.ts";
 
 /** A retained JSON-mode event; unknown records remain in the evidence. */
 export interface RunEvent {
@@ -740,12 +736,11 @@ export function validateRoute(
     const selector = actual.anchor ?? actual.start;
     if (selector !== undefined) {
       const issuers = selectionIssuers(file, before);
+      // Only issued line selections count: a literal selects just its characters.
       const whole = (value: unknown): LineSelection | undefined => {
-        const selected =
-          wholeLineSelection(content, value) ??
-          issuedSelection(content, value, issuers, (source) =>
-            matches({ path: file }, { path: source }),
-          );
+        const selected = issuedSelection(content, value, issuers, (source) =>
+          matches({ path: file }, { path: source }),
+        );
         // Issued inline matches cannot supply a whole line's terminal separator.
         return selected &&
           (selected.from === 0 || content[selected.from - 1] === "\n") &&
@@ -1037,13 +1032,11 @@ export function validateRoute(
       if (hash && exact instanceof RegExp && matches(exact, hash)) normalized[field] = hash;
       if (typeof source !== "string" || typeof exact !== "string") continue;
       const content = editContext(tool, { path: source }, before).content;
-      const paired = target ? expected.targetEnd !== undefined : expected.end !== undefined;
       if (content === undefined) {
         if (
           issuedSearchFragment(
             exact,
             selector,
-            paired,
             issuers.filter((issuer) => !sourceChanged(source, before, issuer.start)),
             (candidate) => matches({ path: source }, { path: candidate }),
           )
@@ -1051,7 +1044,7 @@ export function validateRoute(
           normalized[field] = exact;
         continue;
       }
-      const required = exactSelection(content, exact, paired);
+      const required = exactSelection(content, exact);
       const selected = issuedSelection(content, selector, issuers, (candidate) =>
         matches({ path: source }, { path: candidate }),
       );
@@ -1061,14 +1054,7 @@ export function validateRoute(
     const context = editContext(tool, normalized, before);
     return matches(
       expected,
-      equivalentLineArguments(
-        tool,
-        expected,
-        normalized,
-        context.content,
-        context.selection,
-        matches,
-      ),
+      equivalentLineArguments(tool, expected, normalized, context.selection),
     );
   }
   function argumentReuses(

@@ -988,7 +988,7 @@ function mergeResolvedAnchors(
           throw new Error(`Anchor ${field} selections overlap or are ambiguous.`);
         }
       }
-      // A typed source can duplicate an explicit literal's linewise selection.
+      // A typed source can duplicate an explicit selection that carries endpoint ranges.
       // Keep the explicit endpoint extent when deduplicating that selection.
       const explicitEndpoints = explicitSelection.endpointRanges;
       const endpoints =

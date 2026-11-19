@@ -236,7 +236,7 @@ for (const mode of ["direct", "codemode"]) {
       readStep,
       {
         tool: "replace",
-        args: { path: "task.txt", start: "OLD", text: "NEW" },
+        args: { path: "task.txt", start: "OLD\n", text: "NEW\n" },
         reuse: { from: 0, field: ["path", "start"] },
       },
     ];
@@ -438,7 +438,6 @@ for (const mode of ["direct", "codemode"]) {
       for (const selected of [
         { id: match, path: "other.txt", line: 2, text: fragment, lineText: "left [α\r\nβ right" },
         { id: match, path: "task.txt", line: 2, text: "β", lineText: "left [α\r\nβ right" },
-        { id: match, path: "task.txt", line: 2, text: fragment, lineText: fragment },
       ]) {
         assert.equal(
           check([
@@ -449,6 +448,23 @@ for (const mode of ["direct", "codemode"]) {
           false,
         );
       }
+      // A literal selects only its characters, so a match that spans its whole lines still proves it.
+      assert.ok(
+        check([
+          opening,
+          {
+            ...found,
+            value: {
+              id: result,
+              complete: true,
+              matches: [
+                { id: match, path: "task.txt", line: 2, text: fragment, lineText: fragment },
+              ],
+            },
+          },
+          closing,
+        ]),
+      );
       const changed: Call = {
         tool: "insert",
         args: { path: "task.txt", anchor: "head", text: "!", before: true },

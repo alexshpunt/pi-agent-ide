@@ -87,7 +87,7 @@ export function singleAnchorSpan(
   };
 }
 
-/** Whether an endpoint selects complete lines: a line anchor or text matching a whole line. */
+/** Whether an endpoint selects complete lines: a line anchor or a line selection. */
 function selectsWholeLines(anchors: ReadonlyMap<string, TextAnchor>): boolean {
   const anchor = anchors.values().next().value;
   if (anchor === undefined) return false;
@@ -96,8 +96,8 @@ function selectsWholeLines(anchors: ReadonlyMap<string, TextAnchor>): boolean {
 }
 
 /**
- * Join ordered endpoints. Two whole-line endpoints, such as BEGIN/END marker lines, select their
- * complete lines; otherwise exact text and :match keep character boundaries.
+ * Join ordered endpoints. Two line endpoints select their complete lines; otherwise literal text
+ * and :match keep character boundaries.
  */
 export async function anchorSpanRange(
   context: TextMutationContext,

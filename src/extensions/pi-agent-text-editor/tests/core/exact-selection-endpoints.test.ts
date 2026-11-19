@@ -27,7 +27,7 @@ function registry(resolve = resolveExactTextAnchor) {
 }
 
 test.each(["\n", "\r\n", ""])(
-  "exact EOF endpoints select only original bytes (%j)",
+  "an exact literal at EOF selects only its own characters (%j)",
   async (ending) => {
     const content = `First${ending || "\n"}Last${ending}`;
     const resolved = await registry().resolve("Last", context(content));
@@ -42,8 +42,8 @@ test.each(["\n", "\r\n", ""])(
       range.end.lineNumber,
       range.end.column,
     );
-    expect(document.text(extent)).toBe(`Last${ending}`);
-    expect(extent.to).toBe(content.length);
+    expect(document.text(extent)).toBe("Last");
+    expect(extent.to).toBe(content.length - ending.length);
   },
 );
 

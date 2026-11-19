@@ -102,7 +102,6 @@ export function singleSearchMatch(value: unknown, end: RunEvent): boolean {
 export function issuedSearchFragment(
   exact: string,
   value: unknown,
-  paired: boolean,
   issuers: SelectionIssuer[],
   sameFile: (source: unknown) => boolean,
 ): boolean {
@@ -121,12 +120,10 @@ export function issuedSearchFragment(
         typeof line !== "number" ||
         !Number.isInteger(line) ||
         line < 1 ||
-        (range.startLine !== undefined && range.startLine !== line) ||
-        (!paired && wholeLineSelection(content, exact))
+        (range.startLine !== undefined && range.startLine !== line)
       )
         continue;
-      // A line snapshot omits its final separator, so it cannot prove whole-line ownership.
-      const required = exactSelection(content, exact, paired);
+      const required = exactSelection(content, exact);
       if (!required) continue;
       const local = {
         ...match,
@@ -225,17 +222,9 @@ export function readSourceIssuers(
     },
   }));
 }
-/** An exact string without an end selects a whole line when it is the complete line. */
-export function exactSelection(
-  content: string,
-  value: unknown,
-  paired: boolean,
-): LineSelection | undefined {
+/** A unique literal selects exactly its characters, even when they form complete lines. */
+export function exactSelection(content: string, value: unknown): LineSelection | undefined {
   if (typeof value !== "string" || value.length === 0) return undefined;
-  if (!paired) {
-    const whole = wholeLineSelection(content, value);
-    if (whole) return whole;
-  }
   const from = content.indexOf(value);
   return from < 0 || content.indexOf(value, from + 1) >= 0
     ? undefined
