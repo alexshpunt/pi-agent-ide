@@ -61,12 +61,15 @@ export function renderTerminalAction(
 /** Render a bounded pseudo-terminal card; complete output stays available through its log file. */
 export function renderTerminalResult(
   snapshot: Partial<TerminalSessionSnapshot>,
-  _expanded: boolean,
+  expanded: boolean,
   theme: TerminalTheme,
   action?: string,
 ): Component {
   const lines = terminalCardLines(snapshot, COMPACT_READ_ROWS, theme);
   if (action !== undefined) lines.splice(1, 1, theme.fg("accent", action));
+  // A stored card keeps only the end of the output; the expanded card points to the full log.
+  if (expanded && snapshot.truncated === true && snapshot.fullOutputPath !== undefined)
+    lines.push(theme.fg("muted", `full output: ${snapshot.fullOutputPath}`));
   return new Text(lines.join("\n"), 0, 0);
 }
 
@@ -142,7 +145,10 @@ export function terminalCardLines(
     `${theme.fg("accent", promptMarker(family))} ${snapshot.command ?? ""}`,
   ];
   const window = outputWindow(snapshot.output ?? "", outputLines);
-  if (window.omission !== undefined) lines.push(`  ${theme.fg("muted", window.omission)}`);
+  // A truncated snapshot starts after earlier output, even when its excerpt fits the card.
+  const omission =
+    window.omission ?? (snapshot.truncated === true ? "… earlier output omitted" : undefined);
+  if (omission !== undefined) lines.push(`  ${theme.fg("muted", omission)}`);
   if (window.lines.length > 0)
     lines.push(...window.lines.map((line) => `  ${theme.fg("dim", line)}`));
   lines.push(statusLine(snapshot, (name, text) => theme.fg(name, text)));
