@@ -26,3 +26,7 @@ Before testing native Rust diagnostics against a large workspace, account for ru
 When changing an IDE tool or its supported composition with another tool, review and update the paid capability matrix and affected executable cases in `benchmarks/tool-capabilities/`. This is required even when the tool schema stays the same.
 
 Run `pnpm check:capabilities` without inference. See `benchmarks/tool-capabilities/README.md` for the maintenance steps and paid runner. Paid runs are separate from ordinary tests and need explicit model/cost permission. Unrun routes stay unverified; keep failed attempts visible.
+
+# Editing tools design
+
+Before changing how `replace`, `insert`, `delete`, `copy` or `move` select text, match a literal, or report an error, read [`editing-principles.md`](src/extensions/pi-agent-text-editor/docs/editing-principles.md). Matching is tolerant and writing is strict: any heuristic stays general and is measured on the byte-exact edit benchmark and the classic Explicit Edit suite.
