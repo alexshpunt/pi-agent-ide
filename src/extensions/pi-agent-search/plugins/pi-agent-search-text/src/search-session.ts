@@ -31,7 +31,12 @@ import {
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
 import type { TextAnchorResourceResolver } from "pi-agent-text-editor/api/plugin-protocol";
-import { runSearchRecipe, tokenSelectionWarning, type SearchRecipe } from "#src/search-recipe.ts";
+import {
+  runSearchRecipe,
+  tokenSelectionWarning,
+  wordHintRejection,
+  type SearchRecipe,
+} from "#src/search-recipe.ts";
 
 const searchAnchorPattern = /^SEARCH#([A-F0-9]{4,64}):(all|[1-9]\d*):(line|match)$/u;
 const minimumSearchSessionIdLength = 4;
@@ -70,6 +75,11 @@ interface StoredSearchSession extends TextSearchSession, SearchSnapshot {
   readonly refresh?: SearchSelectionRegistration["refresh"];
   readonly recipe: SearchRecipe;
   readonly editWarning?: string;
+  /**
+   * Set when the matches are separate-word location hints: no numbered reference can edit them. A
+   * refreshed all-selection carries the same refusal in its `editWarning`.
+   */
+  readonly hintReason?: string;
   readonly snapshotByteBudget?: number;
   readonly cwd: string;
   readonly refreshedComplete?: SearchSnapshot;
@@ -258,9 +268,11 @@ export class SearchSessionStore {
     const knownId = this.#idsByIdentity.get(identity);
     const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
     const editWarning = tokenSelectionWarning(recipe, query, matches.length, complete);
+    const hintReason = wordHintRejection(recipe, query, matches.length);
     const session: StoredSearchSession = {
       id,
       ...(editWarning === undefined ? {} : { editWarning }),
+      ...(hintReason === undefined ? {} : { hintReason }),
       query,
       matches,
       complete,
@@ -275,6 +287,7 @@ export class SearchSessionStore {
         complete,
         (source, abort) => readOwnedText(source, abort, environment, read),
         editWarning,
+        hintReason,
       ),
       ...(snapshotByteBudget === undefined ? {} : { snapshotByteBudget }),
       recipe,
@@ -493,6 +506,8 @@ export class SearchSessionStore {
     if (parsed === undefined) return { kind: "not-handled" };
     const session = this.#sessions.get(parsed.id);
     if (session === undefined) return staleAnchor();
+    if (parsed.selector !== "all" && session.hintReason !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.hintReason } };
     if (parsed.selector === "all" && session.editWarning !== undefined)
       return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
@@ -594,6 +609,8 @@ export class SearchSessionStore {
     if (parsed === undefined) return { kind: "not-handled" };
     const session = this.#sessions.get(parsed.id);
     if (session === undefined || session.cwd !== canonicalSource(cwd)) return staleAnchor();
+    if (edit !== undefined && parsed.selector !== "all" && session.hintReason !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.hintReason } };
     if (edit !== undefined && parsed.selector === "all" && session.editWarning !== undefined)
       return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
@@ -844,6 +861,8 @@ function registerResultReferences(
   complete: boolean,
   read: SnapshotReader,
   editWarning?: string,
+  /** Refuses edits through each match's own references too, not just the whole result. */
+  hintReason?: string,
 ): Pick<TextSearchSession, "target" | "matchTargets"> {
   if (store === undefined) return {};
   // Registered targets outlive this call. Their readers come from `sourceReader`, so no closure
@@ -876,9 +895,11 @@ function registerResultReferences(
         },
       ],
       cwd,
+      true,
+      hintReason,
     );
     store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:line`, lineTarget, cwd);
-    const matchTarget = store.register([requiredValue(targets[index])], cwd);
+    const matchTarget = store.register([requiredValue(targets[index])], cwd, true, hintReason);
     store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:match`, matchTarget, cwd);
     matchTargets.push(matchTarget);
   }

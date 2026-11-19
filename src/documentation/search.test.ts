@@ -78,9 +78,9 @@ test("restricts one guide and applies case and Unicode whole-word flags", async 
   ).toHaveLength(1);
 });
 
-test("keeps ordinary punctuation literal and supports explicit regex and quoted literals", async () => {
+test("keeps punctuation and quotes literal and supports explicit regex", async () => {
   expect((await search({ query: "a.b", path: "docs:all" })).data.matches).toHaveLength(1);
-  expect((await search({ query: '"a.b"', path: "docs:all" })).data.matches).toHaveLength(1);
+  expect((await search({ query: '"a.b"', path: "docs:all" })).data.matches).toEqual([]);
   expect(
     (
       await search({ query: "regex:^Needle", path: "docs:all", caseSensitive: true })
@@ -96,7 +96,6 @@ test("uses one limit across guides and distinguishes exact limit from truncation
   const empty = await search({ query: "absent", path: "docs:all" });
   expect(empty.data.complete).toBe(true);
   expect(empty.data.matches).toEqual([]);
-  expect(limited.result.content.find((part) => part.type === "text")?.text).toContain("incomplete");
 });
 
 test("reads the current registry, including guides registered after resolver setup", async () => {

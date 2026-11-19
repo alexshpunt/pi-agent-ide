@@ -151,6 +151,45 @@ test("token selections reject bulk edits but remain readable and individually ed
   if (resolution.kind !== "rejected") throw new Error("Expected a rejected anchor");
   expect(resolution.rejection.reason).toContain(query);
 });
+test("separate-word fallback matches are readable location hints that no reference can edit", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-word-hints-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  const content = "const alpha\nawait beta\n";
+  await writeFile(source, content);
+  const targets = new ResultTargetStore();
+  const store = new SearchSessionStore(undefined, targets);
+  const query = "const x = await f";
+  const { createSearchRecipe } = await import("#src/search-recipe.ts");
+  const recipe = { ...createSearchRecipe({ query }), originalQuery: query };
+  const words = recipe.fallbacks?.find((step) => step.mode === "words")?.query;
+  if (words === undefined) throw new Error("Expected a separate-word fallback");
+  const matches = [
+    { ...searchMatch(source, "const"), lineText: "const alpha" },
+    { ...searchMatch(source, "await"), lineNumber: 2, lineText: "await beta" },
+  ];
+  const session = await store.register(words, matches, true, cwd, undefined, recipe);
+  const handles = [session.target, ...(session.matchTargets ?? [])];
+  for (const mode of ["line", "match"]) handles.push(`SEARCH#${session.id}:1:${mode}`);
+  for (const handle of handles) {
+    expect(() => targets.resolve(handle, cwd, { forEdit: true }), handle).toThrow(
+      expect.objectContaining({ code: "UNSAFE_TOKEN_SELECTION" }),
+    );
+    expect(targets.resolve(handle, cwd).targets, handle).toHaveLength(1);
+  }
+  for (const selector of ["1:line", "1:match", "all:match"]) {
+    const resolution = await store.anchorResolver().tryResolve(`SEARCH#${session.id}:${selector}`, {
+      source,
+      content,
+      lines: content.split("\n"),
+      cwd,
+    });
+    expect(resolution.kind, selector).toBe("rejected");
+  }
+  await expect(
+    store.resolveSearchScope(`SEARCH#${session.id}:1:line`, { cwd }),
+  ).resolves.toMatchObject({ targets: [{ source }] });
+});
 test("an all anchor cannot broaden from a phrase to tokens during refresh", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-refresh-token-"));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));

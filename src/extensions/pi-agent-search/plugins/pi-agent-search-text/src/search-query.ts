@@ -18,18 +18,18 @@ interface Token {
 
 /** Compile the match pattern, paired with compileSearchCondition for Boolean line filtering. */
 export function compileSearchQuery(query: string, regex = false): string {
-  const tokens = tokenize(query);
-  if (!containsBooleanSyntax(tokens)) return regex ? query : escapeRegex(query);
+  const tokens = booleanTokens(query);
+  if (tokens === undefined) return regex ? query : escapeRegex(query);
 
   return matchPattern(compileTerms(new BooleanQueryParser(query, tokens).parse(), regex));
 }
 
 /** Compile Boolean line conditions separately from the pattern that selects a match. */
 export function compileSearchCondition(query: string, regex = false): SearchCondition | undefined {
-  const tokens = tokenize(query);
-  return containsBooleanSyntax(tokens)
-    ? compileTerms(new BooleanQueryParser(query, tokens).parse(), regex)
-    : undefined;
+  const tokens = booleanTokens(query);
+  return tokens === undefined
+    ? undefined
+    : compileTerms(new BooleanQueryParser(query, tokens).parse(), regex);
 }
 
 /** Evaluate a condition using each term's presence anywhere on the same line. */
@@ -45,17 +45,27 @@ export function satisfiesSearchCondition(
 }
 /** Compile the any-term fallback for an ordinary multi-word query. */
 export function compileSearchFallbackQuery(query: string): string | undefined {
-  if (containsBooleanSyntax(tokenize(query))) return undefined;
+  if (booleanTokens(query) !== undefined) return undefined;
 
   const terms = [...new Set(query.trim().split(/\s+/u).filter(Boolean))];
   return terms.length > 1 ? `(?:${terms.map(escapeRegex).join("|")})` : undefined;
 }
 
-function containsBooleanSyntax(tokens: readonly Token[]): boolean {
-  return tokens.some(
-    (token) =>
-      token.quoted === true || token.type === "and" || token.type === "or" || token.type === "not",
-  );
+/**
+ * The tokens of a Boolean query, or undefined for literal text. Only an operator makes a query
+ * Boolean, so quotes alone are literal characters. Once an operator is present, even one inside
+ * quotes, quotes group a literal phrase: `"a || b"` finds the text `a || b`.
+ */
+function booleanTokens(query: string): readonly Token[] | undefined {
+  return hasOperator(tokenize(query, false)) ? tokenize(query) : undefined;
+}
+
+function hasOperator(tokens: readonly Token[]): boolean {
+  return tokens.some(isOperator);
+}
+
+function isOperator(token: Token): boolean {
+  return token.type === "and" || token.type === "or" || token.type === "not";
 }
 
 class BooleanQueryParser {
@@ -180,7 +190,8 @@ class BooleanQueryParser {
   }
 }
 
-function tokenize(query: string): Token[] {
+/** With `quotes` false, quote characters are ordinary term text, so tokenizing cannot fail. */
+function tokenize(query: string, quotes = true): Token[] {
   const tokens: Token[] = [];
   let offset = 0;
 
@@ -190,7 +201,7 @@ function tokenize(query: string): Token[] {
       offset += 1;
       continue;
     }
-    if (character === "(" && isBooleanGroup(query, offset)) {
+    if (character === "(" && isBooleanGroup(query, offset, quotes)) {
       tokens.push({ type: "left", value: character, offset });
       offset += 1;
       continue;
@@ -206,7 +217,7 @@ function tokenize(query: string): Token[] {
       offset += width;
       continue;
     }
-    if (character === "'" || character === '"') {
+    if (quotes && (character === "'" || character === '"')) {
       const start = offset;
       const quote = character;
       let value = "";
@@ -280,12 +291,13 @@ function regexBlockEnd(query: string, start: number): number | undefined {
   return undefined;
 }
 
-function isBooleanGroup(query: string, offset: number): boolean {
+// Grouping only matters once an operator makes the query Boolean; then quoted phrases group too.
+function isBooleanGroup(query: string, offset: number, quotes: boolean): boolean {
   const end = regexBlockEnd(query, offset);
   if (end === undefined) return true;
   const inner = query.slice(offset + 1, end - 1);
   if (inner.trim().length === 0) return true;
-  return containsBooleanSyntax(tokenize(inner));
+  return tokenize(inner, quotes).some((token) => token.quoted === true || isOperator(token));
 }
 
 function operatorType(value: string): TokenType {

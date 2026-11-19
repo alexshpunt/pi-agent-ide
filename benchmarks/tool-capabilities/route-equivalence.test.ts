@@ -1708,7 +1708,7 @@ void test("token edit accepts an issued selection in start but rejects fabricate
     { tool: "replace", args: { start: "SEARCH#ABCD:1:match", text: "GREEN" } },
     {
       tool: "search",
-      args: { path: "literal.txt", query: '"alpha beta"' },
+      args: { path: "literal.txt", query: "alpha beta" },
       text: `<uuid>${uuid}</uuid>`,
     },
     { tool: "replace", args: { path: result, text: "LITERAL" } },

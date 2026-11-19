@@ -13,8 +13,8 @@ import {
 import { expect, test } from "vitest";
 
 test.each([
-  { initial: "old\nold\n", final: "new\nnew\n", remaining: 0 },
-  { initial: "old old\n", final: "new old\n", remaining: 2 },
+  { initial: "old\nold\n", text: "new", final: "new\nnew\n", remaining: 0 },
+  { initial: "old old\n", text: "older", final: "older older\n", remaining: 4 },
 ])(
   "search replacements retain effects and report $remaining remaining matches",
   async (scenario) => {
@@ -46,7 +46,7 @@ test.each([
               toolCall({
                 id: "search",
                 name: "search",
-                arguments: { query: '"old"', include: "*.txt" },
+                arguments: { query: "old", include: "*.txt" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -56,7 +56,7 @@ test.each([
               toolCall({
                 id: "replace",
                 name: "replace",
-                arguments: { path: "SEARCH#RUNTIME:1:all:match", text: "new" },
+                arguments: { path: "SEARCH#RUNTIME:1:all:match", text: scenario.text },
               }),
             ],
             { stopReason: "toolUse" },
@@ -68,7 +68,9 @@ test.each([
       for (const file of ["a.txt", "b.txt"])
         expect(await readFile(path.join(cwd, file), "utf8")).toBe(scenario.final);
       expect(getToolExecutionDetails(getToolExecution(result, "replace"))).toMatchObject({
-        searchObservations: [{ query: '"old"', matches: scenario.remaining, complete: true }],
+        metadata: {
+          searchObservations: [{ query: "old", matches: scenario.remaining, complete: true }],
+        },
       });
       await writeFile(
         path.join(result.artifacts.directory, "receipt.txt"),

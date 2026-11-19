@@ -49,7 +49,7 @@ Node kinds are tree-sitter names and differ by language, for example `function_d
 Pass a Read, Search or edit result as `path` and `relation: "enclosing"` to get the innermost match that contains each of its ranges. Starting from a text match:
 
 ```js
-const hit = await tools.search({ path: "src/app.ts", query: '"connection lost"' });
+const hit = await tools.search({ path: "src/app.ts", query: "connection lost" });
 const fn = await tools.ast_search({
   path: hit,
   relation: "enclosing",
