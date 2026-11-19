@@ -2,6 +2,35 @@ import { expect, test } from "vitest";
 import type { SearchEnvironment, SearchSelectionRegistration } from "pi-agent-search/api/search";
 import { createAstSearchResolver } from "#src/search-resolver.ts";
 
+test("structural search output past the owner's command bound reports the capture budget", async () => {
+  const environment: SearchEnvironment = {
+    resolve: (_cwd, value) => value,
+    dirname: () => "ssh://fixture/work",
+    basename: () => "main.cpp",
+    isDirectory: async () => false,
+    readText: async () => "",
+    runLines: async () => {
+      throw new Error("Must not run ripgrep for structural search");
+    },
+    execute: async () => {
+      throw Object.assign(new Error("CONTENT_LIMIT"), { code: "CONTENT_LIMIT" });
+    },
+  };
+  const resolver = createAstSearchResolver(async () => {
+    throw new Error("Nothing registers past the budget");
+  });
+  await expect(
+    resolver.tryResolve(
+      {
+        query: "$A",
+        path: "ssh://fixture/work/main.cpp",
+        options: { ast: { pattern: "$A", language: "cpp" } },
+      },
+      { cwd: "/unused-local-workspace", environment },
+    ),
+  ).rejects.toMatchObject({ name: "SearchCaptureLimitError" });
+});
+
 test("structural search keeps its executor, snapshots and presentation on the resource owner", async () => {
   const source = "ssh://fixture/work/note.ts";
   const content = 'const label = "café"; console.log(label);\n';

@@ -386,11 +386,86 @@ test("AST search fails with a bounded, named reason when its file keeps changing
       },
       { cwd },
     ),
-  ).rejects.toThrow(
-    `Search result in ${source} changed before its anchors were registered. The structural search ran 5 times and another process wrote its files during every run. Repeat it when those writes stop.`,
-  );
+  ).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
   expect(attempts).toBe(5);
 });
+
+/** A C++ file of one-line functions; a catch-all pattern matches 13 nodes per line. */
+async function cppWorkspace(name: string, functions: number) {
+  const base = path.resolve(".tmp/ast-scoped-tests");
+  await mkdir(base, { recursive: true });
+  const cwd = await mkdtemp(path.join(base, `${name}-`));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const lines = Array.from(
+    { length: functions },
+    (_, index) => `int f${String(index)}(int a) { return a + ${String(index)}; }`,
+  );
+  await writeFile(path.join(cwd, "main.cpp"), lines.join("\n") + "\n");
+  const targets = new ResultTargetStore();
+  const sessions = new SearchSessionStore(undefined, targets, (file) => readFile(file, "utf8"));
+  const resolver = createAstSearchResolver((selection, context) =>
+    sessions.register(
+      selection.request.query,
+      selection.matches,
+      selection.complete,
+      context.cwd,
+      context.signal,
+      selection.request,
+      selection.refresh,
+      undefined,
+      context.environment,
+    ),
+  );
+  return { cwd, resolver };
+}
+
+test.each([
+  ["the file", "main.cpp"],
+  ["its directory", "."],
+])(
+  "a catch-all pattern past the capture budget in %s reports the budget",
+  { timeout: 60_000 },
+  async (_, searched) => {
+    // Every node of 5,000 functions is far more matches than one search may capture.
+    const { cwd, resolver } = await cppWorkspace("catch-all", 5_000);
+    await expect(
+      resolver.tryResolve(
+        {
+          query: "$A",
+          path: searched,
+          limit: 100,
+          options: { ast: { pattern: "$A", language: "cpp" } },
+        },
+        { cwd },
+      ),
+    ).rejects.toMatchObject({ name: "SearchCaptureLimitError" });
+  },
+);
+
+test(
+  "a catch-all pattern within the capture budget returns a bounded result",
+  { timeout: 60_000 },
+  async () => {
+    // 45,500 matches: just within the budget, so every later step handles that many.
+    const { cwd, resolver } = await cppWorkspace("catch-all-bounded", 3_500);
+    const result = await resolver.tryResolve(
+      {
+        query: "$A",
+        path: "main.cpp",
+        limit: 100,
+        options: { ast: { pattern: "$A", language: "cpp" } },
+      },
+      { cwd },
+    );
+    if (result.kind !== "resolved") throw new Error("AST discovery failed");
+    const data = resolver.toScriptData?.(result.payload, {}) as {
+      complete: boolean;
+      matches: unknown[];
+    };
+    expect(data.matches).toHaveLength(100);
+    expect(data.complete).toBe(false);
+  },
+);
 
 // A kernel before 6.13 advances file timestamps every few milliseconds, so a same-size write within
 // one tick keeps the stamp. A fine-grained kernel cannot produce that on demand, so these tests read
