@@ -7,6 +7,8 @@ set -uo pipefail
 
 root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 cd "$root"
+# Size SHARDS by the whole process tree of one shard, not by one Pi: the vitest worker, Pi and the
+# language servers its tests start (tsserver, clangd) take about 1 GB per shard and grow.
 shards="${SHARDS:-4}"
 # Each test workspace gets its own language-server host; stop it soon after its Pi exits, or
 # finished workspaces keep their servers for the default 10 minutes and fill memory.
