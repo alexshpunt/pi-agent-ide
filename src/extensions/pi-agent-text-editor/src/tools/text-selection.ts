@@ -59,7 +59,7 @@ function literalLineEnding(
 }
 
 /** Text as written at a span: as sent, or with Pi's line endings for a literal selection. */
-export function writtenText(text: string, lineEnding: string | undefined): string {
+function writtenText(text: string, lineEnding: string | undefined): string {
   if (lineEnding === undefined) return text;
   const lf = normalizeToLF(text);
   return lineEnding === "\n" ? lf : lf.replaceAll("\n", lineEnding);

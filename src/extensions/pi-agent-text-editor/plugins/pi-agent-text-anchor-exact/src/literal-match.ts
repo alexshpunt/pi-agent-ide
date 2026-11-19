@@ -106,11 +106,7 @@ const fuzzyMatcher: LiteralMatcher = {
 };
 
 /** Literal matchers from strict to tolerant. */
-export const LITERAL_MATCHERS: readonly LiteralMatcher[] = [
-  exactMatcher,
-  lineEndingMatcher,
-  fuzzyMatcher,
-];
+const LITERAL_MATCHERS: readonly LiteralMatcher[] = [exactMatcher, lineEndingMatcher, fuzzyMatcher];
 
 export type LiteralMatch =
   | { readonly kind: "unique"; readonly span: LiteralSpan }
