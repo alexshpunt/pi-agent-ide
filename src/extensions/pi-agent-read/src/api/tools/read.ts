@@ -205,6 +205,8 @@ export interface ReadResultDetails extends UnsupportedContentDetails {
   /** Exact appended notice, outside the useful-output budget. */
   readonly outputNotice?: string;
   readonly lines?: readonly ReadTextLine[];
+  /** The text ends with the display marker line of a source without a final line break. */
+  readonly noFinalLineBreak?: boolean;
   /** Requested view names that no registration backed; they were ignored. */
   readonly ignoredViews?: readonly string[];
   /** Situational presentation messages, kept outside source lines and script data. */

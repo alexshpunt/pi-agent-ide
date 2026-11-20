@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 import { type Change, diffLines, formatPatch, type StructuredPatchHunk } from "diff";
 
 export interface DiffStats {
@@ -12,9 +13,6 @@ export interface UnifiedDiffResult {
 }
 
 const PATCH_CONTEXT_LINES = 3;
-
-/** Marks the end of a file that has no final LF, as a unified diff does. */
-export const NO_FINAL_LINE_BREAK = "\\ No newline at end of file";
 
 /**
  * Creates a unified diff with three context lines, as jsdiff's `createTwoFilesPatch` does, but runs

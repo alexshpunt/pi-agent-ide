@@ -496,7 +496,7 @@ test("presents text before projecting the read result", async () => {
         resource: {
           source,
           async read() {
-            return [{ type: "text", text: "alpha" }];
+            return [{ type: "text", text: "alpha\n" }];
           },
         },
       };
@@ -526,10 +526,10 @@ test("presents text before projecting the read result", async () => {
   });
 
   const raw = await executeRead(read, "notes.txt");
-  expect(raw.content).toEqual([{ type: "text", text: "alpha" }]);
+  expect(raw.content).toEqual([{ type: "text", text: "alpha\n" }]);
 
   const annotated = await executeRead(read, "notes.txt", ["fixture"]);
-  expect(annotated.content).toEqual([{ type: "text", text: "anchor|alpha" }]);
+  expect(annotated.content).toEqual([{ type: "text", text: "anchor|alpha\n" }]);
 });
 
 test("a read of a line range presents only those lines unless a view shows lines outside it", async () => {
@@ -651,7 +651,7 @@ test("runs text presenters in parallel and merges them in priority order", async
         resource: {
           source,
           async read() {
-            return [{ type: "text", text: "alpha" }];
+            return [{ type: "text", text: "alpha\n" }];
           },
         },
       };
@@ -708,7 +708,7 @@ test("runs text presenters in parallel and merges them in priority order", async
     await resultReady;
   }
   const result = await resultReady;
-  expect(result.content).toEqual([{ type: "text", text: "ABalpha" }]);
+  expect(result.content).toEqual([{ type: "text", text: "ABalpha\n" }]);
 });
 
 test("truncates large text at Pi's line and byte limits and tells the agent how to continue", async () => {

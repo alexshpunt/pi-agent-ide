@@ -1,4 +1,5 @@
 import { stat } from "node:fs/promises";
+import { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -65,16 +66,22 @@ export async function limitReadOutput(
     return result;
   }
 
-  const truncation = truncateHead(block.text, {
+  // The marker is not a source line: it neither counts toward the output budget nor survives a cut.
+  const markerSuffix = `\n${NO_FINAL_LINE_BREAK}`;
+  const sourceText =
+    result.details.noFinalLineBreak === true && block.text.endsWith(markerSuffix)
+      ? block.text.slice(0, -markerSuffix.length)
+      : block.text;
+  const truncation = truncateHead(sourceText, {
     maxBytes: READ_OUTPUT_MAX_BYTES,
     maxLines: READ_OUTPUT_MAX_LINES,
   });
 
   if (truncation.truncated) {
     const temporarySource =
-      saveFullOutput === undefined ? undefined : await saveFullOutput(block.text);
+      saveFullOutput === undefined ? undefined : await saveFullOutput(sourceText);
     const baseNotice = truncation.firstLineExceedsLimit
-      ? await oversizedFirstLineNotice(block.text, result.details, request)
+      ? await oversizedFirstLineNotice(sourceText, result.details, request)
       : truncatedOutputNotice(truncation, result.details, request, originLine);
     const notice =
       temporarySource === undefined
@@ -300,8 +307,9 @@ function truncatedDetails(
   details: ReadResultDetails,
   truncation: TruncationResult,
 ): ReadResultDetails {
+  const { noFinalLineBreak: _cut, ...kept } = details;
   return {
-    ...details,
+    ...kept,
     ...(details.lines !== undefined && { lines: details.lines.slice(0, truncation.outputLines) }),
     truncation,
   };

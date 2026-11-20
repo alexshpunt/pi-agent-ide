@@ -1,5 +1,6 @@
 import type { FileTextWindow, ResultRange } from "pi-agent-resource";
 import { requiredValue } from "pi-agent-invariant";
+import { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 
 import {
   buildDiffLines,
@@ -10,7 +11,6 @@ import {
   selectSyntaxHints,
   splitLines,
 } from "./agent-diff.ts";
-import { NO_FINAL_LINE_BREAK } from "./diff.ts";
 
 import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.ts";
 

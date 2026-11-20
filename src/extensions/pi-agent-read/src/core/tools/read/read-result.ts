@@ -1,4 +1,8 @@
-import { createTextDocument, renderPresentedTextDocument } from "pi-agent-text";
+import {
+  createTextDocument,
+  NO_FINAL_LINE_BREAK,
+  renderPresentedTextDocument,
+} from "pi-agent-text";
 
 import type {
   ReadFailure,
@@ -107,11 +111,20 @@ export function projectReadState(
           lineEnding: index === lines.length - 1 && stoppedEarly ? "" : line.lineEnding,
         })),
       });
+  // The marker follows the last line of a file without a final line break. It is display text:
+  // not a line, so the script data and the line counts do not hold it. Other sources, such as
+  // resource text or Linear bodies, have no file end to show.
+  const noFinalLineBreak =
+    state.textMode === "normal" &&
+    (state.resolvedBy === "filesystem" || state.resolvedBy === "ssh") &&
+    state.entries === undefined &&
+    !stoppedEarly &&
+    lines.at(-1)?.lineEnding === "";
   const originalBlock = state.content[0];
   const content: TextContent[] = [
     {
       type: "text",
-      text: renderedText,
+      text: noFinalLineBreak ? `${renderedText}\n${NO_FINAL_LINE_BREAK}` : renderedText,
       ...(originalBlock.textSignature !== undefined && {
         textSignature: originalBlock.textSignature,
       }),
@@ -141,6 +154,7 @@ export function projectReadState(
       endLine: lines.at(-1)?.lineNumber ?? 0,
       totalLines,
       lines,
+      ...(noFinalLineBreak && { noFinalLineBreak }),
     },
   };
 }

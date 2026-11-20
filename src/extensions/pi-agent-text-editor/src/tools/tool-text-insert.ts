@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
+import { refuseEndOfFileMarker } from "#src/tools/display-marker.ts";
 import { anchorProperty } from "#src/tools/text-tool-schema-properties.ts";
 import {
   insertionAfterAnchor,
@@ -69,6 +70,7 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
   ],
   mutate: async (context, parameters: InsertParameters) => {
     if (parameters.text.length === 0) throw new Error("Insert text must not be empty.");
+    refuseEndOfFileMarker(parameters.text);
     const anchors = await context.resolveAnchors("anchor");
     const selections = textSelections(anchors, "anchor");
 
