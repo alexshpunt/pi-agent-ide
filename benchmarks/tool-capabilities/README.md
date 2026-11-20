@@ -43,6 +43,8 @@ Shared-server tests cover another retry trigger: when one session syncs newer di
 
 The `replace-anchored-display` case checks that Replace refuses a stale displayed prefix, accepts a current prefix with only part of the line, and uses literal file bytes when the same selector also matches the anchored view. It checks the resulting file bytes on both routes. Direct and Codemode paid routes remain unverified.
 
+The `exact-range-replace` case checks that a paired literal end skips an earlier match and stops at the first following match, leaving later matches untouched. The revised direct and Codemode paid routes remain unverified.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:
