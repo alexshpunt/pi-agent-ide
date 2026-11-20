@@ -371,6 +371,66 @@ describe("tracking selections after a block move", () => {
     expect(tracker.move(span(501, 5, 501, 8))).toBeUndefined();
   });
 
+  test("a deleted duplicate block leaves only the verified surviving block in an adjusted scope", () => {
+    const before =
+      "template <typename T>\nT one(T v) {\n  return v;\n}\ntemplate <typename T>\nT two(T v) {\n  return v;\n}\n";
+    const after = "template <typename T>\nT two(T v) {\n  return v;\n}\n";
+    const tracker = createRangeTracker(before, after);
+    const whole = { ...span(1, 0, 9, 0), linewise: true };
+    expect(tracker.move(whole)).toBeUndefined();
+    expect(tracker.move(whole, true)).toEqual({
+      ...span(1, 0, 5, 0),
+      linewise: true,
+      adjusted: true,
+    });
+    // The deleted copy and its ambiguous repeated lines never gain the survivor's identity.
+    expect(tracker.move({ ...span(1, 0, 5, 0), linewise: true }, true)).toBeUndefined();
+    expect(tracker.move(span(1, 0, 2, 0), true)).toBeUndefined();
+    expect(tracker.move(span(3, 0, 4, 0), true)).toBeUndefined();
+    expect(tracker.move(span(6, 0, 7, 0))).toEqual(span(2, 0, 3, 0));
+  });
+  test("clips deleted duplicate boundaries without including neighboring text", () => {
+    const before = "outside\nremoved-edge\nrepeat\nfirst\nrepeat\nsecond\nend\n";
+    const after = "outside\nrepeat\nsecond\nend\n";
+    const tracker = createRangeTracker(before, after);
+    expect(tracker.move({ ...span(3, 0, 7, 0), linewise: true }, true)).toEqual({
+      ...span(2, 0, 4, 0),
+      linewise: true,
+      adjusted: true,
+    });
+    const reversed = createRangeTracker(after, before);
+    expect(reversed.move(span(2, 0, 3, 0))).toEqual(span(5, 0, 6, 0));
+  });
+
+  test("conflicting repeated boundary lines do not acquire a place in the old scope", () => {
+    const tracker = createRangeTracker(
+      "outside\nrepeat\nfirst\nrepeat\nsecond\nend\n",
+      "outside\nrepeat\nsecond\nend\n",
+    );
+    // The outside and second anchors disagree about which old repeat survived.
+    expect(tracker.move({ ...span(2, 0, 6, 0), linewise: true }, true)).toEqual({
+      ...span(3, 0, 4, 0),
+      linewise: true,
+      adjusted: true,
+    });
+    expect(tracker.move({ ...span(2, 0, 3, 0), linewise: true }, true)).toBeUndefined();
+    expect(tracker.move({ ...span(4, 0, 5, 0), linewise: true }, true)).toBeUndefined();
+  });
+  test("does not join survivors around an identifiable line from outside the scope", () => {
+    const tracker = createRangeTracker(
+      "outside\nrepeat\nremoved\nrepeat\nleft\nright\n",
+      "repeat\nleft\noutside\nright\n",
+    );
+    expect(tracker.move({ ...span(2, 0, 7, 0), linewise: true }, true)).toBeUndefined();
+  });
+
+  test("does not join reordered survivors into an adjusted scope", () => {
+    const tracker = createRangeTracker(
+      "repeat\nremoved\nrepeat\nleft\nright\n",
+      "right\nrepeat\nleft\n",
+    );
+    expect(tracker.move({ ...span(1, 0, 6, 0), linewise: true }, true)).toBeUndefined();
+  });
   test("can read an adjusted region when unrelated lines swapped", () => {
     const before = "left\nupdated\nright\na\nb\n";
     const after = "left\nchanged\nright\nb\na\n";

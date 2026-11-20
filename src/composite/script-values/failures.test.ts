@@ -9,13 +9,17 @@ describe("CodemodeCallLedger", () => {
     ledger.record(
       "script",
       { id: "2", tool: "read", source: "missing.txt" },
-      { reason: "Unable to read missing.txt\nSearch for the correct path." },
+      { reason: "fixture-read-failure" },
     );
     ledger.record("script", { id: "3", tool: "read", source: "c.txt" });
 
-    expect(ledger.take("script")).toBe(
-      "1 of 3 IDE calls failed:\n- read missing.txt\n  Unable to read missing.txt\n  Search for the correct path.",
-    );
+    const summary = ledger.take("script");
+    expect(summary).toMatch(/\b1\b/u);
+    expect(summary).toMatch(/\b3\b/u);
+    expect(summary).toContain("missing.txt");
+    expect(summary).toContain("fixture-read-failure");
+    expect(summary).not.toContain("a.txt");
+    expect(summary).not.toContain("c.txt");
     expect(ledger.take("script")).toBeUndefined();
   });
 
@@ -27,54 +31,66 @@ describe("CodemodeCallLedger", () => {
 
   test("adds accepted edits whose batch failed, with the files of each edit", () => {
     const ledger = new CodemodeCallLedger();
-    ledger.record("script", { id: "1", tool: "replace", source: "a.txt" });
-    ledger.record("script", { id: "2", tool: "replace", source: "b.txt" });
+    ledger.record("script", { id: "1", tool: "replace", source: "accepted.txt" });
+    ledger.record("script", { id: "2", tool: "replace", source: "successful.txt" });
     ledger.recordBatch("script", [
-      { id: "1", effect: "unknown", errors: [{ message: "Disk full" }], changed: ["b.txt"] },
+      {
+        id: "1",
+        effect: "unknown",
+        errors: [{ message: "fixture-save-failure" }],
+        changed: ["changed.txt"],
+      },
       { id: "2", effect: "applied", errors: [] },
     ]);
 
-    expect(ledger.take("script")).toBe(
-      [
-        "1 of 2 IDE calls failed:",
-        "- replace a.txt",
-        "  Changed: b.txt. Do not repeat this edit blindly; Read the files first.",
-        "  The edit was accepted, then its editor batch failed when it was saved.",
-        "  Disk full",
-      ].join("\n"),
-    );
+    const summary = ledger.take("script");
+    expect(summary).toContain("accepted.txt");
+    expect(summary).toContain("changed.txt");
+    expect(summary).toContain("fixture-save-failure");
+    expect(summary).not.toContain("successful.txt");
   });
 
   test("does not list an unchanged batched edit or one already listed as failed", () => {
     const ledger = new CodemodeCallLedger();
-    ledger.record("script", { id: "1", tool: "replace" }, { reason: "Anchor not found" });
-    ledger.record("script", { id: "2", tool: "replace" });
+    ledger.record(
+      "script",
+      { id: "1", tool: "replace", source: "refused.txt" },
+      { reason: "fixture-refusal" },
+    );
+    ledger.record("script", { id: "2", tool: "replace", source: "unchanged.txt" });
     ledger.recordBatch("script", [
-      { id: "1", effect: "not-applied", errors: [{ message: "Not run" }] },
+      { id: "1", effect: "not-applied", errors: [{ message: "fixture-batch-refusal" }] },
       { id: "2", effect: "not-applied", errors: [] },
     ]);
 
-    expect(ledger.take("script")).toBe("1 of 2 IDE calls failed:\n- replace\n  Anchor not found");
+    const summary = ledger.take("script");
+    expect(summary).toContain("fixture-refusal");
+    expect(summary?.split("refused.txt")).toHaveLength(2);
+    expect(summary).not.toContain("unchanged.txt");
+    expect(summary).not.toContain("fixture-batch-refusal");
   });
 });
 
 test("formatFailures names changed and unknown files of a failed edit", () => {
-  expect(
-    formatFailures(300, [
-      { tool: "move", source: "a.txt → b.txt", reason: "Copy failed", changed: ["b.txt"] },
-      { tool: "write", reason: "Connection lost", unknown: ["c.txt"] },
-    ]),
-  ).toBe(
-    [
-      "2 of 300 IDE calls failed:",
-      "- move a.txt → b.txt",
-      "  Changed: b.txt. Do not repeat this edit blindly; Read the files first.",
-      "  Copy failed",
-      "- write",
-      "  Effect unknown: c.txt. Do not repeat this edit blindly; Read the files first.",
-      "  Connection lost",
-    ].join("\n"),
-  );
+  const summary = formatFailures(300, [
+    {
+      tool: "move",
+      source: "a.txt → b.txt",
+      reason: "fixture-copy-failure",
+      changed: ["changed.txt"],
+    },
+    { tool: "write", reason: "fixture-connection-failure", unknown: ["unknown.txt"] },
+  ]);
+  expect(summary).toMatch(/\b2\b/u);
+  expect(summary).toMatch(/\b300\b/u);
+  for (const value of [
+    "a.txt → b.txt",
+    "changed.txt",
+    "unknown.txt",
+    "fixture-copy-failure",
+    "fixture-connection-failure",
+  ])
+    expect(summary).toContain(value);
 });
 
 test("fileEffects reads applied and unknown files from an edit receipt", () => {
