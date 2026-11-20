@@ -55,7 +55,7 @@ test("reads relative, absolute, empty, and ranged UTF-8 text when loaded before 
       getToolResultText(
         await runRead(directory, "tail.txt", "filesystem-text-tail", { offset: -2 }),
       ),
-    ).toBe("four\nfive");
+    ).toBe("four\nfive\n\\ No newline at end of file");
     expect(
       getToolResultText(
         await runRead(directory, "tail.txt", "filesystem-text-tail-limit", {

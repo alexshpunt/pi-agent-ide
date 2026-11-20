@@ -48,6 +48,13 @@ async function run(cwd: string, steps: readonly Step[]) {
   }).run("Run each requested call in order.");
 }
 
+/** The lines of a result; a result reference note that Pi attaches to the text is not content. */
+function resultLines(result: Parameters<typeof getToolResultText>[0], id: string): string[] {
+  return getToolResultText(result, id)
+    .split("\n")
+    .filter((line) => !line.startsWith("<system-result"));
+}
+
 const FILES: Readonly<Record<string, string>> = {
   "lf-open.txt": "one\ntwo\nthree",
   "lf-closed.txt": "one\ntwo\nthree\n",
@@ -76,8 +83,8 @@ test("Read shows the marker only after the last line of a file without a final l
 
     for (const [file, content] of Object.entries(FILES)) {
       const open = content.length > 0 && !content.endsWith("\n");
-      const plain = getToolResultText(result, `plain:${file}`).split("\n");
-      const anchored = getToolResultText(result, `anchors:${file}`).split("\n");
+      const plain = resultLines(result, `plain:${file}`);
+      const anchored = resultLines(result, `anchors:${file}`);
       expect(plain.includes(MARKER), file).toBe(open);
       expect(anchored.includes(MARKER), file).toBe(open);
       if (!open) continue;
@@ -90,10 +97,10 @@ test("Read shows the marker only after the last line of a file without a final l
       ).toBe(true);
       expect(anchored).toHaveLength(4);
     }
-    const tail = getToolResultText(result, "tail").split("\n");
+    const tail = resultLines(result, "tail");
     expect(tail).toHaveLength(3);
     expect(tail.at(-1)).toBe(MARKER);
-    expect(getToolResultText(result, "head").split("\n")).not.toContain(MARKER);
+    expect(resultLines(result, "head")).not.toContain(MARKER);
   });
 });
 
