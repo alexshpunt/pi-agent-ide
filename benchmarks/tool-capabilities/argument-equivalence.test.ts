@@ -236,7 +236,7 @@ for (const mode of ["direct", "codemode"]) {
       readStep,
       {
         tool: "replace",
-        args: { path: "task.txt", start: "OLD\n", text: "NEW\n" },
+        args: { path: "task.txt", start: "OLD\n", newText: "NEW\n" },
         reuse: { from: 0, field: ["path", "start"] },
       },
     ];
@@ -386,7 +386,7 @@ for (const mode of ["direct", "codemode"]) {
               : {};
       const opening: Call = {
         tool: "insert",
-        args: { path: "task.txt", anchor: "α", text: "[", before: true },
+        args: { path: "task.txt", anchor: "α", newText: "[", before: true },
       };
       const found: Call = {
         tool: "search",
@@ -467,7 +467,7 @@ for (const mode of ["direct", "codemode"]) {
       );
       const changed: Call = {
         tool: "insert",
-        args: { path: "task.txt", anchor: "head", text: "!", before: true },
+        args: { path: "task.txt", anchor: "head", newText: "!", before: true },
       };
       assert.equal(check([opening, found, changed, closing]), false);
       assert.ok(check([opening, found, { ...changed, error: true }, closing]));
@@ -614,7 +614,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "search", args: { path: "search.txt", query: "MATCH" }, text: "SEARCH#ABCD:1:match" },
       {
         tool: "insert",
-        args: { path: "search.txt", anchor: "SEARCH#ABCD:1:match", text: "[", before: true },
+        args: { path: "search.txt", anchor: "SEARCH#ABCD:1:match", newText: "[", before: true },
       },
       { tool: "search", args: { path: "search.txt", query: "MATCH" }, text: "SEARCH#DCBA:1:match" },
       { tool: "insert", args: { path: "search.txt", anchor: "SEARCH#DCBA:1:match", newText: "]" } },

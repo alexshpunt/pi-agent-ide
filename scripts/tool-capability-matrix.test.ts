@@ -234,21 +234,21 @@ describe("capability route evidence", () => {
       index: 2,
       field: "start",
       selector: "Last\nBlock",
-      args: { path: "empty.txt", text: "" },
+      args: { path: "empty.txt", newText: "" },
     },
     {
       id: "insert-before",
       index: 3,
       field: "anchor",
       selector: "α\nβ",
-      args: { path: "block.txt", text: "[", before: true },
+      args: { path: "block.txt", newText: "[", before: true },
     },
     {
       id: "insert-before",
       index: 4,
       field: "anchor",
       selector: "α\nβ",
-      args: { path: "block.txt", text: "]" },
+      args: { path: "block.txt", newText: "]" },
     },
   ])("$id step $index checks exact selection independently of spelling", (fixture) => {
     const step = capabilityCases.find((candidate) => candidate.id === fixture.id)?.steps[

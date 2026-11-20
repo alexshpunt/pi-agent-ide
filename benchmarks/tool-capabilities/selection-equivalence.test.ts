@@ -238,13 +238,13 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read" },
       {
         tool: "replace",
-        args: { path: "source.txt", start: "Last", text: "Final" },
+        args: { path: "source.txt", start: "Last", newText: "Final" },
         reuse: { from: 0, field: "start", kind: "anchor" },
       },
     ];
     const replace: Call = {
       tool: "replace",
-      args: { path: { id }, start: "123ABCD", text: "Final" },
+      args: { path: { id }, start: "123ABCD", newText: "Final" },
     };
     for (const start of ["123ABCD", "123ABCD|Last", "123ABCD|Last\n"])
       assert.ok(
@@ -284,7 +284,7 @@ for (const mode of ["direct", "codemode"]) {
     );
     const mutation: Call = {
       tool: "replace",
-      args: { path: { id }, start: "Last", text: "Changed" },
+      args: { path: { id }, start: "Last", newText: "Changed" },
     };
     assert.ok(!passed(files, route, [read, mutation, replace], mode));
     // Null siblings retain their slot and must not shift a later result onto the wrong path.
@@ -318,7 +318,7 @@ for (const mode of ["direct", "codemode"]) {
     for (const anchor of ["123ABCD", "123ABCD|OLD", "123ABCD|OLD\r\n", "123ABCD|OLD\n"]) {
       const edit: Call = {
         tool: "replace",
-        args: { path: "task.txt", start: anchor, text: "NEW" },
+        args: { path: "task.txt", start: anchor, newText: "NEW" },
       };
       assert.ok(passed({ "task.txt": "OLD\r\n" }, route, [read, edit], mode), anchor);
       assert.ok(!passed({ "task.txt": "OLD\r\n" }, route, [{ ...read, error: true }, edit], mode));
@@ -339,14 +339,14 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "search" },
       {
         tool: "insert",
-        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, before: true, text: "ADDED" },
+        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, before: true, newText: "ADDED" },
         reuse: { from: 0, field: "path" },
       },
     ];
     for (const field of ["anchor", "start"]) {
       const insert: Call = {
         tool: "insert",
-        args: { path: "task.txt", [field]: "SEARCH#ABCD:1:line", before: true, text: "ADDED" },
+        args: { path: "task.txt", [field]: "SEARCH#ABCD:1:line", before: true, newText: "ADDED" },
       };
       assert.ok(passed({ "task.txt": "OLD\n" }, route, [search("task.txt", "OLD"), insert], mode));
       for (const change of [
@@ -540,13 +540,13 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "search" },
       {
         tool: "insert",
-        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, text: "NEW" },
+        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, newText: "NEW" },
         reuse: { from: 0, field: "path" },
       },
     ];
     const insert: Call = {
       tool: "insert",
-      args: { path: "task.txt", anchor: "SEARCH#ABCD:1:line", text: "NEW" },
+      args: { path: "task.txt", anchor: "SEARCH#ABCD:1:line", newText: "NEW" },
     };
     assert.ok(!passed(files, insertRoute, [found, insert], mode));
     const read: Call = {
@@ -588,7 +588,7 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(!passed(files, route, [copy], mode));
     const edit: Call = {
       tool: "replace",
-      args: { path: "task.txt", start: "Last", text: "Changed" },
+      args: { path: "task.txt", start: "Last", newText: "Changed" },
     };
     assert.ok(!passed(files, route, [read, edit, copy], mode));
     assert.ok(
@@ -615,7 +615,7 @@ for (const mode of ["direct", "codemode"]) {
     const found = search("task.txt", "OLD");
     const replace: Call = {
       tool: "replace",
-      args: { path: "task.txt", start: "SEARCH#ABCD:1:match", text: "NEW" },
+      args: { path: "task.txt", start: "SEARCH#ABCD:1:match", newText: "NEW" },
     };
     assert.ok(passed({ "task.txt": "OLD\n" }, route, [found, replace], mode));
     for (const value of [

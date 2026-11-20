@@ -87,7 +87,7 @@ for (const mode of ["direct", "codemode"]) {
 
   test(`${mode} rejects a raw-shell shortcut even with the correct refusal`, () => {
     expect(
-      validateRoute(task, executions(mode, { path: shell, start: "hello", text: "BAD" }), mode)
+      validateRoute(task, executions(mode, { path: shell, start: "hello", newText: "BAD" }), mode)
         .passed,
     ).toBe(false);
   });

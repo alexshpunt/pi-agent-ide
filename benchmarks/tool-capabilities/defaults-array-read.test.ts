@@ -197,7 +197,7 @@ for (const mode of ["direct", "codemode"]) {
         { tool: "read", args: { path: "b.txt" } },
         {
           tool: "replace",
-          args: { path: "b.txt", text: "Changed" },
+          args: { path: "b.txt", newText: "Changed" },
           reuse: { from: 0, field: "path" },
         },
       ],

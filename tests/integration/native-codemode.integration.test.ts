@@ -281,7 +281,7 @@ const shown = (await tools.read({path:"search-selection.txt"})).text;
 const session = shown.match(/SEARCH#([A-Fa-f0-9]+):/)[1];
 const selected = "SEARCH#" + session + ${selection.startsWith("all") ? '":all:line"' : '":1:line"'};
 await tools.insert({path:"note.txt",anchor:"alpha",before:true,newText:"added\\n"});
-await tools.replace(${selection.endsWith("-path") ? '{path:selected,newText:"BETA\\n"}' : '{start:selected,text:"BETA\\n"}'});
+await tools.replace(${selection.endsWith("-path") ? '{path:selected,newText:"BETA\\n"}' : '{start:selected,newText:"BETA\\n"}'});
 await tools.delete({path:"note.txt",start:"gamma\\n"});`,
       ]);
       expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(

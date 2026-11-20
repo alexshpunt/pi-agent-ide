@@ -240,7 +240,7 @@ test("batch output selections preserve shifted ranges and empty replacement posi
           toolCall({
             id: `${prefix}${index}`,
             name: "replace",
-            arguments: { path: issued(index), text: value },
+            arguments: { path: issued(index), newText: value },
           }),
         ),
         { stopReason: "toolUse" },

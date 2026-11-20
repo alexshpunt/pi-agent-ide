@@ -238,7 +238,7 @@ void test("native value batch accepts the complete gamma line and retains its ba
   assert.ok(
     !batch([
       ...calls.slice(0, 2),
-      { ...calls[2], args: { path: "task.txt", start: "beta", text: "BETA" } },
+      { ...calls[2], args: { path: "task.txt", start: "beta", newText: "BETA" } },
       calls[3],
     ]),
   );
@@ -268,7 +268,7 @@ void test("explicit-path scope retry is independent of the failed result-bound e
     !check(task.steps, [
       calls[0],
       calls[1],
-      { ...calls[2], args: { path: "other.txt", start: "last", text: "fixed" } },
+      { ...calls[2], args: { path: "other.txt", start: "last", newText: "fixed" } },
     ]),
   );
   assert.ok(
@@ -276,7 +276,7 @@ void test("explicit-path scope retry is independent of the failed result-bound e
       calls[0],
       calls[1],
       // The real tool refuses this selection: last is outside the line-2 window.
-      { ...calls[2], args: { path: result, start: "last", text: "fixed" }, error: true },
+      { ...calls[2], args: { path: result, start: "last", newText: "fixed" }, error: true },
     ]),
   );
 });
@@ -313,7 +313,7 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
     },
     {
       tool: "insert",
-      args: { path: "shell:input-check", text: "Enter" },
+      args: { path: "shell:input-check", newText: "Enter" },
       text: `<uuid>${insertId}</uuid>`,
     },
     {
@@ -325,7 +325,7 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
     },
     {
       tool: "replace",
-      args: { path: result, start: "hello", text: "BAD" },
+      args: { path: result, start: "hello", newText: "BAD" },
       error: true,
       text: steps("shell-roundtrip").find((step) => step.tool === "replace")?.contains,
     },
@@ -448,7 +448,7 @@ void test("native Search insertion checks reuse and its final match-boundary byt
   assert.ok(
     !check(
       route,
-      [calls[0], { ...calls[1], args: { path: "task.txt", anchor: "OLD", text: "\nNEW" } }],
+      [calls[0], { ...calls[1], args: { path: "task.txt", anchor: "OLD", newText: "\nNEW" } }],
       "codemode",
     ),
   );
@@ -552,7 +552,7 @@ for (const mode of ["direct", "codemode"]) {
       const calls: Call[] = [
         {
           tool: "replace",
-          args: { path: "task.txt", start: "OLD", text: "NEW" },
+          args: { path: "task.txt", start: "OLD", newText: "NEW" },
           text: `<uuid>${uuid}</uuid>`,
         },
         { tool: "read", args: { path: source, views: ["changes"] }, text: "CHANGE#ABCD" },
@@ -652,7 +652,7 @@ for (const mode of ["direct", "codemode"]) {
       const route = steps(`replace-line-boundary-${ending}`);
       const call: Call = {
         tool: "replace",
-        args: { path: "heading.txt", start: "## OLD", text: "## NEW" },
+        args: { path: "heading.txt", start: "## OLD", newText: "## NEW" },
       };
       assert.ok(check(route, [call], mode));
       assert.ok(!check(route, [{ ...call, args: { ...call.args, end: "## OLD" } }], mode));
@@ -674,7 +674,7 @@ for (const mode of ["direct", "codemode"]) {
       assert.ok(replace && readStep && deleteStep);
       const first: Call = {
         tool: "replace",
-        args: { path: "last.txt", start: "Last", text: "Final" },
+        args: { path: "last.txt", start: "Last", newText: "Final" },
       };
       const replaceRoute = { ...task, steps: [replace] };
       assert.ok(validateRoute(replaceRoute, events([first], mode), mode).passed);
@@ -752,7 +752,12 @@ void test("incidental Inserts do not prescribe a selector spelling", () => {
           search,
           {
             tool: "insert",
-            args: { path: "task.txt", anchor: "SEARCH#ABCD:1:match", before: true, text: "top\n" },
+            args: {
+              path: "task.txt",
+              anchor: "SEARCH#ABCD:1:match",
+              before: true,
+              newText: "top\n",
+            },
           },
         ]),
         "direct",
@@ -765,7 +770,7 @@ void test("incidental Inserts do not prescribe a selector spelling", () => {
         events([
           {
             tool: "insert",
-            args: { path: "task.txt", anchor: "alpha", before: false, text: "top\n" },
+            args: { path: "task.txt", anchor: "alpha", before: false, newText: "top\n" },
           },
         ]),
         "direct",
@@ -876,7 +881,7 @@ for (const id of [
         value: { id: result },
       };
       for (const extras of refusal.tool === "replace"
-        ? [{ text: "BAD" }, { start: "another selection", text: "different payload" }, {}]
+        ? [{ newText: "BAD" }, { start: "another selection", newText: "different payload" }, {}]
         : [{ query: "BAD" }, { query: "different query" }]) {
         const rejected: Call = {
           tool: refusal.tool,
@@ -1140,7 +1145,7 @@ void test("Search :line replacement keeps the line only with its sent separator,
         { tool: "search" },
         {
           tool: "replace",
-          args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" + ending },
+          args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, newText: "BETA" + ending },
           reuse: { from: 0, field: "start" },
         },
       ],
@@ -1440,7 +1445,7 @@ for (const mode of ["direct", "codemode"]) {
     ] as const satisfies readonly Call[];
     assert.ok(check(route, calls, mode));
     for (const args of [
-      { anchor: "SEARCH#FFFF:1:match", text: "[", before: true },
+      { anchor: "SEARCH#FFFF:1:match", newText: "[", before: true },
       { ...calls[1].args, path: "wrong.txt" },
     ]) {
       assert.ok(!check(route, [calls[0], { tool: "insert", args }, ...calls.slice(2)], mode));
@@ -1611,7 +1616,7 @@ void test("debug source accepts the earlier Read value, not an unrelated or fail
   };
   const edit: Call = {
     tool: "insert",
-    args: { path: read.value, anchor: "ABCDEFG", text: "breakpoint" },
+    args: { path: read.value, anchor: "ABCDEFG", newText: "breakpoint" },
   };
   assert.ok(check(route, [read, edit], "codemode"));
   assert.ok(
@@ -1818,7 +1823,7 @@ void test("issued-result-edit requires a successful bounded selector replacement
     },
     {
       tool: "replace",
-      args: { path: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222", start: "NEW", text: "FINAL" },
+      args: { path: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222", start: "NEW", newText: "FINAL" },
     },
     { tool: "read", args: { path: "task.txt" }, text: "keep\nFINAL\nlast\n" },
   ] as const satisfies readonly Call[];

@@ -170,32 +170,32 @@ describe("issued whole-line replacement equivalence", () => {
     {
       files: { "task.txt": "keep\nOLD" },
       issued: read(),
-      args: { path: "task.txt", start: hash, text: "NEW\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n" },
     },
     {
       files: { "task.txt": "left OLD right\n" },
       issued: read(),
-      args: { path: "task.txt", start: hash, text: "NEW\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n" },
     },
     {
       files: { "task.txt": "OLD\n" },
       issued: [],
-      args: { path: "task.txt", start: hash, text: "NEW\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n" },
     },
     {
       files: { "task.txt": "OLD\n", "other.txt": "OLD\n" },
       issued: read("other.txt"),
-      args: { path: "task.txt", start: hash, text: "NEW\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n" },
     },
     {
       files: { "task.txt": "OLD\n" },
       issued: [start("read", "read", { path: "task.txt" }), end("read", `${hash}|OLD`, true)],
-      args: { path: "task.txt", start: hash, text: "NEW\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n" },
     },
     {
       files: { "task.txt": "OLD\n" },
       issued: read(),
-      args: { path: "task.txt", start: "D07BBXR", text: "NEW\n" },
+      args: { path: "task.txt", start: "D07BBXR", newText: "NEW\n" },
     },
     {
       files: { "task.txt": "OLD\n" },
@@ -205,7 +205,7 @@ describe("issued whole-line replacement equivalence", () => {
     {
       files: { "task.txt": "OLD\n" },
       issued: read(),
-      args: { path: "task.txt", start: hash, text: "NEW\n\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n\n" },
     },
     {
       files: { "task.txt": "OLD\n" },
@@ -214,12 +214,12 @@ describe("issued whole-line replacement equivalence", () => {
         start("edit", "write", { path: "task.txt", content: "OLD\n" }),
         end("edit"),
       ],
-      args: { path: "task.txt", start: hash, text: "NEW\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n" },
     },
     {
       files: { "task.txt": "OLD\n" },
       issued: [...read(), start("edit", "write", { path: "task.txt", content: "OLD\n" })],
-      args: { path: "task.txt", start: hash, text: "NEW\n" },
+      args: { path: "task.txt", start: hash, newText: "NEW\n" },
     },
   ])("does not invent whole-line or fresh-snapshot authority (%#)", ({ files, issued, args }) => {
     expect(
