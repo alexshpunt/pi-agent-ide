@@ -74,7 +74,7 @@ test.each(["direct", "codemode"])(
         ],
       }).run("Perform the supplied exact-text deletions");
       expect(await readFile(path.join(cwd, "valid.txt"), "utf8")).toBe("First\n");
-      expect(await readFile(path.join(cwd, "invalid.txt"), "utf8")).toBe("\n");
+      expect(await readFile(path.join(cwd, "invalid.txt"), "utf8")).toBe("");
       const step = capabilityCases.find((task) => task.id === "exact-eof-lf")?.steps[1];
       if (!step) throw new Error("Missing exact EOF capability");
       const events = run.traceEvents.flatMap((entry) =>
@@ -170,7 +170,7 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
             ...anchors.map((anchor, index) => ({
               tool: "insert",
-              args: { path: "task.txt", anchor, text: "ADDED", before: true },
+              args: { path: "task.txt", anchor, text: "ADDED\n", before: true },
               after: [0],
               ...(index > 0 && { sameAssistantWith: 1 }),
             })),

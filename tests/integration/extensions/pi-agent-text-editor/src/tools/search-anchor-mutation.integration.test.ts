@@ -223,7 +223,7 @@ test("deletes a final no-LF match through an all-match path resource", async () 
     }).run("Delete the final match through an all-match search path resource");
 
     expect(getToolExecution(result, "delete-final-match").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -345,7 +345,7 @@ test("deletes only the final line while preserving preceding content", async () 
   });
 }, 180_000);
 
-test("deletes all non-linewise matches while preserving separators", async () => {
+test("deletes adjacent exact matches that cover complete lines", async () => {
   await withTempWorkspace(async (directory) => {
     const source = path.join(directory, "adjacent-match-delete.txt");
     await writeFile(source, "needle\nneedle", "utf8");
@@ -377,10 +377,10 @@ test("deletes all non-linewise matches while preserving separators", async () =>
         ),
         assistantMessage([text("done")]),
       ],
-    }).run("Delete both exact matches while preserving their line separator");
+    }).run("Delete both exact matches with their line separator");
 
     expect(getToolExecution(result, "delete-adjacent-match").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("");
   });
 }, 180_000);
 
@@ -419,7 +419,7 @@ test("deletes a final no-LF per-result match through a path resource", async () 
     }).run("Delete one final search match through its per-result path resource");
 
     expect(getToolExecution(result, "delete-final-result").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -475,7 +475,7 @@ test("inserts after a final no-LF end anchor with a path union", async () => {
             toolCall({
               id: "insert-final",
               name: "insert",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", anchor: "end", text: "inserted" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", anchor: "end", text: "inserted\n" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -592,7 +592,7 @@ test("inserts after a final no-LF line when exact and linewise endpoints merge",
               arguments: {
                 anchor: "needle",
                 path: "SEARCH#RUNTIME:1:all:line",
-                text: "inserted",
+                text: "inserted\n",
               },
             }),
           ],
@@ -709,7 +709,6 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                // A literal selects only its characters; the line break puts the copy after it.
                 targetStart: "target\n",
               },
             }),
@@ -722,7 +721,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
 
     expect(getToolExecution(copyResult, "copy-search-range").isError).toBe(false);
     await expect(readFile(source, "utf8")).resolves.toBe("copy me\n");
-    await expect(readFile(target, "utf8")).resolves.toBe("target\ncopy me");
+    await expect(readFile(target, "utf8")).resolves.toBe("target\ncopy me\n");
     await writeFile(source, "move me\n", "utf8");
     await writeFile(target, "target\n", "utf8");
     const moveResult = await new PiIntegrationTest({
@@ -764,8 +763,8 @@ test("copies and moves ranges selected by per-result search anchors", async () =
     }).run("Search a source and target, then move the source range after the target anchor");
 
     expect(getToolExecution(moveResult, "move-search-range").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("\n");
-    await expect(readFile(target, "utf8")).resolves.toBe("target\nmove me");
+    await expect(readFile(source, "utf8")).resolves.toBe("");
+    await expect(readFile(target, "utf8")).resolves.toBe("target\nmove me\n");
   });
 }, 180_000);
 
@@ -1028,7 +1027,7 @@ test("inserts after every reference of a list from different searches", async ()
     ["insert"],
     {
       path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#RUNTIME:2:1:line"],
-      text: "added",
+      text: "added\n",
     },
   );
   expect(run.failed).toBe(false);

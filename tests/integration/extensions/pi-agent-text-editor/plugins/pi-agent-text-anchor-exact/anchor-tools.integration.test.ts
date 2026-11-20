@@ -196,8 +196,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-delete-lines",
       "delete",
-      // Literal text selects only its characters, so the selection includes the last line break.
-      { start: "bravo\ncharlie\n" },
+      { start: "bravo\ncharlie" },
       ["alpha", "delta", "echo"].join("\n"),
     );
   });
@@ -207,7 +206,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-copy",
       "copy",
       { start: "bravo", targetStart: "delta" },
-      content.replace("delta", "deltabravo"),
+      ["alpha", "bravo", "charlie", "delta", "bravo", "echo"].join("\n"),
     );
   });
 
@@ -216,7 +215,7 @@ describe("exact text anchors through real text editor tools", () => {
       "exact-move",
       "move",
       { start: "bravo", targetStart: "delta" },
-      content.replace("bravo", "").replace("delta", "deltabravo"),
+      ["alpha", "charlie", "delta", "bravo", "echo"].join("\n"),
     );
   });
 
@@ -253,7 +252,7 @@ describe("exact text anchors through real text editor tools", () => {
         cwd: directory,
         testName: "exact-copy-crlf",
         tool: "copy",
-        // Literals select only their characters, so both include the line break of their line.
+        // Includes the source and target terminators to cover LPT-1747.
         arguments: {
           path: "source.txt",
           start: "alpha\nbravo\n",
@@ -262,7 +261,7 @@ describe("exact text anchors through real text editor tools", () => {
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
-      await expect(readFile(target, "utf8")).resolves.toBe("one\r\nalpha\nbravo\ntwo");
+      await expect(readFile(target, "utf8")).resolves.toBe("one\r\nalpha\nbravo\r\ntwo");
       await expect(readFile(source, "utf8")).resolves.toBe("alpha\nbravo\n");
     });
   });

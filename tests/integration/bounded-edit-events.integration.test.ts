@@ -51,7 +51,7 @@ function fixture(lineCount: number) {
     expected: `${expected.join("\n")}\n`,
     edits: [
       ...edits,
-      { name: "insert", args: { path: file, anchor: anchor(65), text: "inserted" } },
+      { name: "insert", args: { path: file, anchor: anchor(65), text: "inserted\n" } },
       { name: "move", args: { path: file, start: anchor(60), targetStart: anchor(75) } },
       { name: "write", args: { path: "written.txt", content: "small" } },
     ],

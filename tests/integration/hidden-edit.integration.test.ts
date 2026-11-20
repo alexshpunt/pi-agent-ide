@@ -65,7 +65,7 @@ test.each(["direct", "native"] as const)(
           call("insert", "insert", {
             path: "subject.txt",
             anchor: formatLineHashAnchor("alpha\nbeta\n", 1),
-            text: "recovered",
+            text: "recovered\n",
           }),
           assistantMessage([text("Done")]),
         ],

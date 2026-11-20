@@ -64,7 +64,7 @@ test("whole-file Delete keeps its filesystem route beside a text edit batch", as
       {
         id: "edit",
         name: "insert",
-        arguments: { path: "note.txt", anchor: "keep", text: "\nADDED" },
+        arguments: { path: "note.txt", anchor: "keep", text: "ADDED\n" },
       },
       ...removed.map((file, index) => ({
         id: `remove${index}`,
@@ -109,13 +109,13 @@ const sameFileEdits = [
   {
     tool: "insert",
     kind: "search",
-    args: { text: "ADDED", before: true },
+    args: { text: "ADDED\n", before: true },
     after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
   },
   {
     tool: "insert",
     kind: "uuid",
-    args: { text: "ADDED", before: true },
+    args: { text: "ADDED\n", before: true },
     after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
   },
 ] as const;
@@ -253,7 +253,7 @@ test("batch output selections preserve shifted ranges and empty replacement posi
           query: "LONG OR Ω OR OLD OR keep",
         }),
       ),
-      batch("second", ["FINAL0", "FINAL1", "FINAL2"], (index) => `$issued-uuid:first${index}`),
+      batch("second", ["FINAL0", "FINAL1\n", "FINAL2"], (index) => `$issued-uuid:first${index}`),
     ]);
     for (const index of [0, 1, 2]) {
       for (const prefix of ["first", "scope", "second"]) {
@@ -381,7 +381,7 @@ const consumers = [
     name: "insert-uuid",
     tool: "insert",
     kind: "uuid",
-    extra: { text: "BEFORE", before: true },
+    extra: { text: "BEFORE\n", before: true },
     after: "first\nBEFORE\nOLD\nlast\n",
   },
 ] as const;
@@ -556,7 +556,7 @@ test.each([false, true])(
         call("recovery", "insert", {
           path: "note.txt",
           anchor: "$issued-anchor:current:4",
-          text: "recovered",
+          text: "recovered\n",
         }),
       ]);
       expect(getToolExecution(result, "shift").isError).toBe(false);

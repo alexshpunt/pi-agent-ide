@@ -41,8 +41,8 @@ function fixture(content: string) {
   /** Copy a single-anchor source over a paired destination span, as Copy does. */
   const copyOver = async (source: string, targetStart: string, targetEnd: string) => {
     const target = await span(targetStart, targetEnd);
-    const text = document.text(await span(source));
-    const change = document.replace(target, text, { verbatim: true });
+    const text = document.transfer(await span(source));
+    const change = document.replace(target, text);
     return content.slice(0, change.from) + change.insert + content.slice(change.to);
   };
   return { document, context, span, replace, copyOver };
@@ -68,11 +68,11 @@ test.each(["\n", "\r\n"])(
 );
 
 test.each(["\n", "\r\n"])(
-  "paired whole-line literals select only their characters (%j)",
+  "paired whole-line literals select whole lines (LPT-1747) (%j)",
   async (eol) => {
     const { replace } = fixture(`before${eol}START${eol}body${eol}END${eol}after${eol}`);
     expect(await replace("START", "END", "NEW")).toBe(`before${eol}NEW${eol}after${eol}`);
-    expect(await replace("START", "END", "")).toBe(`before${eol}${eol}after${eol}`);
+    expect(await replace("START", "END", "")).toBe(`before${eol}after${eol}`);
     expect(await replace("START", undefined, "NEW")).toBe(
       `before${eol}NEW${eol}body${eol}END${eol}after${eol}`,
     );
@@ -95,12 +95,12 @@ test("multiline exact endpoints keep their own character boundaries", async () =
 });
 
 test.each(["\n", "\r\n"])(
-  "exact deletion through EOF keeps the preceding separator (%j)",
+  "whole-line deletion through EOF removes the preceding separator (LPT-1747) (%j)",
   async (eol) => {
     const { document, span, replace } = fixture(`keep${eol}START to END`);
-    expect(await replace("START", "END", "")).toBe(`keep${eol}`);
+    expect(await replace("START", "END", "")).toBe("keep");
     expect(document.delete(await span("START", "END"))).toEqual({
-      from: 4 + eol.length,
+      from: 4,
       to: 16 + eol.length,
       insert: "",
     });

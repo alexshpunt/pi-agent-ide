@@ -70,7 +70,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
     const starts = await context.resolveAnchors("start");
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const sourceSpan = await anchorSpanRange(context, starts, ends, "start", "end");
-    const copied = context.documentFor(sourceSpan.source).text(sourceSpan);
+    const copied = context.documentFor(sourceSpan.source).transfer(sourceSpan);
     const deletion = {
       ...context.documentFor(sourceSpan.source).delete(sourceSpan),
       selectorFields: parameters.end === undefined ? ["start"] : ["start", "end"],
@@ -80,9 +80,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
     let target: string;
     let targetChange: TextChange;
     if (parameters.targetEnd === undefined) {
-      [target, targetChange] = insertionAfterAnchor(context, targetStarts, "targetStart", copied, {
-        verbatim: true,
-      });
+      [target, targetChange] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
     } else {
       const targetEnds = await context.resolveAnchors("targetEnd");
       const targetSpan = await anchorSpanRange(
@@ -93,7 +91,7 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
         "targetEnd",
       );
       target = targetSpan.source;
-      targetChange = context.documentFor(target).replace(targetSpan, copied, { verbatim: true });
+      targetChange = context.documentFor(target).replace(targetSpan, copied);
     }
 
     const destination = {

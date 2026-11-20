@@ -76,7 +76,7 @@ test.each(["numbered", "all"] as const)(
                     ? `$issued-search:details:${index}`
                     : "$issued-searchallline:compact",
                 before: true,
-                text: "ADDED",
+                text: "ADDED\n",
               },
             }),
           ),

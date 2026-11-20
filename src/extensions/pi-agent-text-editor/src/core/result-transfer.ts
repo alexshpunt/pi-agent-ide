@@ -179,22 +179,18 @@ export async function prepareResultTransfer(
       };
       const planned: { target: TransferSpan; change: TextChange }[] = [];
       for (const [index, span] of sources.entries()) {
-        const copied = context.documentFor(span.source).text(span);
+        const copied = context.documentFor(span.source).transfer(span);
         const destinationSpan = destinations?.[index];
         if (destinationSpan !== undefined) {
           planned.push({
             target: destinationSpan,
-            change: context
-              .documentFor(destinationSpan.source)
-              .replace(destinationSpan, copied, { verbatim: true }),
+            change: context.documentFor(destinationSpan.source).replace(destinationSpan, copied),
           });
           continue;
         }
         const starts = await context.resolveAnchors("targetStart");
         if (input.targetEnd === undefined) {
-          const [target, change] = insertionAfterAnchor(context, starts, "targetStart", copied, {
-            verbatim: true,
-          });
+          const [target, change] = insertionAfterAnchor(context, starts, "targetStart", copied);
           planned.push({
             target: { source: target, from: change.from, to: change.to },
             change,
@@ -209,17 +205,32 @@ export async function prepareResultTransfer(
           );
           planned.push({
             target,
-            change: context.documentFor(target.source).replace(target, copied, { verbatim: true }),
+            change: context.documentFor(target.source).replace(target, copied),
           });
         }
       }
       if (operation === "move") {
+        const spansBySource = new Map<string, TransferSpan[]>();
+        for (const span of sources) {
+          const group = spansBySource.get(span.source);
+          if (group === undefined) spansBySource.set(span.source, [span]);
+          else group.push(span);
+        }
+        const deletions = [...spansBySource].flatMap(([source, spans]) =>
+          context
+            .documentFor(source)
+            .deleteSpans(spans)
+            .map((change) => ({ source, ...change })),
+        );
         assertMoveTargets(
           sources,
-          planned.map((transfer) => transfer.target),
+          planned.map(({ target }) => target),
         );
-        for (const span of sources)
-          append(span, context.documentFor(span.source).delete(span), false);
+        assertMoveTargets(
+          deletions,
+          planned.map(({ target, change }) => ({ source: target.source, ...change })),
+        );
+        for (const deletion of deletions) append(deletion, deletion, false);
       }
       for (const transfer of planned) append(transfer.target, transfer.change, true);
       return { edits };

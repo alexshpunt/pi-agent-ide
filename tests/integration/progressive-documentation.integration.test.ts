@@ -211,7 +211,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-first",
             name: "codemode",
             arguments: {
-              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text !== "export const marker = 1;\\n") throw new Error("Read value changed: " + JSON.stringify(read)); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || found.matches[0].text !== "marker") throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"\\n// changed"}));',
+              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text !== "export const marker = 1;\\n") throw new Error("Read value changed: " + JSON.stringify(read)); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || found.matches[0].text !== "marker") throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed\\n"}));',
             },
           }),
         ],

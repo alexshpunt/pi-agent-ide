@@ -122,8 +122,9 @@ describe("TextChangeDocument.replace", () => {
 
   test("writes copied bytes verbatim", () => {
     const document = new TextChangeDocument(content);
-    const change = document.replace(document.lineSpan(2, 2), "export default routes;", {
-      verbatim: true,
+    const change = document.replace(document.lineSpan(2, 2), {
+      text: "export default routes;",
+      wholeLines: true,
     });
     expect(change.insert).toBe("export default routes;");
   });

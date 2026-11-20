@@ -77,7 +77,7 @@ const cases: {
   { name: "delete", args: { start: "prefix", end: anchor }, expected: original, error: true },
   {
     name: "replace",
-    // Two line endpoints select whole lines; the text replaces them and the last LF stays.
+    // The span covers whole lines; the text replaces them and the last LF stays.
     args: { start: "LINE#RUNTIME:1", end: anchor, text: "NEW\n" },
     expected: original.replace(selected, "NEW\n"),
   },
@@ -98,12 +98,12 @@ const cases: {
   },
   {
     name: "insert",
-    args: { anchor, text: "NEW" },
+    args: { anchor, text: "NEW\n" },
     expected: original.replace("GAP", "NEW\nGAP"),
   },
   {
     name: "insert",
-    args: { anchor, text: "NEW", before: true },
+    args: { anchor, text: "NEW\n", before: true },
     expected: original.replace("prefix END", "NEW\nprefix END"),
   },
   {
@@ -150,6 +150,8 @@ for (const [index, scenario] of cases.entries()) {
         testName: `mixed-boundary-${index}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
+        // Start Pi in the fixture workspace so it loads the post-processing setting.
+        transport: "rpc",
         extensions: [
           path.resolve(
             "tests/integration/extensions/pi-agent-text-editor/support/search-anchor-runtime-extension.ts",
