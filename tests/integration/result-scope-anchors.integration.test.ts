@@ -580,6 +580,80 @@ text(JSON.stringify({ retry: retry !== null }));
     });
   },
 );
+test.each(["direct", "codemode"] as const)(
+  "%s: retry an ambiguous exact selector with the issued all-match reference",
+  async (route) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "task.txt"), "inside OLD\noutside OLD\ninside OLD\n");
+      const result = await run(
+        cwd,
+        `ambiguous-exact-all-match-${route}`,
+        route === "direct"
+          ? [
+              { id: "scope", name: "search", arguments: { path: "task.txt", query: "inside OLD" } },
+              {
+                id: "ambiguous",
+                name: "replace",
+                arguments: { path: { id: "$issued-uuid:scope" }, start: "OLD", text: "NEW" },
+              },
+              {
+                id: "retry",
+                name: "replace",
+                arguments: {
+                  path: { id: "$issued-uuid:scope" },
+                  start: "$issued-searchallmatch:ambiguous",
+                  text: "NEW",
+                },
+              },
+            ]
+          : [
+              {
+                id: "ambiguous",
+                name: "codemode",
+                arguments: {
+                  code: `
+const scope = await tools.search({ path: "task.txt", query: "inside OLD" });
+store("scope", scope);
+const replaced = await tools.replace({ path: scope, start: "OLD", text: "NEW" });
+text(JSON.stringify({ refused: replaced === null }));
+`,
+                },
+              },
+              {
+                id: "retry",
+                name: "codemode",
+                arguments: {
+                  code: `
+const scope = load("scope");
+const replaced = await tools.replace({ path: scope, start: "$issued-searchallmatch:ambiguous", text: "NEW" });
+text(JSON.stringify({ replaced: replaced !== null }));
+`,
+                },
+              },
+            ],
+        route === "direct" ? "tui" : "rpc",
+      );
+      const failure = getToolExecution(result, "ambiguous");
+      const output = getToolResultText(result, "ambiguous");
+      if (route === "direct") {
+        expect(failure.isError, output).toBe(true);
+        expect(getToolExecutionDetails(failure)).toMatchObject({ effect: "not-applied" });
+      } else {
+        expect(failure.isError, output).toBe(false);
+        expect(output).toContain(JSON.stringify({ refused: true }));
+        expect(getToolResultText(result, "retry")).toContain(JSON.stringify({ replaced: true }));
+      }
+      expect(output).toMatch(/SEARCH#[A-Fa-f\d]+:all:match\b/u);
+      expect(getToolExecution(result, "retry").isError, getToolResultText(result, "retry")).toBe(
+        false,
+      );
+      expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
+        "inside NEW\noutside OLD\ninside NEW\n",
+      );
+    });
+  },
+);
+
 test("Codemode passes results as path and values with an id as selectors", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "line.txt"), "First\nLast\n");

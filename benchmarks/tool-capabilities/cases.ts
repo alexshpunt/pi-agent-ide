@@ -3481,6 +3481,31 @@ add(
 );
 
 add(
+  "ambiguous-exact-all-match",
+  ["edit.ambiguous-exact-all-match"],
+  'Read only line 2 of task.txt (offset 2, limit 1). Pass that bounded Read result as Replace path, with literal start "OLD", text "NEW" and no end. Wait for the ambiguous-selector refusal. In Codemode, finish the script to see its failure summary and retain the Read value for the next script. Retry Replace with the same path and text, using the SEARCH# reference ending in :all:match from that refusal as start. Omit end again. Change both OLD fragments on line 2 and keep line 1 unchanged. Do not rerun Search or Read to obtain a different selection.',
+  [
+    { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
+    {
+      tool: "replace",
+      args: { start: "OLD", end: undefined },
+      exactText: ["start"],
+      reuse: reuse(0),
+      error: true,
+    },
+    {
+      tool: "replace",
+      args: { start: /^SEARCH#[A-Fa-f\d]+:all:match$/u, end: undefined },
+      reuse: [reuse(0), reuse(1, "start", "text")],
+    },
+  ],
+  {
+    files: { "task.txt": "outside OLD\ninside OLD and OLD\n" },
+    expected: { "task.txt": "outside OLD\ninside NEW and NEW\n" },
+  },
+);
+
+add(
   "copied-line-prefix-recovery",
   ["edit.copied-line-prefix-refusal"],
   "Read task.txt with anchors and wait for its result. Attempt Replace of line 2 using its issued line anchor as start and text consisting of that same 7-character anchor followed by |NEW. This deliberately copied display prefix must be refused without writes. Wait for the refusal, then retry Replace with the same start anchor and text NEW followed by a newline, without the prefix. Keep keep and last unchanged. In Codemode, continue after the refused call and keep its failure visible.",
