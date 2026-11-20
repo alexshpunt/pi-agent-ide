@@ -17,16 +17,30 @@ Raw text carries bytes that neither the model nor most readers see: a BOM, CRLF 
 Matching and writing follow different rules.
 
 - Matching uses general heuristics: exact, then normalized, then fuzzy, and the anchored view of the file. A literal that names the intended span selects it even when invisible bytes differ.
-- Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. The new text is saved as sent over a line anchor, a SEARCH# reference or a line range. Over exact text, its line breaks take the line ending of the line where the span starts, as Pi's edit writes them.
+- Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. Principle 4 gives the rules.
 - An ambiguous match is refused. The tools never pick between candidates; the error lists them so the next call can select one.
 
 A match never decides what the tool writes outside the span it selected.
 
-## 4. Every error tells the next step
+## 4. Selectors only locate; one algorithm writes
+
+Every edit inside a file goes through one write algorithm, whatever selected its place: exact text, a line anchor, a SEARCH# `:line` or `:match` reference, a line range, an LSP declaration or reference, an AST match, or a Read or Search result. A selector only resolves a span: a range of characters, or whole lines. It never decides how the text is written. The algorithm follows the rules of an edit by exact text, as Pi's edit writes `newText`:
+
+- Line breaks in the written text take the line ending of the line where the span starts. An insertion takes the line ending at the insertion point.
+- The BOM belongs to no line. No selector captures or removes it; only a whole-file `write` replaces it.
+- Over whole lines, the text replaces the content of the lines. The last line keeps its own ending: CRLF, LF, or none at the end of the file, whether or not the text ends with a line break. Joining a line with the next one therefore needs an exact-text selector.
+- Deleting whole lines removes them with their line endings and leaves no empty line. When the last deleted line has no ending, the line ending before it goes instead: deleting line 2 of `a⏎b` leaves `a`.
+- Inserting lines adds the separators they need. After the last line of a file that ends with a line break, the file still ends with one: inserting `added` after line 1 of `base⏎` gives `base⏎added⏎`. Inserting lines and deleting them again restores the original bytes.
+- A range with a line endpoint and an exact-text endpoint is a character span. The line endpoint marks the content boundary of its line: the start after a BOM, the end before the line ending. Deleting from `START` through line 3 of `left START right⏎middle⏎left END right⏎last` gives `left ⏎last`.
+- Copy and Move keep the copied bytes, including their line endings. The same rules decide the target span, the BOM, the last line's ending, and the separators added at the target, which take the target's line ending.
+
+Add no rule for one kind of selector. A case that a selector needs is a case of the write algorithm.
+
+## 5. Every error tells the next step
 
 An edit error says what did not match, what is similar, and which anchors to use. The recovery takes one turn: the next call can use a stable anchor from the error without reading the file again. An error that only reports failure is incomplete.
 
-## 5. General rules, measured
+## 6. General rules, measured
 
 Add a general rule, not a fix for one corner case. A new heuristic must hold across the cases the benchmarks cover, and each one is measured on:
 
