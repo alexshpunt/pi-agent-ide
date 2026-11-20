@@ -138,10 +138,11 @@ test("edits through the real tools change exactly the selected bytes", async () 
     const expected = [
       "\uFEFF// table\r\n",
       "export const routes = [\n",
-      '\t{ id: "home", retries: 1 },\r\n',
+      // Look-alikes the model retyped as plain spaces keep their bytes outside what it changed.
+      '\t{ id: "home",\u00A0retries: 1 },\r\n',
       '  { id: "checkout", retries: 5 }, // keep\rthis\r\n',
       '  { id: "find", retries: 4 },\n',
-      '  { id: "sale", retries: 6 },  \n',
+      '  { id: "sale",\u00A0retries: 6 },  \n',
       "];\r\n\r\n",
       "export default routeTable;",
     ].join("");

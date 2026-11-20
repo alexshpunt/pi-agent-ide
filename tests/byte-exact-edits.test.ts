@@ -27,6 +27,7 @@ import {
   TEXT_POSITION_ANCHOR_KIND,
   TEXT_SEARCH_ANCHOR_KIND,
 } from "#pi-agent-text-editor/api/plugin-protocol.ts";
+import { keepLookalikeBytes } from "#pi-agent-text-editor/core/lookalike-bytes.ts";
 import { createResultTargetAnchors } from "#pi-agent-text-editor/core/result-target-anchors.ts";
 import { createTextEditorCore } from "#pi-agent-text-editor/core/text-editor-core.ts";
 import { createTextTool } from "#pi-agent-text-editor/core/text-mutation.ts";
@@ -133,7 +134,7 @@ function writeLines(
 ): string {
   const { from, to } = linesContent(content, lines, low, high);
   if (text.length > 0) {
-    const written = sentText(content, from, text.replace(/(?:\r\n|\r|\n)$/u, ""));
+    const written = replacedText(content, from, to, text.replace(/(?:\r\n|\r|\n)$/u, ""));
     return content.slice(0, from) + written + content.slice(to);
   }
   if (content[(lines[high]?.to ?? 0) - 1] === "\n")
@@ -157,6 +158,14 @@ function lineEndingAt(content: string, at: number): string {
 /** Text sent for a literal selection as written at `at`. */
 function sentText(content: string, at: number, text: string): string {
   return text.replace(/\r\n?/gu, "\n").replaceAll("\n", lineEndingAt(content, at));
+}
+
+/**
+ * Text sent to replace `content[from, to)`: as sent, except that characters it retypes as
+ * look-alikes of the original, outside what it changes, keep the original bytes.
+ */
+function replacedText(content: string, from: number, to: number, text: string): string {
+  return keepLookalikeBytes(content.slice(from, to), sentText(content, from, text));
 }
 
 /** The source offset of an offset in `normalizeToLF(text)`: before the CR of a CRLF at its LF. */
@@ -458,7 +467,7 @@ function randomOperation(
           start: main.slice(span.from, span.to),
           ...(kind === 1 ? {} : { text: insert }),
         }),
-        expected: { "main.txt": splice(main, from, to, sentText(main, from, insert)) },
+        expected: { "main.txt": splice(main, from, to, replacedText(main, from, to, insert)) },
       };
     }
     case 2: {
@@ -483,7 +492,7 @@ function randomOperation(
         expected: (() => {
           const from = literalSpan(main, first).from;
           const to = literalSpan(main, second).to;
-          return { "main.txt": splice(main, from, to, sentText(main, from, text)) };
+          return { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) };
         })(),
       };
     }
@@ -519,7 +528,7 @@ function randomOperation(
       return {
         name: `replace match ${JSON.stringify(main.slice(span.from, span.to))}`,
         run: call(replaceMutationTool, { path: "main.txt", start: reference, text: text }),
-        expected: { "main.txt": splice(main, from, to, sentText(main, from, text)) },
+        expected: { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) },
       };
     }
     case 6: {
@@ -625,7 +634,7 @@ function randomOperation(
         run: call(replaceMutationTool, { path: "main.txt", start: variant, text: text }),
         expected:
           found.length === 1
-            ? { "main.txt": splice(main, from, to, sentText(main, from, text)) }
+            ? { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) }
             : undefined,
       };
     }
@@ -674,7 +683,7 @@ function randomOperation(
         run: call(replaceMutationTool, { path: "main.txt", start: variant, text: text }),
         expected:
           found.length === 1
-            ? { "main.txt": splice(main, from, to, sentText(main, from, text)) }
+            ? { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) }
             : undefined,
       };
     }
@@ -935,7 +944,8 @@ describe("byte-exact regressions", () => {
     });
     expect(result.isError, text).not.toBe(true);
     expect((await bytes("main.txt")).toString("utf8")).toBe(
-      `${line.replace("retries: 3\u202F},", "retries: 5 },")}  \r\nnext\n`,
+      // The narrow no-break space after the changed digit is not part of the change: it stays.
+      `${line.replace("retries: 3", "retries: 5")}  \r\nnext\n`,
     );
   });
 

@@ -2966,6 +2966,25 @@ for (const [name, eol, ending] of [
     },
   );
 }
+add(
+  "replace-lookalike-bytes",
+  ["edit.replace-lookalike-bytes"],
+  "Read routes.ts with anchors. Use Replace with the actual returned line anchor of its last line as start and the text export default routeTable; written with plain ASCII spaces. Keep every other byte of the file, including characters that look like spaces, quotes or dashes. Do not use literal text as start.",
+  [
+    { tool: "read", args: { path: "routes.ts", views: ["anchors"] } },
+    {
+      tool: "replace",
+      args: { path: "routes.ts", text: "export default routeTable;", end: undefined },
+      reuse: reuse(0, ["path", "start"], "anchor"),
+    },
+  ],
+  {
+    files: { "routes.ts": "// \u201Croutes\u201D \u2013 table\nexport\u00A0default routes;\n" },
+    expected: {
+      "routes.ts": "// \u201Croutes\u201D \u2013 table\nexport\u00A0default routeTable;\n",
+    },
+  },
+);
 for (const method of ["all", "allSettled"] as const) {
   add(
     `parallel-edit-effects-${method}`,

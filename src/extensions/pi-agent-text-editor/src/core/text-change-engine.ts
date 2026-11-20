@@ -1,5 +1,6 @@
 import { requiredValue } from "pi-agent-invariant";
 import { getLineEndingAt, normalizeToLF } from "#src/api/pi-edit-text.ts";
+import { keepLookalikeBytes } from "#src/core/lookalike-bytes.ts";
 
 export interface TextRange {
   readonly from: number;
@@ -150,7 +151,16 @@ export class TextChangeDocument {
   public replace(span: TextSpan, text: string, options: TextWriteOptions = {}): TextChange {
     if (text.length === 0) return this.delete(span);
     const range = this.charSpan(span);
-    return { ...range, insert: this.#written(text, range.from, options, span.lines !== undefined) };
+    const written = this.#written(text, range.from, options, span.lines !== undefined);
+    return {
+      ...range,
+      // Copied bytes are written as they are; text a model sent keeps the original bytes of
+      // look-alike characters that it retyped outside what it changed.
+      insert:
+        options.verbatim === true
+          ? written
+          : keepLookalikeBytes(this.content.slice(range.from, range.to), written),
+    };
   }
 
   /**
