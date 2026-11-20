@@ -280,6 +280,26 @@ test.each([
   expect(await f.content("test.txt")).toBe(expected);
 });
 
+test("the all-matches reference is short and leads the ambiguity error before the shown matches", async () => {
+  const content = "alpha red\nbeta red\ngamma red\n";
+  const f = await fixture({ "test.txt": content });
+  const input = { path: "test.txt", start: "red", text: "blue" };
+  const first = await f.run(replaceMutationTool, input);
+  const second = await f.run(replaceMutationTool, input);
+
+  const reference = allMatchesReference(first.text);
+  // The same format as a Search reference such as SEARCH#BB17:all:match, not a 32-digit hash.
+  expect(reference).toMatch(/^SEARCH#[A-F\d]{4}:all:match$/u);
+  // It sits in the first line with the match count, ahead of any other guidance or shown matches.
+  const lead = first.text.split("\n")[0] ?? "";
+  expect(lead).toContain(reference);
+  expect(lead).toContain("3");
+  expect(allMatchesReference(second.text)).not.toBe(reference);
+
+  await f.run(replaceMutationTool, { ...input, start: reference });
+  expect(await f.content("test.txt")).toBe("alpha blue\nbeta blue\ngamma blue\n");
+});
+
 test.each([
   { operation: deleteMutationTool, field: "start", expected: "outside red\n \n" },
   { operation: insertMutationTool, field: "anchor", expected: "outside red\n!red !red\n" },

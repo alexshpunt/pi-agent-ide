@@ -2176,14 +2176,18 @@ async function anchorFailureToolResult(
   }
 
   const allMatches = canOfferAll ? resolution.allMatchesTarget() : undefined;
-  const nextStep =
+  const offer: AllMatchesOffer | undefined =
     allMatches === undefined || retry === undefined
       ? undefined
-      : `To change all ${allMatches.ranges.length} matches, retry with ${retry.store.registerAllMatchesReference(allMatches, context.cwd)} as ${retry.field}.`;
+      : {
+          count: allMatches.ranges.length,
+          reference: retry.store.registerAllMatchesReference(allMatches, context.cwd),
+          field: retry.field,
+        };
   const reason =
-    nextStep === undefined
+    offer === undefined
       ? resolution.message
-      : `${resolution.message.replace(/[.!?]+$/u, "")}. ${nextStep}`;
+      : `${resolution.message.replace(/[.!?]+$/u, "")}. To change all ${offer.count} matches, pass ${offer.reference} as ${offer.field}.`;
   const result = new FileMutationResult({
     ok: false,
     path: contextual.source,
@@ -2211,7 +2215,7 @@ async function anchorFailureToolResult(
           } satisfies StaleAnchorMessageDetails,
           resolution.message,
         )
-      : formatRejectedAnchorMessage(contextual, rejectionCode, reason, recoveryContext);
+      : formatRejectedAnchorMessage(contextual, rejectionCode, reason, recoveryContext, offer);
 
   return {
     content: [{ type: "text", text: content }],
@@ -2234,12 +2238,32 @@ async function anchorFailureToolResult(
   };
 }
 
+/** A reference that selects every match of an ambiguous literal, and where to pass it. */
+interface AllMatchesOffer {
+  readonly count: number;
+  readonly reference: string;
+  readonly field: "start" | "anchor";
+}
+
 function formatRejectedAnchorMessage(
   failure: TextMutationAnchorResolutionError,
   code: TextAnchorRejection["code"] | undefined,
   reason: string,
   recoveryContext: string,
+  offer?: AllMatchesOffer,
 ): string {
+  if (offer !== undefined) {
+    // The all-matches step leads: it is the step an agent asked to change every match needs.
+    const one =
+      recoveryContext.length > 0
+        ? "use an anchor below or longer unique text"
+        : "get an anchor with Read/Search or use longer unique text";
+    return (
+      `[SYSTEM] ${failure.toolName} blocked: ${quoteAnchorExcerpt(failure.anchor)} matches ${offer.count} times in "${failure.source}". ` +
+      `To change all of them, pass ${offer.reference} as ${offer.field}; to change one, ${one}.` +
+      (recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`)
+    );
+  }
   const state =
     code === "ambiguous"
       ? "is ambiguous"

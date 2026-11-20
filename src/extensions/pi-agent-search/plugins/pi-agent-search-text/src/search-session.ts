@@ -148,7 +148,7 @@ export function createSearchSessionIdentity(
 /** Returns the shortest unused prefix of a complete search identity. */
 export function allocateSearchSessionId(
   identity: string,
-  allocatedIds: ReadonlySet<string>,
+  allocatedIds: { has(id: string): boolean },
 ): string {
   if (!/^[A-F0-9]{64}$/u.test(identity)) {
     throw new Error("Search session identity must be a 64-character uppercase hexadecimal value.");
@@ -266,7 +266,14 @@ export class SearchSessionStore {
     matches = withMultilineContext(matches, contentBySource, capture);
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
-    const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
+    // Ids the result store issued for other references, such as an all-match retry, are taken too.
+    const id =
+      knownId ??
+      allocateSearchSessionId(identity, {
+        has: (candidate) =>
+          this.#sessions.has(candidate) || this.resultTargets?.hasSearchId(candidate) === true,
+      });
+    this.resultTargets?.claimSearchId(id);
     const editWarning = tokenSelectionWarning(recipe, query, matches.length, complete);
     const hintReason = wordHintRejection(recipe, query, matches.length);
     const session: StoredSearchSession = {

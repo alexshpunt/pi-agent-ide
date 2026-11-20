@@ -357,6 +357,31 @@ test("colliding short ids keep both registered searches resolvable", async () =>
   ).resolves.toMatchObject({ kind: "resolved", targets: [{ source: secondSource }] });
 });
 
+test("a search never takes an id the result store issued for an all-match reference", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-issued-id-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  await writeFile(source, "first\n", "utf8");
+  const targets = new ResultTargetStore();
+  // The id this search would get is already issued to another reference.
+  targets.claimSearchId("ABCD");
+  const store = new SearchSessionStore(() => `ABCD0${"0".repeat(59)}`, targets);
+
+  const session = await store.register("first", [searchMatch(source, "first")], true, cwd);
+
+  expect(session.id).not.toBe("ABCD");
+  expect(targets.hasSearchId(session.id)).toBe(true);
+  const issued = targets.registerAllMatchesReference(
+    {
+      source,
+      expectedContent: "first\n",
+      ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 5 } }],
+    },
+    cwd,
+  );
+  expect(issued).not.toContain(`SEARCH#${session.id}:`);
+});
+
 test("search session id allocation fails instead of reusing an occupied identity", () => {
   const identity = "A".repeat(64);
   const occupiedPrefixes = new Set(

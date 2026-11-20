@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFileSync, statSync, type BigIntStats } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -110,7 +110,7 @@ export function resultValueReference(
  * copy of this package must not provide, such as a new method or different resolution rules.
  * Extensions bundle their own copy, so one session can load several versions.
  */
-export const RESULT_TARGET_STORE_VERSION = 11;
+export const RESULT_TARGET_STORE_VERSION = 12;
 const liveResource = /^(?:shell|debug):/u;
 /** Larger files are never reread on a change; their selections are retired instead. */
 const maxRebasedBytes = 16 * 1024 * 1024;
@@ -148,6 +148,8 @@ export class ResultTargetStore {
   /** Provider-owned source prohibitions also apply to newly registered Read/Search selections. */
   readonly #readOnlySources = new Map<string, string>();
   readonly #referenceNames = new Map<string, string>();
+  /** Ids of Search references in use. Kept when the store clears: sessions outlive its results. */
+  readonly #searchIds = new Set<string>();
   readonly #snapshots = new Map<string, FileSnapshot>();
   readonly #results = new Map<
     string,
@@ -359,12 +361,44 @@ export class ResultTargetStore {
     this.#bindSearchReference(reference, target);
   }
 
-  /** Issue a fixed selection of every match of a rejected literal, not a live Search query. */
+  /**
+   * Mark a Search id as used, so no all-match reference issued here can shadow the Search session
+   * that owns it, and no later session takes an id this store already issued.
+   */
+  public claimSearchId(id: string): void {
+    this.#searchIds.add(id);
+  }
+
+  /** Whether a Search id is already used by a session or an issued all-match reference. */
+  public hasSearchId(id: string): boolean {
+    return this.#searchIds.has(id);
+  }
+
+  /**
+   * Issue a fixed selection of every match of a rejected literal, not a live Search query. Its id
+   * has the length and format of a Search session id and is unused by any other Search reference.
+   */
   public registerAllMatchesReference(target: ResultSourceTarget, cwd: string): string {
-    const id = randomUUID().replaceAll("-", "").toUpperCase();
+    const id = this.#newSearchId();
     const reference = `SEARCH#${id}:all:match`;
     this.#bindSearchReference(reference, this.register([target], cwd));
     return reference;
+  }
+
+  /** A random unused id, as short as a Search session id and longer only when short ones run out. */
+  #newSearchId(): string {
+    for (let length = 4; length < 64; length += 1) {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const id = randomBytes(Math.ceil(length / 2))
+          .toString("hex")
+          .toUpperCase()
+          .slice(0, length);
+        if (this.#searchIds.has(id)) continue;
+        this.#searchIds.add(id);
+        return id;
+      }
+    }
+    throw new Error("Could not allocate a unique search reference id.");
   }
 
   #bindSearchReference(reference: string, target: string): void {

@@ -96,6 +96,25 @@ describe("source result targets", () => {
       expect(resultValueReference(store, value, "/workspace")).toBe(id);
     }
   });
+  test("an all-match reference looks like a Search reference and never reuses a Search id", () => {
+    const store = new ResultTargetStore();
+    const issued = Array.from({ length: 50 }, () =>
+      store.registerAllMatchesReference(target, "/workspace"),
+    );
+    for (const reference of issued) expect(reference).toMatch(/^SEARCH#[A-F\d]{4}:all:match$/u);
+    expect(new Set(issued).size).toBe(issued.length);
+    for (const reference of issued) {
+      expect(store.hasSearchReference(reference)).toBe(true);
+      expect(store.resolve(reference, "/workspace").targets).toEqual([target]);
+    }
+
+    // Once every four-digit id is used, a longer one is issued instead of a repeated one.
+    for (let id = 0; id < 0x10000; id += 1)
+      store.claimSearchId(id.toString(16).toUpperCase().padStart(4, "0"));
+    const longer = store.registerAllMatchesReference(target, "/workspace");
+    expect(longer).toMatch(/^SEARCH#[A-F\d]{5,}:all:match$/u);
+    expect(store.hasSearchId(/^SEARCH#([A-F\d]+):/u.exec(longer)?.[1] ?? "")).toBe(true);
+  });
   test("a value with an id passed as a selector becomes one reference", () => {
     const store = new ResultTargetStore();
     const one = store.register([target], "/workspace");
