@@ -38,7 +38,7 @@ async function run(
       path.resolve("src/pi-agent-ide.ts"),
       "builtin:codemode",
     ],
-    tools: ["read", "search", "replace", "delete", "insert", "copy", "codemode"],
+    tools: ["read", "search", "replace", "delete", "insert", "copy", "move", "codemode"],
     conversation: [
       ...steps.map((step) =>
         assistantMessage([toolCall({ ...step, delayMs: 0 })], { stopReason: "toolUse" }),
@@ -47,6 +47,213 @@ async function run(
     ],
   }).run("Edit inside results with selectors.");
 }
+
+test.each(
+  (["direct", "codemode"] as const).flatMap((route) =>
+    [
+      { label: "plain", joiner: "" },
+      { label: "zero-width-space", joiner: "\u200b" },
+    ].map((text) => ({ route, ...text })),
+  ),
+)(
+  "$route: multi-range Search scopes accept their own and narrower selectors ($label)",
+  async ({ route, joiner, label }) => {
+    await withTempWorkspace(async (cwd) => {
+      const old = `legacy${joiner}Checkout`;
+      const replacement = `stable${joiner}Checkout`;
+      const rows = Array.from({ length: 10 }, (_, index) => `    route-${index + 1} = ${old};\n`);
+      const original = `header\n${rows.join("")}footer\n`;
+      const narrowOriginal = original.replaceAll(
+        `route-2 = ${old}`,
+        `route-2 = legacy${joiner}Basket`,
+      );
+      const names = ["all-match", "all-line", "own-result", "narrow", "insert", "delete"] as const;
+      for (const name of names)
+        await writeFile(
+          path.join(cwd, `${name}.txt`),
+          name === "narrow" ? narrowOriginal : original,
+        );
+      const steps: { id: string; name: string; arguments: Record<string, JsonValue> }[] = [];
+      for (const name of names) {
+        steps.push({
+          id: `scope-${name}`,
+          name: "search",
+          arguments: {
+            path: `${name}.txt`,
+            query: name === "narrow" ? `regex:legacy${joiner}(?:Checkout|Basket)` : old,
+            limit: 20,
+          },
+        });
+        if (name === "narrow")
+          steps.push({
+            id: "narrower",
+            name: "search",
+            arguments: { path: { id: "$issued-uuid:scope-narrow" }, query: old, limit: 20 },
+          });
+        const selector =
+          name === "own-result"
+            ? { id: "$issued-uuid:scope-own-result" }
+            : name === "all-line"
+              ? "$issued-searchallline:scope-all-line"
+              : name === "narrow"
+                ? "$issued-searchallmatch:narrower"
+                : `$issued-searchallmatch:scope-${name}`;
+        const tool = name === "insert" || name === "delete" ? name : "replace";
+        const written = name === "all-line" ? "selected\n" : name === "insert" ? "!" : replacement;
+        const args = {
+          path: { id: `$issued-uuid:scope-${name}` },
+          ...(name === "insert" ? { anchor: selector } : { start: selector }),
+          ...(name === "delete" ? {} : { text: written }),
+        };
+        steps.push({
+          id: `edit-${name}`,
+          name: route === "direct" ? tool : "codemode",
+          arguments:
+            route === "direct"
+              ? args
+              : {
+                  code:
+                    name === "own-result"
+                      ? `const scope = await tools.search({ path: "own-result.txt", query: ${JSON.stringify(old)}, limit: 20 });\nawait tools.replace({ path: scope, start: scope, text: ${JSON.stringify(written)} });`
+                      : `await tools.${tool}(${JSON.stringify(args)});`,
+                },
+        });
+      }
+      // The native TUI representation issues SEARCH references on both routes.
+      const result = await run(cwd, `multi-range-search-scope-${route}-${label}`, steps, "tui");
+      for (const name of names) {
+        const id = `edit-${name}`;
+        expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
+        if (route === "codemode")
+          expect(getToolExecutionDetails(getToolExecution(result, id))).toMatchObject({
+            calls: Array.from({ length: name === "own-result" ? 2 : 1 }, () => ({ status: "ok" })),
+          });
+        const expected =
+          name === "all-line"
+            ? `header\n${"selected\n".repeat(10)}footer\n`
+            : (name === "narrow" ? narrowOriginal : original).replaceAll(
+                old,
+                name === "insert" ? `${old}!` : name === "delete" ? "" : replacement,
+              );
+        expect(await readFile(path.join(cwd, `${name}.txt`), "utf8")).toBe(expected);
+      }
+    });
+  },
+);
+
+test.each(["direct", "codemode"] as const)(
+  "%s: Search scopes allow line anchors and Move while refusing gaps and cross-range pairs",
+  async (route) => {
+    await withTempWorkspace(async (cwd) => {
+      const original =
+        "header\n  legacy\u200bCheckout first\nmiddle\n  legacy\u200bCheckout second\nfooter\n";
+      await writeFile(path.join(cwd, "source.txt"), original);
+      await writeFile(path.join(cwd, "line.txt"), original);
+      await writeFile(path.join(cwd, "target.txt"), "SLOT\n");
+      const steps: { id: string; name: string; arguments: Record<string, JsonValue> }[] = [
+        { id: "anchors", name: "read", arguments: { path: "source.txt", views: ["anchors"] } },
+        {
+          id: "scope",
+          name: "search",
+          arguments: { path: "source.txt", query: "legacy\u200bCheckout" },
+        },
+        { id: "line-anchors", name: "read", arguments: { path: "line.txt", views: ["anchors"] } },
+        {
+          id: "line-scope",
+          name: "search",
+          arguments: { path: "line.txt", query: "legacy\u200bCheckout" },
+        },
+      ];
+      const attempts = [
+        { id: "outside-text", start: "middle" },
+        { id: "outside-line", start: "$issued-anchor:anchors:3" },
+        {
+          id: "cross-match",
+          start: "$issued-searchmatch:scope:1",
+          end: "$issued-searchmatch:scope:2",
+        },
+        { id: "cross-line", start: "$issued-anchor:anchors:2", end: "$issued-anchor:anchors:4" },
+      ];
+      for (const { id, ...selector } of attempts) {
+        const args = {
+          path: { id: "$issued-uuid:scope" },
+          start: selector.start,
+          ...(selector.end === undefined ? {} : { end: selector.end }),
+          text: "BAD",
+        };
+        steps.push({
+          id,
+          name: route === "direct" ? "replace" : "codemode",
+          arguments:
+            route === "direct"
+              ? args
+              : {
+                  code: `await tools.replace(${JSON.stringify(args)});`,
+                },
+        });
+      }
+      const edits: { id: string; name: string; args: Record<string, JsonValue> }[] = [
+        {
+          id: "line-replace",
+          name: "replace",
+          args: {
+            path: { id: "$issued-uuid:line-scope" },
+            start: "$issued-anchor:line-anchors:2",
+            text: "selected\n",
+          },
+        },
+        {
+          id: "line-move",
+          name: "move",
+          args: {
+            path: { id: "$issued-uuid:scope" },
+            start: "$issued-anchor:anchors:2",
+            target: "target.txt",
+            targetStart: "SLOT",
+            targetEnd: "SLOT",
+          },
+        },
+      ];
+      for (const { id, name, args } of edits)
+        steps.push({
+          id,
+          name: route === "direct" ? name : "codemode",
+          arguments:
+            route === "direct"
+              ? args
+              : {
+                  code: `await tools.${name}(${JSON.stringify(args)});`,
+                },
+        });
+      const result = await run(cwd, `search-scope-line-anchors-${route}`, steps, "tui");
+      for (const { id } of attempts) {
+        expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(
+          route === "direct",
+        );
+        if (route === "codemode")
+          expect(getToolExecutionDetails(getToolExecution(result, id))).toMatchObject({
+            calls: [{ status: "error" }],
+          });
+      }
+      for (const { id } of edits) {
+        expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
+        if (route === "codemode")
+          expect(getToolExecutionDetails(getToolExecution(result, id))).toMatchObject({
+            calls: [{ status: "ok" }],
+          });
+      }
+      expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(
+        "header\nmiddle\n  legacy\u200bCheckout second\nfooter\n",
+      );
+      expect(await readFile(path.join(cwd, "line.txt"), "utf8")).toBe(
+        "header\nselected\nmiddle\n  legacy\u200bCheckout second\nfooter\n",
+      );
+      expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+        "  legacy\u200bCheckout first\n",
+      );
+    });
+  },
+);
 
 test.each(["direct", "codemode"] as const)(
   "%s: result lists with explicit selectors refuse all mutations and can be retried without selectors",
