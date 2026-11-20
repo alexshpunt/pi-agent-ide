@@ -38,13 +38,13 @@ const two=await tools.search({path:file,query:"two"});
 const five=anchorOf("five");
 const three=anchorOf("three");
 await tools.bash({command:"sed -i '1i zero' "+file});
-await tools.replace({path:four.matches[0].id,newText:"FOUR"});
-await tools.replace({path:file,start:five,newText:"LAST\\n"});
+await tools.replace({path:four.matches[0].id,text:"FOUR"});
+await tools.replace({path:file,start:five,text:"LAST\\n"});
 check((await tools.read({path:file})).text.startsWith("zero\\none\\ntwo\\nthree\\nFOUR\\nLAST"),"Edits above did not keep the targets");
 await tools.bash({command:"sed -i 's/two/2/' "+file});
-await rejects(()=>tools.replace({path:two.matches[0].id,newText:"X"}));
+await rejects(()=>tools.replace({path:two.matches[0].id,text:"X"}));
 await tools.bash({command:"sed -i 's/three/3/' "+file});
-await rejects(()=>tools.replace({path:file,start:three,newText:"X\\n"}));`;
+await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-survive-edits",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -90,12 +90,12 @@ const ref=(n)=>{const hit=found.matches[n-1]; check(hit&&hit.line===n&&hit.text=
 const [r3,r110,r112,r115,r117,r120]=[3,110,112,115,117,120].map(ref);
 // Another session shifts the file and edits other parts of every second line.
 await tools.bash({command:"sed -i '2~2s/other(/different(/' "+file+" && sed -i '1i top' "+file});
-await tools.replace({path:[r3,r110,r112],newText:"renamed"});
+await tools.replace({path:[r3,r110,r112],text:"renamed"});
 const after=await tools.read({path:file});
 check(after.text.includes("v_2 = renamed(a_2)")&&after.text.includes("v_109 = renamed(a_109)")&&after.text.includes("v_111 = renamed(a_111)"),"Targets were not applied at their new lines: "+after.text.slice(0,500));
 // Two stale matches must stop the entire call, including the still-valid match.
 await tools.bash({command:"sed -i '116s/rename_me/x_me/;118s/rename_me/y_me/' "+file});
-await rejects(()=>tools.replace({path:[r115,r117,r120],newText:"renamed"}));`;
+await rejects(()=>tools.replace({path:[r115,r117,r120],text:"renamed"}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-list-concurrent",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -167,7 +167,7 @@ for(let attempt=0;attempt<${String(attempts)};attempt++){
   if(!found.complete) continue;
   const next="step_"+String(attempt).padStart(2,"0");
   const chosen=names.flatMap((_,row)=>(row+attempt)%3===0?[]:[{row,ref:found.matches[row].id}]);
-  await tools.replace({path:chosen.map((item)=>item.ref),newText:next});
+  await tools.replace({path:chosen.map((item)=>item.ref),text:next});
   for(const item of chosen) names[item.row]=next;
   anchored++;
 }

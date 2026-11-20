@@ -62,7 +62,7 @@ describe("interactive text editor demos", () => {
                   path: demoFileName,
                   start: formatLineHashAnchor(baseline, line),
                   // A line anchor selects the line with its line break; the text keeps it.
-                  newText: `${replacement}\n`,
+                  text: `${replacement}\n`,
                 },
                 ...interactivePacing,
               }),

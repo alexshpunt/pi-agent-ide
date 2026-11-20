@@ -22,7 +22,7 @@ export const insertSchema = Type.Object(
     anchor: anchorProperty(
       "Selection whose start or end receives the text. Omit when path already selects text. With a result as path, it selects inside the result's ranges.",
     ),
-    newText: Type.String({
+    text: Type.String({
       minLength: 1,
       description:
         "Non-empty text to insert. A line selection, such as a line anchor, SEARCH :line or a Read result, puts the text on its own line and adds needed line breaks; exact text and SEARCH :match insert it exactly at their boundary.",
@@ -47,7 +47,7 @@ interface InsertParameters {
   readonly path?: unknown;
   /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
   readonly anchor?: unknown;
-  readonly newText: string;
+  readonly text: string;
   readonly separation?: "line" | "blank-line";
   readonly before?: boolean;
 }
@@ -68,7 +68,7 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
     },
   ],
   mutate: async (context, parameters: InsertParameters) => {
-    if (parameters.newText.length === 0) throw new Error("Insert text must not be empty.");
+    if (parameters.text.length === 0) throw new Error("Insert text must not be empty.");
     const anchors = await context.resolveAnchors("anchor");
     const selections = textSelections(anchors, "anchor");
 
@@ -76,7 +76,7 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
       const changes = insertionChanges(
         context,
         selections,
-        parameters.newText,
+        parameters.text,
         parameters.before,
         parameters.separation,
       );
@@ -95,7 +95,7 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
       context,
       anchors,
       "anchor",
-      parameters.newText,
+      parameters.text,
       parameters.separation,
     );
     return {

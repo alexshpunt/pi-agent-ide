@@ -100,7 +100,7 @@ test.each(["direct", "codemode"] as const)(
             args: {
               path: file,
               start: `${anchor}|OLD`,
-              newText: `${prefix}${anchor}|NEW`,
+              text: `${prefix}${anchor}|NEW`,
             },
             error: true,
             code: "COPIED_LINE_ANCHOR",
@@ -117,7 +117,7 @@ test.each(["direct", "codemode"] as const)(
             path: "retry.txt",
             start: anchor,
             end: anchor,
-            newText: `${anchor}|NEW`,
+            text: `${anchor}|NEW`,
           },
           error: true,
         },
@@ -125,7 +125,7 @@ test.each(["direct", "codemode"] as const)(
         {
           id: "retry",
           tool: "replace",
-          args: { path: "retry.txt", start: anchor, newText: "NEW\n" },
+          args: { path: "retry.txt", start: anchor, text: "NEW\n" },
         },
       );
       await writeFile(path.join(cwd, "literal-prefix.txt"), initial);
@@ -137,7 +137,7 @@ test.each(["direct", "codemode"] as const)(
           args: {
             path: "literal-prefix.txt",
             start: "OLD",
-            newText: `${anchor}|NEW`,
+            text: `${anchor}|NEW`,
           },
         },
         {
@@ -146,7 +146,7 @@ test.each(["direct", "codemode"] as const)(
           args: {
             path: "other-prefix.txt",
             start: anchor,
-            newText: "ZZZZZZZ|NEW\n",
+            text: "ZZZZZZZ|NEW\n",
           },
         },
       );
@@ -179,7 +179,7 @@ test.each(["direct", "codemode"] as const)(
           {
             id: `change-${tool}`,
             tool: "replace",
-            args: { path: file, start: anchor, newText: "NEW\n" },
+            args: { path: file, start: anchor, text: "NEW\n" },
           },
           {
             id: `stale-${tool}`,
@@ -187,7 +187,7 @@ test.each(["direct", "codemode"] as const)(
             args: {
               path: file,
               [tool === "insert" ? "anchor" : "start"]: anchor,
-              newText: "BLOCKED",
+              text: "BLOCKED",
             },
             error: true,
           },
@@ -200,7 +200,7 @@ test.each(["direct", "codemode"] as const)(
         args: {
           path: "literal.txt",
           start: `literal ${anchor}|payload`,
-          newText: "literal recovered",
+          text: "literal recovered",
         },
       });
       await run(cwd, route, "stale-anchor-collision", steps);

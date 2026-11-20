@@ -57,7 +57,7 @@ test("replacing a declaration name capture renames imports, re-exports and short
     `const declaration = await tools.lsp_search({declaration:"source.ts#count"});
 const name = declaration.matches[0].captures.name[0];
 if (!name.id || name.text !== "count") throw Error("Missing name capture");
-text(await tools.replace({path:name, newText:"total"}));`,
+text(await tools.replace({path:name, text:"total"}));`,
     "name-capture-rename",
     async (cwd) => {
       expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toBe("export const total = 1;\n");
@@ -74,7 +74,7 @@ text(await tools.replace({path:name, newText:"total"}));`,
 test("replacing a whole declaration remains a text edit", async () => {
   await scenario(
     `const declaration = await tools.lsp_search({declaration:"source.ts#count"});
-text(await tools.replace({path:declaration.matches[0], newText:"export const other = 2;\\n"}));`,
+text(await tools.replace({path:declaration.matches[0], text:"export const other = 2;\\n"}));`,
     "declaration-text-edit",
     async (cwd) => {
       expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toBe("export const other = 2;\n");
@@ -89,8 +89,8 @@ test("a changed name capture cannot silently become a text edit", async () => {
   await scenario(
     `const declaration = await tools.lsp_search({declaration:"source.ts#count"});
 const name = declaration.matches[0].captures.name[0];
-await tools.replace({path:"source.ts", start:"export const count = 1;", newText:"export const other = 1;"});
-if (await tools.replace({path:name, newText:"total"}) !== null) throw Error("Stale capture succeeded");`,
+await tools.replace({path:"source.ts", start:"export const count = 1;", text:"export const other = 1;"});
+if (await tools.replace({path:name, text:"total"}) !== null) throw Error("Stale capture succeeded");`,
     "stale-name-capture",
     async (cwd) => {
       expect(await readFile(path.join(cwd, "source.ts"), "utf8")).toContain(
@@ -109,8 +109,8 @@ test("a name capture retains LSP semantics beside an independent native batch ed
 const name = declaration.matches[0].captures.name[0];
 await tools.write({path:"independent.txt",content:"before"});
 const results = await Promise.all([
-  tools.replace({path:{...name, text:"forged", path:"usage.ts", line:999},newText:"total"}),
-  tools.replace({path:"independent.txt",start:"before",newText:"after"})
+  tools.replace({path:{...name, text:"forged", path:"usage.ts", line:999},text:"total"}),
+  tools.replace({path:"independent.txt",start:"before",text:"after"})
 ]);
 if (results.some(result => result === null)) throw Error("Concurrent edit failed");`,
     "name-capture-batch",
@@ -128,8 +128,8 @@ test("invalid and mixed name-capture requests never fall back to text replacemen
     `const declaration = await tools.lsp_search({declaration:"source.ts#count"});
 const name = declaration.matches[0].captures.name[0];
 for (const args of [
-  {path:name,newText:""}, {path:name,start:"count",newText:"total"},
-  {path:[name,declaration.matches[0]],newText:"total"}
+  {path:name,text:""}, {path:name,start:"count",text:"total"},
+  {path:[name,declaration.matches[0]],text:"total"}
 ]) if (await tools.replace(args) !== null) throw Error("Invalid capture edit succeeded");`,
     "name-capture-refusals",
     async (cwd) => {

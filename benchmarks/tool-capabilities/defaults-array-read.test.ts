@@ -197,7 +197,7 @@ for (const mode of ["direct", "codemode"]) {
         { tool: "read", args: { path: "b.txt" } },
         {
           tool: "replace",
-          args: { path: "b.txt", newText: "Changed" },
+          args: { path: "b.txt", text: "Changed" },
           reuse: { from: 0, field: "path" },
         },
       ],
@@ -214,7 +214,7 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(
       validateRoute(
         resultTask,
-        events([valued, { tool: "replace", args: { path: b, newText: "Changed" } }], mode),
+        events([valued, { tool: "replace", args: { path: b, text: "Changed" } }], mode),
         mode,
       ).passed,
     );
@@ -222,7 +222,7 @@ for (const mode of ["direct", "codemode"]) {
       assert.equal(
         validateRoute(
           resultTask,
-          events([valued, { tool: "replace", args: { path, newText: "Changed" } }], mode),
+          events([valued, { tool: "replace", args: { path, text: "Changed" } }], mode),
           mode,
         ).passed,
         false,
@@ -242,11 +242,11 @@ for (const mode of ["direct", "codemode"]) {
         text: paths.map((path, index) => `--- ${path} ---\n${texts[index]}\n`).join("\n"),
       };
       const edits: Call[] = [
-        { tool: "replace", args: { path: "last.txt", start: "Last", newText: "Final" } },
+        { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
         { tool: "delete", args: { path: "block.txt", start: `${eol}Last${eol}Block` } },
         {
           tool: "replace",
-          args: { path: "empty.txt", start: `${eol}Last${eol}Block`, newText: "" },
+          args: { path: "empty.txt", start: `${eol}Last${eol}Block`, text: "" },
         },
         { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
       ];
@@ -300,7 +300,7 @@ void test("standalone discovery may load each tool before its first use", () => 
     { tool: "demo_read", args: { path: "memory://demo/note", limit: 1 }, text: `alpha ${readId}` },
     { tool: "demo_search", args: { path: readId, query: "alpha" }, text: `alpha ${searchId}` },
     { tool: "tool_search", args: {}, loaded: ["demo_replace"] },
-    { tool: "demo_replace", args: { path: searchId, newText: "changed" } },
+    { tool: "demo_replace", args: { path: searchId, text: "changed" } },
     { tool: "demo_read", args: { path: "local.txt" }, error: true },
     { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
     { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },

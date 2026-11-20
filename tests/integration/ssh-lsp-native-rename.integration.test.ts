@@ -119,7 +119,7 @@ test.each(["cold graph", "rename"] as const)(
                       name: "replace",
                       arguments: {
                         path: `fixture:declaration:${root}/note.ts#greet#name`,
-                        newText: "welcome",
+                        text: "welcome",
                       },
                     }),
                   ]),

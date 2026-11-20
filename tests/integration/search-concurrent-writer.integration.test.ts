@@ -174,12 +174,12 @@ for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
 for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   // The whole result as an edit source: every occurrence of the identifier is renamed at once.
   const whole = await found("edit.cpp", "regex:alpha_token_\\\\d+", round, "identifier", ${String(edited.tokenOccurrences)});
-  const renamed = await tools.replace({path:whole,newText:"alpha_token_" + String(round)});
+  const renamed = await tools.replace({path:whole,text:"alpha_token_" + String(round)});
   check(renamed === null || (typeof renamed === "string" && renamed.startsWith("RESULT#")), "Round " + round + ": invalid whole-result rename value: " + JSON.stringify(renamed));
   // Match ids of a result with many matches: one marker of each round is retired.
   // The count is left open: the peer rewrites what it last read, so it can drop a retired marker.
   const markers = await found("edit.cpp", ${JSON.stringify(edited.markerQuery)}, round, "marker");
-  const retired = await tools.replace({path:markers.matches[0].id,newText:"beta_done_" + String(round)});
+  const retired = await tools.replace({path:markers.matches[0].id,text:"beta_done_" + String(round)});
   check(retired === null || (typeof retired === "string" && retired.startsWith("RESULT#")), "Round " + round + ": invalid numbered rename value: " + JSON.stringify(retired));
   // Give the slower peer a write window even when the edit rounds finish quickly.
   await tools.bash({command:"sleep 0.6"});

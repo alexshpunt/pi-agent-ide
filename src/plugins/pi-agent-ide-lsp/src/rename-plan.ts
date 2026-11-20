@@ -232,15 +232,15 @@ export function prepareSymbolRename(
     planEdit: async () => {
       if (
         capture === undefined ||
-        typeof input.newText !== "string" ||
-        input.newText.trim() === "" ||
+        typeof input.text !== "string" ||
+        input.text.trim() === "" ||
         input.start !== undefined ||
         input.end !== undefined
       )
         throw new Error(
           "Rename needs one declaration name capture and a non-empty new name. " +
             "Omit start/end. Use replace with " +
-            JSON.stringify({ path: selected.reference, newText: "newName" }),
+            JSON.stringify({ path: selected.reference, text: "newName" }),
         );
       state.signal?.throwIfAborted();
       const deadline = contendedCaptures.has(capture) ? startRefresh(capture) : undefined;
@@ -252,7 +252,7 @@ export function prepareSymbolRename(
           ? state.signal
           : AbortSignal.any([deadline, attempt, ...(state.signal ? [state.signal] : [])]);
       try {
-        const request: RenameRequest = { ...capture, newName: input.newText };
+        const request: RenameRequest = { ...capture, newName: input.text };
         const plan = await withLspDocuments(() =>
           planRename(state.cwd, signal, request, managerFor, () =>
             currentNameCapture(resultTargets, input.path, state.cwd, signal),

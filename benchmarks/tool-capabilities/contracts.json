@@ -606,10 +606,6 @@
           "before": {
             "type": "boolean"
           },
-          "newText": {
-            "minLength": 1,
-            "type": "string"
-          },
           "path": {
             "anyOf": [
               {
@@ -656,9 +652,13 @@
                 "type": "string"
               }
             ]
+          },
+          "text": {
+            "minLength": 1,
+            "type": "string"
           }
         },
-        "required": ["newText"],
+        "required": ["text"],
         "type": "object"
       }
     },
@@ -985,9 +985,6 @@
               }
             ]
           },
-          "newText": {
-            "type": "string"
-          },
           "path": {
             "anyOf": [
               {
@@ -1038,9 +1035,12 @@
                 "type": "object"
               }
             ]
+          },
+          "text": {
+            "type": "string"
           }
         },
-        "required": ["newText"],
+        "required": ["text"],
         "type": "object"
       }
     },

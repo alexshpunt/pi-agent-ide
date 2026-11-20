@@ -43,7 +43,7 @@ test("overflow overview preserves source coordinates for a later exact edit", as
           path: "large.ts",
           anchor: "}",
           before: true,
-          newText: "  finish();\n",
+          text: "  finish();\n",
         }),
         assistantMessage([text("Done")]),
       ],

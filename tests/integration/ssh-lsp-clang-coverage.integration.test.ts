@@ -121,7 +121,7 @@ test("C/C++ references on an SSH target open the files that name the symbol and 
               name: "replace",
               arguments: {
                 path: `fixture:declaration:${root}/lib.h#call_normalize_routine#name`,
-                newText: "renamed_routine",
+                text: "renamed_routine",
               },
             }),
           ]),

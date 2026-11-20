@@ -45,7 +45,7 @@ for (const native of [false, true]) {
         const hasPeer = native && scenario === "target-failed";
         if (hasPeer) await writeFile(path.join(cwd, peer), "OLD\n");
         const peerCode = hasPeer
-          ? `await tools.replace({path:${JSON.stringify(peer)},start:"OLD",newText:"CONFIRMED"}); await tools.read({path:${JSON.stringify(peer)}});`
+          ? `await tools.replace({path:${JSON.stringify(peer)},start:"OLD",text:"CONFIRMED"}); await tools.read({path:${JSON.stringify(peer)}});`
           : "";
         const run = await new PiIntegrationTest({
           testName: `move-rollback-${native ? "native" : "immediate"}-${scenario}`,

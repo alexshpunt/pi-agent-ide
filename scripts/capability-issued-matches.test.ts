@@ -90,7 +90,7 @@ function chain(mode: string, scope: unknown = "."): Call[] {
     },
     {
       tool: "replace",
-      args: { path: { id: `RESULT#${ids[1]}` }, newText: second.replace("9", "10") },
+      args: { path: { id: `RESULT#${ids[1]}` }, text: second.replace("9", "10") },
     },
   ];
 }
@@ -204,7 +204,7 @@ for (const mode of ["direct", "codemode"]) {
         args: { path: ".", include: "task.ts", pattern: "function $NAME() { return 7; }" },
         value,
       },
-      { tool: "replace", args: { path: { id: ids[2] }, newText: "renamed" } },
+      { tool: "replace", args: { path: { id: ids[2] }, text: "renamed" } },
     ];
     assert.ok(validateRoute(capture, events(calls, mode), mode).passed);
     for (const id of [ids[1], ids[3]]) {

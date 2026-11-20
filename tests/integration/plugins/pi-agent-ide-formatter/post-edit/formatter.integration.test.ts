@@ -48,7 +48,7 @@ test("editing an unformatted Rust file preserves unrelated formatting", async ()
       arguments: {
         path: fileName,
         start: formatLineHashAnchor(before, 2),
-        newText: "    let value=2;\n",
+        text: "    let value=2;\n",
       },
     });
     expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -90,7 +90,7 @@ test("formatting a Rust edit leaves child modules unchanged", async () => {
       arguments: {
         path: "src/main.rs",
         start: formatLineHashAnchor(before, 4),
-        newText: '    println!( "changed" );\n',
+        text: '    println!( "changed" );\n',
       },
     });
     expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -119,7 +119,7 @@ test("editing a Rust 2024 let chain formats the saved file", async () => {
       arguments: {
         path: fileName,
         start: formatLineHashAnchor(before, 5),
-        newText: '        println!( "value={x}" );\n',
+        text: '        println!( "value={x}" );\n',
       },
     });
     expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -148,7 +148,7 @@ test("an installed built-in does not format without project evidence", async () 
         path: fileName,
         start: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
         // A line anchor selects the line with its line break; the text keeps it.
-        newText: "var Value=2\n",
+        text: "var Value=2\n",
       },
     });
 
@@ -180,7 +180,7 @@ test("an installed built-in formats when the project has matching evidence", asy
       arguments: {
         path: fileName,
         start: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
-        newText: "var Value=2\n",
+        text: "var Value=2\n",
       },
     });
 
@@ -254,7 +254,7 @@ test("an edit returns the formatter result instead of the requested intermediate
       arguments: {
         path: fileName,
         start: formatLineHashAnchor(before, 1),
-        newText: `${requestedLine}\n`,
+        text: `${requestedLine}\n`,
       },
     });
 
@@ -297,7 +297,7 @@ test.skipIf(process.platform !== "win32" || !process.env.PI_TEST_WSL_FORMATTER_P
         arguments: {
           path: file,
           start: formatLineHashAnchor(before, 1),
-          newText: "export const value = 2;\n",
+          text: "export const value = 2;\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);

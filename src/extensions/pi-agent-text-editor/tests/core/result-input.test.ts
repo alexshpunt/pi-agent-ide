@@ -76,7 +76,7 @@ for (const complete of [true, false]) {
         "structured-replace",
         {
           path: target,
-          newText: "READY",
+          text: "READY",
         },
         undefined,
         undefined,
@@ -94,7 +94,7 @@ for (const complete of [true, false]) {
       }
       const empty = await tool.execute(
         "empty",
-        { path: [], newText: "must not write" },
+        { path: [], text: "must not write" },
         undefined,
         undefined,
         { cwd } as ExtensionToolContext,
@@ -137,7 +137,7 @@ test.each([
             annotations,
             () => undefined,
             store,
-          ).execute(operation, { path: target, newText: "new" }, undefined, undefined, context)
+          ).execute(operation, { path: target, text: "new" }, undefined, undefined, context)
         : await createTextTool(core, copyMutationTool, annotations, () => undefined, store).execute(
             operation,
             { path: target, target: "destination.txt" },

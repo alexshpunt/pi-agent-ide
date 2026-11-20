@@ -198,7 +198,7 @@ for (const effect of ["not-applied", "applied", "unknown"] as const) {
       );
       const result = await tool.execute(
         "post-write-effect",
-        { path: file, newText: "after" },
+        { path: file, text: "after" },
         undefined,
         undefined,
         {
@@ -219,7 +219,7 @@ for (const effect of ["not-applied", "applied", "unknown"] as const) {
       await executeRegisteredTextBatch(
         core,
         new Map([["replace", definition]]),
-        { edits: [{ callId: "post-write-batch", op: "replace", path: file, newText: "after" }] },
+        { edits: [{ callId: "post-write-batch", op: "replace", path: file, text: "after" }] },
         undefined,
         undefined,
         { cwd } as ExtensionToolContext,

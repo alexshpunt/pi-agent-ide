@@ -51,7 +51,7 @@ const cases: {
   },
   {
     name: "replace",
-    args: { path: anchor, end: "GAP\n", newText: "NEW\n" },
+    args: { path: anchor, end: "GAP\n", text: "NEW\n" },
     expected: original.replace("prefix END suffix\nGAP\n", "NEW\n"),
   },
   {
@@ -67,7 +67,7 @@ const cases: {
   },
   {
     name: "replace",
-    args: { start: "ZZZZZZZ", end: anchor, newText: "BAD" },
+    args: { start: "ZZZZZZZ", end: anchor, text: "BAD" },
     expected: original,
     error: true,
   },
@@ -75,7 +75,7 @@ const cases: {
   {
     name: "replace",
     // Two line endpoints select whole lines with their LFs; the text keeps one line.
-    args: { start: "LINE#RUNTIME:1", end: anchor, newText: "NEW\n" },
+    args: { start: "LINE#RUNTIME:1", end: anchor, text: "NEW\n" },
     expected: original.replace(selected, "NEW\n"),
   },
   {
@@ -95,12 +95,12 @@ const cases: {
   },
   {
     name: "insert",
-    args: { anchor, newText: "NEW" },
+    args: { anchor, text: "NEW" },
     expected: original.replace("GAP", "NEW\nGAP"),
   },
   {
     name: "insert",
-    args: { anchor, newText: "NEW", before: true },
+    args: { anchor, text: "NEW", before: true },
     expected: original.replace("prefix END", "NEW\nprefix END"),
   },
   {
@@ -110,7 +110,7 @@ const cases: {
   },
   {
     name: "replace",
-    args: { start: "SEARCH#RUNTIME:1:1:match", newText: "NEW" },
+    args: { start: "SEARCH#RUNTIME:1:1:match", text: "NEW" },
     expected: original.replace("END", "NEW"),
   },
   {

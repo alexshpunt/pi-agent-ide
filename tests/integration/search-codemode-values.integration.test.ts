@@ -22,7 +22,7 @@ const zero = await tools.search({path:seed,query:"regex:absent"});
 const some = await tools.search({path:seed,query:"regex:probe"});
 check(zero.matches.length === 0 && zero.complete === false,"Incomplete empty scope became absence");
 check(some.matches.length === 1 && some.complete === false,"Inherited incomplete coverage was lost");
-const blocked = (await tools.replace({path:zero,newText:"BAD"})) === null;
+const blocked = (await tools.replace({path:zero,text:"BAD"})) === null;
 check(blocked,"Incomplete scope authorized an edit");
 const large = await tools.search({path:"large.txt",query:"regex:^entry\\\\d+ x+$"});
 check(large.complete === true && large.matches.length === 150,"Search value lost matches");
@@ -128,21 +128,21 @@ test("Search and ast_search values compose by match, capture and stored value wh
 function check(value, message) { if (!value) throw Error(message + ": " + JSON.stringify(value)); }
 const empty = await tools.search({path:"note.txt",query:"regex:absent"});
 check(empty.complete === true && empty.matches.length === 0 && /^RESULT#[a-f\\d-]{36}$/u.test(empty.id),"Complete empty Search");
-check(await tools.replace({path:empty,newText:"BAD"}) !== null,"Complete empty result must be a successful no-op");
-check(await tools.replace({path:"note.txt",start:empty.id,newText:"BAD"}) === null,"Empty endpoint must reject only its own call");
+check(await tools.replace({path:empty,text:"BAD"}) !== null,"Complete empty result must be a successful no-op");
+check(await tools.replace({path:"note.txt",start:empty.id,text:"BAD"}) === null,"Empty endpoint must reject only its own call");
 const found = await tools.search({path:"note.txt",query:"beta"});
 check(found.complete === true && found.matches.length === 2,"Search matches");
 check(found.matches.every((match) => match.path === "note.txt" && match.text === "beta" && match.id.startsWith("RESULT#")),"Match fields");
 check(found.matches.map((match) => match.line).join() === "2,4","Match lines");
 check(Object.keys(found).sort().join() === "complete,id,matches","Private fields leaked");
 check(Object.keys(found.matches[0]).sort().join() === "id,line,lineText,path,text","Private match fields leaked");
-check(await tools.replace({path:found.matches[1],newText:"BETA2"}) !== null,"Replace one match by its value");
+check(await tools.replace({path:found.matches[1],text:"BETA2"}) !== null,"Replace one match by its value");
 store("found", found);
 const calls = await tools.ast_search({path:"calls.ts",pattern:"call($ARG)"});
 check(calls.matches.map((match) => match.captures.ARG[0].text).join() === "one,two","Capture texts");
 for (const match of calls.matches) {
   const [arg] = match.captures.ARG;
-  check(await tools.replace({path:arg.id,newText:arg.text.toUpperCase()}) !== null,"Replace a capture by its id");
+  check(await tools.replace({path:arg.id,text:arg.text.toUpperCase()}) !== null,"Replace a capture by its id");
 }
 text("Search values verified");`;
     const run = await new PiIntegrationTest({
@@ -176,7 +176,7 @@ text("Search values verified");`;
               name: "codemode",
               arguments: {
                 // The stored match id follows the edit of the other match in the previous script.
-                code: 'const saved=load("found"); if (await tools.replace({path:saved.matches[0].id,newText:"BETA1"}) === null) throw Error("Stored match id"); text("Stored value verified");',
+                code: 'const saved=load("found"); if (await tools.replace({path:saved.matches[0].id,text:"BETA1"}) === null) throw Error("Stored match id"); text("Stored value verified");',
               },
               delayMs: 0,
             }),

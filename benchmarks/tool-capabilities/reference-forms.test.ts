@@ -62,10 +62,10 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read", args: { path: "task.txt", views: ["anchors"] }, text: "D07BBXQ|OLD" },
       {
         tool: "replace",
-        args: { path: "task.txt", start: "D07BBXQ|", newText: "D07BBXQ|NEW" },
+        args: { path: "task.txt", start: "D07BBXQ|", text: "D07BBXQ|NEW" },
         error: true,
       },
-      { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|", newText: "NEW" } },
+      { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|", text: "NEW" } },
     ];
     assert.ok(validateRoute(task, events(calls, mode), mode).passed);
     for (const start of ["123ABCD|", "D07BBXQ|WRONG"])

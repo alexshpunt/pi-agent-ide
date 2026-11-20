@@ -159,7 +159,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-bare-result",
                 name: "replace",
-                arguments: { start: `SEARCH#${searchId}:1`, newText: "BROKEN" },
+                arguments: { start: `SEARCH#${searchId}:1`, text: "BROKEN" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -169,7 +169,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-bare-all",
                 name: "replace",
-                arguments: { start: `SEARCH#${searchId}:all`, newText: "BROKEN" },
+                arguments: { start: `SEARCH#${searchId}:all`, text: "BROKEN" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -250,7 +250,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: replaceCallId,
                 name: "replace",
-                arguments: { start: allAnchor, newText: "modernName" },
+                arguments: { start: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -320,7 +320,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-with-unrelated-path",
                 name: "replace",
-                arguments: { path: unrelated, start: allAnchor, newText: "modernName" },
+                arguments: { path: unrelated, start: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -330,7 +330,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-with-explicit-path",
                 name: "replace",
-                arguments: { path: first, start: allAnchor, newText: "modernName" },
+                arguments: { path: first, start: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -396,7 +396,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-with-search-all-only",
                 name: "replace",
-                arguments: { start: allAnchor, newText: "modernName" },
+                arguments: { start: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -459,7 +459,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-stale-search",
                 name: "replace",
-                arguments: { start: allAnchor, newText: "modernName" },
+                arguments: { start: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -648,7 +648,7 @@ async function runExplicitSearchReplacement(
               arguments: {
                 start: selector.replace("SEARCH_SELECTOR", `SEARCH#${searchId}`),
                 // A :line selection includes its line break, so its replacement sends one.
-                newText: selector.endsWith(":line") ? "UPDATED\n" : "UPDATED",
+                text: selector.endsWith(":line") ? "UPDATED\n" : "UPDATED",
               },
             }),
           ],

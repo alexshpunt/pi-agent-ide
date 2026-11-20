@@ -98,7 +98,7 @@ const RENAME = {
   name: "replace",
   arguments: {
     path: "fixture:declaration:lib.h#call_normalize_routine#name",
-    newText: "renamed_routine",
+    text: "renamed_routine",
   },
 };
 const ALL_MATCHES = /SEARCH#\w+:all:match/u;

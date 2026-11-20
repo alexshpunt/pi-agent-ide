@@ -17,12 +17,12 @@ import { withTextResultChecks } from "#integration/support/text-result-checks.ts
 // Each edit resolves to the id of the text it produced, or null when it selects none.
 const script = `
 const id = (value, what) => { check(typeof value==="string" && /^RESULT#[a-f0-9-]{36}$/.test(value), what+" did not resolve to an id: "+JSON.stringify(value)); return value; };
-const replaced = id(await tools.replace({path:"a.txt",start:"alpha",newText:"ALPHA"}), "Replace");
-id(await tools.insert({path:"a.txt",anchor:"gamma",newText:" delta"}), "Insert");
+const replaced = id(await tools.replace({path:"a.txt",start:"alpha",text:"ALPHA"}), "Replace");
+id(await tools.insert({path:"a.txt",anchor:"gamma",text:" delta"}), "Insert");
 // The id of an edit still pending in the batch: the next call commits the batch first.
 const found = await tools.search({path:replaced,query:"ALPHA"});
 check(found.matches.length===1 && found.complete===true, "Search lost the pending replacement: "+JSON.stringify(found));
-id(await tools.replace({path:replaced,newText:"OMEGA"}), "Chained Replace");
+id(await tools.replace({path:replaced,text:"OMEGA"}), "Chained Replace");
 check(await tools.delete({path:"a.txt",start:"beta "})===null, "Delete selected text");
 const written = id(await tools.write({path:"b.txt",content:"one\\ntwo\\n"}), "Write");
 check((await tools.read({path:written})).text==="one\\ntwo\\n", "Write id lost the whole file");

@@ -59,7 +59,7 @@ for (const expanded of [false, true]) {
             ? {
                 path: file,
                 start: "unchanged source line 0005",
-                newText: "changed source line five",
+                text: "changed source line five",
               }
             : name === "read"
               ? { path: file, offset: 4, limit: 8, views: ["anchors"] }
@@ -196,13 +196,13 @@ test("restores formatted multi-hunk batch results and errors without source file
             toolCall({
               id: "batch-first",
               name: "replace",
-              arguments: { path: file, start: "source line 5", newText: "unformatted first" },
+              arguments: { path: file, start: "source line 5", text: "unformatted first" },
               delayMs: 0,
             }),
             toolCall({
               id: "batch-last",
               name: "replace",
-              arguments: { path: file, start: "source line 25", newText: "unformatted last" },
+              arguments: { path: file, start: "source line 25", text: "unformatted last" },
               delayMs: 0,
             }),
           ],
@@ -213,7 +213,7 @@ test("restores formatted multi-hunk batch results and errors without source file
             toolCall({
               id: "batch-error",
               name: "replace",
-              arguments: { path: file, start: "absent anchor", newText: "never written" },
+              arguments: { path: file, start: "absent anchor", text: "never written" },
               delayMs: 0,
             }),
           ],

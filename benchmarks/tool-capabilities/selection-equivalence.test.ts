@@ -238,13 +238,13 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read" },
       {
         tool: "replace",
-        args: { path: "source.txt", start: "Last", newText: "Final" },
+        args: { path: "source.txt", start: "Last", text: "Final" },
         reuse: { from: 0, field: "start", kind: "anchor" },
       },
     ];
     const replace: Call = {
       tool: "replace",
-      args: { path: { id }, start: "123ABCD", newText: "Final" },
+      args: { path: { id }, start: "123ABCD", text: "Final" },
     };
     for (const start of ["123ABCD", "123ABCD|Last", "123ABCD|Last\n"])
       assert.ok(
@@ -253,8 +253,8 @@ for (const mode of ["direct", "codemode"]) {
     const single = { ...read, args: { ...read.args, path: ["source.txt"] }, value: { id } };
     assert.ok(passed(files, route, [single, replace], mode));
     for (const args of [
-      { path: { id }, newText: "Final" },
-      { path: "source.txt", start: { id }, newText: "Final" },
+      { path: { id }, text: "Final" },
+      { path: "source.txt", start: { id }, text: "Final" },
     ])
       assert.ok(!passed(files, route, [read, { tool: "replace", args }], mode));
     // Literal paths must also restrict evidence to the selected array element.
@@ -267,35 +267,30 @@ for (const mode of ["direct", "codemode"]) {
       ),
     );
     assert.ok(
-      !passed(
-        files,
-        route,
-        [read, { ...replace, args: { ...replace.args, newText: "Wrong" } }],
-        mode,
-      ),
+      !passed(files, route, [read, { ...replace, args: { ...replace.args, text: "Wrong" } }], mode),
     );
     assert.ok(
       !passed(
         files,
         route,
-        [read, { tool: "replace", args: { path: "source.txt", start: "Last", newText: "Final" } }],
+        [read, { tool: "replace", args: { path: "source.txt", start: "Last", text: "Final" } }],
         mode,
       ),
     );
     const mutation: Call = {
       tool: "replace",
-      args: { path: { id }, start: "Last", newText: "Changed" },
+      args: { path: { id }, start: "Last", text: "Changed" },
     };
     assert.ok(!passed(files, route, [read, mutation, replace], mode));
     // Null siblings retain their slot and must not shift a later result onto the wrong path.
     const partial = { ...read, value: [null, { id: matchId, text: "765ABCD|Last" }] };
     const targetRoute: RouteStep[] = [
       { tool: "read" },
-      { tool: "replace", args: { path: "target.txt", start: "Last", newText: "Final" } },
+      { tool: "replace", args: { path: "target.txt", start: "Last", text: "Final" } },
     ];
     const targetEdit: Call = {
       tool: "replace",
-      args: { path: { id: matchId }, start: "765ABCD", newText: "Final" },
+      args: { path: { id: matchId }, start: "765ABCD", text: "Final" },
     };
     assert.ok(passed(files, targetRoute, [partial, targetEdit], mode));
     assert.ok(!passed(files, route, [partial, replace], mode));
@@ -305,7 +300,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read" },
       {
         tool: "replace",
-        args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, newText: "NEW" },
+        args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, text: "NEW" },
         reuse: { from: 0, field: "start", kind: "anchor" },
       },
     ];
@@ -318,7 +313,7 @@ for (const mode of ["direct", "codemode"]) {
     for (const anchor of ["123ABCD", "123ABCD|OLD", "123ABCD|OLD\r\n", "123ABCD|OLD\n"]) {
       const edit: Call = {
         tool: "replace",
-        args: { path: "task.txt", start: anchor, newText: "NEW" },
+        args: { path: "task.txt", start: anchor, text: "NEW" },
       };
       assert.ok(passed({ "task.txt": "OLD\r\n" }, route, [read, edit], mode), anchor);
       assert.ok(!passed({ "task.txt": "OLD\r\n" }, route, [{ ...read, error: true }, edit], mode));
@@ -328,7 +323,7 @@ for (const mode of ["direct", "codemode"]) {
         !passed(
           { "task.txt": "OLD\r\n" },
           route,
-          [read, { tool: "replace", args: { path: "task.txt", start: anchor, newText: "NEW" } }],
+          [read, { tool: "replace", args: { path: "task.txt", start: anchor, text: "NEW" } }],
           mode,
         ),
       );
@@ -339,14 +334,14 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "search" },
       {
         tool: "insert",
-        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, before: true, newText: "ADDED" },
+        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, before: true, text: "ADDED" },
         reuse: { from: 0, field: "path" },
       },
     ];
     for (const field of ["anchor", "start"]) {
       const insert: Call = {
         tool: "insert",
-        args: { path: "task.txt", [field]: "SEARCH#ABCD:1:line", before: true, newText: "ADDED" },
+        args: { path: "task.txt", [field]: "SEARCH#ABCD:1:line", before: true, text: "ADDED" },
       };
       assert.ok(passed({ "task.txt": "OLD\n" }, route, [search("task.txt", "OLD"), insert], mode));
       for (const change of [
@@ -540,13 +535,13 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "search" },
       {
         tool: "insert",
-        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, newText: "NEW" },
+        args: { path: /^SEARCH#[A-F0-9]+:1:line$/u, text: "NEW" },
         reuse: { from: 0, field: "path" },
       },
     ];
     const insert: Call = {
       tool: "insert",
-      args: { path: "task.txt", anchor: "SEARCH#ABCD:1:line", newText: "NEW" },
+      args: { path: "task.txt", anchor: "SEARCH#ABCD:1:line", text: "NEW" },
     };
     assert.ok(!passed(files, insertRoute, [found, insert], mode));
     const read: Call = {
@@ -588,7 +583,7 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(!passed(files, route, [copy], mode));
     const edit: Call = {
       tool: "replace",
-      args: { path: "task.txt", start: "Last", newText: "Changed" },
+      args: { path: "task.txt", start: "Last", text: "Changed" },
     };
     assert.ok(!passed(files, route, [read, edit, copy], mode));
     assert.ok(
@@ -608,14 +603,14 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "search" },
       {
         tool: "replace",
-        args: { newText: "NEW" },
+        args: { text: "NEW" },
         reuse: { from: 0, field: ["path", "start"], kind: "whole-result" },
       },
     ];
     const found = search("task.txt", "OLD");
     const replace: Call = {
       tool: "replace",
-      args: { path: "task.txt", start: "SEARCH#ABCD:1:match", newText: "NEW" },
+      args: { path: "task.txt", start: "SEARCH#ABCD:1:match", text: "NEW" },
     };
     assert.ok(passed({ "task.txt": "OLD\n" }, route, [found, replace], mode));
     for (const value of [
@@ -658,7 +653,7 @@ for (const mode of ["direct", "codemode"]) {
     };
     const edit: Call = {
       tool: "replace",
-      args: { path: "task.txt", start: "OLD", newText: "NEW" },
+      args: { path: "task.txt", start: "OLD", text: "NEW" },
     };
     const old: Call = { tool: "read", args: { path: { id } }, error: true };
     const fresh: Call = { tool: "read", args: { path: "task.txt" }, text: "NEW" };
@@ -675,7 +670,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "lsp_search" },
       {
         tool: "replace",
-        args: { newText: "total" },
+        args: { text: "total" },
         reuse: { from: 0, field: "path", kind: "capture:name" },
       },
     ];
@@ -720,7 +715,7 @@ for (const mode of ["direct", "codemode"]) {
       { ...declaration, text: "" },
     ]) {
       for (const reference of forms(nameId)) {
-        const edit = { tool: "replace", args: { path: reference, newText: "total" } };
+        const edit = { tool: "replace", args: { path: reference, text: "total" } };
         assert.ok(passed({}, route, [issuer, edit], mode));
         assert.ok(!passed({}, route, [{ ...issuer, error: true }, edit], mode));
         assert.ok(!passed({}, route, [edit, issuer], mode));
@@ -733,7 +728,7 @@ for (const mode of ["direct", "codemode"]) {
           !passed(
             {},
             route,
-            [issuer, { tool: "replace", args: { path: reference, newText: "total" } }],
+            [issuer, { tool: "replace", args: { path: reference, text: "total" } }],
             mode,
           ),
         );

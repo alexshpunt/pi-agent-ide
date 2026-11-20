@@ -34,7 +34,7 @@ export default async function semanticInsertReceipt(pi: ExtensionAPI): Promise<v
       api.tool("insert").addSemanticHandler({
         matches: (input) => (input as { path?: unknown }).path === SOURCE,
         async execute(_context, input) {
-          const { newText: text } = input as { newText: string };
+          const { text: text } = input as { text: string };
           return {
             source: SOURCE,
             summary: `Probe receipt: ${text} delivered`,

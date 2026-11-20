@@ -28,9 +28,9 @@ export const replaceSchema = Type.Object(
       }),
     ),
     ...sourceRangeProperties(),
-    newText: Type.String({
+    text: Type.String({
       description:
-        "Replacement for each selected range, saved exactly as sent; empty text deletes it. A line selection includes its line break: end the text with one to keep the line.",
+        "Replacement for each selected range; empty text deletes it. Line breaks in text written over exact text take the line ending of the line where the range starts; other selections save the text as sent. A line selection includes its line break: end the text with one to keep the line.",
     }),
   },
   { additionalProperties: false },
@@ -40,7 +40,7 @@ interface ReplaceParameters {
   /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
   readonly start?: unknown;
   readonly end?: unknown;
-  readonly newText: string;
+  readonly text: string;
 }
 
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
@@ -66,7 +66,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
   pair: ["start", "end"],
   mutate: async (context, parameters: ReplaceParameters) => {
     const starts = await context.resolveAnchors("start");
-    const copiedAnchor = PRESENTED_LINE_ANCHOR_PATTERN.exec(parameters.newText)?.[1];
+    const copiedAnchor = PRESENTED_LINE_ANCHOR_PATTERN.exec(parameters.text)?.[1];
     if (
       copiedAnchor !== undefined &&
       [...starts.values()].some(
@@ -78,12 +78,12 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
     ) {
       throw new TextMutationInputError(
         "COPIED_LINE_ANCHOR",
-        `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from newText and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
+        `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from text and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
       );
     }
     const selections = textSelections(starts, "start");
     if (parameters.end === undefined && selections !== undefined) {
-      const changes = selectionChanges(context, selections, parameters.newText);
+      const changes = selectionChanges(context, selections, parameters.text);
       refuseIdenticalReplacement(
         context,
         [...changes].flatMap(([source, sourceChanges]) =>
@@ -102,7 +102,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
 
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const span = await anchorSpanRange(context, starts, ends, "start", "end");
-    const change = replaceAnchorSpan(span, parameters.newText);
+    const change = replaceAnchorSpan(span, parameters.text);
     refuseIdenticalReplacement(context, [{ source: span.source, ...change }]);
     return {
       edits: new Map([[span.source, { changes: [change], action: "edited" }]]),

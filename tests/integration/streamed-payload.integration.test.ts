@@ -21,7 +21,7 @@ test("a bounded repeated edit payload completes through real Pi argument streami
       path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
       JSON.stringify({ disabled: ["ide.lsp", "ide.lint", "ide.formatter"] }),
     );
-    const args = JSON.stringify({ path: "note.txt", start: "OLD", newText: payload });
+    const args = JSON.stringify({ path: "note.txt", start: "OLD", text: payload });
     const chunks = Array.from({ length: Math.ceil(args.length / 8) }, (_, index) =>
       args.slice(index * 8, index * 8 + 8),
     );

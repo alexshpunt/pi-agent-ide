@@ -32,7 +32,7 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
           }
         : {}),
     });
-    if (input.newText === "BLOCKED") return { block: true, reason: "fixture blocked this edit" };
+    if (input.text === "BLOCKED") return { block: true, reason: "fixture blocked this edit" };
     return;
   });
   pi.on("tool_result", async (event, context) => {
@@ -65,18 +65,18 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
           }
         : {}),
     });
-    if (event.input.newText === "ABORT_PENDING" && !event.isError) context.abort();
-    if (event.input.newText === "SLOW_BOUNDARY" && event.parentToolCallId)
+    if (event.input.text === "ABORT_PENDING" && !event.isError) context.abort();
+    if (event.input.text === "SLOW_BOUNDARY" && event.parentToolCallId)
       slowParents.add(event.parentToolCallId);
     // A different writer changes the real file after acceptance but before commit.
-    if (event.input.newText === "RACE" && typeof event.input.path === "string")
+    if (event.input.text === "RACE" && typeof event.input.path === "string")
       await writeFile(path.resolve(context.cwd, event.input.path), "external\n");
     // Another writer changes the file after acceptance but keeps other calls' anchors.
-    if (event.input.newText === "RACE_APPEND" && typeof event.input.path === "string")
+    if (event.input.text === "RACE_APPEND" && typeof event.input.path === "string")
       await appendFile(path.resolve(context.cwd, event.input.path), "external\n");
     // A line replacement sends its marker with the line's LF.
     const marker =
-      typeof event.input.newText === "string" ? event.input.newText.replace(/\n$/u, "") : undefined;
+      typeof event.input.text === "string" ? event.input.text.replace(/\n$/u, "") : undefined;
     if (marker === "RACE_PREPEND" && typeof event.input.path === "string") {
       const file = path.resolve(context.cwd, event.input.path);
       await writeFile(file, "external\n" + (await readFile(file, "utf8")));
@@ -85,7 +85,7 @@ export default async function nativeBatchProbe(pi: ExtensionAPI): Promise<void> 
       const file = path.resolve(context.cwd, event.input.path);
       await writeFile(file, (await readFile(file, "utf8")).replace("gamma\n", ""));
     }
-    if (event.input.newText === "RACE_EXPAND" && typeof event.input.path === "string") {
+    if (event.input.text === "RACE_EXPAND" && typeof event.input.path === "string") {
       const file = path.resolve(context.cwd, event.input.path);
       await writeFile(file, "external\n" + (await readFile(file, "utf8")));
       await writeFile(path.join(context.cwd, "b.txt"), "beta\n");

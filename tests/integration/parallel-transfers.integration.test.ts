@@ -105,12 +105,12 @@ test("whole-object transfers split text batches without changing file, tree or l
       toolCall({
         id: "replace-alpha",
         name: "replace",
-        arguments: { path: "edited.txt", start: "alpha", newText: "ALPHA" },
+        arguments: { path: "edited.txt", start: "alpha", text: "ALPHA" },
       }),
       toolCall({
         id: "replace-beta",
         name: "replace",
-        arguments: { path: "edited.txt", start: "beta", newText: "BETA" },
+        arguments: { path: "edited.txt", start: "beta", text: "BETA" },
       }),
       ...transfers.map(({ name, path: source, target }, index) =>
         toolCall({ id: `object-${index}`, name, arguments: { path: source, target } }),

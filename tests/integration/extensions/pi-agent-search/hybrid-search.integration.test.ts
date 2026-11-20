@@ -198,7 +198,7 @@ test("refreshes a regex fallback as literal-first before reading and editing all
       call("read-original", "read", { path: "SEARCH#RUNTIME:1:all:match" }),
       call("change", "write", { path: "input.txt", content: "foo.bar\nfooYbar\n" }),
       call("read-refreshed", "read", { path: "SEARCH#RUNTIME:1:all:match" }),
-      call("replace", "replace", { path: "SEARCH#RUNTIME:1:all:match", newText: "done" }),
+      call("replace", "replace", { path: "SEARCH#RUNTIME:1:all:match", text: "done" }),
       assistantMessage([text("Done")]),
     ],
   }).run("Use fallback search anchors, then refresh them after an exact match appears");

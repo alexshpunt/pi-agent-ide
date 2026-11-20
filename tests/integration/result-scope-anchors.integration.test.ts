@@ -68,7 +68,7 @@ test.each(["direct", "codemode"] as const)(
               ...(name === "insert"
                 ? { anchor: "$issued-search:first:1" }
                 : { start: "$issued-search:first:1", end: "$issued-search:first:1" }),
-              ...(name === "delete" ? {} : { newText: "BAD\n" }),
+              ...(name === "delete" ? {} : { text: "BAD\n" }),
             },
           });
         }
@@ -77,7 +77,7 @@ test.each(["direct", "codemode"] as const)(
           name: "insert",
           arguments: {
             path: [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }],
-            newText: "NEW\n",
+            text: "NEW\n",
           },
         });
       } else {
@@ -89,10 +89,10 @@ test.each(["direct", "codemode"] as const)(
 const path = [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }];
 const anchor = "$issued-search:first:1";
 const refused = [];
-refused.push(await tools.insert({ path, anchor, newText: "BAD\\n" }));
-refused.push(await tools.replace({ path, start: anchor, end: anchor, newText: "BAD\\n" }));
+refused.push(await tools.insert({ path, anchor, text: "BAD\\n" }));
+refused.push(await tools.replace({ path, start: anchor, end: anchor, text: "BAD\\n" }));
 refused.push(await tools.delete({ path, start: anchor, end: anchor }));
-const retry = await tools.insert({ path, newText: "NEW\\n" });
+const retry = await tools.insert({ path, text: "NEW\\n" });
 text(JSON.stringify({ refused, retry: retry !== null }));
 `,
           },
@@ -140,7 +140,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "$issued-searchmatch:scope:1",
-                  newText: "ONE",
+                  text: "ONE",
                 },
               },
               {
@@ -148,7 +148,7 @@ test.each(["direct", "codemode"] as const)(
                 name: "replace",
                 arguments: {
                   path: ["$issued-searchmatch:scope:1", "$issued-searchmatch:scope:2"],
-                  newText: "BAD",
+                  text: "BAD",
                 },
               },
               {
@@ -157,7 +157,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "$issued-searchmatch:scope:1",
-                  newText: "BAD",
+                  text: "BAD",
                 },
               },
               {
@@ -165,7 +165,7 @@ test.each(["direct", "codemode"] as const)(
                 name: "replace",
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
-                  newText: "BAD",
+                  text: "BAD",
                 },
               },
               {
@@ -174,7 +174,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "keep2",
-                  newText: "BAD",
+                  text: "BAD",
                 },
               },
               {
@@ -183,7 +183,7 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: { id: "$issued-uuid:scope" },
                   start: "$issued-searchmatch:scope:2",
-                  newText: "TWO",
+                  text: "TWO",
                 },
               },
             ]
@@ -195,7 +195,7 @@ test.each(["direct", "codemode"] as const)(
                   code: `
 const scope = await tools.search({ path: "task.txt", query: "OLD" });
 store("scope", scope);
-const first = await tools.replace({ path: scope, start: scope.matches[0], newText: "ONE" });
+const first = await tools.replace({ path: scope, start: scope.matches[0], text: "ONE" });
 text(JSON.stringify({ first: first !== null }));
 `,
                 },
@@ -206,11 +206,11 @@ text(JSON.stringify({ first: first !== null }));
                 arguments: {
                   code: `
 const scope = load("scope");
-const list = await tools.replace({ path: scope.matches, newText: "BAD" });
-const stale = await tools.replace({ path: scope, start: scope.matches[0], newText: "BAD" });
-const whole = await tools.replace({ path: scope, newText: "BAD" });
-const outside = await tools.replace({ path: scope, start: "keep2", newText: "BAD" });
-const second = await tools.replace({ path: scope, start: scope.matches[1], newText: "TWO" });
+const list = await tools.replace({ path: scope.matches, text: "BAD" });
+const stale = await tools.replace({ path: scope, start: scope.matches[0], text: "BAD" });
+const whole = await tools.replace({ path: scope, text: "BAD" });
+const outside = await tools.replace({ path: scope, start: "keep2", text: "BAD" });
+const second = await tools.replace({ path: scope, start: scope.matches[1], text: "TWO" });
 text(JSON.stringify({ list, stale, whole, outside, second: second !== null }));
 `,
                 },
@@ -252,12 +252,12 @@ test.each(["direct", "codemode"] as const)(
               {
                 id: "miss",
                 name: "replace",
-                arguments: { path: "$issued-uuid:scope", start: "last", newText: "BAD" },
+                arguments: { path: "$issued-uuid:scope", start: "last", text: "BAD" },
               },
               {
                 id: "retry",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", newText: "fixed" },
+                arguments: { path: "task.txt", start: "last", text: "fixed" },
               },
             ]
           : [
@@ -267,8 +267,8 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   code: `
 const scope = await tools.read({ path: "task.txt", offset: 2, limit: 1 });
-const miss = await tools.replace({ path: scope, start: "last", newText: "BAD" });
-const retry = await tools.replace({ path: "task.txt", start: "last", newText: "fixed" });
+const miss = await tools.replace({ path: scope, start: "last", text: "BAD" });
+const retry = await tools.replace({ path: "task.txt", start: "last", text: "fixed" });
 text(JSON.stringify({ miss, retry: retry !== null }));
 `,
                 },
@@ -307,12 +307,12 @@ test.each(["direct", "codemode"] as const)(
               {
                 id: "miss",
                 name: "replace",
-                arguments: { path: "$issued-uuid:scope", start: "absent", newText: "BAD" },
+                arguments: { path: "$issued-uuid:scope", start: "absent", text: "BAD" },
               },
               {
                 id: "blocked",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", newText: "BAD" },
+                arguments: { path: "task.txt", start: "last", text: "BAD" },
               },
               {
                 id: "recover",
@@ -320,13 +320,13 @@ test.each(["direct", "codemode"] as const)(
                 arguments: {
                   path: "task.txt",
                   start: "$issued-anchor:anchors:2",
-                  newText: "NEW\n",
+                  text: "NEW\n",
                 },
               },
               {
                 id: "retry",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", newText: "fixed" },
+                arguments: { path: "task.txt", start: "last", text: "fixed" },
               },
             ]
           : [
@@ -338,9 +338,9 @@ test.each(["direct", "codemode"] as const)(
 const anchors = await tools.read({ path: "task.txt", views: ["anchors"] });
 const anchor = anchors.text.split("\n")[1].split("|")[0];
 const scope = await tools.read({ path: "task.txt", offset: 2, limit: 1 });
-const miss = await tools.replace({ path: scope, start: "absent", newText: "BAD" });
-const blocked = await tools.replace({ path: "task.txt", start: "last", newText: "BAD" });
-const recover = await tools.replace({ path: "task.txt", start: anchor, newText: "NEW\n" });
+const miss = await tools.replace({ path: scope, start: "absent", text: "BAD" });
+const blocked = await tools.replace({ path: "task.txt", start: "last", text: "BAD" });
+const recover = await tools.replace({ path: "task.txt", start: anchor, text: "NEW\n" });
 text(JSON.stringify({ miss, blocked, recover: recover !== null }));
 `,
                 },
@@ -350,7 +350,7 @@ text(JSON.stringify({ miss, blocked, recover: recover !== null }));
                 name: "codemode",
                 arguments: {
                   code: `
-const retry = await tools.replace({ path: "task.txt", start: "last", newText: "fixed" });
+const retry = await tools.replace({ path: "task.txt", start: "last", text: "fixed" });
 text(JSON.stringify({ retry: retry !== null }));
 `,
                 },
@@ -390,7 +390,7 @@ const lines = await tools.read({ path: "line.txt", views: ["anchors"] });
 const last = lines.text.split("\n")[1].split("|")[0];
 const deleted = await tools.delete({ path: lines, start: last });
 const list = await tools.read({ path: "list.txt" });
-const inserted = await tools.insert({ path: list, anchor: "two", newText: "\nADDED" });
+const inserted = await tools.insert({ path: list, anchor: "two", text: "\nADDED" });
 const begin = await tools.search({ path: "target.txt", query: "TARGET_BEGIN" });
 const end = await tools.search({ path: "target.txt", query: "TARGET_END" });
 const copied = await tools.copy({

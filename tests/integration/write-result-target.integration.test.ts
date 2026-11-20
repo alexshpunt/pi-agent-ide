@@ -36,9 +36,9 @@ const found=await tools.search({path:overwritten,query:"UNIQUE"});
 check(found.matches.length===2,"Search lost part of the final whole file");
 const noop=await tools.write({path:overwritten,content:"😀 UNIQUE\\r\\nUNIQUE TAIL"});
 check((await tools.read({path:noop})).text==="😀 UNIQUE\\r\\nUNIQUE TAIL","No-op lost the final snapshot");
-await tools.replace({path:found.matches[0],newText:"FINAL"});
+await tools.replace({path:found.matches[0],text:"FINAL"});
 await rejects(()=>tools.read({path:overwritten}));
-await rejects(()=>tools.replace({path:overwritten,newText:"WRONG"}));
+await rejects(()=>tools.replace({path:overwritten,text:"WRONG"}));
 text(created); text(noop);`;
       const run = await new PiIntegrationTest({
         testName: `write-final-target-${mode}`,

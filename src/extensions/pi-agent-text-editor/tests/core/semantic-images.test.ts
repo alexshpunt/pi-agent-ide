@@ -53,7 +53,7 @@ async function insertWith(action: Omit<TextSemanticMutationResult, "source">) {
     new ToolCallInterceptionRenderStore(),
     () => undefined,
   );
-  return tool.execute("insert-images", { path: SOURCE, newText: "click" }, undefined, undefined, {
+  return tool.execute("insert-images", { path: SOURCE, text: "click" }, undefined, undefined, {
     cwd: process.cwd(),
   } as ExtensionToolContext);
 }

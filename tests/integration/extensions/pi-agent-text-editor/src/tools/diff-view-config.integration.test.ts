@@ -101,7 +101,7 @@ function replaceArguments(fileName: string, content: string) {
     path: fileName,
     start: formatLineHashAnchor(content, startIndex + 1),
     end: formatLineHashAnchor(content, endIndex + 1),
-    newText: replacement,
+    text: replacement,
   };
 }
 

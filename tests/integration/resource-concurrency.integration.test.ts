@@ -179,7 +179,7 @@ test("independent standalone replacements commit concurrently through real Pi", 
               arguments: {
                 path: name,
                 start: "original",
-                newText: `updated:${name}`,
+                text: `updated:${name}`,
               },
             }),
           ),

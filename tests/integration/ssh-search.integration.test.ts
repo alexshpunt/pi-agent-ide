@@ -89,7 +89,7 @@ test("ordinary search retains SSH identities, recipes, selections and file scope
           toolCall({
             id: "replace-search",
             name: "replace",
-            arguments: { start: "SEARCH#0000:all:match", newText: "changed" },
+            arguments: { start: "SEARCH#0000:all:match", text: "changed" },
           }),
         ]),
         assistantMessage([toolCall({ id: "read", name: "read", arguments: { path: note } })]),

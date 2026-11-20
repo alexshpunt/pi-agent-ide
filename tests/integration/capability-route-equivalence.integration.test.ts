@@ -143,7 +143,7 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             toolCall({
               id: `insert-${String(index)}`,
               name: "insert",
-              arguments: { path: "task.txt", anchor, newText: "ADDED\n", before: true },
+              arguments: { path: "task.txt", anchor, text: "ADDED\n", before: true },
               chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
             }),
           ),
@@ -170,7 +170,7 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
             ...anchors.map((anchor, index) => ({
               tool: "insert",
-              args: { path: "task.txt", anchor, newText: "ADDED", before: true },
+              args: { path: "task.txt", anchor, text: "ADDED", before: true },
               after: [0],
               ...(index > 0 && { sameAssistantWith: 1 }),
             })),
@@ -214,7 +214,7 @@ const targetStart = line(target, "top");
 const finalLine = line(last, "Last");
 if (!start || !targetStart || !finalLine) throw Error("Missing issued line");
 text(await tools.move({path:{id:source.id},start:start+"\\n",target:{id:target.id},targetStart:targetStart+"\\n"}));
-text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),newText:"Final"}));`,
+text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),text:"Final"}));`,
               },
             }),
           ],
@@ -253,7 +253,7 @@ text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),newText:"
             },
             {
               tool: "replace",
-              args: { path: "last.txt", start: "Last", newText: "Final" },
+              args: { path: "last.txt", start: "Last", text: "Final" },
               reuse: { from: 0, field: "start", kind: "anchor" },
             },
           ],
@@ -355,7 +355,7 @@ test.each(["all", "allSettled"] as const)(
                   code: `const result = await tools.read({path:"task.txt",views:["anchors"]});
 const anchor = result.text.match(/^([0-9A-HJKMNP-TV-Z]{7})\\|OLD$/m)?.[1];
 if (!anchor) throw Error("Read did not issue the OLD line anchor");
-text(await tools.replace({path:"task.txt",start:anchor,newText:"NEW\\n"}));
+text(await tools.replace({path:"task.txt",start:anchor,text:"NEW\\n"}));
 text(await Promise.${aggregation}([
   tools.copy({path:"source.txt",target:"first.txt"}),
   tools.copy({path:"source.txt",target:"second.txt"})
@@ -385,7 +385,7 @@ text(await Promise.${aggregation}([
             steps: [
               { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
               // A line anchor selects the line with its LF; Replace writes exactly its text.
-              { tool: "replace", args: { newText: "NEW\n" }, after: [0] },
+              { tool: "replace", args: { text: "NEW\n" }, after: [0] },
               { tool: "copy", args: { path: "source.txt", target: "first.txt" } },
               {
                 tool: "copy",

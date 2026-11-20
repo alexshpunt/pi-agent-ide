@@ -146,7 +146,7 @@ for (const before of [false, true]) {
     const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
     const result = await insertMutationTool.mutate(f.context, {
       anchor: "α🙂",
-      newText: "+",
+      text: "+",
       before,
     });
     expect(
@@ -159,7 +159,7 @@ for (const before of [false, true]) {
     const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
     const result = await insertMutationTool.mutate(f.context, {
       anchor: "α🙂",
-      newText: "+",
+      text: "+",
       before,
       separation: "blank-line",
     });
@@ -172,7 +172,7 @@ for (const before of [false, true]) {
     const f = fixture({ source: content }, { anchor: ["source", "α\r\nβ"] });
     const result = await insertMutationTool.mutate(f.context, {
       anchor: "α\r\nβ",
-      newText: "+",
+      text: "+",
       before,
     });
     expect(

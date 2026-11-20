@@ -36,7 +36,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-replace",
       "replace",
-      { start: "rav", newText: "XYZ" },
+      { start: "rav", text: "XYZ" },
       content.replace("rav", "XYZ"),
     );
   });
@@ -77,7 +77,7 @@ describe("exact text anchors through real text editor tools", () => {
         arguments: {
           path: relativeFile,
           start: 'const privateFiles = new Set(["CONTEXT.md", "lefthook.yml"]);',
-          newText: replacement,
+          text: replacement,
         },
       });
       const expectedContent = policyFixture.replace(
@@ -137,7 +137,7 @@ describe("exact text anchors through real text editor tools", () => {
               arguments: {
                 path: filename,
                 start: entry.replaceAll("\n", eol),
-                ...(tool === "replace" ? { newText: replacement.replaceAll("\n", eol) } : {}),
+                ...(tool === "replace" ? { text: replacement.replaceAll("\n", eol) } : {}),
               },
             });
             expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -174,7 +174,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-line-range",
       "replace",
-      { start: "rav", end: formatLineHashAnchor(content, 3), newText: "X" },
+      { start: "rav", end: formatLineHashAnchor(content, 3), text: "X" },
       ["alpha", "bX", "delta", "echo"].join("\n"),
     );
   });
@@ -183,7 +183,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-insert",
       "insert",
-      { anchor: "bravo", newText: "!" },
+      { anchor: "bravo", text: "!" },
       content.replace("bravo", "bravo!"),
     );
   });

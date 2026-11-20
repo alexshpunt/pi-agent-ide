@@ -40,7 +40,7 @@ describe("AST scope anchors through text editor tools", () => {
     await runAstScenario(
       "ast-anchor-insert",
       "insert",
-      ([first]) => ({ anchor: first.endScopeAnchor.value, newText: "inserted();" }),
+      ([first]) => ({ anchor: first.endScopeAnchor.value, text: "inserted();" }),
       [...firstFunction, "inserted();", "", ...secondFunction].join("\n"),
     );
   });
@@ -52,7 +52,7 @@ describe("AST scope anchors through text editor tools", () => {
       ([first]) => ({
         start: first.beginAnchor.value,
         end: first.endScopeAnchor.value,
-        newText: "function replaced() {\n    return 0;\n}",
+        text: "function replaced() {\n    return 0;\n}",
       }),
       ["function replaced() {", "    return 0;", "}", "", ...secondFunction].join("\n"),
     );

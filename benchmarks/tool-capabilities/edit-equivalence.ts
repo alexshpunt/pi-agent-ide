@@ -40,8 +40,8 @@ export function equivalentLineArguments(
   selected: LineSelection | undefined,
 ): Record<string, unknown> {
   const normalized = { ...actual };
-  const required = expected.newText;
-  const text = actual.newText;
+  const required = expected.text;
+  const text = actual.text;
   if (
     !selected ||
     typeof required !== "string" ||
@@ -56,6 +56,6 @@ export function equivalentLineArguments(
   const equivalent =
     tool === "insert" &&
     (actual.before === true ? selected.from : selected.to) < selected.content.length;
-  if (equivalent) normalized.newText = required;
+  if (equivalent) normalized.text = required;
   return normalized;
 }
