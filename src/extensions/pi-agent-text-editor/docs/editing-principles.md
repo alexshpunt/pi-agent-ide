@@ -18,7 +18,7 @@ Matching and writing follow different rules.
 
 - Match the literal against file text first: exact, then normalized, then fuzzy. Only then try the current Read `anchors` view. A copied `HASH|text` fragment may start or end partway through a line; the hashes must still match, and only source characters are selected. A copied final no-newline marker is display-only and selects no bytes.
 - Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. Principle 4 gives the rules.
-- An ambiguous match is refused. The tools never pick between candidates; the error lists them so the next call can select one.
+- An ambiguous match is refused. Use a candidate anchor to select one match. If the error offers a `SEARCH#…:all:match` reference, pass it as `start` for Replace or Delete without `end`, or as `anchor` for Insert, to edit all non-overlapping matches from the original selection.
 
 Matching locates the span. The write algorithm decides which line separators belong to a whole-line edit.
 
