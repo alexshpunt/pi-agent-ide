@@ -46,7 +46,8 @@ function normalizeLineHashAnchor(value: string): string {
   if (presented !== undefined) {
     return presented;
   }
-  const trimmed = value.trim();
+  // A line break is literal content, not padding around a bare line anchor.
+  const trimmed = /[\r\n]/u.test(value) ? value : value.trim();
   return isLineAnchor(trimmed) ? trimmed : value;
 }
 

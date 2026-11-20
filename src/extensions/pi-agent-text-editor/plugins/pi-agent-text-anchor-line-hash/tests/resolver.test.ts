@@ -68,6 +68,16 @@ describe("line anchors", () => {
     });
   });
 
+  test.each(["PACKAGE\n", "PACKAGE\r\n", "\nPACKAGE"])(
+    "keeps line breaks in literal selector %j",
+    async (value) => {
+      const normalized = resolver.normalize?.(value) ?? value;
+      expect(normalized).toBe(value);
+      await expect(
+        resolver.tryResolve(normalized, contextFor("First\nPACKAGE\n")),
+      ).resolves.toEqual({ kind: "not-handled" });
+    },
+  );
   test("rejects anchor-shaped literal words instead of changing selector semantics", async () => {
     await expect(
       resolver.tryResolve("PACKAGE", contextFor("PACKAGE\nsecond\nthird")),
