@@ -3344,6 +3344,38 @@ add(
 );
 
 add(
+  "replace-anchored-display",
+  ["edit.replace-anchored-display"],
+  'Read task.txt with views ["anchors"] and save the whole displayed second row, including its 7-character prefix and pipe but excluding the line break. Then Replace in task.txt with literal start "OLD" and text "OLD tail". After that edit finishes, try Replace in task.txt with the saved displayed row as start and text "BAD". This must refuse because its hash is stale, even though OLD still begins the line. After the refusal, Read task.txt with views ["anchors"] again. From the new second row, copy the current 7-character prefix, the pipe and OLD into Replace start; omit " tail". Pass text "NEW" and omit end. Keep the suffix and every line break. Independently Read collision.txt with views ["anchors"] and Replace in collision.txt with start "|OLD" and text "NEW". That start is both a partial display of the first row and literal source text on the second line. Only the second line should change. In Codemode, use the displayed rows in the Read value\'s text field and continue after the refused call.',
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "replace", args: { path: "task.txt", start: "OLD" }, after: [0] },
+    {
+      tool: "replace",
+      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}\|OLD$/u },
+      reuse: reuse(0, "start", "text"),
+      error: true,
+      after: [1],
+    },
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [2] },
+    {
+      tool: "replace",
+      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}\|OLD$/u },
+      reuse: reuse(3, "start", "text"),
+    },
+    { tool: "read", args: { path: "collision.txt", views: ["anchors"] } },
+    { tool: "replace", args: { path: "collision.txt", start: /^\|OLD$/u }, after: [5] },
+  ],
+  {
+    files: { ...textFile, "collision.txt": "OLD tail\nliteral |OLD tail\n" },
+    expected: {
+      "task.txt": "keep\nNEW tail\nlast\n",
+      "collision.txt": "OLD tail\nliteral NEW tail\n",
+    },
+  },
+);
+
+add(
   "copied-line-prefix-recovery",
   ["edit.copied-line-prefix-refusal"],
   "Read task.txt with anchors and wait for its result. Attempt Replace of line 2 using its issued line anchor as start and text consisting of that same 7-character anchor followed by |NEW. This deliberately copied display prefix must be refused without writes. Wait for the refusal, then retry Replace with the same start anchor and text NEW followed by a newline, without the prefix. Keep keep and last unchanged. In Codemode, continue after the refused call and keep its failure visible.",

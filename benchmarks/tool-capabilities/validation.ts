@@ -113,10 +113,13 @@ export function servedIdentity(
     reasons.push("Reported response model differs from the expected served model");
   return { identities, reasons, ...(responseModels.length ? { responseModels } : {}) };
 }
-/** A source argument must carry a reference returned by an earlier real execution. */
+/** An argument must reuse a reference or copy text returned by an earlier real execution. */
 export interface ResultReuse {
   from: number;
   field: string | string[];
+  /**
+   * Reference kind. Use `text` for a literal fragment of the earlier tool's text output.
+   */
   kind?: string;
   newParent?: boolean;
   /** An explicit argument accepted instead of the reference, such as the path it was read from. */
@@ -1075,6 +1078,9 @@ export function validateRoute(
     }
     if (["start", "anchor"].includes(field) && args && value === undefined)
       alternatives.push(args.path);
+    if (reference.kind === "text") {
+      return typeof value === "string" && value.length > 0 && resultText(prior).includes(value);
+    }
     return alternatives.some((candidate) => {
       if (reference.kind?.startsWith("capture:")) {
         const name = reference.kind.slice("capture:".length);

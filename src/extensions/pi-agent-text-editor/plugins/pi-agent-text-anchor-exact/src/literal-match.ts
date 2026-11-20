@@ -1,3 +1,4 @@
+import type { AnchoredLiteralView } from "./anchored-literal-view.ts";
 import {
   normalizeForFuzzyMatch,
   normalizeToLF,
@@ -113,33 +114,44 @@ export type LiteralMatch =
   | { readonly kind: "ambiguous" }
   | { readonly kind: "missing" };
 
-/** Finds the one span the literal selects: the first matcher that finds it decides. */
+/** Finds the one source span the literal selects: the first phase that finds it decides. */
 export function matchLiteral(
   content: string,
   value: string,
+  anchored: AnchoredLiteralView,
   accept: (span: LiteralSpan) => boolean = () => true,
 ): LiteralMatch {
-  if (value.length === 0) return { kind: "missing" };
-  for (const matcher of LITERAL_MATCHERS) {
-    const [first, second] = matcher.find(content, value, accept, 2);
-    if (second !== undefined) return { kind: "ambiguous" };
-    if (first !== undefined) return { kind: "unique", span: first };
-  }
+  const [first, second] = firstMatches(content, value, anchored, accept, 2);
+  if (second !== undefined) return { kind: "ambiguous" };
+  if (first !== undefined) return { kind: "unique", span: first };
   return { kind: "missing" };
 }
 
-/** Every span of the first matcher that finds the literal, up to `limit`, and their number. */
+/** Every span of the first phase that finds the literal, up to `limit`, and their number. */
 export function literalCandidates(
   content: string,
   value: string,
+  anchored: AnchoredLiteralView,
   limit: number,
+  accept: (span: LiteralSpan) => boolean = () => true,
 ): { readonly spans: readonly LiteralSpan[]; readonly total: number } {
-  if (value.length === 0) return { spans: [], total: 0 };
+  const spans = firstMatches(content, value, anchored, accept, Number.MAX_SAFE_INTEGER);
+  return { spans: spans.slice(0, limit), total: spans.length };
+}
+
+function firstMatches(
+  content: string,
+  value: string,
+  anchored: AnchoredLiteralView,
+  accept: (span: LiteralSpan) => boolean,
+  limit: number,
+): LiteralSpan[] {
+  if (value.length === 0) return [];
   for (const matcher of LITERAL_MATCHERS) {
-    const spans = matcher.find(content, value, () => true, Number.MAX_SAFE_INTEGER);
-    if (spans.length > 0) return { spans: spans.slice(0, limit), total: spans.length };
+    const spans = matcher.find(content, value, accept, limit);
+    if (spans.length > 0) return spans;
   }
-  return { spans: [], total: 0 };
+  return anchored.find(value, LITERAL_MATCHERS, accept, limit);
 }
 
 /** Overlapping occurrences of `query` in `text`, mapped to source spans and filtered. */

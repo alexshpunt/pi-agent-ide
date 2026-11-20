@@ -10,6 +10,7 @@ import {
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
 import { quoteAnchorExcerpt } from "pi-agent-text-editor/api/anchor-excerpt";
+import { AnchoredLiteralView } from "./anchored-literal-view.ts";
 import type { ExactTextRecoveryConfig } from "./config.ts";
 import { literalCandidates, matchLiteral, type LiteralSpan } from "./literal-match.ts";
 import { recoverExactText } from "./recovery.ts";
@@ -38,7 +39,8 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
 /**
  * Resolves the one place the literal `value` selects, matching the way Pi's edit matches
  * `oldText`: exact characters first, then without the BOM and with CRLF and CR as LF, then
- * fuzzily. The first way that finds the literal decides; more than one match is refused.
+ * fuzzily. Finally, match a copy from the current Read anchors view. The first way that finds
+ * the literal decides; more than one match is refused.
  */
 export function resolveExactTextAnchor(
   value: string,
@@ -49,18 +51,13 @@ export function resolveExactTextAnchor(
   }
 
   const content = context.content;
-  const scope = context.scope?.map((range) => scopeOffsets(content, range));
-  // In a scope, only matches inside it count: text that occurs elsewhere in the file too is
-  // still unique there. Diagnostic candidates must respect the same character boundaries.
-  const inScope =
-    scope === undefined
-      ? undefined
-      : (span: LiteralSpan) =>
-          scope.some((range) => span.from >= range.from && span.to <= range.to);
-  const match = matchLiteral(content, value, inScope);
+  const inScope = scopeFilter(context);
+  const anchored = new AnchoredLiteralView(context.source, content);
+  const match = matchLiteral(content, value, anchored, inScope);
 
   if (match.kind === "missing") {
-    const outsideScope = scope !== undefined && matchLiteral(content, value).kind !== "missing";
+    const outsideScope =
+      inScope !== undefined && matchLiteral(content, value, anchored).kind !== "missing";
     // Interpret only single backslash control escapes, and only to explain a refusal.
     // Never resolve or edit the decoded candidate, or reinterpret escaped backslashes.
     const decoded = value.replace(/(?<!\\)\\[nrt]/gu, (escape) =>
@@ -69,16 +66,16 @@ export function resolveExactTextAnchor(
     if (
       !outsideScope &&
       decoded !== value &&
-      matchLiteral(content, decoded, inScope).kind !== "missing"
+      matchLiteral(content, decoded, anchored, inScope).kind !== "missing"
     ) {
       return rejected(
         "missing",
-        `Exact-text selector ${quoteAnchorExcerpt(value)} contains literal backslash escapes; the character form ${quoteAnchorExcerpt(decoded)} matches text inside the ${scope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
+        `Exact-text selector ${quoteAnchorExcerpt(value)} contains literal backslash escapes; the character form ${quoteAnchorExcerpt(decoded)} matches text inside the ${inScope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
       );
     }
     return rejected(
       outsideScope ? "outside-scope" : "missing",
-      scope === undefined
+      inScope === undefined
         ? "exact text anchor was not found"
         : "exact text anchor was not found inside the selection",
     );
@@ -87,7 +84,7 @@ export function resolveExactTextAnchor(
   if (match.kind === "ambiguous") {
     return rejected(
       "ambiguous",
-      scope === undefined
+      inScope === undefined
         ? "exact text anchor matched more than once"
         : "exact text anchor matched more than once inside the selection",
     );
@@ -108,7 +105,14 @@ export function findExactTextMatches(
   context: TextAnchorResolverContext,
   limit: number,
 ): { readonly ranges: readonly TextAnchorRecoveryCandidateRange[]; readonly total: number } {
-  const matches = literalCandidates(context.content, value, limit);
+  const { content, source } = context;
+  const matches = literalCandidates(
+    content,
+    value,
+    new AnchoredLiteralView(source, content),
+    limit,
+    scopeFilter(context),
+  );
   return {
     total: matches.total,
     ranges: matches.spans.map((span) => ({
@@ -116,6 +120,16 @@ export function findExactTextMatches(
       end: positionAt(context.content, span.to),
     })),
   };
+}
+
+/** Only spans wholly inside one selected range count for matching and recovery. */
+function scopeFilter(
+  context: TextAnchorResolverContext,
+): ((span: LiteralSpan) => boolean) | undefined {
+  const scope = context.scope?.map((range) => scopeOffsets(context.content, range));
+  return scope === undefined
+    ? undefined
+    : (span) => scope.some((range) => span.from >= range.from && span.to <= range.to);
 }
 
 function rejected(

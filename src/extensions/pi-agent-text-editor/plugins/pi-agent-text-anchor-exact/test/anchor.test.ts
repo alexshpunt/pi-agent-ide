@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import { TextSelectionAnchor } from "pi-agent-text-editor/api/text-selection-anchor";
 
-import { resolveExactTextAnchor } from "#src/anchor.ts";
+import { textLineAnchors } from "pi-agent-text";
+import { findExactTextMatches, resolveExactTextAnchor } from "#src/anchor.ts";
 
 function resolve(value: string, content: string) {
   return resolveExactTextAnchor(value, {
@@ -193,6 +194,108 @@ test("counts overlapping matches as ambiguous", () => {
   expect(resolve("aaa", "aaaa")).toMatchObject({
     kind: "rejected",
     rejection: { code: "ambiguous" },
+  });
+});
+
+function displayLine(content: string, line: number, copiedText: string) {
+  return `${textLineAnchors("fixture.txt", content)[line - 1]}|${copiedText}`;
+}
+
+test("maps a copy that starts inside the prefix and ends inside the source line", () => {
+  const content = "alpha\nbravo charlie\ndelta\n";
+  expect(rangesOf(resolve(displayLine(content, 2, "bravo").slice(3), content))).toEqual([
+    { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
+  ]);
+});
+
+test("a stale prefix cannot select matching content on a changed line", () => {
+  const before = "alpha\nbravo charlie\n";
+  const after = "alpha\nbravo delta\n";
+  expect(resolve(displayLine(before, 2, "bravo"), after)).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "missing" },
+  });
+});
+
+test("fuzzy text matching does not accept a lookalike hash or pipe", () => {
+  const content = "bravo\u00a0charlie\n";
+  const copied = displayLine(content, 1, "bravo charlie");
+  const lookalike = String.fromCharCode(copied.charCodeAt(0) + 0xfee0);
+  for (const selector of [lookalike + copied.slice(1), copied.replace("|", "｜")]) {
+    expect(resolve(selector, content)).toMatchObject({
+      kind: "rejected",
+      rejection: { code: "missing" },
+    });
+  }
+});
+
+test("a copied slice may end inside the next line's prefix", () => {
+  const content = "alpha\nbravo\ncharlie\n";
+  const nextPrefix = displayLine(content, 2, "").slice(0, 3);
+  expect(rangesOf(resolve(`pha\n${nextPrefix}`, content))).toEqual([
+    { start: { lineNumber: 1, column: 2 }, end: { lineNumber: 2, column: 0 } },
+  ]);
+});
+
+test("the anchored view counts only matches wholly inside the selection", () => {
+  const content = "alpha\nalpha\nalpha\n";
+  const context = {
+    source: "fixture.txt",
+    content,
+    lines: content.trimEnd().split("\n"),
+    cwd: "/project",
+    scope: [{ start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } }],
+  };
+  expect(rangesOf(resolveExactTextAnchor("|alpha", context))).toEqual(context.scope);
+  expect(findExactTextMatches("|alpha", context, 10)).toEqual({ total: 1, ranges: context.scope });
+  expect(resolveExactTextAnchor(displayLine(content, 1, "alpha"), context)).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "outside-scope" },
+  });
+});
+
+test("plain text wins before trying a displayed line", () => {
+  const line = displayLine("bravo\n", 1, "bravo");
+  expect(rangesOf(resolve(line, `bravo\n${line}\n`))).toEqual([
+    { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: line.length } },
+  ]);
+});
+
+test("ambiguous displayed text lists the mapped source candidates", () => {
+  const content = "alpha\nalpha\n";
+  const context = {
+    source: "fixture.txt",
+    content,
+    lines: ["alpha", "alpha"],
+    cwd: "/project",
+  };
+  expect(resolve("|alpha", content)).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "ambiguous" },
+  });
+  expect(findExactTextMatches("|alpha", context, 10)).toEqual({
+    total: 2,
+    ranges: [
+      { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 5 } },
+      { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
+    ],
+  });
+});
+
+test("a copied missing-newline marker does not become part of the span", () => {
+  const content = "alpha\nbravo";
+  const selector = `${displayLine(content, 2, "bravo")}\n\\ No newline at end of file`;
+  expect(rangesOf(resolve(selector, content))).toEqual([
+    { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
+  ]);
+});
+
+test("a copied missing-newline marker never makes the selected span include another line", () => {
+  const content = "bravo\n\\ No newline at end of file\n";
+  const selector = `${displayLine(content, 1, "bravo")}\n\\ No newline at end of file`;
+  expect(resolve(selector, content)).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "missing" },
   });
 });
 
