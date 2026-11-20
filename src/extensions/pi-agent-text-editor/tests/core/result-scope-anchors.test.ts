@@ -146,6 +146,103 @@ async function fixture(files: Record<string, string>) {
   return { store, run, lines, content };
 }
 
+test.each(["legacyCheckout", "legacy\u200bCheckout"])(
+  "a multi-range result scopes its own selector and narrower selectors for %j",
+  async (token) => {
+    for (const selection of ["self", "all-lines", "narrower"] as const) {
+      const original = `keep\nfirst ${token} suffix\ngap\nsecond ${token} suffix\nlast\n`;
+      const f = await fixture({ "tokens.txt": original });
+      const ranges = [2, 4].map((lineNumber, index) => ({
+        start: { lineNumber, column: index === 0 ? 6 : 7 },
+        end: { lineNumber, column: (index === 0 ? 6 : 7) + token.length },
+      }));
+      const register = (selected: typeof ranges) =>
+        f.store.register(
+          [{ source: path.join(cwd, "tokens.txt"), expectedContent: original, ranges: selected }],
+          cwd,
+        );
+      const scope = register(ranges);
+      const selector =
+        selection === "self"
+          ? scope
+          : selection === "narrower"
+            ? register(ranges.slice(1))
+            : f.store.register(
+                [
+                  {
+                    source: path.join(cwd, "tokens.txt"),
+                    expectedContent: original,
+                    ranges: [2, 4].map((lineNumber) => ({
+                      start: { lineNumber, column: 0 },
+                      end: { lineNumber: lineNumber + 1, column: 0 },
+                      linewise: true,
+                    })),
+                  },
+                ],
+                cwd,
+              );
+      const { result, text } = await f.run(replaceMutationTool, {
+        path: { id: scope },
+        start: { id: selector },
+        text: "NEW",
+      });
+      expect(result.details.effect, text).not.toBe("not-applied");
+      expect(await f.content("tokens.txt")).toBe(
+        selection === "all-lines"
+          ? "keep\nNEW\ngap\nNEW\nlast\n"
+          : selection === "narrower"
+            ? `keep\nfirst ${token} suffix\ngap\nsecond NEW suffix\nlast\n`
+            : "keep\nfirst NEW suffix\ngap\nsecond NEW suffix\nlast\n",
+      );
+    }
+  },
+);
+
+test("a line anchor on a partial result line can move that line but cannot span a gap", async () => {
+  const original = "keep\nfirst MATCH suffix\ngap\nsecond MATCH suffix\nlast\n";
+  const f = await fixture({ "tokens.txt": original, "target.txt": "SLOT\n" });
+  const scope = f.store.register(
+    [
+      {
+        source: path.join(cwd, "tokens.txt"),
+        expectedContent: original,
+        ranges: [2, 4].map((lineNumber, index) => ({
+          start: { lineNumber, column: index === 0 ? 6 : 7 },
+          end: { lineNumber, column: index === 0 ? 11 : 12 },
+        })),
+      },
+    ],
+    cwd,
+  );
+  const first = lineAnchor("tokens.txt", original, 2);
+  const acrossGap = await f.lines("tokens.txt", 2, 4);
+  for (const selectors of [
+    { start: first, end: lineAnchor("tokens.txt", original, 4) },
+    { start: lineAnchor("tokens.txt", original, 3) },
+    { start: "first", end: "first" },
+    { start: { id: acrossGap } },
+    { start: { id: scope }, end: first },
+  ]) {
+    const refused = await f.run(replaceMutationTool, {
+      path: { id: scope },
+      ...selectors,
+      text: "BAD",
+    });
+    expect(refused.result.details.effect).toBe("not-applied");
+    expect(await f.content("tokens.txt")).toBe(original);
+  }
+  const moved = await f.run(moveMutationTool, {
+    path: { id: scope },
+    start: first,
+    end: first,
+    target: "target.txt",
+    targetStart: "SLOT",
+    targetEnd: "SLOT",
+  });
+  expect(moved.result.details.effect, moved.text).not.toBe("not-applied");
+  expect(await f.content("tokens.txt")).toBe("keep\ngap\nsecond MATCH suffix\nlast\n");
+  expect(await f.content("target.txt")).toBe("first MATCH suffix\n");
+});
 async function tokenFixture(complete = true) {
   const original = "red blue\n";
   const f = await fixture({ "tokens.txt": original, "target.txt": "left SLOT right\n" });
