@@ -99,7 +99,7 @@ describe("Search anchor batch payloads", () => {
 
   test.each([
     ["insert", { before: false }],
-    ["insert", { anchor: "omega" }],
+    ["insert", { path: "other.txt" }],
     ["replace", { path: "task.txt" }],
     ["delete", { path: "task.txt" }],
     ["replace", { start: reference(1, "DEAD") }],

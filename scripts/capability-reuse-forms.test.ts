@@ -422,8 +422,16 @@ test("read-jq-bounded-input reads the first line with or without offset 1", () =
   expect(validateRoute(task, events({ offset: 2, limit: 1 }), "direct").passed).toBe(false);
 });
 
-describe("selection-batch-insert", () => {
-  const task = capabilityCase("selection-batch-insert");
+describe("whole-line insert argument normalization", () => {
+  const original = capabilityCase("selection-batch-insert");
+  // Outcome validation leaves payload spelling free in the paid case. Isolate normalization:
+  // accepting an omitted separator still requires a current whole-line witness.
+  const task = {
+    ...original,
+    steps: original.steps.map((step) =>
+      step.tool === "insert" ? { ...step, args: { ...step.args, text: "ADDED\n" } } : step,
+    ),
+  };
   const reads = [2, 4, 6].flatMap((line, index) =>
     call({
       id: `read-${String(index)}`,
@@ -450,6 +458,17 @@ describe("selection-batch-insert", () => {
     );
   const batch = message("insert-0", "insert-1", "insert-2");
 
+  test.each(["ADDED", "ADDED\n", "ADDED\n\n", "another payload"])(
+    "the paid case leaves %j to final-byte validation",
+    (text) => {
+      expect(validateRoute(original, [...reads, batch, ...inserts(text)], "direct").passed).toBe(
+        true,
+      );
+      expect(
+        validateRoute(original, [...reads, batch, ...inserts(text).slice(0, -1)], "direct").passed,
+      ).toBe(false);
+    },
+  );
   test.each(["ADDED", "ADDED\n"])("accepts %j before each selected line", (text) => {
     expect(validateRoute(task, [...reads, batch, ...inserts(text)], "direct")).toEqual({
       passed: true,
@@ -464,7 +483,7 @@ describe("selection-batch-insert", () => {
       agenticIdeBatch: { ...receipt.agenticIdeBatch, calls: [{ id: "insert-0", name: "insert" }] },
     },
   ])("rejects missing or inconsistent shared-snapshot receipts (%#)", (details) => {
-    const edits = inserts("ADDED\n").map((event) =>
+    const edits = inserts("ADDED").map((event) =>
       event.type === "tool_execution_end" && event.toolCallId === "insert-0"
         ? { ...event, result: { ...event.result, details } }
         : event,
@@ -475,7 +494,7 @@ describe("selection-batch-insert", () => {
   test.each([{ calls: [] }, { calls: [{ id: "insert-0", name: "insert" }] }, { calls: [null] }])(
     "rejects matching receipts without both call memberships (%#)",
     ({ calls }) => {
-      const edits = inserts("ADDED\n").map((event) =>
+      const edits = inserts("ADDED").map((event) =>
         event.type === "tool_execution_end"
           ? {
               ...event,
@@ -498,7 +517,7 @@ describe("selection-batch-insert", () => {
     expect(
       validateRoute(
         task,
-        [...reads, ...(completed ? write : write.slice(0, 1)), batch, ...inserts("ADDED\n")],
+        [...reads, ...(completed ? write : write.slice(0, 1)), batch, ...inserts("ADDED")],
         "direct",
       ).passed,
     ).toBe(false);
