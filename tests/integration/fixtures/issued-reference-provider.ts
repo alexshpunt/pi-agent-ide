@@ -64,7 +64,7 @@ export default function issuedReferenceProvider(pi: ExtensionAPI): void {
                     : kind === "searchallline"
                       ? /(SEARCH#[A-F\d]+:all:line)/u
                       : kind === "searchallmatch"
-                        ? /(SEARCH#[A-F\d]+:all:match)/u
+                        ? /(SEARCH#[A-Fa-f\d]+:all:match)/u
                         : /(SEARCH#[A-F\d]+):/u;
           const value = expression.exec(shown)?.[1];
           if (!value) throw new Error(`Missing ${kind} reference in ${id}`);

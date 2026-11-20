@@ -93,6 +93,32 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(!check(fixture, args, groups, mode, { ...receipts, 3: "CCCCCCC|OLD tail" }));
   });
 
+  void test(`an all-match retry reuses both the bounded source and the ambiguity result (${mode})`, () => {
+    const fixture = task("ambiguous-exact-all-match");
+    const scope = "22222222-bbbb-4bbb-8bbb-222222222222";
+    const reference = "SEARCH#beef:all:match";
+    const args = [
+      { path: "task.txt", offset: 2, limit: 1 },
+      { path: scope, start: "OLD", text: "NEW" },
+      { path: scope, start: reference, text: "NEW" },
+    ];
+    const receipts = { 0: `<uuid>${scope}</uuid>`, 1: reference };
+    assert.ok(check(fixture, args, [[0], [1], [2]], mode, receipts));
+    assert.ok(!check(fixture, args, [[0], [1, 2]], mode, receipts));
+    assert.ok(
+      !check(fixture, args, [[0], [1], [2]], mode, { ...receipts, 1: "SEARCH#cafe:all:match" }),
+    );
+    assert.ok(
+      !check(
+        fixture,
+        [...args.slice(0, 2), { ...args[2], path: "task.txt" }],
+        [[0], [1], [2]],
+        mode,
+        receipts,
+      ),
+    );
+  });
+
   void test(`independent Insert and Copy recoveries may overlap (${mode})`, () => {
     const fixture = task("missing-edit-selector-recovery");
     const args = [

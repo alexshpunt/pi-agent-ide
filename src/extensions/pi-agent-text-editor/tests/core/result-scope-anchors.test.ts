@@ -243,6 +243,131 @@ test("a line anchor on a partial result line can move that line but cannot span 
   expect(await f.content("tokens.txt")).toBe("keep\ngap\nsecond MATCH suffix\nlast\n");
   expect(await f.content("target.txt")).toBe("first MATCH suffix\n");
 });
+function allMatchesReference(text: string): string {
+  const reference = /SEARCH#[A-F\d]+:all:match/u.exec(text)?.[0];
+  if (reference === undefined) throw new Error(`Expected an all-match reference in: ${text}`);
+  return reference;
+}
+
+test.each([
+  {
+    title: "all matches beyond the candidate display limit, excluding a fuzzy decoy",
+    content: "it's fine\n".repeat(23) + "it’s fine\n",
+    query: "it's fine",
+    expected: "done\n".repeat(23) + "it’s fine\n",
+  },
+  {
+    title: "multiline matches normalized from CRLF, including the final line break",
+    content: "a\r\nb\r\na\r\nb\r\n",
+    query: "a\nb\n",
+    expected: "done\r\ndone\r\n",
+  },
+  {
+    title: "Unicode-tolerant literal matches with their original widths",
+    content: "and…\nand…\n",
+    query: "and...",
+    expected: "done\ndone\n",
+  },
+])("Replace can retry $title", async ({ content, query, expected }) => {
+  const f = await fixture({ "test.txt": content });
+  const input = { path: "test.txt", start: query, text: query.endsWith("\n") ? "done\n" : "done" };
+  const failed = await f.run(replaceMutationTool, input);
+  expect(failed.result.details.effect).toBe("not-applied");
+  expect(await f.content("test.txt")).toBe(content);
+
+  expect(failed.result.details.anchorRecoveries?.[0]?.total).toBeGreaterThan(1);
+  await f.run(replaceMutationTool, { ...input, start: allMatchesReference(failed.text) });
+  expect(await f.content("test.txt")).toBe(expected);
+});
+
+test.each([
+  { operation: deleteMutationTool, field: "start", expected: "outside red\n \n" },
+  { operation: insertMutationTool, field: "anchor", expected: "outside red\n!red !red\n" },
+])(
+  "$operation.name retries only the matches inside the original scope",
+  async ({ operation, field, expected }) => {
+    const original = "outside red\nred red\n";
+    const f = await fixture({ "test.txt": original });
+    const input = {
+      path: await f.lines("test.txt", 2, 2),
+      [field]: "red",
+      text: "!",
+      before: true,
+    };
+    const failed = await f.run(operation, input);
+    expect(failed.result.details.effect).toBe("not-applied");
+    expect(await f.content("test.txt")).toBe(original);
+
+    await f.run(operation, { ...input, [field]: allMatchesReference(failed.text) });
+    expect(await f.content("test.txt")).toBe(expected);
+  },
+);
+
+test.each([{ start: "aaa" }, { start: "red", end: "finish" }, { start: "finish", end: "red" }])(
+  "Replace does not offer overlapping matches or a multi-range endpoint: %j",
+  async (selectors) => {
+    const content = "aaaaa\nred red finish\n";
+    const f = await fixture({ "test.txt": content });
+    const failed = await f.run(replaceMutationTool, {
+      path: "test.txt",
+      text: "done",
+      ...selectors,
+    });
+    expect(failed.result.details.effect).toBe("not-applied");
+    expect(failed.text).not.toMatch(/SEARCH#[A-F\d]+:all:match/u);
+    expect(await f.content("test.txt")).toBe(content);
+  },
+);
+
+test("an ambiguity retry changes each selected range without touching the gap between them", async () => {
+  const original = "first red\ngap red\nthird red\n";
+  const f = await fixture({ "test.txt": original });
+  const scope = f.store.register(
+    [
+      {
+        source: path.join(cwd, "test.txt"),
+        expectedContent: original,
+        ranges: [1, 3].map((lineNumber) => ({
+          start: { lineNumber, column: 0 },
+          end: { lineNumber: lineNumber + 1, column: 0 },
+          linewise: true,
+        })),
+      },
+    ],
+    cwd,
+  );
+  const input = { path: scope, start: "red", text: "blue" };
+  const failed = await f.run(replaceMutationTool, input);
+  expect(failed.result.details.effect).toBe("not-applied");
+  expect(await f.content("test.txt")).toBe(original);
+
+  await f.run(replaceMutationTool, { ...input, start: allMatchesReference(failed.text) });
+  expect(await f.content("test.txt")).toBe("first blue\ngap red\nthird blue\n");
+});
+
+test("an ambiguity reference neither adds later matches nor edits a changed selection", async () => {
+  const original = "left red\nright red\n";
+  const f = await fixture({ "test.txt": original, "changed.txt": original });
+  const input = { start: "red", text: "blue" };
+  const select = async (name: string) =>
+    allMatchesReference((await f.run(replaceMutationTool, { path: name, ...input })).text);
+  const fixed = await select("test.txt");
+  const stale = await select("changed.txt");
+  await writeFile(path.join(cwd, "test.txt"), original + "third red\n");
+  const changed = "left red\nright green\n";
+  await writeFile(path.join(cwd, "changed.txt"), changed);
+
+  await f.run(replaceMutationTool, { path: "test.txt", ...input, start: fixed });
+  expect(await f.content("test.txt")).toBe("left blue\nright blue\nthird red\n");
+  const refused = await f.run(replaceMutationTool, {
+    path: "changed.txt",
+    ...input,
+    start: stale,
+  });
+  expect(refused.result.details.effect).toBe("not-applied");
+  expect(await f.content("changed.txt")).toBe(changed);
+});
+
 async function tokenFixture(complete = true) {
   const original = "red blue\n";
   const f = await fixture({ "tokens.txt": original, "target.txt": "left SLOT right\n" });
