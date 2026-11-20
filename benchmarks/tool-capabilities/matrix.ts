@@ -109,6 +109,7 @@ const groups: [string[], string[]][] = [
   // Guard metadata and identical execution/transcript refusals protect early payload truncation.
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [["edit.copied-line-prefix-refusal"], ["copied-line-prefix-recovery"]],
+  [["edit.replace-anchored-display"], ["replace-anchored-display"]],
   // Stale checks follow the edit; literal Search is independent of either refusal.
   // Early streaming cutoffs remain refusals, even when their payload has not arrived.
   [

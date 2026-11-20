@@ -76,6 +76,23 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(!check(fixture, args, [[0], [1], [3, 4], [5]], mode, receipts));
     assert.ok(!check(fixture, args, [[0], [1], [2, 3], [5]], mode, receipts));
   });
+  void test(`displayed selectors must copy text from the intended Read (${mode})`, () => {
+    const fixture = task("replace-anchored-display");
+    const args = [
+      { path: "task.txt", views: ["anchors"] },
+      { path: "task.txt", start: "OLD", text: "OLD tail" },
+      { path: "task.txt", start: "AAAAAAA|OLD", text: "BAD" },
+      { path: "task.txt", views: ["anchors"] },
+      { path: "task.txt", start: "BBBBBBB|OLD", text: "NEW" },
+      { path: "collision.txt", views: ["anchors"] },
+      { path: "collision.txt", start: "|OLD", text: "NEW" },
+    ];
+    const groups = [[5], [0], [1], [2], [3], [4], [6]];
+    const receipts = { 0: "AAAAAAA|OLD", 3: "BBBBBBB|OLD tail" };
+    assert.ok(check(fixture, args, groups, mode, receipts));
+    assert.ok(!check(fixture, args, groups, mode, { ...receipts, 3: "CCCCCCC|OLD tail" }));
+  });
+
   void test(`independent Insert and Copy recoveries may overlap (${mode})`, () => {
     const fixture = task("missing-edit-selector-recovery");
     const args = [
