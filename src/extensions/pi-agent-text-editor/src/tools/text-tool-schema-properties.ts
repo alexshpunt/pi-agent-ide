@@ -26,7 +26,10 @@ export function sourceRangeProperties(descriptions: Partial<Record<"start" | "en
       descriptions.start ??
         "Start selector; omit when path selects the intended text. With a result as path, it selects inside the result's ranges.",
     ),
-    end: anchorProperty(descriptions.end ?? "Inclusive end selector; omit for start alone."),
+    end: anchorProperty(
+      descriptions.end ??
+        "Inclusive end selector. With one start match, a repeated end selects the first match after it. Omit for start alone.",
+    ),
   };
 }
 
@@ -40,7 +43,7 @@ export function targetProperties(directorySemantics: string) {
       "Anchor or unique exact text in the destination file; the text goes after its selected extent. Required when the text goes into a file path.",
     ),
     targetEnd: anchorProperty(
-      "Replace from targetStart through targetEnd instead of inserting after targetStart.",
+      "Replace from targetStart through targetEnd instead of inserting. With one targetStart match, a repeated targetEnd selects the first match after it.",
     ),
   };
 }

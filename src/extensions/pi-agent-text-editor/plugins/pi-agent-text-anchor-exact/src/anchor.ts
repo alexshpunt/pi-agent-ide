@@ -1,5 +1,6 @@
 import {
   type TextAnchorRecoveryCandidateRange,
+  type TextAnchorRejection,
   type TextAnchorResolutionAttempt,
   type TextAnchorResolver,
   type TextAnchorResolverContext,
@@ -40,7 +41,8 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
  * Resolves the one place the literal `value` selects, matching the way Pi's edit matches
  * `oldText`: exact characters first, then without the BOM and with CRLF and CR as LF, then
  * fuzzily. Finally, match a copy from the current Read anchors view. The first way that finds
- * the literal decides; more than one match is refused.
+ * the literal decides. An end selector takes the first match after its paired start; other
+ * selectors must match uniquely.
  */
 export function resolveExactTextAnchor(
   value: string,
@@ -53,7 +55,7 @@ export function resolveExactTextAnchor(
   const content = context.content;
   const inScope = scopeFilter(context);
   const anchored = new AnchoredLiteralView(context.source, content);
-  const match = matchLiteral(content, value, anchored, inScope);
+  const match = matchLiteral(content, value, anchored, inScope, context.endAfter);
 
   if (match.kind === "missing") {
     const outsideScope =
@@ -88,6 +90,10 @@ export function resolveExactTextAnchor(
         ? "exact text anchor matched more than once"
         : "exact text anchor matched more than once inside the selection",
     );
+  }
+
+  if (match.kind === "before-start") {
+    return rejected("before-start", "all matches start before the end of the start selection");
   }
 
   // Literal text selects exactly the characters it matched, even when they form complete lines.
@@ -160,10 +166,7 @@ function scopeFilter(
     : (span) => scope.some((range) => span.from >= range.from && span.to <= range.to);
 }
 
-function rejected(
-  code: "invalid" | "missing" | "ambiguous" | "outside-scope",
-  reason: string,
-): TextAnchorResolutionAttempt {
+function rejected(code: TextAnchorRejection["code"], reason: string): TextAnchorResolutionAttempt {
   return { kind: "rejected", rejection: { code, reason } };
 }
 

@@ -98,6 +98,53 @@ function selectsWholeLines(anchors: ReadonlyMap<string, TextAnchor>): boolean {
   return anchor.ranges.length === 1 && anchor.ranges[0]?.linewise === true;
 }
 
+/** Resolve a paired end only after the first selector has resolved to one span. */
+export async function resolveAnchorSpanRange(
+  context: TextMutationContext,
+  starts: ReadonlyMap<string, TextAnchor>,
+  startField: string,
+  endField: string,
+  hasEnd: boolean,
+): Promise<TextAnchorSpan> {
+  if (!hasEnd) return singleAnchorSpan(context, starts, startField);
+  const start = singleAnchorSpan(context, starts, startField, true);
+  const ends = await context.resolveAnchors(endField, {
+    source: start.source,
+    offset: start.to,
+  });
+  const end = ends.get(start.source);
+  let selectedEnds = ends;
+  if (ends.size === 1 && TextSelectionAnchor.is(end) && end.ranges.length > 1) {
+    const document = context.documentFor(start.source);
+    const endpoints = end.endpointRanges ?? end.ranges;
+    let nearest: { index: number; offset: number } | undefined;
+    for (const [index, range] of endpoints.entries()) {
+      selectionRange(context, start.source, range);
+      const offset = selectionSpan(document, range).from;
+      if (offset >= start.to && (nearest === undefined || offset < nearest.offset))
+        nearest = { index, offset };
+    }
+    if (nearest === undefined) {
+      throw new TextMutationInputError(
+        "ANCHOR_NOT_FOUND_AFTER_START",
+        `No match for ${endField} follows ${startField} in "${start.source}". Choose an end selector that matches after the start.`,
+      );
+    }
+    selectedEnds = new Map([
+      [
+        start.source,
+        new TextSelectionAnchor(
+          end.value,
+          start.source,
+          [requiredValue(end.ranges[nearest.index])],
+          end.endpointRanges === undefined ? undefined : [requiredValue(endpoints[nearest.index])],
+        ),
+      ],
+    ]);
+  }
+  return anchorSpanRange(context, starts, selectedEnds, startField, endField);
+}
+
 /**
  * Join ordered endpoints. Two line endpoints select their complete lines. Otherwise the span keeps
  * character boundaries, and a line endpoint gives its line's content boundary.
@@ -123,6 +170,12 @@ export async function anchorSpanRange(
     throw new TextMutationInputError(
       "ANCHOR_RANGE_REVERSED",
       `Anchor ${startField} must not come after ${endField}.`,
+    );
+  }
+  if (end.from < start.to && (start.from !== end.from || start.to !== end.to)) {
+    throw new TextMutationInputError(
+      "ANCHOR_RANGE_OVERLAP",
+      `Anchors ${startField} and ${endField} overlap. Choose an end selector that starts after the start selection.`,
     );
   }
   const document = context.documentFor(start.source);

@@ -6,7 +6,11 @@ import {
 } from "#src/tools/text-tool-schema-properties.ts";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
-import { anchorSpanRange, selectionChanges, textSelections } from "#src/tools/text-selection.ts";
+import {
+  resolveAnchorSpanRange,
+  selectionChanges,
+  textSelections,
+} from "#src/tools/text-selection.ts";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 
@@ -66,8 +70,13 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
       };
     }
 
-    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const span = await anchorSpanRange(context, starts, ends, "start", "end");
+    const span = await resolveAnchorSpanRange(
+      context,
+      starts,
+      "start",
+      "end",
+      parameters.end !== undefined,
+    );
     return {
       edits: new Map([
         [

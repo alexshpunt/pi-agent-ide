@@ -48,6 +48,79 @@ async function run(
   }).run("Edit inside results with selectors.");
 }
 
+test.each(["literal", "Search match reference"] as const)(
+  "a direct edit uses the first %s end after its start",
+  async (selector) => {
+    await withTempWorkspace(async (cwd) => {
+      const file = path.join(cwd, "task.txt");
+      await writeFile(file, "close\nopen\nbody\nclose\nkeep\nclose\n");
+      const steps: { id: string; name: string; arguments: Record<string, JsonValue> }[] = [
+        { id: "read", name: "read", arguments: { path: "task.txt" } },
+      ];
+      if (selector !== "literal")
+        steps.push({
+          id: "end-matches",
+          name: "search",
+          arguments: { path: "task.txt", query: "close" },
+        });
+      steps.push({
+        id: "edit",
+        name: "replace",
+        arguments: {
+          path: "task.txt",
+          start: "open",
+          end: selector === "literal" ? "close" : "$issued-searchallmatch:end-matches",
+          text: "new",
+        },
+      });
+      const result = await run(
+        cwd,
+        `ordered-${selector === "literal" ? "literal" : "search"}-end`,
+        steps,
+        "tui",
+      );
+      expect(getToolExecution(result, "edit").isError, getToolResultText(result, "edit")).toBe(
+        false,
+      );
+      await expect(readFile(file, "utf8")).resolves.toBe("close\nnew\nkeep\nclose\n");
+    });
+  },
+);
+
+test("an ordered pair stays inside the Read result and preserves CRLF", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const file = path.join(cwd, "task.txt");
+    await writeFile(file, "OPEN\r\nCLOSE\r\nCLOSE\r\nOPEN\r\nbody\r\nCLOSE\r\nkeep\r\nCLOSE\r\n");
+    const result = await run(cwd, "ordered-read-scope-end", [
+      {
+        id: "outside-end",
+        name: "codemode",
+        arguments: {
+          code: `const scope = await tools.read({ path: "task.txt", offset: 2, limit: 4 });
+await tools.replace({ path: scope, start: "OPEN", end: "CLOSE", text: "BAD" });`,
+        },
+      },
+      {
+        id: "inside-end",
+        name: "codemode",
+        arguments: {
+          code: `const scope = await tools.read({ path: "task.txt", offset: 2, limit: 7 });
+await tools.replace({ path: scope, start: "OPEN", end: "CLOSE", text: "new" });`,
+        },
+      },
+    ]);
+    expect(getToolExecutionDetails(getToolExecution(result, "outside-end"))).toMatchObject({
+      calls: [{ status: "ok" }, { status: "error" }],
+    });
+    expect(getToolExecutionDetails(getToolExecution(result, "inside-end"))).toMatchObject({
+      calls: [{ status: "ok" }, { status: "ok" }],
+    });
+    await expect(readFile(file, "utf8")).resolves.toBe(
+      "OPEN\r\nCLOSE\r\nCLOSE\r\nnew\r\nkeep\r\nCLOSE\r\n",
+    );
+  });
+});
+
 test.each(
   (["direct", "codemode"] as const).flatMap((route) =>
     [

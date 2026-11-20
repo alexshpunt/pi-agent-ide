@@ -39,6 +39,7 @@ import {
   type TextMutation,
   type TextMutationAnchorField,
   type TextMutationContext,
+  type PairedAnchorStart,
   type TextMutationEdit,
   type TextMutationToolRegistration,
   type TextSemanticMutationResult,
@@ -1076,6 +1077,7 @@ export function createMutationContext(
     descriptor: TextMutationAnchorField,
     value: string,
     scope: readonly TextTarget[],
+    start?: PairedAnchorStart,
   ): Promise<ReadonlyMap<string, TextAnchor>> => {
     const describe = (target: TextTarget) =>
       describeScope(target.source, target.ranges ?? [], documentFor(target.source), invocation.cwd);
@@ -1107,6 +1109,7 @@ export function createMutationContext(
             value,
             descriptor.kinds,
             ranges.length === 0 ? undefined : ranges,
+            start?.source === target.source ? start.offset : undefined,
           );
         } catch (error) {
           throw contextualizeTextMutationAnchorError(
@@ -1204,7 +1207,10 @@ export function createMutationContext(
     });
     return new Map([[target.source, anchor]]);
   };
-  const resolveAnchors = (field: string): Promise<ReadonlyMap<string, TextAnchor>> => {
+  const resolveAnchors = (
+    field: string,
+    start?: PairedAnchorStart,
+  ): Promise<ReadonlyMap<string, TextAnchor>> => {
     const cached = anchorCache.get(field);
 
     if (cached !== undefined) {
@@ -1223,7 +1229,7 @@ export function createMutationContext(
 
       const scope = sources.scopes.get(descriptor.sourceField);
       if (typeof value === "string" && scope !== undefined)
-        return resolveScopedAnchor(field, descriptor, value, scope);
+        return resolveScopedAnchor(field, descriptor, value, scope, start);
 
       const explicitAnchors =
         typeof value === "string" && anchorSources !== undefined
@@ -1231,7 +1237,13 @@ export function createMutationContext(
               await Promise.all(
                 anchorSources.map(async (source) => {
                   try {
-                    const anchor = await resolveResourceAnchor(source, value, descriptor.kinds);
+                    const anchor = await resolveResourceAnchor(
+                      source,
+                      value,
+                      descriptor.kinds,
+                      undefined,
+                      start?.source === source ? start.offset : undefined,
+                    );
 
                     if (resolvedTextAnchorType(anchor) === "major") {
                       majorAnchorSources.add(source);
@@ -1352,7 +1364,7 @@ function withResultPresentations(
 }
 
 const preflightMutationTools = new Set(["replace", "delete", "insert", "copy", "move"]);
-/** Resolves every supplied anchor field for built-in span mutation tools. */
+/** Resolves independent selectors. Paired ends need the first selector's boundary. */
 export async function preflightMutationAnchors(
   definition: TextMutationToolRegistration,
   input: Readonly<Record<string, unknown>>,
@@ -1371,7 +1383,11 @@ export async function preflightMutationAnchors(
   const failures: TextMutationAnchorResolutionError[] = [];
   await Promise.all(
     (definition.anchors ?? []).map(async (descriptor) => {
-      if (!isMutationAnchorValue(descriptor, input[descriptor.field])) {
+      if (
+        descriptor.field === definition.pair?.[1] ||
+        descriptor.field === "targetEnd" ||
+        !isMutationAnchorValue(descriptor, input[descriptor.field])
+      ) {
         return;
       }
       try {
@@ -2267,19 +2283,23 @@ function formatRejectedAnchorMessage(
   const state =
     code === "ambiguous"
       ? "is ambiguous"
-      : code === "missing"
-        ? "was not found"
-        : code === "invalid"
-          ? "was rejected"
-          : "could not be resolved";
+      : code === "before-start"
+        ? "has no match after the start selector"
+        : code === "missing"
+          ? "was not found"
+          : code === "invalid"
+            ? "was rejected"
+            : "could not be resolved";
   const guidance =
-    code === "outside-scope"
-      ? "Choose text inside the result's selection, or pass the file path to edit elsewhere."
-      : failure.resolution.resolverId === "exact-text"
-        ? `${recoveryContext.length > 0 ? "Use a current anchor below or from Read/Search" : "Get a current anchor with Read/Search"}, or retry with text that matches exactly once.`
-        : recoveryContext.length > 0
-          ? "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor."
-          : "Reread the relevant section and choose a current anchor.";
+    code === "before-start"
+      ? "Choose an end selector that matches after the start."
+      : code === "outside-scope"
+        ? "Choose text inside the result's selection, or pass the file path to edit elsewhere."
+        : failure.resolution.resolverId === "exact-text"
+          ? `${recoveryContext.length > 0 ? "Use a current anchor below or from Read/Search" : "Get a current anchor with Read/Search"}, or retry with text that matches exactly once.`
+          : recoveryContext.length > 0
+            ? "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor."
+            : "Reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
   const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${quoteAnchorExcerpt(failure.anchor)} ${state} in "${failure.source}"`;
   // Nothing is shown below a reference without a position; its reason carries the next step.
