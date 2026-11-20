@@ -34,6 +34,13 @@ Every edit inside a file goes through one write algorithm, whatever selected its
 - A range with a line endpoint and an exact-text endpoint is a character span. The line endpoint marks the content boundary of its line: the start after a BOM, the end before the line ending. Deleting from `START` through line 3 of `left START right⏎middle⏎left END right⏎last` gives `left ⏎last`.
 - Copy and Move keep the copied bytes, including their line endings. The same rules decide the target span, the BOM, the last line's ending, and the separators added at the target, which take the target's line ending.
 
+The algorithm also keeps look-alike bytes. When the text a model sends for a span differs from the original span, outside the part it really changes, only by characters that Pi's `normalizeForFuzzyMatch` treats as equal (special spaces such as a non-breaking space, smart quotes, Unicode dashes, and the other equivalences literal selectors already use), those places keep the original bytes. A model that retypes a line from an anchor cannot see an invisible non-breaking space; the tools keep it. The sent text is aligned with the original character by character under the equivalence, and only aligned characters keep the original. Two cases write the text as sent:
+
+- The whole replacement is equal to the original under the equivalence. The model's only change is the look-alike characters themselves, so a deliberate normalization such as a non-breaking space to a plain space works.
+- The text differs from the original by more than a few edits. It is a rewrite, not a retyped copy.
+
+Copied bytes (Copy and Move) and insertions have no original to align with and are written as they are. A replacement that is byte-identical to the selection is still refused.
+
 Add no rule for one kind of selector. A case that a selector needs is a case of the write algorithm.
 
 ## 5. Every error tells the next step

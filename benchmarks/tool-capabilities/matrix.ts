@@ -281,6 +281,8 @@ const groups: [string[], string[]][] = [
   [["codemode.diff-complete"], ["diff-script-complete"]],
   // These recipes explicitly require literal text and an omitted end, across LF/CRLF/EOF.
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
+  // A retyped line keeps the original look-alike bytes (non-breaking space) outside its change.
+  [["edit.replace-lookalike-bytes"], ["replace-lookalike-bytes"]],
   [
     ["edit.exact-eof", "edit.delete-empty-replace"],
     ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"],

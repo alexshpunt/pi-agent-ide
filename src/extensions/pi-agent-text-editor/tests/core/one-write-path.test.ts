@@ -412,3 +412,68 @@ describe("copy and move", () => {
     ).toBe("SOURCE\nSOURCE\r\nkeep\n");
   });
 });
+
+describe.each([
+  {
+    name: "LF",
+    prefix: "head\n",
+    ending: "\n",
+    suffix: "tail\n",
+  },
+  {
+    name: "BOM and CRLF",
+    prefix: "\uFEFFhead\r\n",
+    ending: "\r\n",
+    suffix: "tail\r\n",
+  },
+])("look-alike characters retyped by the model on $name", ({ prefix, ending, suffix }) => {
+  const original = "export\u00A0default \u201Croutes\u201D \u2013 old;";
+  const shape: Shape = {
+    name: "look-alikes",
+    prefix,
+    content: original,
+    ending,
+    suffix,
+    startEnding: ending,
+    afterEnding: ending,
+  };
+  const content = contentOf(shape);
+
+  describe.each(selectors)("$name", (selector) => {
+    const { start: startAnchor, end } = selector.anchors(shape);
+    const anchors: Record<string, TextAnchor> =
+      end === undefined ? { start: startAnchor } : { start: startAnchor, end };
+    const range = end === undefined ? {} : { end: "end" };
+    const replace = (text: string) =>
+      run(replaceMutationTool, content, anchors, { start: "start", ...range, text });
+
+    test("keeps the original bytes outside the part the model changes", async () => {
+      expect(await replace('export default "routes" - new;')).toBe(
+        `${prefix}export\u00A0default \u201Croutes\u201D \u2013 new;${ending}${suffix}`,
+      );
+    });
+
+    test("writes a whole span that only normalizes them as sent", async () => {
+      expect(await replace('export default "routes" - old;')).toBe(
+        `${prefix}export default "routes" - old;${ending}${suffix}`,
+      );
+    });
+
+    test("still refuses a replacement identical to the selection", async () => {
+      await expect(replace(original)).rejects.toMatchObject({ code: "REPLACEMENT_IDENTICAL" });
+    });
+  });
+});
+
+describe("look-alike characters in an insertion", () => {
+  test("are written as sent, since an insertion replaces nothing", async () => {
+    expect(
+      await run(
+        insertMutationTool,
+        "a\u00A0b\nc\n",
+        { anchor: new LineAnchor(1) },
+        { anchor: "anchor", text: "d e" },
+      ),
+    ).toBe("a\u00A0b\nd e\nc\n");
+  });
+});

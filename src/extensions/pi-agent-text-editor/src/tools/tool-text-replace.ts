@@ -25,7 +25,7 @@ export const replaceSchema = Type.Object(
     ...sourceRangeProperties(),
     text: Type.String({
       description:
-        "Replacement for each selected range; empty text deletes it. Over whole lines, the text replaces their content and the last line keeps its line ending, whether or not text ends with a line break; select exact text to join a line with the next.",
+        "Replacement for each selected range; empty text deletes it. Over whole lines, the text replaces their content and the last line keeps its line ending, whether or not text ends with a line break; select exact text to join a line with the next. Outside the part you change, look-alike characters (special spaces, smart quotes, dashes) keep the original; send only look-alikes to normalize them.",
     }),
   },
   { additionalProperties: false },
