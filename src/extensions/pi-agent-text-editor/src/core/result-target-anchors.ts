@@ -9,17 +9,22 @@ import {
 export function createResultTargetAnchors(
   store: ResultTargetStore,
 ): TextAnchorResolverRegistration {
+  const ownsReference = (value: string) =>
+    value.startsWith("RESULT#") ||
+    (value.endsWith(":all:match") && store.hasSearchReference(value));
   return {
     kind: TEXT_SEARCH_ANCHOR_KIND,
     type: "auxiliary",
     describeInPrompt: false,
+    // Resolve fixed matches ourselves, rather than sending them to a live Search session.
+    priority: -20,
     resolver: {
       id: "result-targets",
       description: "Use returned RESULT# references to target exact source snapshots.",
       renderFull: (value) => value,
       renderCompact: () => "result targets",
       async tryResolve(value, context) {
-        if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
+        if (!ownsReference(value)) return { kind: "not-handled" };
         try {
           const target = store
             .resolve(value, context.cwd, { forEdit: true })
@@ -55,7 +60,7 @@ export function createResultTargetAnchors(
     resources: {
       id: "result-target-sources",
       async tryResolve(value, context) {
-        if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
+        if (!ownsReference(value)) return { kind: "not-handled" };
         try {
           const selected = store.resolve(value, context.cwd, {
             forEdit: context.edit !== undefined,

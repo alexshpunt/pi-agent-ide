@@ -33,6 +33,7 @@ export async function recoverExactText(
       kind: "candidates",
       total: matches.total,
       candidates: matches.ranges.map((range, index) => ({ rank: index + 1, range })),
+      ...(matches.allMatches !== undefined && { allMatches: matches.allMatches }),
     };
   }
 

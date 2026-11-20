@@ -46,6 +46,7 @@ import {
   TextMutationAnchorResolutionError,
 } from "#src/core/text-mutation-anchor-error.ts";
 import {
+  allMatchesRetry,
   buildFailedCopyWriteResult,
   buildFailedTextMutationResult,
   buildSuccessfulTextMutationResult,
@@ -793,7 +794,14 @@ export async function executeRegisteredTextBatch(
     );
   }
 
+  const preparedById = new Map(prepared.map((item) => [item.callId, item]));
   for (const failure of failures) {
+    const call = preparedById.get(failure.callId);
+    // Refreshed snippets in a batch no longer carry the original selector scope.
+    const retry =
+      call === undefined || call.input.scopedSources !== undefined
+        ? undefined
+        : allMatchesRetry(call.registration.name, call.input, resultTargets);
     const anchorFailures =
       failure.error instanceof TextMutationAnchorAggregateError
         ? failure.error.failures
@@ -822,6 +830,7 @@ export async function executeRegisteredTextBatch(
       },
       context,
       failure.effect,
+      retry,
     );
     const failureResults = failedResult.details.results ?? [];
     reporter.fail(failure.callId, {

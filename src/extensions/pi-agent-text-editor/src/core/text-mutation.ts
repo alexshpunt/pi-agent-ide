@@ -473,6 +473,7 @@ export function createTextTool<TParameters extends TSchema>(
                     definition.name === "write"
                       ? guardWholeFileWrite(observations, expectedWriteContent)
                       : undefined,
+                    resultTargets,
                   );
                 return directExecute();
               };
@@ -1465,6 +1466,7 @@ export async function executeTextMutation<TParameters extends TSchema>(
   publishAnchorRenderState?: (field: string, state: ToolCallAnchorRenderState) => void,
   lastResolvedSource?: string,
   checkSnapshot?: TextResourceEditRequest["checkSnapshot"],
+  resultTargets?: ResultTargetStore,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   const execution = await executeTextMutationPipeline(
     core,
@@ -1482,6 +1484,7 @@ export async function executeTextMutation<TParameters extends TSchema>(
     execution.source,
     context,
     definition.name,
+    allMatchesRetry(definition.name, parameters, resultTargets),
   );
   return execution.pipeline.kind === "completed" && execution.pipeline.state.metadata !== undefined
     ? { ...result, details: { ...result.details, metadata: execution.pipeline.state.metadata } }
@@ -1896,6 +1899,7 @@ async function buildToolResult(
   source: string,
   context: ExtensionContext,
   operation: string,
+  retry?: AllMatchesRetry,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (pipeline.kind === "failed") {
     return failureToolResult(
@@ -1918,7 +1922,7 @@ async function buildToolResult(
   }
 
   if (outcome.kind === "failed") {
-    const recovery = await anchorFailureToolResult(core, outcome.failure, context);
+    const recovery = await anchorFailureToolResult(core, outcome.failure, context, retry);
 
     if (recovery !== undefined) {
       return recovery;
@@ -2041,15 +2045,43 @@ async function resolveAnchorRecovery(error: TextMutationAnchorResolutionError) {
   return error.resolution.recovery;
 }
 
+interface AllMatchesRetry {
+  readonly store: ResultTargetStore;
+  readonly field: "start" | "anchor";
+}
+
+/** Only selectors that edit each range independently can use an entire match set. */
+export function allMatchesRetry(
+  operation: string,
+  input: Readonly<Record<string, unknown>>,
+  store?: ResultTargetStore,
+): AllMatchesRetry | undefined {
+  if (store === undefined) return undefined;
+  if (operation === "insert") return { store, field: "anchor" };
+  if (
+    (operation === "replace" || operation === "delete") &&
+    (input.end === undefined || input.end === "")
+  )
+    return { store, field: "start" };
+  return undefined;
+}
+
 async function anchorFailureToolResult(
   core: TextEditorCore,
   failure: TextResourceEditFailure,
   context: ExtensionContext,
+  retry?: AllMatchesRetry,
 ): Promise<AgentToolResult<FileMutationBatchResult> | undefined> {
   if (failure.cause instanceof TextMutationAnchorAggregateError) {
+    const failures = failure.cause.failures;
     const recovered = await Promise.all(
-      failure.cause.failures.map((cause) =>
-        anchorFailureToolResult(core, { ...failure, source: cause.source, cause }, context),
+      failures.map((cause) =>
+        anchorFailureToolResult(
+          core,
+          { ...failure, source: cause.source, cause },
+          context,
+          failures.length === 1 ? retry : undefined,
+        ),
       ),
     );
     const results: FileMutationResult[] = [];
@@ -2086,12 +2118,15 @@ async function anchorFailureToolResult(
   const contextual = failure.cause;
   const resolution = contextual.resolution;
   const showRecovery = contextual.anchor.length <= MAX_ANCHOR_EXCERPT_LENGTH;
-  const recovery = showRecovery
-    ? await resolveAnchorRecovery(contextual).catch(() => {
-        context.signal?.throwIfAborted();
-        return undefined;
-      })
-    : undefined;
+  const canOfferAll =
+    retry?.field === contextual.field && resolution.rejection?.code === "ambiguous";
+  const recovery =
+    showRecovery || canOfferAll
+      ? await resolveAnchorRecovery(contextual).catch(() => {
+          context.signal?.throwIfAborted();
+          return undefined;
+        })
+      : undefined;
 
   // A reference such as SEARCH#…:all:match names resources, not a position: reading it as a path
   // would only resolve it again, and the first lines of a file say nothing about it.
@@ -2140,6 +2175,15 @@ async function anchorFailureToolResult(
     );
   }
 
+  const allMatches = canOfferAll ? resolution.allMatchesTarget() : undefined;
+  const nextStep =
+    allMatches === undefined || retry === undefined
+      ? undefined
+      : `To change all ${allMatches.ranges.length} matches, retry with ${retry.store.registerAllMatchesReference(allMatches, context.cwd)} as ${retry.field}.`;
+  const reason =
+    nextStep === undefined
+      ? resolution.message
+      : `${resolution.message.replace(/[.!?]+$/u, "")}. ${nextStep}`;
   const result = new FileMutationResult({
     ok: false,
     path: contextual.source,
@@ -2147,7 +2191,7 @@ async function anchorFailureToolResult(
       {
         path: contextual.source,
         code: resolution.rejection?.code ?? failure.code,
-        reason: resolution.message,
+        reason,
       },
     ],
   });
@@ -2167,7 +2211,7 @@ async function anchorFailureToolResult(
           } satisfies StaleAnchorMessageDetails,
           resolution.message,
         )
-      : formatRejectedAnchorMessage(contextual, rejectionCode, resolution.message, recoveryContext);
+      : formatRejectedAnchorMessage(contextual, rejectionCode, reason, recoveryContext);
 
   return {
     content: [{ type: "text", text: content }],
@@ -2248,6 +2292,7 @@ export async function buildFailedTextMutationResult(
   failure: TextResourceEditFailure,
   context: ExtensionContext,
   effect: "applied" | "not-applied" | "unknown" = "not-applied",
+  retry?: AllMatchesRetry,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (failure.cause instanceof TextMutationInputError) {
     return failureToolResult(
@@ -2270,7 +2315,7 @@ export async function buildFailedTextMutationResult(
     );
   }
   return effect === "not-applied"
-    ? ((await anchorFailureToolResult(core, failure, context)) ??
+    ? ((await anchorFailureToolResult(core, failure, context, retry)) ??
         failureToolResult(failure.source, failure.code, failure.message, effect, failure.rollback))
     : failureToolResult(failure.source, failure.code, failure.message, effect, failure.rollback);
 }
