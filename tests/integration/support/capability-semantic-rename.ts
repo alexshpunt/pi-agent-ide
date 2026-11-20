@@ -76,9 +76,9 @@ const run = await new PiIntegrationTest(
     rawMode: false,
     timeoutMs: 90_000,
     extensions: [
+      "/source/tests/integration/fixtures/issued-reference-provider.ts",
       "/source/src/pi-agent-ide.ts",
       "builtin:codemode",
-      "/source/tests/integration/fixtures/issued-reference-provider.ts",
     ],
     tools: ["read", "lsp_search", "replace", "codemode"],
     conversation: [
