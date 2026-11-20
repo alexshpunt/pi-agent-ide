@@ -7,12 +7,7 @@ import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
 import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.ts";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
-import {
-  anchorSpanRange,
-  replaceAnchorSpan,
-  selectionChanges,
-  textSelections,
-} from "#src/tools/text-selection.ts";
+import { anchorSpanRange, selectionChanges, textSelections } from "#src/tools/text-selection.ts";
 
 import {
   TextMutationInputError,
@@ -30,7 +25,7 @@ export const replaceSchema = Type.Object(
     ...sourceRangeProperties(),
     text: Type.String({
       description:
-        "Replacement for each selected range; empty text deletes it. Line breaks in text written over exact text take the line ending of the line where the range starts; other selections save the text as sent. A line selection includes its line break: end the text with one to keep the line.",
+        "Replacement for each selected range; empty text deletes it. Over whole lines, the text replaces their content and the last line keeps its line ending, whether or not text ends with a line break; select exact text to join a line with the next.",
     }),
   },
   { additionalProperties: false },
@@ -102,7 +97,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
 
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const span = await anchorSpanRange(context, starts, ends, "start", "end");
-    const change = replaceAnchorSpan(span, parameters.text);
+    const change = context.documentFor(span.source).replace(span, parameters.text);
     refuseIdenticalReplacement(context, [{ source: span.source, ...change }]);
     return {
       edits: new Map([[span.source, { changes: [change], action: "edited" }]]),

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
 import { TextChangeDocument } from "#src/core/text-change-engine.ts";
-import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.ts";
+import { anchorSpanRange } from "#src/tools/text-selection.ts";
 import type { TextMutationContext } from "#src/api/mutation-tool.ts";
 
 function fixture(content: string) {
@@ -35,14 +35,14 @@ function fixture(content: string) {
       "end",
     );
   const replace = async (start: string, end: string | undefined, text: string) => {
-    const change = replaceAnchorSpan(await span(start, end), text);
+    const change = document.replace(await span(start, end), text);
     return content.slice(0, change.from) + change.insert + content.slice(change.to);
   };
   /** Copy a single-anchor source over a paired destination span, as Copy does. */
   const copyOver = async (source: string, targetStart: string, targetEnd: string) => {
     const target = await span(targetStart, targetEnd);
     const text = document.text(await span(source));
-    const change = { from: target.from, to: target.to, insert: text };
+    const change = document.replace(target, text, { verbatim: true });
     return content.slice(0, change.from) + change.insert + content.slice(change.to);
   };
   return { document, context, span, replace, copyOver };
@@ -97,9 +97,9 @@ test("multiline exact endpoints keep their own character boundaries", async () =
 test.each(["\n", "\r\n"])(
   "exact deletion through EOF keeps the preceding separator (%j)",
   async (eol) => {
-    const { span, replace } = fixture(`keep${eol}START to END`);
+    const { document, span, replace } = fixture(`keep${eol}START to END`);
     expect(await replace("START", "END", "")).toBe(`keep${eol}`);
-    expect(deleteAnchorSpan(await span("START", "END"))).toEqual({
+    expect(document.delete(await span("START", "END"))).toEqual({
       from: 4 + eol.length,
       to: 16 + eol.length,
       insert: "",

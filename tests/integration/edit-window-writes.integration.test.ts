@@ -230,8 +230,8 @@ test("A move whose source and destination references were resolved on different 
     const code =
       textResultChecks +
       String.raw`
-// The whole slot line with its line break, as a line reference selected it.
-const slot=await tools.search({path:"main.cpp",query:"regex:^// __SLOT__\\n",multiline:true});
+// The slot line's text: the moved block's lines take its place and keep its line ending.
+const slot=await tools.search({path:"main.cpp",query:"// __SLOT__"});
 const ref=slot.matches[0]?.id;
 check(slot.matches.length===1&&ref,"No slot reference: "+JSON.stringify(slot).slice(0,300));
 // The block is answered for the text before another session's write; the slot for the text after.

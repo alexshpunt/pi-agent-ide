@@ -24,7 +24,8 @@ test("empty replacements remove lines and keep unselected separators in real Pi"
       end: "END\r\n",
       expected: "A\r\n\r\nB\r\n",
     },
-    { content: "A\nBLOCK", start: "end", expected: "A\n" },
+    // A last line without a line break takes the line ending before it.
+    { content: "A\nBLOCK", start: "end", expected: "A" },
     { content: "BLOCK\n", start: "begin", expected: "" },
     { content: "A BLOCK B\n", start: "BLOCK", expected: "A  B\n" },
   ];

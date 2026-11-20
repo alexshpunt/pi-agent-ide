@@ -9,14 +9,13 @@ for (const separator of ["\n", "\r\n"]) {
           const source = ["FIRST", "ANCHOR"].join(separator) + (terminated ? separator : "");
           const normalized = payload.replace(/\n/g, separator);
           const document = new TextChangeDocument(source);
-          const change = before
-            ? document.insertBeforeLine(2, normalized)
-            : document.insertAfterLine(2, normalized);
+          const change = document.insert(document.lineSpan(2, 2), normalized, { before });
           let expected: string;
           if (before) {
             expected = `FIRST${separator}${normalized}${normalized.endsWith(separator) ? "" : separator}ANCHOR${terminated ? separator : ""}`;
           } else if (terminated) {
-            expected = `${source}${normalized}`;
+            // A file that ends with a line break keeps it after the inserted line.
+            expected = `${source}${normalized}${normalized.endsWith(separator) ? "" : separator}`;
           } else {
             expected = `${source}${separator}${normalized}`;
           }

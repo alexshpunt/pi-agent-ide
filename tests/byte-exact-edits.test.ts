@@ -1,13 +1,15 @@
 /**
- * Edit tools change exactly the selected bytes and nothing else. Every edit is checked against the
- * reference model `file[:start] + text + file[end:]`, byte for byte, on files built from the
- * pieces that tools used to rewrite: a BOM, CRLF, lone CR, NUL, invisible and combining
- * characters, astral characters, trailing whitespace, and a missing final LF.
+ * Edit tools change exactly the selected bytes and nothing else. Every edit is checked against a
+ * reference model, byte for byte, on files built from the pieces that tools used to rewrite: a BOM,
+ * CRLF, lone CR, NUL, invisible and combining characters, astral characters, trailing whitespace,
+ * and a missing final LF.
  *
- * Literal text selects and writes the way Pi's edit does: a selected span never splits a CRLF,
- * and line breaks in the sent text take the line ending of the line where the span starts. A
- * literal that is not in the file matches without the BOM and with CRLF and CR as LF, and then
- * fuzzily; Pi's own normalization functions are the reference for both.
+ * Every selector writes the way Pi's edit does: line breaks in the sent text take the line ending
+ * of the line where the span starts, and the BOM belongs to no span. A literal's span never splits
+ * a CRLF. Over whole lines, the text replaces their content and the last line keeps its ending;
+ * deleting whole lines removes their endings. A literal that is not in the file matches without
+ * the BOM and with CRLF and CR as LF, and then fuzzily; Pi's own normalization functions are the
+ * reference for both.
  */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -70,16 +72,74 @@ beforeAll(async () => {
   pi = (await import(new URL("./core/tools/edit-diff.js", entry).href)) as typeof pi;
 }, 30_000);
 
-/** A literal's span never splits a CRLF: it covers the whole CRLF, as in Pi's edit. */
+/**
+ * A literal's span never splits a CRLF: it covers the whole CRLF, as in Pi's edit. The BOM belongs
+ * to no span: a span that starts in it starts after it.
+ */
 function literalSpan(
   content: string,
   span: { from: number; to: number },
 ): { from: number; to: number } {
-  return {
+  return withoutBom(content, {
     from:
       content[span.from] === "\n" && content[span.from - 1] === "\r" ? span.from - 1 : span.from,
     to: content[span.to - 1] === "\r" && content[span.to] === "\n" ? span.to + 1 : span.to,
-  };
+  });
+}
+
+/** A character span without the BOM. */
+function withoutBom(
+  content: string,
+  span: { from: number; to: number },
+): { from: number; to: number } {
+  const bom = content.startsWith(BOM) ? 1 : 0;
+  return { from: Math.max(span.from, bom), to: Math.max(span.to, bom) };
+}
+
+/** Where a line's content ends: before its LF or CRLF, or at the end of an unterminated line. */
+function contentEnd(content: string, line: { from: number; to: number }): number {
+  if (content[line.to - 1] !== "\n") return line.to;
+  const start = withoutBom(content, line).from;
+  return line.to - 2 >= start && content[line.to - 2] === "\r" ? line.to - 2 : line.to - 1;
+}
+
+/**
+ * The content of whole lines `low` through `high`: from the first line's start after a BOM to the last
+ * line's end before its line ending.
+ */
+function linesContent(
+  content: string,
+  lines: readonly { from: number; to: number }[],
+  low: number,
+  high: number,
+): { from: number; to: number } {
+  const first = lines[low] ?? { from: 0, to: 0 };
+  const last = lines[high] ?? first;
+  return { from: withoutBom(content, first).from, to: contentEnd(content, last) };
+}
+
+/**
+ * Whole lines after `text` replaced them: their content takes the text, written with the line
+ * ending where it starts and without one trailing line break, and the last line keeps its own
+ * ending. Empty text deletes the lines with their endings; when the last of them has none, the
+ * ending before them goes instead.
+ */
+function writeLines(
+  content: string,
+  lines: readonly { from: number; to: number }[],
+  low: number,
+  high: number,
+  text: string,
+): string {
+  const { from, to } = linesContent(content, lines, low, high);
+  if (text.length > 0) {
+    const written = sentText(content, from, text.replace(/(?:\r\n|\r|\n)$/u, ""));
+    return content.slice(0, from) + written + content.slice(to);
+  }
+  if (content[(lines[high]?.to ?? 0) - 1] === "\n")
+    return content.slice(0, from) + content.slice(lines[high]?.to ?? 0);
+  const previous = lines[low - 1];
+  return content.slice(0, previous === undefined ? from : contentEnd(content, previous));
 }
 
 /**
@@ -429,7 +489,7 @@ function randomOperation(
     }
     case 3:
     case 4: {
-      // Replace or delete whole lines through line anchors; a line covers its own LF.
+      // Replace or delete whole lines through line anchors.
       const first = uniqueLine();
       const last = uniqueLine();
       if (first === undefined || last === undefined) return undefined;
@@ -444,25 +504,26 @@ function randomOperation(
           ...(kind === 4 ? {} : { text: insert }),
         }),
         expected: {
-          "main.txt": splice(main, lines[low]?.from ?? 0, lines[high]?.to ?? main.length, insert),
+          "main.txt": writeLines(main, lines, low, high, insert),
         },
       };
     }
     case 5: {
-      // A Search :match reference selects exactly its characters.
+      // A Search :match reference selects exactly its characters, except a BOM.
       const span = uniqueSpan(rng, main, near);
       if (span === undefined) return undefined;
       const reference = h.select(file("main.txt"), main, [
         { start: position(main, span.from), end: position(main, span.to) },
       ]);
+      const { from, to } = withoutBom(main, span);
       return {
         name: `replace match ${JSON.stringify(main.slice(span.from, span.to))}`,
         run: call(replaceMutationTool, { path: "main.txt", start: reference, text: text }),
-        expected: { "main.txt": splice(main, span.from, span.to, text) },
+        expected: { "main.txt": splice(main, from, to, sentText(main, from, text)) },
       };
     }
     case 6: {
-      // A Search :line or Read range selects whole lines with their LFs.
+      // A Search :line or Read range selects whole lines.
       if (lines.length === 0) return undefined;
       const low = rng.int(lines.length);
       const high = Math.min(lines.length - 1, low + rng.int(3));
@@ -477,12 +538,12 @@ function randomOperation(
         name: `replace line selection ${String(low + 1)}-${String(high + 1)}`,
         run: call(replaceMutationTool, { path: "main.txt", start: reference, text: text }),
         expected: {
-          "main.txt": splice(main, lines[low]?.from ?? 0, lines[high]?.to ?? 0, text),
+          "main.txt": writeLines(main, lines, low, high, text),
         },
       };
     }
     case 7: {
-      // Insert at an exact boundary adds exactly the text.
+      // Insert at an exact boundary adds the text there, with the line ending where it lands.
       const span = uniqueSpan(rng, main, near);
       if (span === undefined || text.length === 0) return undefined;
       const before = rng.chance(0.5);
@@ -618,7 +679,8 @@ function randomOperation(
       };
     }
     default: {
-      // Insert after a whole line with text ending in LF adds exactly the text.
+      // Insert after a whole line with text ending in LF adds the text, with its line breaks
+      // written in the line ending at the insertion point.
       const line = uniqueLine();
       if (line === undefined || !main.slice(0, lines[line]?.to).endsWith("\n")) return undefined;
       const insert = `${text}\n`;
@@ -626,22 +688,23 @@ function randomOperation(
       return {
         name: `insert after line ${String(line + 1)}`,
         run: call(insertMutationTool, { path: "main.txt", anchor: anchors[line], text: insert }),
-        expected: { "main.txt": splice(main, at, at, insert) },
+        expected: { "main.txt": splice(main, at, at, sentText(main, at, insert)) },
       };
     }
   }
 }
 
 /**
- * A replace whose text equals the selected bytes changes nothing, so the tool refuses it. The
- * reference model predicts that case as a no-op result.
+ * A replace whose text equals the selected bytes changes nothing, nor does a delete of an empty
+ * span, such as a selection of only the BOM; the tool refuses both. The reference model predicts
+ * that case as a no-op result.
  */
-function refuseIdenticalReplace(
+function refuseNoOpEdit(
   operation: Operation | undefined,
   main: string,
   other: string,
 ): Operation | undefined {
-  if (operation === undefined || !operation.name.startsWith("replace ")) return operation;
+  if (operation === undefined || !/^(?:replace|delete) /u.test(operation.name)) return operation;
   const { expected } = operation;
   if (expected === undefined) return operation;
   const unchanged =
@@ -667,11 +730,7 @@ describe("byte-exact edits on bomb files", () => {
       let near: number | undefined;
       let applied = 0;
       for (let step = 0; step < 40; step += 1) {
-        const operation = refuseIdenticalReplace(
-          randomOperation(rng, h, main, other, near),
-          main,
-          other,
-        );
+        const operation = refuseNoOpEdit(randomOperation(rng, h, main, other, near), main, other);
         if (operation === undefined) continue;
         const label = `seed ${String(seed)} step ${String(step)}: ${operation.name} on ${JSON.stringify(main)}`;
         const outcome = await operation.run();
@@ -744,22 +803,31 @@ describe("byte-exact regressions", () => {
     );
   });
 
-  test("a line replaced with LF-ended text keeps the LF it was sent", async () => {
+  test("a replaced line keeps its own line ending, whatever the text ends with", async () => {
     const h = await harness();
     const content = "one\r\ntwo\nthree\r\n";
     await put("main.txt", content);
     const anchor = textLineAnchors(file("main.txt"), content)[1];
-    await h.run(replaceMutationTool, { path: "main.txt", start: anchor, text: "TWO\n" });
+    await h.run(replaceMutationTool, { path: "main.txt", start: anchor, text: "TWO\r\n" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("one\r\nTWO\nthree\r\n");
   });
 
-  test("a line replaced without a line break joins the next line, as sent", async () => {
+  test("a line replaced without a line break does not join the next line", async () => {
     const h = await harness();
     const content = "one\ntwo\nthree\n";
     await put("main.txt", content);
     const anchor = textLineAnchors(file("main.txt"), content)[1];
     await h.run(replaceMutationTool, { path: "main.txt", start: anchor, text: "TWO" });
-    expect((await bytes("main.txt")).toString("utf8")).toBe("one\nTWOthree\n");
+    expect((await bytes("main.txt")).toString("utf8")).toBe("one\nTWO\nthree\n");
+  });
+
+  test("a first line replaced through its anchor keeps the BOM", async () => {
+    const h = await harness();
+    const content = `${BOM}one\r\ntwo`;
+    await put("main.txt", content);
+    const anchor = textLineAnchors(file("main.txt"), content)[0];
+    await h.run(replaceMutationTool, { path: "main.txt", start: anchor, text: "ONE" });
+    expect((await bytes("main.txt")).toString("utf8")).toBe(`${BOM}ONE\r\ntwo`);
   });
 
   test("a literal in a file with lone CRs is replaced exactly", async () => {

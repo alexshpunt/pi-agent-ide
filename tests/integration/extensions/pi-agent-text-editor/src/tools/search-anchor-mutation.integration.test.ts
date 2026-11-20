@@ -145,10 +145,12 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
     expect(getToolExecution(result, "replace-union").isError).toBe(false);
     expect(getToolExecution(result, "replace-begin").isError).toBe(false);
     expect(getToolExecution(result, "replace-end").isError).toBe(false);
-    // One text replaces every selected range exactly: a line range with its line break, a match
-    // only its characters. So the line selected by the anchor joins the line after it.
-    await expect(readFile(first, "utf8")).resolves.toBe("toptop\ntail one\n");
-    await expect(readFile(second, "utf8")).resolves.toBe("changedchanged second\nbottom\nbottom");
+    // One text replaces every selected range: the content of a selected line, which keeps its
+    // line break, and only the characters of a match.
+    await expect(readFile(first, "utf8")).resolves.toBe("top\nchanged first\ntop\ntail one\n");
+    await expect(readFile(second, "utf8")).resolves.toBe(
+      "changed\nchanged second\nbottom\nbottom\n",
+    );
   });
 }, 180_000);
 
@@ -181,7 +183,8 @@ test("deletes a final no-LF line through a path resource", async () => {
     }).run("Delete the final line through a search path resource");
 
     expect(getToolExecution(result, "delete-final").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    // The deleted last line has no line break, so the one before it goes too.
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -337,7 +340,8 @@ test("deletes only the final line while preserving preceding content", async () 
     }).run("Delete only the final matching line through its per-result line path");
 
     expect(getToolExecution(result, "delete-final-line-only").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\nneedle\n");
+    // The deleted last line has no line break, so the one before it goes too.
+    await expect(readFile(source, "utf8")).resolves.toBe("header\nneedle");
   });
 }, 180_000);
 
@@ -448,7 +452,7 @@ test("deletes a final no-LF line from a position-anchor union", async () => {
     }).run("Delete a final line using a path and end anchor");
 
     expect(getToolExecution(result, "delete-union-final").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -556,7 +560,7 @@ test("deletes a final no-LF line when exact and linewise endpoints merge", async
     }).run("Delete a final line by merging an exact anchor with a linewise search path");
 
     expect(getToolExecution(result, "delete-final-exact").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -1028,7 +1032,8 @@ test("inserts after every reference of a list from different searches", async ()
     },
   );
   expect(run.failed).toBe(false);
-  expect(run.contents).toEqual({ "a.txt": "one\nneedle\nadded", "b.txt": "pin\nadded" });
+  // A file that ends with a line break keeps one after the inserted line.
+  expect(run.contents).toEqual({ "a.txt": "one\nneedle\nadded\n", "b.txt": "pin\nadded\n" });
 }, 180_000);
 
 test("deletes every reference of a list from different searches", async () => {

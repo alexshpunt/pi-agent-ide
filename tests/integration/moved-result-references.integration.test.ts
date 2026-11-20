@@ -57,7 +57,8 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
     const call = (options: Parameters<typeof toolCall>[0]) =>
       assistantMessage([toolCall(options)], { stopReason: "toolUse" });
     const moveStart = '{"path":"main.cpp","start":"$issued-search:carrier:1"';
-    // A literal selects only its characters; the line break places the moved line after it.
+    // A literal selects only its characters; the line break places the moved line after it. The
+    // moved line carries its content, so the file then ends without a line break.
     const moveEnd = ',"target":"sink.cpp","targetStart":"// destination\\n"}';
     const result = await new PiIntegrationTest({
       testName: "peer-block-swap-with-issued-results",
@@ -139,7 +140,7 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
         ),
     );
     await expect(readFile(path.join(cwd, "sink.cpp"), "utf8")).resolves.toBe(
-      `// destination\n${carrier}\n`,
+      `// destination\n${carrier}`,
     );
   });
 }, 180_000);

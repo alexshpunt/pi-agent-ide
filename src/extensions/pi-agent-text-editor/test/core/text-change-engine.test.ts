@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
+import {
+  applyTextChanges,
+  TextChangeDocument,
+  type TextChange,
+} from "#src/core/text-change-engine.ts";
 
 describe("text change engine", () => {
   test("applies replacements, insertions, deletions, and full replacements", () => {
@@ -101,31 +105,39 @@ describe("text change engine", () => {
 });
 
 describe("text change document", () => {
+  const apply = (document: TextChangeDocument, ...changes: TextChange[]) =>
+    applyTextChanges(document.content, changes).content;
+
   test("selects inclusive line ranges in either direction", () => {
     const document = new TextChangeDocument("one\ntwo\nthree");
     expect(document.lineRange(2, 3)).toEqual({ from: 4, to: 13 });
     expect(document.lineRange(3, 2)).toEqual({ from: 4, to: 13 });
     expect(document.text(document.lineRange(2, 2))).toBe("two\n");
+    expect(document.text(document.lineSpan(2, 2))).toBe("two");
   });
 
   test("replaces and deletes first and last lines without changing unrelated separators", () => {
     const document = new TextChangeDocument("one\ntwo\nthree");
-    expect(applyTextChanges(document.content, [document.replaceLines(1, 1, "ONE\n")]).content).toBe(
+    expect(apply(document, document.replace(document.lineSpan(1, 1), "ONE\n"))).toBe(
       "ONE\ntwo\nthree",
     );
-    expect(applyTextChanges(document.content, [document.deleteLines(3, 3)]).content).toBe(
-      "one\ntwo\n",
-    );
+    expect(apply(document, document.delete(document.lineSpan(3, 3)))).toBe("one\ntwo");
   });
 
-  test("replaces whole lines with exactly the sent text, adding no line break", () => {
+  test("replaces the content of whole lines and keeps the last line's ending", () => {
     const document = new TextChangeDocument("one\r\ntwo\nthree");
-    expect(applyTextChanges(document.content, [document.replaceLines(1, 1, "ONE")]).content).toBe(
-      "ONEtwo\nthree",
+    expect(apply(document, document.replace(document.lineSpan(1, 1), "ONE"))).toBe(
+      "ONE\r\ntwo\nthree",
     );
-    expect(applyTextChanges(document.content, [document.replaceLines(2, 2, "2\n")]).content).toBe(
+    expect(apply(document, document.replace(document.lineSpan(2, 2), "2\n"))).toBe(
       "one\r\n2\nthree",
     );
+    expect(apply(document, document.replace(document.lineSpan(1, 2), "A\nB"))).toBe(
+      "A\r\nB\nthree",
+    );
+    // A file whose only line ending is a lone CR is one line; its end stays without an ending.
+    const cr = new TextChangeDocument("a\rb");
+    expect(apply(cr, cr.replace(cr.lineSpan(1, 1), "X\nY\n"))).toBe("X\rY");
   });
 
   test("counts a CRLF line's CR as its last column", () => {
@@ -137,59 +149,59 @@ describe("text change document", () => {
 
   test("handles a final newline and an empty document", () => {
     const finalNewline = new TextChangeDocument("one\ntwo\n");
-    expect(applyTextChanges(finalNewline.content, [finalNewline.deleteLines(2, 2)]).content).toBe(
-      "one\n",
-    );
+    expect(apply(finalNewline, finalNewline.delete(finalNewline.lineSpan(2, 2)))).toBe("one\n");
 
     const empty = new TextChangeDocument("");
-    expect(applyTextChanges(empty.content, [empty.replaceAll("first")]).content).toBe("first");
-    expect(applyTextChanges(empty.content, [empty.insertAfterLine(1, "first")]).content).toBe(
-      "first",
-    );
+    expect(apply(empty, empty.replaceAll("first"))).toBe("first");
+    expect(apply(empty, empty.insert(empty.lineSpan(1, 1), "first"))).toBe("first");
   });
 
-  test("inserts before and after lines with the document line ending", () => {
+  test("inserts before and after lines with the line ending at the insertion point", () => {
     const lf = new TextChangeDocument("one\ntwo");
-    expect(applyTextChanges(lf.content, [lf.insertBeforeLine(1, "zero")]).content).toBe(
+    expect(apply(lf, lf.insert(lf.lineSpan(1, 1), "zero", { before: true }))).toBe(
       "zero\none\ntwo",
     );
-    expect(applyTextChanges(lf.content, [lf.insertAfterLine(2, "three")]).content).toBe(
-      "one\ntwo\nthree",
-    );
+    expect(apply(lf, lf.insert(lf.lineSpan(2, 2), "three"))).toBe("one\ntwo\nthree");
 
     const crlf = new TextChangeDocument("one\r\ntwo\r\nthree");
-    expect(applyTextChanges(crlf.content, [crlf.replaceLines(2, 2, "TWO\r\n")]).content).toBe(
-      "one\r\nTWO\r\nthree",
-    );
-    expect(applyTextChanges(crlf.content, [crlf.insertAfterLine(1, "middle")]).content).toBe(
+    expect(apply(crlf, crlf.replace(crlf.lineSpan(2, 2), "TWO\r\n"))).toBe("one\r\nTWO\r\nthree");
+    expect(apply(crlf, crlf.insert(crlf.lineSpan(1, 1), "middle"))).toBe(
       "one\r\nmiddle\r\ntwo\r\nthree",
+    );
+
+    const mixed = new TextChangeDocument("one\r\ntwo\nthree\r\n");
+    expect(apply(mixed, mixed.insert(mixed.lineSpan(2, 2), "a\nb", { before: true }))).toBe(
+      "one\r\na\nb\ntwo\nthree\r\n",
     );
   });
 
   test("applies a same-document move as one changeset", () => {
     const document = new TextChangeDocument("one\ntwo\nthree\nfour");
-    const range = document.lineRange(2, 2);
-    const changes = [document.deleteLines(2, 2), document.insertAfterLine(4, document.text(range))];
+    const moved = document.lineSpan(2, 2);
+    const changes = [
+      document.delete(moved),
+      document.insert(document.lineSpan(4, 4), document.text(moved), { verbatim: true }),
+    ];
 
-    expect(applyTextChanges(document.content, changes).content).toBe("one\nthree\nfour\ntwo\n");
+    expect(applyTextChanges(document.content, changes).content).toBe("one\nthree\nfour\ntwo");
   });
 
-  test("copy and move preserve copied trailing line breaks at an unterminated EOF", () => {
+  test("copy and move keep an unterminated EOF unterminated", () => {
     const source = "first\nblock\nlast";
     const document = new TextChangeDocument(source);
-    const copied = document.text(document.lineRange(2, 2));
-    const addition = document.insertAfterLine(3, copied);
-    expect(applyTextChanges(source, [addition]).content).toBe("first\nblock\nlast\nblock\n");
-    expect(applyTextChanges(source, [document.deleteLines(2, 2), addition]).content).toBe(
-      "first\nlast\nblock\n",
-    );
+    const copied = document.text(document.lineSpan(2, 2));
+    const addition = document.insert(document.lineSpan(3, 3), copied, { verbatim: true });
+    expect(applyTextChanges(source, [addition]).content).toBe("first\nblock\nlast\nblock");
+    expect(
+      applyTextChanges(source, [document.delete(document.lineSpan(2, 2)), addition]).content,
+    ).toBe("first\nlast\nblock");
   });
   test("rejects a move whose target is inside the removed range", () => {
     const document = new TextChangeDocument("one\ntwo\nthree");
     expect(() =>
       applyTextChanges(document.content, [
-        document.deleteLines(2, 2),
-        document.insertAfterLine(1, "two\n"),
+        document.delete(document.lineSpan(2, 2)),
+        document.insert(document.lineSpan(1, 1), "two\n"),
       ]),
     ).toThrow("overlap");
   });

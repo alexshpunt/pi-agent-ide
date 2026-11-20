@@ -96,13 +96,9 @@ export function resolveExactTextAnchor(
   // Literal text selects exactly the characters it matched, even when they form complete lines.
   return {
     kind: "resolved",
-    anchor: new TextSelectionAnchor(
-      value,
-      context.source,
-      [{ start: positionAt(content, match.span.from), end: positionAt(content, match.span.to) }],
-      undefined,
-      { literal: true },
-    ),
+    anchor: new TextSelectionAnchor(value, context.source, [
+      { start: positionAt(content, match.span.from), end: positionAt(content, match.span.to) },
+    ]),
   };
 }
 

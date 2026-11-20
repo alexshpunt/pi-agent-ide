@@ -110,7 +110,8 @@ test("range tools preserve exact endpoints and the paragraph before leading newl
           path: "line-end.txt",
           start: "START",
           end: "SEARCH#RUNTIME:7:1:line",
-          text: "NEW\n",
+          // The line end stops before its line ending, which stays.
+          text: "NEW",
         }),
         call("credit", "replace", {
           path: "credit.md",
@@ -182,8 +183,9 @@ test("typed source merging pairs a whole-line start with an EOF line endpoint", 
     }).run("Delete the START line through the END line at the end of the file.");
     expect(getToolExecution(result, "delete").isError).toBe(false);
     // The literal START line with its break equals the typed source's line selection, and END is a
-    // line reference, so the pair deletes both lines. The separator before START belongs to KEEP.
-    expect(await readFile(path.join(cwd, "fixture.txt"), "utf8")).toBe("KEEP\n");
+    // line reference, so the pair deletes both lines. END has no line ending, so the one before
+    // START goes with them.
+    expect(await readFile(path.join(cwd, "fixture.txt"), "utf8")).toBe("KEEP");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
