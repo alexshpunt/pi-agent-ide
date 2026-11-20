@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.ts";
 
+import { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 import {
   formatLineHashAnchor,
   renderLineHashLines,
@@ -81,8 +82,13 @@ test("adds line anchors to filesystem text", async () => {
     const originalAnchor = formatLineHashAnchor(fixtureContent, 8);
     const changedAnchor = formatLineHashAnchor(changedContent, 8);
 
-    expect(originalText).toBe(renderLineHashLines(fixtureContent).join("\n"));
-    expect(changedText).toBe(renderLineHashLines(changedContent).join("\n"));
+    // The fixture has no final line break, so Read ends it with the marker, which is no line.
+    expect(originalText).toBe(
+      `${renderLineHashLines(fixtureContent).join("\n")}\n${NO_FINAL_LINE_BREAK}`,
+    );
+    expect(changedText).toBe(
+      `${renderLineHashLines(changedContent).join("\n")}\n${NO_FINAL_LINE_BREAK}`,
+    );
     expect(originalAnchor).not.toBe(changedAnchor);
     expect(originalText).toContain(`${originalAnchor}|${fixtureLines[7]}`);
     expect(changedText).toContain(`${changedAnchor}|${changedFixtureLines[7]}`);

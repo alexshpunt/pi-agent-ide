@@ -3,6 +3,7 @@ import { resultInputSchema } from "pi-agent-resource";
 import { PRESENTED_LINE_ANCHOR_PATTERN, isLineAnchor } from "pi-agent-text";
 
 import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
+import { refuseEndOfFileMarker } from "#src/tools/display-marker.ts";
 
 import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.ts";
 
@@ -60,6 +61,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
   ],
   pair: ["start", "end"],
   mutate: async (context, parameters: ReplaceParameters) => {
+    refuseEndOfFileMarker(parameters.text);
     const starts = await context.resolveAnchors("start");
     const copiedAnchor = PRESENTED_LINE_ANCHOR_PATTERN.exec(parameters.text)?.[1];
     if (

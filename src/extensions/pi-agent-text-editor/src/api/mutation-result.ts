@@ -23,11 +23,8 @@ export {
   type Warning,
 } from "#src/core/mutation-result/file-mutation-result.ts";
 
-export {
-  type ChangedRange,
-  computeChangedRanges,
-  NO_FINAL_LINE_BREAK,
-} from "#src/core/mutation-result/diff.ts";
+export { NO_FINAL_LINE_BREAK } from "pi-agent-text";
+export { type ChangedRange, computeChangedRanges } from "#src/core/mutation-result/diff.ts";
 export {
   mutationDataSchema,
   mutationResultSchema,

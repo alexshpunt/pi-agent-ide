@@ -1,7 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
-import { type PresentedTextRow, renderPresentedTextRows } from "pi-agent-text";
+import { NO_FINAL_LINE_BREAK, type PresentedTextRow, renderPresentedTextRows } from "pi-agent-text";
 
-import { NO_FINAL_LINE_BREAK, diffTextLines } from "./diff.ts";
+import { diffTextLines } from "./diff.ts";
 import { formatHint } from "./inline-hints.ts";
 
 import type { DiagnosticHint, FileMutationResult } from "./file-mutation-result.ts";

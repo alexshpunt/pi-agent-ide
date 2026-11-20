@@ -71,3 +71,5 @@ export {
 } from "./text-target.ts";
 
 export { storeText, restoreText, type StoredText } from "./stored-text.ts";
+
+export { endsWithNoFinalLineBreakMarker, NO_FINAL_LINE_BREAK } from "./no-final-line-break.ts";
