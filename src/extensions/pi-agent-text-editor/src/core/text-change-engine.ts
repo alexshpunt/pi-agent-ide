@@ -269,10 +269,16 @@ export class TextChangeDocument {
     if (!separate || (written.length === 0 && !wholeTransfer))
       return { from: offset, to: offset, insert: written };
 
+    // The destination supplies the first separator. Keep extra breaks, all-break payloads,
+    // and transferred bytes.
+    const block =
+      typeof text === "string" && written.startsWith(ending) && /[^\r\n]/u.test(written)
+        ? written.slice(ending.length)
+        : written;
     return {
       from: offset,
       to: offset,
-      insert: this.#lineInsertion(offset, written, separation, ending, wholeTransfer),
+      insert: this.#lineInsertion(offset, block, separation, ending, wholeTransfer),
     };
   }
 

@@ -1728,16 +1728,15 @@ add(
 add(
   "search-anchor-insert",
   ["edit.whole-line-spans", "search.text", "compose.search-insert", "edit.insert"],
-  "Search for OLD using task.txt as path. Insert NEW on the following line. In direct mode use the issued :line anchor as insert.path, or use task.txt as path plus that anchor. In Codemode pass the first Search match value unchanged, or its id, as insert.path. Use text NEW followed by a newline in both modes. Do not combine a result input with an anchor argument. Do not supply an extra blank line.",
+  "Search for OLD using task.txt as path. Insert NEW on the following line. In direct mode use the issued :line anchor as insert.path, or use task.txt as path plus that anchor. In Codemode pass the first Search match value unchanged, or its id, as insert.path. Use text NEW with one leading and one trailing newline in both modes. Do not combine a result input with an anchor argument. Do not supply an extra blank line.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
       tool: "insert",
       modes: ["direct"],
-      args: { text: "NEW\n" },
       reuse: reuse(0, ["anchor", "path"], "anchor"),
     },
-    { tool: "insert", args: { text: "NEW\n" }, modes: ["codemode"], reuse: reuse(0) },
+    { tool: "insert", modes: ["codemode"], reuse: reuse(0) },
   ],
   { expected: { "task.txt": "keep\nOLD\nNEW\nlast\n" } },
 );
