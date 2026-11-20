@@ -441,7 +441,11 @@ void test("native Search insertion checks reuse and its final match-boundary byt
   assert.ok(await outputPasses("search-anchor-insert", "keep\nOLD\nNEW\nlast\n"));
   for (const text of ["NEW", "\n\nNEW", "\nOTHER"]) {
     assert.ok(
-      check(route, [calls[0], { ...calls[1], args: { ...calls[1].args, text } }], "codemode"),
+      check(
+        route,
+        [calls[0], { ...calls[1], args: { ...calls[1].args, newText: text } }],
+        "codemode",
+      ),
     );
     assert.equal(await outputPasses("search-anchor-insert", `keep\nOLD${text}\nlast\n`), false);
   }
@@ -1471,7 +1475,7 @@ for (const mode of ["direct", "codemode"]) {
     };
     const source = mode === "codemode" ? read.value : result;
     for (const text of ["BEFORE", "BEFORE\n"]) {
-      const insert: Call = { tool: "insert", args: { path: source, before: true, text } };
+      const insert: Call = { tool: "insert", args: { path: source, before: true, newText: text } };
       const withPaths = (path: string | string[]): Call => ({
         ...read,
         args: { ...read.args, path },
@@ -1514,7 +1518,11 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(await outputPasses("read-window-insert", "keep\nBEFORE\nOLD\nlast\n"));
     for (const text of ["BEFORE\n\n", "BEFORE ", "OTHER"]) {
       assert.ok(
-        check(route, [read, { tool: "insert", args: { path: source, before: true, text } }], mode),
+        check(
+          route,
+          [read, { tool: "insert", args: { path: source, before: true, newText: text } }],
+          mode,
+        ),
       );
       const inserted = text.endsWith("\n") ? text : `${text}\n`;
       assert.equal(await outputPasses("read-window-insert", `keep\n${inserted}OLD\nlast\n`), false);

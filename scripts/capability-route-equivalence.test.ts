@@ -144,7 +144,7 @@ describe("issued whole-line replacement equivalence", () => {
           expect(
             validateRoute(
               { files, steps: [...steps] },
-              [...read(), ...replace({ path: "task.txt", start: selector, text })],
+              [...read(), ...replace({ path: "task.txt", start: selector, newText: text })],
               "direct",
             ).passed,
           ).toBe(false);

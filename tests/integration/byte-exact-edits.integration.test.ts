@@ -75,7 +75,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
       {
         id: "normalized",
         name: "replace",
-        arguments: { path: "routes.ts", start: "];\nexport", text: "];\n\nexport" },
+        arguments: { path: "routes.ts", start: "];\nexport", newText: "];\n\nexport" },
       },
       // A plain space matches the no-break space; trailing spaces outside the match stay.
       {
@@ -84,7 +84,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
         arguments: {
           path: "routes.ts",
           start: 'id: "promo", retries',
-          text: 'id: "sale", retries',
+          newText: 'id: "sale", retries',
         },
       },
       // A literal that is not in the file is refused and changes nothing.

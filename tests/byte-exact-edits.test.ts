@@ -610,7 +610,7 @@ function randomOperation(
       const { from, to } = literalSpan(main, span);
       return {
         name: `replace fuzzy ${JSON.stringify(variant)}`,
-        run: call(replaceMutationTool, { path: "main.txt", start: variant, text }),
+        run: call(replaceMutationTool, { path: "main.txt", start: variant, newText: text }),
         expected:
           found.length === 1
             ? { "main.txt": splice(main, from, to, sentText(main, from, text)) }
@@ -814,7 +814,7 @@ describe("byte-exact regressions", () => {
     await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "// first\nsecond",
-      text: "/* first */\nsecond",
+      newText: "/* first */\nsecond",
     });
     expect((await bytes("main.txt")).toString("utf8")).toBe(`${BOM}/* first */\r\nsecond\n`);
   });
@@ -863,7 +863,7 @@ describe("byte-exact regressions", () => {
     const { result, text } = await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "retries: 3 },",
-      text: "retries: 5 },",
+      newText: "retries: 5 },",
     });
     expect(result.isError, text).not.toBe(true);
     expect((await bytes("main.txt")).toString("utf8")).toBe(
