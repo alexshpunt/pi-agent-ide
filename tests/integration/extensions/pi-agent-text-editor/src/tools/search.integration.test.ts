@@ -107,7 +107,7 @@ describe("pi-agent-text-editor search", () => {
     );
   }, 180_000);
 
-  test("deletes selected lines with only their own separators", async () => {
+  test("deletes selected lines while preserving the final line-ending state", async () => {
     await runExplicitSearchDeletion(
       "search-anchor-delete-lf",
       "legacyName first\nkeep\n",
@@ -121,7 +121,12 @@ describe("pi-agent-text-editor search", () => {
     await runExplicitSearchDeletion(
       "search-anchor-delete-final-unterminated",
       "keep\nlegacyName final",
-      "keep\n",
+      "keep",
+    );
+    await runExplicitSearchDeletion(
+      "search-anchor-delete-final-unterminated-crlf",
+      "keep\r\nlegacyName final",
+      "keep",
     );
   }, 180_000);
 

@@ -37,15 +37,14 @@ const invalidRequests = [
   { id: "malformed-rename", arguments: { start: "count", text: "total" } },
   { id: "end-rename", arguments: { end: "count", text: "total" } },
 ];
-const invalidCalls = invalidRequests
-  .filter(({ id }) => id === "whitespace-rename")
-  .map(({ id, arguments: args }) =>
-    toolCall({
-      id,
-      name: "replace",
-      arguments: { path: "fixture:declaration:task.ts#count#name", ...args },
-    }),
-  );
+const invalidCalls = invalidRequests.map(({ id, arguments: args }) =>
+  toolCall({
+    id,
+    name: "replace",
+    // Substitute the issued capture in the provider stream, before streamed selector guards.
+    arguments: { path: "$issued-item:read-symbol", ...args },
+  }),
+);
 const inspect = toolCall({ id: "after-rejection", name: "read", arguments: { path: "task.ts" } });
 const calls =
   mode === "direct"
@@ -76,7 +75,11 @@ const run = await new PiIntegrationTest(
     transport: mode === "direct" ? "tui" : "rpc",
     rawMode: false,
     timeoutMs: 90_000,
-    extensions: ["/source/src/pi-agent-ide.ts", "builtin:codemode"],
+    extensions: [
+      "/source/tests/integration/fixtures/issued-reference-provider.ts",
+      "/source/src/pi-agent-ide.ts",
+      "builtin:codemode",
+    ],
     tools: ["read", "lsp_search", "replace", "codemode"],
     conversation: [
       ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
