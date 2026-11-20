@@ -33,7 +33,7 @@ test("argument preparation uses the current schema before the tool's own prepara
   const args = { path: '["a.txt","b.txt"]' };
   expect(registered?.prepareArguments?.(args)).toEqual(args);
   schema = Type.Object({
-    path: Type.Union([Type.String(), Type.Array(Type.String())]),
+    path: Type.Array(Type.String()),
   });
   expect(registered?.prepareArguments?.(args)).toEqual({ path: ["a.txt", "b.txt"] });
   expect(prepareArguments.mock.calls.map(([input]) => input)).toEqual([

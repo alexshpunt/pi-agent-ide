@@ -16,10 +16,8 @@ export function toolSemantics(name: string): string {
   );
 }
 
-/** Decode source forms independently of payload validation, including stream-guard cuts. */
-export function sourceValues(input: unknown): string[] {
-  const tool = tools.get("read");
-  const value = tool ? normalizeStructuredArguments({ path: input }, tool.parameters).path : input;
+/** Read executed source values without guessing whether JSON text named a literal path. */
+export function sourceValues(value: unknown): string[] {
   if (Array.isArray(value)) return (value as unknown[]).flatMap(sourceValues);
   if (value !== null && typeof value === "object" && "id" in value)
     return typeof value.id === "string" ? [value.id] : [];

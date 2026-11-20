@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "@earendil-works/pi-ai";
+import type { TSchema } from "typebox";
 import path from "node:path";
 import type {
   MessageEndEvent,
@@ -126,6 +127,7 @@ export function createIdeTextResults(
   const store = connectResultTargets(pi);
   const resultImages = connectResultImages(pi);
   const names = new Set<string>();
+  const schemas = new Map<string, () => TSchema>();
   const outputs = new TempResourceStore();
   const saveFullOutput = (text: string) =>
     options.resourceOutput ? outputs.save(text) : outputs.saveFile(text);
@@ -311,8 +313,16 @@ export function createIdeTextResults(
   });
   on("tool_call", (event, context) => {
     if (!names.has(event.toolName)) return;
-    labels.set(event.toolCallId, sourceLabel(event.toolName, event.input));
-    const input: Record<string, unknown> = { ...event.input };
+    const schema = schemas.get(event.toolName)?.();
+    const normalized = schema
+      ? normalizeStructuredArguments(event.input, schema, {
+          cwd: context.cwd,
+          sourceFields: [...(sourceFields[event.toolName] ?? []), "path"],
+          resolveSource: (value) => store.source(value, context.cwd, true),
+        })
+      : event.input;
+    labels.set(event.toolCallId, sourceLabel(event.toolName, normalized));
+    const input: Record<string, unknown> = { ...normalized };
     try {
       for (const field of sourceFields[event.toolName] ?? []) {
         const value = input[field];
@@ -385,6 +395,7 @@ export function createIdeTextResults(
   });
   const registerTool: ExtensionAPI["registerTool"] = (definition) => {
     names.add(definition.name);
+    schemas.set(definition.name, () => definition.parameters);
     const publicDefinition = {} as typeof definition;
     const descriptors = Object.getOwnPropertyDescriptors(definition);
     // Pi validates before tool_call hooks. Prepare both direct and nested calls before that

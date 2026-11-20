@@ -32,6 +32,7 @@ const groups: [string[], string[]][] = [
   [["edit.missing-selector-recovery"], ["missing-edit-selector-recovery"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
   [["compose.json-text-structured-arguments"], ["json-structured-arguments"]],
+  [["edit.literal-json-selectors", "read.literal-json-path"], ["json-literal-selectors"]],
   [
     ["diagnostics.file", "compose.diagnostics-read-search", "diagnostics.readonly-report"],
     ["diagnostics-report"],
