@@ -27,6 +27,8 @@ export interface TextChangeResult {
 
 export type LineSeparation = "line" | "blank-line";
 
+const BOM = "\uFEFF";
+
 /**
  * The place a selector resolved. Selectors only locate: every edit writes through the document's
  * `replace`, `delete` and `insert`, whatever selected the span.
@@ -196,6 +198,7 @@ export class TextChangeDocument {
           : (this.#lineStarts[span.lines.last] ?? this.content.length);
     const separation = options.separation ?? "line";
     const written = this.#written(text, at, options, false);
+    if (written.length === 0) throw new Error("Insert text must not be empty.");
     if (span.lines === undefined && separation === "line")
       return { from: at, to: at, insert: written };
     return {
@@ -212,8 +215,14 @@ export class TextChangeDocument {
   /**
    * Text as written at `offset`: as sent for copied bytes, else with the line's ending. With
    * `lines`, one trailing line break is dropped first, since the last line keeps its own ending.
+   * At the start of a BOM file's content, a leading BOM of the text is dropped.
    */
-  #written(text: string, offset: number, options: TextWriteOptions, lines: boolean): string {
+  #written(sentText: string, offset: number, options: TextWriteOptions, lines: boolean): string {
+    // The file keeps exactly the BOM it had: text written right after it drops its own.
+    const text =
+      this.#bom > 0 && offset === this.#bom && sentText.startsWith(BOM)
+        ? sentText.slice(1)
+        : sentText;
     if (options.verbatim === true) return lines ? withoutFinalLineBreak(text) : text;
     const lf = normalizeToLF(text);
     const sent = lines && lf.endsWith("\n") ? lf.slice(0, -1) : lf;

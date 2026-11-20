@@ -477,3 +477,127 @@ describe("look-alike characters in an insertion", () => {
     ).toBe("a\u00A0b\nd e\nc\n");
   });
 });
+
+describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
+  const bomShape: Shape = {
+    name: "a BOM file",
+    prefix: "\uFEFF",
+    content: "TARGET",
+    ending: "\n",
+    suffix: "next\n",
+    startEnding: "\n",
+    afterEnding: "\n",
+  };
+  const plainShape: Shape = { ...bomShape, name: "a file without a BOM", prefix: "" };
+
+  // Exact text that starts with a BOM, as a model copies it from Read.
+  function exactTextWithBom(shape: Shape): TextAnchor {
+    const content = contentOf(shape);
+    const resolved = resolveExactTextAnchor(`\uFEFF${shape.content}`, {
+      source,
+      content,
+      lines: content.split("\n"),
+      cwd: process.cwd(),
+    });
+    if (resolved.kind !== "resolved") throw new Error("The exact text did not resolve");
+    return resolved.anchor;
+  }
+
+  const bomSelectors: readonly Selector[] = [
+    ...selectors,
+    {
+      name: "exact text that starts with a BOM",
+      lines: false,
+      anchors: (shape) => ({ start: exactTextWithBom(shape) }),
+    },
+  ];
+
+  // A file keeps exactly the BOM it had; a model that writes a BOM into a file without one writes
+  // it as sent. Both results start with one BOM, and nothing outside the span changes.
+  describe.each([bomShape, plainShape])("$name", (shape) => {
+    describe.each(bomSelectors)("$name", (selector) => {
+      const { start: startAnchor, end } = selector.anchors(shape);
+      const anchors: Record<string, TextAnchor> =
+        end === undefined ? { start: startAnchor } : { start: startAnchor, end };
+      const range = end === undefined ? {} : { end: "end" };
+
+      test("replace writes one BOM", async () => {
+        expect(
+          await run(replaceMutationTool, contentOf(shape), anchors, {
+            start: "start",
+            ...range,
+            text: "\uFEFFNEW",
+          }),
+        ).toBe("\uFEFFNEW\nnext\n");
+      });
+
+      test("replace with text that has no BOM keeps the file's BOM", async () => {
+        expect(
+          await run(replaceMutationTool, contentOf(shape), anchors, {
+            start: "start",
+            ...range,
+            text: "NEW",
+          }),
+        ).toBe(`${shape.prefix}NEW\nnext\n`);
+      });
+
+      if (end !== undefined) return;
+
+      test("insert at the start writes one BOM", async () => {
+        expect(
+          await run(
+            insertMutationTool,
+            contentOf(shape),
+            { anchor: startAnchor },
+            { anchor: "anchor", text: "\uFEFFA", before: true },
+          ),
+        ).toBe(selector.lines ? "\uFEFFA\nTARGET\nnext\n" : "\uFEFFATARGET\nnext\n");
+      });
+    });
+  });
+
+  test("a BOM further into the file is written as sent", async () => {
+    expect(
+      await run(
+        replaceMutationTool,
+        "\uFEFFone\ntwo\n",
+        { start: new LineAnchor(2) },
+        { start: "start", text: "\uFEFFtwo" },
+      ),
+    ).toBe("\uFEFFone\n\uFEFFtwo\n");
+    expect(
+      await run(
+        insertMutationTool,
+        "\uFEFFone\n",
+        { anchor: new LineAnchor(1) },
+        { anchor: "anchor", text: "\uFEFFtwo" },
+      ),
+    ).toBe("\uFEFFone\n\uFEFFtwo\n");
+  });
+
+  test("only one leading BOM of the text is dropped", () => {
+    const document = new TextChangeDocument("\uFEFFone\n");
+    expect(document.replace(document.lineSpan(1, 1), "\uFEFF\uFEFFNEW").insert).toBe("\uFEFFNEW");
+  });
+
+  test("copied bytes drop a leading BOM too", () => {
+    const document = new TextChangeDocument("\uFEFFone\n");
+    const span = document.lineSpan(1, 1);
+    expect(document.replace(span, "\uFEFFNEW", { verbatim: true }).insert).toBe("NEW");
+    expect(document.insert(span, "\uFEFFNEW", { before: true, verbatim: true }).insert).toBe(
+      "NEW\n",
+    );
+  });
+
+  test("text that is only a BOM inserts nothing", () => {
+    const document = new TextChangeDocument("\uFEFFone\n");
+    expect(() => document.insert(document.lineSpan(1, 1), "\uFEFF", { before: true })).toThrow(
+      /empty/u,
+    );
+  });
+
+  test("a whole-file write keeps the BOM it is given", () => {
+    const document = new TextChangeDocument("\uFEFFone\n");
+    expect(document.replaceAll("\uFEFF\uFEFFone\n").insert).toBe("\uFEFF\uFEFFone\n");
+  });
+});
