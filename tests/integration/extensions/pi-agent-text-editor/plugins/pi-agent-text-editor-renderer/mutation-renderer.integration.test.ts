@@ -491,7 +491,7 @@ describe("text mutation renderer", () => {
       arguments: {
         path: "subject.ts",
         anchor: uniqueLineAnchor("    return value;"),
-        text: "    audit(value);",
+        text: "    audit(value);\n",
       },
       stats: "+1 ~0 -0",
       row: /4\s+\+\s+audit\(value\);/u,

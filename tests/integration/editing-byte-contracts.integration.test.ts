@@ -94,7 +94,8 @@ test.each(["direct", "codemode"] as const)(
               before: `First${eol}Last${eol}Block${ending}`,
               // A literal matches only the file's own line breaks: CRLF text in a CRLF file.
               start: `Last${eol}Block${ending}`,
-              after: `First${eol}`,
+              // Without a final break, deleting the whole last lines removes the preceding one.
+              after: ending ? `First${eol}` : "First",
             };
           }),
         ];

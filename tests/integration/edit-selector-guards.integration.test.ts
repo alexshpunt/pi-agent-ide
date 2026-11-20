@@ -81,7 +81,7 @@ test.each(Object.entries(paths))(
           turn("recovery", "insert", {
             path: "note.txt",
             anchor: "$issued-anchor:current:2",
-            text: "RECOVERED",
+            text: "RECOVERED\n",
           }),
           assistantMessage([text("Done")]),
         ],

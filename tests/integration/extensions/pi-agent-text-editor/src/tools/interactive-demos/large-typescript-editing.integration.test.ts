@@ -426,7 +426,7 @@ function insertAfter(
     arguments: {
       path: file,
       anchor: formatLineHashAnchor(source, anchorIndex + 1),
-      text: insertion,
+      text: `${insertion}\n`,
     },
     after: afterLines.join("\n"),
     inspection: { offset: anchorIndex + 1, limit: 1 },

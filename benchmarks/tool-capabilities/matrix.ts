@@ -281,6 +281,22 @@ const groups: [string[], string[]][] = [
   [["read.diff-omission"], ["diff-omission"]],
   [["codemode.diff-complete"], ["diff-script-complete"]],
   [["edit.hash-shaped-literal"], ["hash-shaped-literal"]],
+  // LPT-1747: boundaries and payload, not selector type, determine the edit.
+  [
+    ["edit.whole-line-spans"],
+    [
+      "search-anchor-insert",
+      "read-window-insert",
+      "delete-selection",
+      "exact-range-copy",
+      "whole-line-move-to-point",
+      "replace-line-boundary-lf",
+      "replace-line-boundary-crlf",
+      "exact-eof-lf",
+      "exact-eof-crlf",
+      "exact-eof-unterminated",
+    ],
+  ],
   // These recipes explicitly require literal text and an omitted end, across LF/CRLF/EOF.
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
   // A retyped line keeps the original look-alike bytes (non-breaking space) outside its change.

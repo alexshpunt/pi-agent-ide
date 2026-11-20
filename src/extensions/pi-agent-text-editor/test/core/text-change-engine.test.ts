@@ -158,14 +158,14 @@ describe("text change document", () => {
 
   test("inserts before and after lines with the line ending at the insertion point", () => {
     const lf = new TextChangeDocument("one\ntwo");
-    expect(apply(lf, lf.insert(lf.lineSpan(1, 1), "zero", { before: true }))).toBe(
+    expect(apply(lf, lf.insert(lf.lineSpan(1, 1), "zero\n", { before: true }))).toBe(
       "zero\none\ntwo",
     );
-    expect(apply(lf, lf.insert(lf.lineSpan(2, 2), "three"))).toBe("one\ntwo\nthree");
+    expect(apply(lf, lf.insert(lf.lineSpan(2, 2), "three\n"))).toBe("one\ntwo\nthree");
 
     const crlf = new TextChangeDocument("one\r\ntwo\r\nthree");
     expect(apply(crlf, crlf.replace(crlf.lineSpan(2, 2), "TWO\r\n"))).toBe("one\r\nTWO\r\nthree");
-    expect(apply(crlf, crlf.insert(crlf.lineSpan(1, 1), "middle"))).toBe(
+    expect(apply(crlf, crlf.insert(crlf.lineSpan(1, 1), "middle\n"))).toBe(
       "one\r\nmiddle\r\ntwo\r\nthree",
     );
 
@@ -175,12 +175,28 @@ describe("text change document", () => {
     );
   });
 
+  test.each(["\n", "\r\n"])("inserts before or after a selected empty line (%j)", (ending) => {
+    const document = new TextChangeDocument(["one", "", "two", ""].join(ending));
+    const blank = document.lineSpan(2, 2);
+    expect(apply(document, document.insert(blank, "added\n", { before: true }))).toBe(
+      ["one", "added", "", "two", ""].join(ending),
+    );
+    expect(apply(document, document.insert(blank, "added\n"))).toBe(
+      ["one", "", "added", "two", ""].join(ending),
+    );
+    // Without a selected empty line, the same end offset is the start of that line.
+    const previous = { from: 0, to: document.lineContentStart(2) };
+    expect(apply(document, document.insert(previous, "added\n"))).toBe(
+      ["one", "added", "", "two", ""].join(ending),
+    );
+  });
+
   test("applies a same-document move as one changeset", () => {
     const document = new TextChangeDocument("one\ntwo\nthree\nfour");
     const moved = document.lineSpan(2, 2);
     const changes = [
       document.delete(moved),
-      document.insert(document.lineSpan(4, 4), document.text(moved), { verbatim: true }),
+      document.insert(document.lineSpan(4, 4), document.transfer(moved)),
     ];
 
     expect(applyTextChanges(document.content, changes).content).toBe("one\nthree\nfour\ntwo");
@@ -189,8 +205,8 @@ describe("text change document", () => {
   test("copy and move keep an unterminated EOF unterminated", () => {
     const source = "first\nblock\nlast";
     const document = new TextChangeDocument(source);
-    const copied = document.text(document.lineSpan(2, 2));
-    const addition = document.insert(document.lineSpan(3, 3), copied, { verbatim: true });
+    const copied = document.transfer(document.lineSpan(2, 2));
+    const addition = document.insert(document.lineSpan(3, 3), copied);
     expect(applyTextChanges(source, [addition]).content).toBe("first\nblock\nlast\nblock");
     expect(
       applyTextChanges(source, [document.delete(document.lineSpan(2, 2)), addition]).content,

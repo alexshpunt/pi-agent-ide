@@ -16,7 +16,7 @@ import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor"
 const extension = path.resolve("src/pi-agent-ide.ts");
 
 for (const [name, original, payload, mode, expected] of [
-  ["unterminated EOF", "anchor", "new\n\n", "line", "anchor\nnew\n\n"],
+  ["unterminated EOF with a trailing empty line", "anchor", "new\n\n", "line", "anchor\nnew\n"],
   ["LF block", "A\nB\n", "X", "blank-line", "A\n\nX\n\nB\n"],
   ["existing LF separator", "A\n\nB\n", "X", "blank-line", "A\n\nX\n\nB\n"],
   ["CRLF block", "A\r\nB\r\n", "X", "blank-line", "A\r\n\r\nX\r\n\r\nB\r\n"],
@@ -39,7 +39,6 @@ for (const [name, original, payload, mode, expected] of [
                 name: "insert",
                 arguments: {
                   path: "standalone.txt",
-                  // A line anchor selects the whole first line; a literal would select only its text.
                   anchor: formatLineHashAnchor(original, 1),
                   text: payload,
                   separation: mode,

@@ -140,7 +140,7 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
         ),
     );
     await expect(readFile(path.join(cwd, "sink.cpp"), "utf8")).resolves.toBe(
-      `// destination\n${carrier}`,
+      `// destination\n${carrier}\n`,
     );
   });
 }, 180_000);

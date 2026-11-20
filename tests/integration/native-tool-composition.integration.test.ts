@@ -1147,10 +1147,37 @@ text(await tools.replace({path:first,text:"NEW"}));`,
         "NEW\r\nONE\r\nONE outside",
       );
       expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(
-        operation === "copy" ? "😀 ONE\r\nTWO\r\nONE outside" : "😀 \r\n\r\nONE outside",
+        operation === "copy" ? "😀 ONE\r\nTWO\r\nONE outside" : "😀 \r\nONE outside",
       );
     });
   },
+);
+
+test.each(["copy", "move"] as const)(
+  "transfers a whole line to a structured point at a line edge (%s)",
+  async (operation) => {
+    await withTempWorkspace(async (cwd) => {
+      await writeFile(path.join(cwd, "source.txt"), "block\nkeep\n");
+      await writeFile(path.join(cwd, "destination.txt"), "target\r\nafter\r\n");
+      const run = await runComposition(cwd, `${operation}-whole-line-to-point`, [
+        `const source = await tools.read({path:"source.txt",offset:1,limit:1});
+const points = await tools.search({path:"destination.txt",query:"regex:^(?=target)"});
+if (points?.matches.length !== 1) throw Error("Expected a point at the start of target");
+const changed = await tools.${operation}({path:source,target:points});
+if (typeof changed !== "string" || !changed) throw Error(JSON.stringify(changed));`,
+      ]);
+      expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
+        false,
+      );
+      await expect(readFile(path.join(cwd, "destination.txt"), "utf8")).resolves.toBe(
+        "block\r\ntarget\r\nafter\r\n",
+      );
+      await expect(readFile(path.join(cwd, "source.txt"), "utf8")).resolves.toBe(
+        operation === "copy" ? "block\nkeep\n" : "keep\n",
+      );
+    });
+  },
+  180_000,
 );
 
 test.each(["copy", "move"] as const)(
@@ -1218,7 +1245,7 @@ test.each(["copy", "move"] as const)(
       await writeFile(path.join(cwd, "source.txt"), "😀 ONE\r\nneighbor");
       await writeFile(path.join(cwd, "destination.txt"), "anchor\r\nONE outside");
       const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
-        // A line anchor puts the transferred text on its own line; a literal would select only its text.
+        // A partial source transfers characters even after a line anchor.
         `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:${JSON.stringify(formatLineHashAnchor("anchor\r\nONE outside", 1))}});
 if (typeof changed !== "string" || !changed) throw Error("Legacy transfer did not return a reusable result");
 const found = await tools.search({path:changed,query:"ONE"});
@@ -1246,7 +1273,7 @@ text(await tools.replace({path:found,text:"NEW"}));`,
         [{ source: "destination.txt", effect: "applied" }],
       ]);
       expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
-        "anchor\r\nNEW\r\nONE outside",
+        "anchorNEW\r\nONE outside",
       );
       expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(
         operation === "copy" ? "😀 ONE\r\nneighbor" : "😀 \r\nneighbor",
@@ -1573,8 +1600,7 @@ test("composes inserted text without searching identical neighbors", async () =>
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "inserted.txt"), "same before\r\nanchor\r\nsame after");
     const run = await runComposition(cwd, "insert-result-search-replace", [
-      // Insert writes its text as sent; CRLF here keeps the file's own line breaks.
-      `const changed = await tools.insert({path:"inserted.txt",anchor:"anchor",text:"\\r\\nsame new"});
+      `const changed = await tools.insert({path:"inserted.txt",anchor:"anchor",text:"same new\\n"});
 if (typeof changed !== "string") throw Error("Expected pending insert");
 const found = await tools.search({path:changed,query:"same"});
 if (found === null || found.matches.length !== 1 || found.matches[0].line !== 3) throw Error("Lost inserted scope");

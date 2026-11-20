@@ -25,7 +25,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-insert",
       "insert",
-      { anchor: after, text: "inserted" },
+      { anchor: after, text: "inserted\n" },
       [after],
       ["alpha", "bravo", "inserted", "charlie", "delta", "echo"].join("\n"),
     );
@@ -43,7 +43,7 @@ describe("line-hash anchors through text editor tools", () => {
       await runLineHashScenario(
         `line-hash-extract-${variant.name}`,
         "insert",
-        { anchor: variant.value, text: "inserted" },
+        { anchor: variant.value, text: "inserted\n" },
         [canonical],
         ["alpha", "bravo", "inserted", "charlie", "delta", "echo"].join("\n"),
       );

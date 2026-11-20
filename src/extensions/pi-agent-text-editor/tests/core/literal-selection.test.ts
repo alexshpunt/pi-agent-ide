@@ -156,26 +156,26 @@ test("insert before a literal that covers a whole line adds the text right befor
   ).toEqual({ source: file.replace("// END block", "// X// END block") });
 });
 
-test("insert after a line anchor still puts the text on its own line", async () => {
+test("single-line insertion after a line anchor uses the exact boundary (LPT-1747)", async () => {
   expect(await run(insertMutationTool, { source: file }, { anchor: 4 }, { text: "// X" })).toEqual({
-    source: file.replace("// END block\n", "// END block\n// X\n"),
+    source: file.replace("// END block", "// END block// X"),
   });
 });
 
-test("delete of a literal that covers a whole line keeps its line break", async () => {
+test("deleting a whole-line literal takes its line break (LPT-1747)", async () => {
   expect(await run(deleteMutationTool, { source: file }, { start: "body line" })).toEqual({
-    source: "// PREFIX\n// BEGIN block\n\n// END block\n// SUFFIX\n",
+    source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n",
   });
 });
 
-test("delete between two whole-line literals keeps the line break after the end", async () => {
+test("deleting a span between whole-line literals removes the lines (LPT-1747)", async () => {
   expect(
     await run(
       deleteMutationTool,
       { source: file },
       { start: "// BEGIN block", end: "// END block" },
     ),
-  ).toEqual({ source: "// PREFIX\n\n// SUFFIX\n" });
+  ).toEqual({ source: "// PREFIX\n// SUFFIX\n" });
 });
 
 test("delete of a line anchor still removes the line with its break", async () => {
@@ -184,13 +184,13 @@ test("delete of a line anchor still removes the line with its break", async () =
   });
 });
 
-test("replace of a literal that covers a whole line replaces only its characters", async () => {
+test("empty replacement deletes the whole line selected by a literal (LPT-1747)", async () => {
   expect(
     await run(replaceMutationTool, { source: file }, { start: "body line" }, { text: "" }),
-  ).toEqual({ source: "// PREFIX\n// BEGIN block\n\n// END block\n// SUFFIX\n" });
+  ).toEqual({ source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n" });
 });
 
-test("copy of a whole-line literal copies only its characters", async () => {
+test("copy of a whole-line literal over a partial span keeps character boundaries (LPT-1747)", async () => {
   expect(
     await run(
       copyMutationTool,
@@ -200,17 +200,17 @@ test("copy of a whole-line literal copies only its characters", async () => {
   ).toEqual({ source: file, target: "left body line right\n" });
 });
 
-test("copy after a whole-line literal destination inserts right after its characters", async () => {
+test("copy after a whole-line literal destination adds a line (LPT-1747)", async () => {
   expect(
     await run(
       copyMutationTool,
       { source: file, target: "first\nlast\n" },
       { start: "body line", targetStart: "first" },
     ),
-  ).toEqual({ source: file, target: "firstbody line\nlast\n" });
+  ).toEqual({ source: file, target: "first\nbody line\nlast\n" });
 });
 
-test("move of a whole-line literal leaves its line break behind", async () => {
+test("move of a whole-line literal removes its line break (LPT-1747)", async () => {
   expect(
     await run(
       moveMutationTool,
@@ -218,7 +218,7 @@ test("move of a whole-line literal leaves its line break behind", async () => {
       { start: "body line", targetStart: "SLOT", targetEnd: "SLOT" },
     ),
   ).toEqual({
-    source: "// PREFIX\n// BEGIN block\n\n// END block\n// SUFFIX\n",
+    source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n",
     target: "left body line right\n",
   });
 });

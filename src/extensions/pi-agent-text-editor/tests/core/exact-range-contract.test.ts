@@ -86,7 +86,7 @@ for (const original of ["base\n", "base\r\n", "base", "\uFEFFbase\r\n"]) {
   test(`insert after the last line, then delete it, restores the original bytes (${JSON.stringify(original)})`, () => {
     const document = new TextChangeDocument(original);
     const appended = applyTextChanges(original, [
-      document.insert(document.lineSpan(1, 1), "added"),
+      document.insert(document.lineSpan(1, 1), "added\n"),
     ]).content;
     const after = new TextChangeDocument(appended);
     expect(after.text(after.lineSpan(2, 2))).toBe("added");
@@ -96,7 +96,7 @@ for (const original of ["base\n", "base\r\n", "base", "\uFEFFbase\r\n"]) {
 
 for (const operation of [copyMutationTool, moveMutationTool]) {
   for (const ending of ["", "\n", "\r\n"]) {
-    test(`${operation.name} transfers only the characters of a whole-line literal (${JSON.stringify(ending)})`, async () => {
+    test(`${operation.name} transfers a whole line as characters onto a partial target (LPT-1747) (${JSON.stringify(ending)})`, async () => {
       const content = `keep\r\n段🙂${ending}`;
       const f = fixture(
         { source: content, target: "left TARGET right\n" },
@@ -119,7 +119,7 @@ for (const operation of [copyMutationTool, moveMutationTool]) {
       const deletion = result.edits.get("source");
       expect(
         deletion === undefined ? content : applyTextChanges(content, deletion.changes).content,
-      ).toBe(operation.name === "copy" ? content : `keep\r\n${ending}`);
+      ).toBe(operation.name === "copy" ? content : ending === "" ? "keep" : "keep\r\n");
     });
   }
 }
@@ -170,18 +170,18 @@ for (const before of [false, true]) {
     });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,
-    ).toBe(before ? "pre \n\n+\n\nα🙂 end\n" : "pre α🙂\n\n+\n\n end\n");
+    ).toBe(before ? "pre +α🙂 end\n" : "pre α🙂+ end\n");
   });
-  test(`multiline exact insertion does not widen the selection (before=${before})`, async () => {
+  test(`inserting multiline text mid-line keeps the character boundary (before=${before})`, async () => {
     const content = "pre α\r\nβ end\r\n";
     const f = fixture({ source: content }, { anchor: ["source", "α\r\nβ"] });
     const result = await insertMutationTool.mutate(f.context, {
       anchor: "α\r\nβ",
-      text: "+",
+      text: "X\nY",
       before,
     });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,
-    ).toBe(before ? "pre +α\r\nβ end\r\n" : "pre α\r\nβ+ end\r\n");
+    ).toBe(before ? "pre X\r\nYα\r\nβ end\r\n" : "pre α\r\nβX\r\nY end\r\n");
   });
 }

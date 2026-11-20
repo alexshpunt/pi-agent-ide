@@ -26,12 +26,12 @@ export const insertSchema = Type.Object(
     text: Type.String({
       minLength: 1,
       description:
-        "Non-empty text to insert. A line selection, such as a line anchor, SEARCH :line or a Read result, puts the text on its own line and adds needed line breaks; exact text and SEARCH :match insert it exactly at their boundary.",
+        "Non-empty text to insert. At a line edge, include a line break to insert separate lines; text with no line break goes at the selected boundary with default separation. Mid-line insertion keeps its character boundary.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
         description:
-          "line (default) keeps the line handling above; blank-line puts the text in its own paragraph, with blank lines around it.",
+          "line (default) uses ordinary insertion; blank-line separates a paragraph at a line edge.",
       }),
     ),
     before: Type.Optional(

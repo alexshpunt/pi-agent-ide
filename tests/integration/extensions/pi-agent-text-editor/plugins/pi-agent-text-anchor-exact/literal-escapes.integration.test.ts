@@ -105,8 +105,8 @@ test("literal control escapes refuse without mutation, recover by issued anchors
     for (const id of ["recover", "literal", "actual"])
       expect(getToolExecution(result, id).isError, id).toBe(false);
     await expect(readFile(file, "utf8")).resolves.toBe(
-      // Both literals exclude their existing CRLF; replacement CRLF is additional content.
-      "character-edited\r\n\r\nSUFFIX\r\nliteral-edited\r\n\r\n",
+      // Both literals cover whole lines, so replacement retains one ending for each.
+      "character-edited\r\nSUFFIX\r\nliteral-edited\r\n",
     );
   });
 });

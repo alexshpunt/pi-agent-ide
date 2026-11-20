@@ -18,7 +18,6 @@ const initial = "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n";
 const copy = {
   path: "same.txt",
   start: "alpha",
-  // Literals select only their characters; the end includes its line break to copy whole lines.
   end: "beta\n",
   targetStart: "});",
 };
@@ -107,8 +106,8 @@ text(await tools.copy(${corrected}));
       expect(await readFile(file, "utf8")).toBe(
         field === "targetStart"
           ? "alpha\nbeta\ngap\n});\nINSERT_HERE\nalpha\nbeta\n});\ntail\n"
-          : // The line-anchor end keeps its line ending, and the copied block brings its own LF.
-            "alpha\nbeta\nalpha\nbeta\n\n});\ntail\n",
+          : // The whole-line target keeps its own ending (LPT-1747).
+            "alpha\nbeta\nalpha\nbeta\n});\ntail\n",
       );
     });
   },

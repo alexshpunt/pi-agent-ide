@@ -141,3 +141,29 @@ test("empty paired selections are no-ops, not whole-file fallback", async () => 
   );
   expect(prepared.empty).toBe(true);
 });
+
+test.each(["copy", "move"] as const)(
+  "%s lands a whole line separately at a zero-width line edge",
+  async (operation) => {
+    const f = fixture();
+    const sourceContent = "block\nkeep\n";
+    const destinationContent = "target\r\nafter\r\n";
+    f.texts.set(f.source, sourceContent);
+    f.texts.set(f.destination, destinationContent);
+    const prepared = await prepareResultTransfer(
+      operation,
+      { path: f.selected(f.source, 0, 5), target: f.selected(f.destination, 0, 0) },
+      f.store,
+      f.cwd,
+    );
+    const mutation = await prepared.mutate?.(f.context);
+
+    expect(
+      applyTextChanges(destinationContent, mutation?.edits.get(f.destination)?.changes ?? [])
+        .content,
+    ).toBe("block\r\ntarget\r\nafter\r\n");
+    expect(
+      applyTextChanges(sourceContent, mutation?.edits.get(f.source)?.changes ?? []).content,
+    ).toBe(operation === "copy" ? sourceContent : "keep\n");
+  },
+);

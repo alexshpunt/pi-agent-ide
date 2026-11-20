@@ -103,8 +103,6 @@ function targetLine(shape: Shape): number {
 /** How a selector names the target; every kind resolves only a span. */
 interface Selector {
   readonly name: string;
-  /** Whether it selects the whole line or only the line's characters. */
-  readonly lines: boolean;
   readonly anchors: (shape: Shape) => {
     readonly start: TextAnchor;
     readonly end?: TextAnchor;
@@ -151,17 +149,32 @@ function matchSelection(shape: Shape): TextSelectionAnchor {
 }
 
 const selectors: readonly Selector[] = [
-  { name: "exact text", lines: false, anchors: (shape) => ({ start: exactText(shape) }) },
+  { name: "exact text", anchors: (shape) => ({ start: exactText(shape) }) },
   {
     name: "a line anchor",
-    lines: true,
     anchors: (shape) => ({ start: new LineAnchor(targetLine(shape)) }),
   },
-  { name: "SEARCH :line", lines: true, anchors: (shape) => ({ start: lineSelection(shape) }) },
-  { name: "SEARCH :match", lines: false, anchors: (shape) => ({ start: matchSelection(shape) }) },
+  { name: "SEARCH :line", anchors: (shape) => ({ start: lineSelection(shape) }) },
+  { name: "SEARCH :match", anchors: (shape) => ({ start: matchSelection(shape) }) },
+  {
+    name: "a result with an exact range through the line ending",
+    anchors: (shape) => ({
+      start: new TextSelectionAnchor("RESULT#1", source, [
+        {
+          start: {
+            lineNumber: targetLine(shape),
+            column: targetLine(shape) === 1 ? shape.prefix.length : 0,
+          },
+          end:
+            shape.ending === ""
+              ? requiredValue(matchSelection(shape).ranges[0]).end
+              : { lineNumber: targetLine(shape) + 1, column: 0 },
+        },
+      ]),
+    }),
+  },
   {
     name: "a line range",
-    lines: true,
     anchors: (shape) => ({
       start: new LineAnchor(targetLine(shape)),
       end: new LineAnchor(targetLine(shape)),
@@ -169,7 +182,6 @@ const selectors: readonly Selector[] = [
   },
   {
     name: "exact text to a line anchor",
-    lines: false,
     anchors: (shape) => ({ start: exactText(shape), end: new LineAnchor(targetLine(shape)) }),
   },
 ];
@@ -223,20 +235,37 @@ describe.each(shapes)("on $name", (shape) => {
           ...range,
           text: `${sent}\n`,
         }),
-      ).toBe(
-        selector.lines
-          ? `${prefix}A${start}B${ending}${suffix}`
-          : `${prefix}A${start}B${start}${ending}${suffix}`,
-      );
+      ).toBe(`${prefix}A${start}B${ending}${suffix}`);
     });
 
     test("delete removes the span and nothing outside it", async () => {
       const removedLine =
         ending === "" ? prefix.slice(0, prefix.length - start.length) : prefix + suffix;
       expect(await run(deleteMutationTool, content, anchors, { start: "start", ...range })).toBe(
-        selector.lines ? removedLine : `${prefix}${ending}${suffix}`,
+        removedLine,
       );
     });
+
+    test("empty replacement removes the line", async () => {
+      const removedLine =
+        ending === "" ? prefix.slice(0, prefix.length - start.length) : prefix + suffix;
+      expect(
+        await run(replaceMutationTool, content, anchors, { start: "start", ...range, text: "" }),
+      ).toBe(removedLine);
+    });
+
+    test.each([1, 2])(
+      "replacement with %i line breaks leaves that many empty lines",
+      async (count) => {
+        expect(
+          await run(replaceMutationTool, content, anchors, {
+            start: "start",
+            ...range,
+            text: "\n".repeat(count),
+          }),
+        ).toBe(prefix + start.repeat(count - 1) + ending + suffix);
+      },
+    );
 
     if (end !== undefined) return;
 
@@ -252,11 +281,7 @@ describe.each(shapes)("on $name", (shape) => {
             before: true,
           },
         ),
-      ).toBe(
-        selector.lines
-          ? `${prefix}A${start}B${start}${shape.content}${ending}${suffix}`
-          : `${prefix}A${start}B${shape.content}${ending}${suffix}`,
-      );
+      ).toBe(`${prefix}A${start}B${start}${shape.content}${ending}${suffix}`);
     });
 
     test("insert after", async () => {
@@ -274,21 +299,17 @@ describe.each(shapes)("on $name", (shape) => {
             text: sent,
           },
         ),
-      ).toBe(
-        selector.lines ? lineInsertion : `${prefix}${shape.content}A${start}B${ending}${suffix}`,
-      );
+      ).toBe(lineInsertion);
     });
 
-    if (!selector.lines) return;
-
-    test("insert after, then delete the inserted line, restores the original bytes", async () => {
+    test("inserting a line after and deleting it restores the original bytes", async () => {
       const inserted = await run(
         insertMutationTool,
         content,
         { anchor: startAnchor },
         {
           anchor: "anchor",
-          text: "added",
+          text: "added\n",
         },
       );
       const addedLine = targetLine(shape) + 1;
@@ -307,7 +328,28 @@ describe.each(shapes)("on $name", (shape) => {
 });
 
 describe("whole-line replacement", () => {
-  test("cannot join a line with the next one", async () => {
+  test.each(["\n", "\r\n"])(
+    "includes a blank line named by a mixed end anchor (%j)",
+    async (eol) => {
+      const content = ["before", "START", "", "after", ""].join(eol);
+      const start = new TextSelectionAnchor("START", source, [
+        { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
+      ]);
+      expect(
+        await run(
+          deleteMutationTool,
+          content,
+          { start, end: new LineAnchor(3) },
+          {
+            start: "start",
+            end: "end",
+          },
+        ),
+      ).toBe(["before", "after", ""].join(eol));
+    },
+  );
+
+  test("keeps the selected line separate from the next one", async () => {
     const content = "one\ntwo\nthree\n";
     expect(
       await run(
@@ -352,7 +394,7 @@ describe("selections of several ranges", () => {
     const content = "keep\nalpha\nbeta";
     const lines = new TextSelectionAnchor("start", source, [
       { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 3, column: 0 }, linewise: true },
-      { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 4 }, linewise: true },
+      { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 4 } },
     ]);
     expect(await run(deleteMutationTool, content, { start: lines }, { start: "start" })).toBe(
       "keep",
@@ -361,6 +403,54 @@ describe("selections of several ranges", () => {
 });
 
 describe("copy and move", () => {
+  test.each([copyMutationTool, moveMutationTool])(
+    "$name from an exact whole line onto a partial span",
+    async (tool) => {
+      const content = "block\nkeep\nleft SLOT right\n";
+      const anchors = {
+        start: new TextSelectionAnchor("block", source, [
+          { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 2, column: 0 } },
+        ]),
+        targetStart: new TextSelectionAnchor("SLOT", source, [
+          { start: { lineNumber: 3, column: 5 }, end: { lineNumber: 3, column: 9 } },
+        ]),
+      };
+      expect(
+        await run(
+          tool,
+          content,
+          { ...anchors, targetEnd: anchors.targetStart },
+          {
+            start: "start",
+            targetStart: "targetStart",
+            targetEnd: "targetEnd",
+          },
+        ),
+      ).toBe((tool === copyMutationTool ? "block\n" : "") + "keep\nleft block right\n");
+    },
+  );
+
+  test.each([copyMutationTool, moveMutationTool])(
+    "$name from exact text to an exact boundary",
+    async (tool) => {
+      const content = "block\nkeep\nslot\nnext\n";
+      const anchors = {
+        start: new TextSelectionAnchor("block", source, [
+          { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 5 } },
+        ]),
+        targetStart: new TextSelectionAnchor("slot", source, [
+          { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 4 } },
+        ]),
+      };
+      expect(
+        await run(tool, content, anchors, {
+          start: "start",
+          targetStart: "targetStart",
+        }),
+      ).toBe((tool === copyMutationTool ? "block\n" : "") + "keep\nslot\nblock\nnext\n");
+    },
+  );
+
   test("keep the copied bytes and separate them with the target's line ending", async () => {
     const content = "one\ntwo\r\nthree\r\nfour\n";
     const anchors = {
@@ -474,7 +564,7 @@ describe("look-alike characters in an insertion", () => {
         { anchor: new LineAnchor(1) },
         { anchor: "anchor", text: "d e" },
       ),
-    ).toBe("a\u00A0b\nd e\nc\n");
+    ).toBe("a\u00A0bd e\nc\n");
   });
 });
 
@@ -507,7 +597,6 @@ describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
     ...selectors,
     {
       name: "exact text that starts with a BOM",
-      lines: false,
       anchors: (shape) => ({ start: exactTextWithBom(shape) }),
     },
   ];
@@ -551,7 +640,7 @@ describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
             { anchor: startAnchor },
             { anchor: "anchor", text: "\uFEFFA", before: true },
           ),
-        ).toBe(selector.lines ? "\uFEFFA\nTARGET\nnext\n" : "\uFEFFATARGET\nnext\n");
+        ).toBe("\uFEFFATARGET\nnext\n");
       });
     });
   });
@@ -570,7 +659,7 @@ describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
         insertMutationTool,
         "\uFEFFone\n",
         { anchor: new LineAnchor(1) },
-        { anchor: "anchor", text: "\uFEFFtwo" },
+        { anchor: "anchor", text: "\uFEFFtwo\n" },
       ),
     ).toBe("\uFEFFone\n\uFEFFtwo\n");
   });
@@ -583,10 +672,9 @@ describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
   test("copied bytes drop a leading BOM too", () => {
     const document = new TextChangeDocument("\uFEFFone\n");
     const span = document.lineSpan(1, 1);
-    expect(document.replace(span, "\uFEFFNEW", { verbatim: true }).insert).toBe("NEW");
-    expect(document.insert(span, "\uFEFFNEW", { before: true, verbatim: true }).insert).toBe(
-      "NEW\n",
-    );
+    const payload = { text: "\uFEFFNEW", wholeLines: true };
+    expect(document.replace(span, payload).insert).toBe("NEW");
+    expect(document.insert(span, payload, { before: true }).insert).toBe("NEW\n");
   });
 
   test("text that is only a BOM inserts nothing", () => {

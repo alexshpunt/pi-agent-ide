@@ -8,6 +8,7 @@ import type {
   TextChangeDocument,
   TextInsertOptions,
   TextSpan,
+  TextTransfer,
 } from "#src/core/text-change-engine.ts";
 
 export function textSelections(
@@ -128,7 +129,10 @@ export async function anchorSpanRange(
   const span: TextSpan =
     start.lines !== undefined && end.lines !== undefined
       ? document.lineSpan(start.lines.first, end.lines.last)
-      : document.charSpan({ from: start.from, to: end.to });
+      : {
+          ...document.charSpan({ from: start.from, to: end.to }),
+          ...(end.lines === undefined ? {} : { endLine: end.lines.last }),
+        };
   const first = requiredValue(starts.get(start.source));
   const last = requiredValue(ends.get(end.source));
   if (first.rangeRejection !== undefined) {
@@ -150,7 +154,7 @@ export function insertionAfterAnchor(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
-  insert: string,
+  insert: string | TextTransfer,
   options: TextInsertOptionsWithoutBefore = {},
 ): readonly [string, TextChange] {
   const span = singleAnchorSpan(context, anchors, field);
@@ -174,27 +178,6 @@ export function insertionBeforeAnchor(
 
 type TextInsertOptionsWithoutBefore = Omit<TextInsertOptions, "before">;
 
-/** Joins adjacent or overlapping whole-line spans, so deleting them leaves no empty line. */
-function coalesceLineSpans(spans: readonly TextSpan[], document: TextChangeDocument): TextSpan[] {
-  const result: TextSpan[] = [];
-  for (const span of spans) {
-    const previous = result.at(-1);
-    if (
-      previous?.lines !== undefined &&
-      span.lines !== undefined &&
-      span.lines.first <= previous.lines.last + 1
-    ) {
-      result[result.length - 1] = document.lineSpan(
-        previous.lines.first,
-        Math.max(previous.lines.last, span.lines.last),
-      );
-    } else {
-      result.push(span);
-    }
-  }
-  return result;
-}
-
 /** Writes `insert` over every selected range; empty text deletes them. */
 export function selectionChanges(
   context: TextMutationContext,
@@ -207,9 +190,9 @@ export function selectionChanges(
       const spans = anchor.ranges.map((range) => selectionSpan(document, range));
       return [
         source,
-        (insert.length === 0 ? coalesceLineSpans(spans, document) : spans).map((span) =>
-          document.replace(span, insert),
-        ),
+        insert.length === 0
+          ? document.deleteSpans(spans)
+          : spans.map((span) => document.replace(span, insert)),
       ];
     }),
   );

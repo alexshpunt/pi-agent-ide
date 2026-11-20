@@ -585,7 +585,7 @@ test.each(["on", "only"] as const)(
         `native-codemode-sequential-${mode}`,
         [
           `text(await tools.read({path:"note.txt",views:["anchors"]}));
-text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added"}));
+text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added\\n"}));
 text(await tools.replace({start:${JSON.stringify(anchor(2, "beta"))},text:"BETA\\n"}));
 text(await tools.delete({path:"note.txt",start:${JSON.stringify(anchor(3, "gamma"))}}));`,
         ],
@@ -653,7 +653,7 @@ test("read and search finish a batch before dependent work starts", async () => 
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-read-boundary", [
-      `text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added"}));
+      `text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added\\n"}));
 const shown = await tools.read({path:"note.txt",views:["anchors"]});
 if (!shown.text.includes(${JSON.stringify(anchor(3, "beta"))})) throw new Error("read saw an uncommitted file");
 text(await tools.replace({path:"note.txt",start:${JSON.stringify(anchor(3, "beta"))},text:"BETA\\n"}));
@@ -704,7 +704,7 @@ test.each([
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, `native-codemode-${scenario.name}`, [
-      `text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added"}));\n${scenario.tail}`,
+      `text(await tools.insert({path:"note.txt",anchor:${JSON.stringify(anchor(1, "alpha"))},before:true,text:"added\\n"}));\n${scenario.tail}`,
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
     expect(getToolResultText(run, "script-0")).toContain(scenario.message);
@@ -924,7 +924,7 @@ test("an ordinary error after deadline-like script output keeps accepted edits",
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), initial);
     const run = await runScripts(cwd, "native-codemode-deadline-like-output", [
-      'await tools.insert({path:"note.txt",anchor:"alpha",text:"\\nKEPT"}); text("Script error:\\nScript timed out: script output only"); throw new Error("ordinary failure");',
+      'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT\\n"}); text("Script error:\\nScript timed out: script output only"); throw new Error("ordinary failure");',
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
@@ -940,7 +940,7 @@ test.each([false, true])(
       await writeFile(path.join(cwd, "note.txt"), initial);
       const run = await runScripts(cwd, `native-codemode-marker-in-error-${clipped}`, [
         (clipped ? '// @options: {"max_output_tokens":1000}\n' : "") +
-          'await tools.insert({path:"note.txt",anchor:"alpha",text:"\\nKEPT"});' +
+          'await tools.insert({path:"note.txt",anchor:"alpha",text:"KEPT\\n"});' +
           (clipped ? 'text("x".repeat(100000));' : "") +
           'throw new Error("Script error:\\nScript timed out: copied failure");',
       ]);

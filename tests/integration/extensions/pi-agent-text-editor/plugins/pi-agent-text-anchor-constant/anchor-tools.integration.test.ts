@@ -21,7 +21,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-insert",
       "insert",
-      { anchor: "begin", text: "inserted" },
+      { anchor: "begin", text: "inserted\n" },
       ["alpha", "inserted", "bravo", "charlie", "delta", "echo"].join("\n"),
     );
   });

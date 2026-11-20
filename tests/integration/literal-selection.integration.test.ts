@@ -20,8 +20,8 @@ const runtimeAnchors = path.resolve(
 );
 const content = "// PREFIX\n// BEGIN block\nbody line\n// END block\n// SUFFIX\n";
 
-// Literal text selects only its characters, even a complete line; a :line reference keeps lines.
-test("literal selectors edit exact characters while :line references edit whole lines", async () => {
+// LPT-1747: equivalent boundaries behave the same for a literal and a :line reference.
+test("literal text and :line references edit the same boundaries", async () => {
   await mkdir(tempRoot, { recursive: true });
   const cwd = await mkdtemp(path.join(tempRoot, "run-"));
   try {
@@ -73,10 +73,8 @@ test("literal selectors edit exact characters while :line references edit whole 
     }).run("Edit the block markers with literal and :line selectors.");
     const read = (name: string) => readFile(path.join(cwd, `${name}.txt`), "utf8");
     expect(await read("insert-literal")).toBe(content.replace("// END block", "// END block// X"));
-    expect(await read("delete-literal")).toBe(content.replace("body line", ""));
-    expect(await read("insert-line")).toBe(
-      content.replace("// END block\n", "// END block\n// X\n"),
-    );
+    expect(await read("delete-literal")).toBe(content.replace("body line\n", ""));
+    expect(await read("insert-line")).toBe(content.replace("// END block", "// END block// X"));
     expect(await read("delete-line")).toBe(content.replace("body line\n", ""));
   } finally {
     await rm(cwd, { recursive: true, force: true });
