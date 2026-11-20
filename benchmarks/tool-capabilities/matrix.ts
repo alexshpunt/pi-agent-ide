@@ -343,7 +343,13 @@ const groups: [string[], string[]][] = [
   // Anchor-rejection card causes are presentation only; renderer tests decode all four codes.
   [
     ["compose.result-selector-scope"],
-    ["result-selector-scope", "result-selector-surviving-scope", "result-selector-exact-retry"],
+    [
+      "result-selector-scope",
+      "result-selector-multi-range-plain",
+      "result-selector-multi-range-unicode",
+      "result-selector-surviving-scope",
+      "result-selector-exact-retry",
+    ],
   ],
   [
     [

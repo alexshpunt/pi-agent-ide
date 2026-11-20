@@ -57,41 +57,38 @@ function lineBreakAt(content: string, offset: number): number {
   return content.startsWith("\r\n", offset) ? 2 : content[offset] === "\n" ? 1 : 0;
 }
 
-/** The ranges an anchor selects; a line anchor selects its whole line with its break. */
-function anchorOffsets(document: TextChangeDocument, anchor: TextAnchor): TextRange[] {
-  if (TextSelectionAnchor.is(anchor))
-    return anchor.ranges.map((range) =>
-      document.range(
-        range.start.lineNumber,
-        range.start.column,
-        range.end.lineNumber,
-        range.end.column,
-      ),
-    );
-  return [document.lineRange(anchor.lineNumber, anchor.lineNumber)];
-}
-
 /**
- * The index of the scope range that holds everything the anchor selects, or `undefined` when the
- * anchor reaches outside the scope or spans two of its ranges.
+ * The scope range holding each independent anchor selection. Line selectors use the containing
+ * lines of the scope; exact selectors keep its column boundaries. No selection may cross a gap.
  */
-export function scopeRangeIndex(
+export function scopeRangeIndices(
   document: TextChangeDocument,
   anchor: TextAnchor,
   scope: readonly TextSelectionRange[],
-): number | undefined {
-  let selected: TextRange[];
-  let ranges: TextRange[];
+): readonly number[] | undefined {
   try {
-    selected = anchorOffsets(document, anchor);
-    ranges = scope.map((range) => scopeOffsets(document, range));
+    const ranges = scope.map((range) => scopeOffsets(document, range));
+    const lines = scope.map((range) => document.lineRange(range.start.lineNumber, lastLine(range)));
+    const selected = TextSelectionAnchor.is(anchor)
+      ? anchor.ranges.map((range) => ({
+          offsets: document.range(
+            range.start.lineNumber,
+            range.start.column,
+            range.end.lineNumber,
+            range.end.column,
+          ),
+          linewise: range.linewise === true,
+        }))
+      : [{ offsets: document.lineRange(anchor.lineNumber, anchor.lineNumber), linewise: true }];
+    const indices = selected.map(({ offsets: part, linewise }) =>
+      (linewise ? lines : ranges).findIndex(
+        (range) => part.from >= range.from && part.to <= range.to,
+      ),
+    );
+    return indices.some((index) => index < 0) ? undefined : indices;
   } catch {
     return undefined;
   }
-  const index = ranges.findIndex((range) =>
-    selected.every((part) => part.from >= range.from && part.to <= range.to),
-  );
-  return index < 0 ? undefined : index;
 }
 
 /** Names a file's selected ranges as an agent reads them, such as `task.txt lines 2-4`. */

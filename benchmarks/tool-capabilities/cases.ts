@@ -3705,6 +3705,55 @@ add(
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
 );
 
+for (const { suffix, joiner } of [
+  { suffix: "plain", joiner: "" },
+  { suffix: "unicode", joiner: "\u200b" },
+]) {
+  const old = `legacy${joiner}Checkout`;
+  const replacement = `stable${joiner}Checkout`;
+  const original = `header\n${Array.from(
+    { length: 10 },
+    (_, index) => `    route-${index + 1} = ${old};\n${index === 4 ? "unselected-gap\n" : ""}`,
+  ).join("")}footer\n`;
+  const wholeResult = /^(?:RESULT#)?[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
+  add(
+    `result-selector-multi-range-${suffix}`,
+    ["compose.result-selector-scope"],
+    `Search task.txt for the exact literal ${JSON.stringify(old)} with limit 20 and retain its complete ten-match result. Use that whole Search result unchanged as path in every Replace below. On the direct route pass an object containing the Search result's envelope UUID as id, not a numbered SEARCH reference. In Codemode pass the unchanged returned Search value as path. First try to Replace a span from the first exact match to the tenth exact match with text BAD. Use the actual issued :1:match and :10:match references directly, or the first and tenth match values in Codemode. The span crosses unselected text, so it must refuse without writing. Next try Replace with the same path, literal start unselected-gap and text BAD; it must also refuse. After both refusals, replace all ten exact matches in one Replace with text ${JSON.stringify(replacement)} and no end. For that final start use the original Search's :all:match reference directly, or the whole unchanged Search value in Codemode. Preserve the gap, line prefixes, punctuation and every other byte. Do not rewrite whole lines, refresh the Search or use a file path for the edits.`,
+    [
+      { tool: "search", args: { path: "task.txt", query: old, limit: 20 } },
+      {
+        tool: "replace",
+        args: { path: wholeResult, start: matchReference(1), end: matchReference(10) },
+        reuse: reuse(0, ["path", "start", "end"]),
+        error: true,
+      },
+      {
+        tool: "replace",
+        args: { path: wholeResult, start: "unselected-gap" },
+        reuse: reuse(0),
+        exactText: ["start"],
+        after: [1],
+        error: true,
+      },
+      {
+        tool: "replace",
+        args: {
+          path: wholeResult,
+          start: /^(?:SEARCH#[A-F\d]+:all:match|RESULT#[a-f\d-]{36})$/u,
+          end: undefined,
+        },
+        reuse: reuse(0, ["path", "start"]),
+        after: [2],
+      },
+    ],
+    {
+      files: { "task.txt": original },
+      expected: { "task.txt": original.replaceAll(old, replacement) },
+    },
+  );
+}
+
 add(
   "result-selector-surviving-scope",
   ["compose.result-selector-scope"],
