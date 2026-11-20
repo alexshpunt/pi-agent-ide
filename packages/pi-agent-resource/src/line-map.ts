@@ -504,6 +504,51 @@ export interface RangeTracker {
   readonly describe: (range: ResultRange) => string;
 }
 
+/** Keep an adjusted line scope bounded by verified survivors, never by an ordered duplicate. */
+function survivingRegion(
+  range: ResultRange,
+  context: ContextMap,
+  old: readonly string[],
+  next: readonly string[],
+): ResultRange | undefined {
+  if (range.linewise !== true) return undefined;
+  let first: number | undefined;
+  let last: number | undefined;
+  let previous = 0;
+  let count = 0;
+  const end = lastSelectedLine(range);
+  for (let line = range.start.lineNumber; line <= end; line += 1) {
+    const moved = context.newLine(line);
+    if (moved === undefined) continue;
+    if (moved <= previous) return undefined;
+    first ??= line;
+    last = line;
+    previous = moved;
+    count += 1;
+  }
+  if (first === undefined || last === undefined) return undefined;
+  const from = context.newLine(first);
+  const token = old[last - 1];
+  if (from === undefined || token === undefined) return undefined;
+  // A bounding range must not capture an identifiable line from outside the old scope.
+  if ((context.newClaims[previous] ?? 0) - (context.newClaims[from - 1] ?? 0) !== count)
+    return undefined;
+  const cropped = {
+    ...range,
+    start: first === range.start.lineNumber ? range.start : { lineNumber: first, column: 0 },
+    end:
+      last === end
+        ? range.end
+        : token.endsWith("\n")
+          ? { lineNumber: last + 1, column: 0 }
+          : { lineNumber: last, column: token.length },
+  };
+  return relocateRange(
+    cropped,
+    { ...context, oldLines: old, newLines: next },
+    next.map(withoutEnding),
+  );
+}
 /** Track a snapshot pair once, even when many independent selections use it. */
 export function createRangeTracker(before: string, after: string): RangeTracker {
   if (before === after) return { move: (range) => range, describe: describeUnmappedRange };
@@ -557,7 +602,7 @@ export function createRangeTracker(before: string, after: string): RangeTracker 
           orderedLine !== undefined &&
           (context.reordered || context.duplicated.has(lineText(old, line))))
       )
-        return undefined;
+        return allowAdjusted ? survivingRegion(range, context, old, next) : undefined;
     }
     if (context.reordered) return relocateRange(range, map, (lines ??= after.split("\n")));
     return allowAdjusted
