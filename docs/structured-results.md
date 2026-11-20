@@ -16,11 +16,13 @@ if (source !== null) {
 }
 ```
 
-Pass a Read value, a Search value, one of its matches, any of their `id`s, an edit's id or an unchanged result string to a supported source parameter. Direct calls also accept the issued UUID. A source parameter accepts any object whose `id` holds a `RESULT#` reference, alone or in a list; the IDE resolves the id and ignores the object's other fields. An id the IDE did not issue fails like an unknown reference, even when it names a file. `file_search` and `semantic_search` take paths only, not results or values. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
+Pass a Read value, a Search value, one of its matches, any of their `id`s, an edit's id or an unchanged result string to a supported source parameter. Direct calls also accept the issued UUID. A source parameter accepts issued values or `{ id }` objects, alone or in a list. Preview metadata never changes the registered selection, and unsupported fields are refused. An id the IDE did not issue fails like an unknown reference, even when it names a file. `file_search` and `semantic_search` take paths only, not results or values. Store/load retains results across scripts in the same session. Displayed item and capture references allow narrower selections without inspecting private arrays.
 
-Where an input schema accepts an object or array, IDE tools also accept its JSON-text form. For example, Read accepts `path: '["a.txt","b.txt"]'`, and Diff accepts `before: '{"path":"a.txt","limit":0}'`. Nested composite fields follow the same rule. Native objects and arrays remain the preferred form. Schema validation and issued-reference ownership checks still apply after decoding.
+Selector and content strings keep their text, including valid JSON objects and arrays. Issued reference strings still resolve as references. Pass result values to selectors as native objects or issued IDs.
 
-This applies to direct and Codemode calls, local and SSH sources, and parallel edit batches. Ordinary strings and malformed JSON keep their meaning. Fields that accept only strings, including file contents and replacement text, are never decoded.
+Source fields also accept JSON-text arrays and issued result-value objects when the literal string does not name an existing path in the call's working directory and the decoded value is valid for that field. An existing literal path takes precedence. Unknown result IDs and unsupported object fields do not acquire reference authority from JSON text. Native objects and arrays avoid this ambiguity.
+
+Fields that accept objects or arrays but do not accept strings also accept JSON text, such as Read `views: '["anchors"]'`. Diff request wrappers use native objects, such as `before: { path: "a.txt", limit: 0 }`. Schema validation and issued-reference ownership checks still apply. These rules apply to direct and Codemode calls, local and SSH sources, and parallel edit batches.
 
 A result identifies its backend-owned ranges, not the text in its preview. Shortened output does not clip a complete selection or make an incomplete selection complete. Read around a selection may show context without granting authority to edit it.
 
