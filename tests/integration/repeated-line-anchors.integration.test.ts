@@ -43,7 +43,7 @@ const blankAfterFirst=nth("",1);
 await tools.bash({command:${JSON.stringify(moveFirst)}+file});
 check((await tools.read({path:file})).text.endsWith("// end\\n${block("one")}\\n"),"The block was not moved");
 await tools.delete({path:file,start:secondTemplate,end:secondClose});
-await rejects(()=>tools.insert({path:file,anchor:blankAfterFirst,newText:"X\\n"}));`;
+await rejects(()=>tools.insert({path:file,anchor:blankAfterFirst,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({
       testName: "repeated-line-anchors-block-move",
       artifactsDir: testArtifactsDir(import.meta.filename),

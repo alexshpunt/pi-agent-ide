@@ -67,8 +67,8 @@ describe("resolvePartial", () => {
   it("parses a complete JSON with edits array", () => {
     const json = JSON.stringify({
       edits: [
-        { path: "a.ts", start: "begin", end: "end", newText: "content" },
-        { path: "b.ts", start: "K7M2QX4", end: "E5R6T7S", newText: "other" },
+        { path: "a.ts", start: "begin", end: "end", text: "content" },
+        { path: "b.ts", start: "K7M2QX4", end: "E5R6T7S", text: "other" },
       ],
     });
     const edits = editsOf(json);

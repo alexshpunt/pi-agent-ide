@@ -66,7 +66,7 @@ test.each(cases)(
       const prefix =
         `{"path":${JSON.stringify(entry.source)}` +
         (entry.anchor ? `,"${entry.anchor}":"$issued-searchmatch:selection:1"` : "");
-      const payload = `,"newText":${JSON.stringify(entry.payload)}}`;
+      const payload = `,"text":${JSON.stringify(entry.payload)}}`;
       const run = await new PiIntegrationTest({
         testName: `streamed-outer-search-${entry.name}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
@@ -96,7 +96,7 @@ test.each(cases)(
                     toolCall({
                       id: "change",
                       name: "replace",
-                      arguments: { path: "note.txt", start: "OLD", newText: "CHANGED" },
+                      arguments: { path: "note.txt", start: "OLD", text: "CHANGED" },
                     }),
                   ],
                   { stopReason: "toolUse" },

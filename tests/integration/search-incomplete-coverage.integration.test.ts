@@ -34,7 +34,7 @@ for (const value of [seed, zero, found])
   if (value.complete !== false) throw Error("Incomplete result claimed complete coverage: " + JSON.stringify(value));
 if (zero.matches.length !== 0 || found.matches.length !== 1) throw Error(JSON.stringify([zero, found]));
 // A refused edit resolves to null; the test checks its reason in the Codemode result.
-const blocked = (await tools.replace({path:zero,newText:"BAD"})) === null;
+const blocked = (await tools.replace({path:zero,text:"BAD"})) === null;
 if (!blocked) throw Error("Incomplete zero result authorized an edit");
 text("Incomplete values checked");`;
     const run = await new PiIntegrationTest({

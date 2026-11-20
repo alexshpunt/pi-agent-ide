@@ -105,7 +105,7 @@ describe("interactive text editor demos", () => {
               toolCall({
                 id: replaceCallId,
                 name: "replace",
-                arguments: { start: runtimeAllAnchor, newText: "queueName" },
+                arguments: { start: runtimeAllAnchor, text: "queueName" },
                 ...interactivePacing,
               }),
             ],

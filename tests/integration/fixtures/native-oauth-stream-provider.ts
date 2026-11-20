@@ -46,7 +46,7 @@ export default function nativeOAuthStreamProvider(pi: ExtensionAPI): void {
               type: "toolCall",
               id: "native-replace",
               name: "replace",
-              arguments: { path: "note.txt", start: "OLD", newText: "NEW" },
+              arguments: { path: "note.txt", start: "OLD", text: "NEW" },
             },
           ]
         : [{ type: "text", text: "NATIVE_OAUTH_STREAM_OK" }],

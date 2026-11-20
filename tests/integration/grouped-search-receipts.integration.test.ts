@@ -56,7 +56,7 @@ test.each([
               toolCall({
                 id: "replace",
                 name: "replace",
-                arguments: { path: "SEARCH#RUNTIME:1:all:match", newText: scenario.text },
+                arguments: { path: "SEARCH#RUNTIME:1:all:match", text: scenario.text },
               }),
             ],
             { stopReason: "toolUse" },

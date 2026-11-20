@@ -192,7 +192,7 @@ for (const mode of ["direct", "codemode"]) {
       },
       {
         tool: "replace",
-        args: { path: "RESULT#11111111-aaaa-4aaa-8aaa-111111111111", newText: "NEW" },
+        args: { path: "RESULT#11111111-aaaa-4aaa-8aaa-111111111111", text: "NEW" },
       },
       { tool: "delete", args: { path: "sentinel.txt" }, error: true },
     ];
@@ -201,7 +201,7 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(
       !check([
         calls[0],
-        { ...calls[1], args: { path: "task.txt", start: "OLD", newText: "NEW" } },
+        { ...calls[1], args: { path: "task.txt", start: "OLD", text: "NEW" } },
         calls[2],
       ]),
     );

@@ -71,12 +71,12 @@ export default async function anthropicStalePrefixProvider(pi: ExtensionAPI): Pr
               ? "malformed"
               : "recovered";
       const args = turn === 1
-        ? { path: "note.txt", start: "OLD", newText: "NEW" }
+        ? { path: "note.txt", start: "OLD", text: "NEW" }
         : {
             path: "note.txt",
             anchor: formatLineHashAnchor(stale ? original : updated, 2),
-            ...(turn === 4 && { newText: "BLOCKED" }),
-            ...(turn === 6 && { newText: "RECOVERED" }),
+            ...(turn === 4 && { text: "BLOCKED" }),
+            ...(turn === 6 && { text: "RECOVERED" }),
           };
       send(response, {
         type: "content_block_start",

@@ -58,7 +58,7 @@ describe("mutation renderer lifecycle", () => {
       if (!renderer?.renderResult) throw new Error("Missing renderer");
       const renderResult = renderer.renderResult;
       const privateReason = "PRIVATE anchor payload and recovery instructions";
-      const args = { path: "fixture.txt", start: "selection", newText: "changed" };
+      const args = { path: "fixture.txt", start: "selection", text: "changed" };
       const render = (code: string | undefined) =>
         renderResult(
           {
@@ -232,7 +232,7 @@ describe("mutation renderer lifecycle", () => {
     });
     registerMutationRenderers(api, { track }, () => false);
     if (!renderer?.renderCall || !renderer.renderResult) throw new Error("Missing renderer");
-    const args = { path: "fixture.txt", start: "old", newText: "new" };
+    const args = { path: "fixture.txt", start: "old", text: "new" };
     const context = {
       args,
       toolCallId: "static",
@@ -288,7 +288,7 @@ describe("mutation renderer lifecycle", () => {
     registerMutationRenderers(api);
     if (renderer?.renderCall === undefined || renderer.renderResult === undefined)
       throw new Error("Missing renderer");
-    const args = { path: "removed.txt", start: "old", newText: "new" };
+    const args = { path: "removed.txt", start: "old", text: "new" };
     const context = {
       args,
       toolCallId: "restored",
@@ -1026,7 +1026,7 @@ describe("mutation renderer lifecycle", () => {
     registerMutationRenderers(api);
     if (renderer?.renderCall === undefined) throw new Error("Missing replace renderer");
     const anchor = "    old_value = calculate_value()\n".repeat(100);
-    const args = { path: "monitor.py", start: anchor, end: anchor, newText: "updated_value = 1" };
+    const args = { path: "monitor.py", start: anchor, end: anchor, text: "updated_value = 1" };
     const panel = renderer.renderCall(args, theme, {
       args,
       toolCallId: "long-exact-anchor",

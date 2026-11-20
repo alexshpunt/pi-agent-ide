@@ -17,7 +17,7 @@ Raw text carries bytes that neither the model nor most readers see: a BOM, CRLF 
 Matching and writing follow different rules.
 
 - Matching uses general heuristics: exact, then normalized, then fuzzy, and the anchored view of the file. A literal that names the intended span selects it even when invisible bytes differ.
-- Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. The new text is saved exactly as sent.
+- Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. The new text is saved as sent over a line anchor, a SEARCH# reference or a line range. Over exact text, its line breaks take the line ending of the line where the span starts, as Pi's edit writes them.
 - An ambiguous match is refused. The tools never pick between candidates; the error lists them so the next call can select one.
 
 A match never decides what the tool writes outside the span it selected.
@@ -37,4 +37,4 @@ A heuristic that helps one case and costs another is not added.
 
 ## Parameter names
 
-`replace` and `insert` take the text they write in `newText`: it is new text, and `text` names too many other things. `write` takes the whole file in `content`. The `text` input of a terminal or debugger action is not a file edit; those actions share the `insert` tool, so they pass their keys or command in `newText` as well.
+`replace` and `insert` take the text they write in `text`. `write` takes the whole file in `content`. Terminal and debugger actions share the `insert` tool, so they pass their keys or command in `text` as well.

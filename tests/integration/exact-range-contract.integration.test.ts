@@ -31,13 +31,13 @@ for (const route of ["direct", "codemode"] as const) {
         files[file] = `base${eol}`;
         expected[file] = files[file];
         edits.push(
-          { tool: "insert", args: { path: file, anchor: "base", newText: "added" } },
+          { tool: "insert", args: { path: file, anchor: "base", text: "added" } },
           { tool: "delete", args: { path: file, start: "added" } },
           // A literal selects only its characters; the line break comes from the inserted text,
           // written as sent, so it uses the file's own line break.
           {
             tool: "insert",
-            args: { path: file, anchor: "base", before: true, newText: `correct${eol}` },
+            args: { path: file, anchor: "base", before: true, text: `correct${eol}` },
           },
         );
         expected[file] = `correct${eol}base${eol}`;
@@ -47,7 +47,7 @@ for (const route of ["direct", "codemode"] as const) {
           expected[name] = `keep${eol}${eol}`;
           edits.push({
             tool,
-            args: { path: name, start: "尾🙂", ...(tool === "replace" ? { newText: "" } : {}) },
+            args: { path: name, start: "尾🙂", ...(tool === "replace" ? { text: "" } : {}) },
           });
         }
       }
@@ -79,7 +79,7 @@ for (const route of ["direct", "codemode"] as const) {
         // A literal matches only the file's own line breaks: CRLF in a CRLF file.
         edits.push({
           tool: "insert",
-          args: { path: file, anchor: "α\r\nβ", newText: "+", before },
+          args: { path: file, anchor: "α\r\nβ", text: "+", before },
         });
       }
       await Promise.all(
@@ -136,18 +136,18 @@ for (const route of ["direct", "codemode"] as const) {
               call("ambiguous", "replace", {
                 path: "ambiguous.txt",
                 start: "duplicate",
-                newText: "BAD",
+                text: "BAD",
               }),
               call("search", "search", { path: "stale.txt", query: "OLD" }),
-              call("change", "replace", { path: "stale.txt", start: "OLD", newText: "NEW" }),
+              call("change", "replace", { path: "stale.txt", start: "OLD", text: "NEW" }),
               call("stale", "delete", { path: "stale.txt", start: "SEARCH#RUNTIME:1:1:match" }),
             ]
           : [
               call("ambiguous", "codemode", {
-                code: 'await tools.replace({path:"ambiguous.txt",start:"duplicate",newText:"BAD"});',
+                code: 'await tools.replace({path:"ambiguous.txt",start:"duplicate",text:"BAD"});',
               }),
               call("stale", "codemode", {
-                code: 'const selected = await tools.search({path:"stale.txt",query:"OLD"}); await tools.replace({path:"stale.txt",start:"OLD",newText:"NEW"}); await tools.delete({path:selected});',
+                code: 'const selected = await tools.search({path:"stale.txt",query:"OLD"}); await tools.replace({path:"stale.txt",start:"OLD",text:"NEW"}); await tools.delete({path:selected});',
               }),
             ];
       const result = await new PiIntegrationTest({

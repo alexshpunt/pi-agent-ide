@@ -112,7 +112,7 @@ check(failures.length === 0, failures.join("\n") + "\n" + report.join("\n"));
 check(scoped > 0, "No round could use a result scope: " + report.join("\n"));
 // The list's id selects every reference it found.
 check(listed.complete === true, "The reference list is incomplete: " + JSON.stringify(listed).slice(0, 400));
-await tools.replace({ path: listed.id, newText: "dispatch" });
+await tools.replace({ path: listed.id, text: "dispatch" });
 const counted = (await tools.bash({ command: "grep -c dispatch main.cpp; grep -c handle main.cpp || true" })).output;
 const counts = (counted.match(/^\d+$/gm) ?? []).map(Number);
 report.push("renamed=" + counts[0] + " left=" + counts[1]);

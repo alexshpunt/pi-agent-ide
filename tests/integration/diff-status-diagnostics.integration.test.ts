@@ -54,7 +54,7 @@ test.each([false, true])(
               toolCall({
                 id: file,
                 name: "replace",
-                arguments: { path: file, start: "before", newText: "after   " },
+                arguments: { path: file, start: "before", text: "after   " },
               }),
             ),
             { stopReason: "toolUse" },

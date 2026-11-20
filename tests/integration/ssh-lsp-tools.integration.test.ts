@@ -152,7 +152,7 @@ test.each(["diagnostics", "rename", "race"] as const)(
                         name: "replace",
                         arguments: {
                           path: `fixture:declaration:${note}#label#name`,
-                          newText: "renamed",
+                          text: "renamed",
                         },
                       }),
                     ]),
@@ -174,7 +174,7 @@ test.each(["diagnostics", "rename", "race"] as const)(
                         name: "replace",
                         arguments: {
                           path: `fixture:declaration:${note}#label#name`,
-                          newText: "raced",
+                          text: "raced",
                         },
                       }),
                     ]),

@@ -35,14 +35,14 @@ Read accepts a file or directory path, resource address, or issued result. Pass 
 A typed `SEARCH#...` value is both an anchor and a resource reference. It carries its source or sources and its selected ranges. Pass it by itself in either role:
 
 ```ts
-replace({ path: "SEARCH#19AF:all:match", newText: "new" });
-replace({ start: "SEARCH#19AF:all:match", newText: "new" });
+replace({ path: "SEARCH#19AF:all:match", text: "new" });
+replace({ start: "SEARCH#19AF:all:match", text: "new" });
 ```
 
 Do not append it to a filesystem path:
 
 ```ts
-replace({ path: "src/file.ts:SEARCH#19AF:all:match", newText: "new" }); // wrong
+replace({ path: "src/file.ts:SEARCH#19AF:all:match", text: "new" }); // wrong
 ```
 
 A source field such as `path` or mutation `target` is therefore a resource field even when its name reflects the familiar filesystem case.

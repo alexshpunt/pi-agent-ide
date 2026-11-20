@@ -59,11 +59,11 @@ test.each(Object.entries(paths))(
                 turn("copied", "replace", {
                   path: source,
                   start: "$issued-anchor:selection:2|OLD",
-                  newText: "$issued-anchor:selection:2|NEW\n",
+                  text: "$issued-anchor:selection:2|NEW\n",
                 }),
               ]
             : []),
-          turn("change", "replace", { path: source, start: "OLD", newText: "CHANGED" }),
+          turn("change", "replace", { path: source, start: "OLD", text: "CHANGED" }),
           assistantMessage(
             [
               text("Attempt the stale insertion."),
@@ -81,7 +81,7 @@ test.each(Object.entries(paths))(
           turn("recovery", "insert", {
             path: "note.txt",
             anchor: "$issued-anchor:current:2",
-            newText: "RECOVERED",
+            text: "RECOVERED",
           }),
           assistantMessage([text("Done")]),
         ],
@@ -128,10 +128,10 @@ test("rejects unknown keys in every edit selector without applying file effects"
     await fixture(cwd);
     const bad = { id: "$issued-uuid:selection", anchor: "unissued selector override" };
     const cases = [
-      ["bad-path", "replace", { path: bad, newText: "BAD" }],
-      ["bad-start", "replace", { path: "note.txt", start: bad, newText: "BAD" }],
-      ["bad-end", "replace", { path: "note.txt", start: "keep", end: bad, newText: "BAD" }],
-      ["bad-anchor", "insert", { path: "note.txt", anchor: bad, newText: "BAD" }],
+      ["bad-path", "replace", { path: bad, text: "BAD" }],
+      ["bad-start", "replace", { path: "note.txt", start: bad, text: "BAD" }],
+      ["bad-end", "replace", { path: "note.txt", start: "keep", end: bad, text: "BAD" }],
+      ["bad-anchor", "insert", { path: "note.txt", anchor: bad, text: "BAD" }],
       ["bad-target", "copy", { path: "note.txt", target: bad }],
       ["bad-target-start", "copy", { path: "note.txt", target: "target.txt", targetStart: bad }],
       [
@@ -187,8 +187,8 @@ test.each(Object.entries(paths))(
         tools: ["read", "replace"],
         conversation: [
           turn("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
-          turn("outside", "replace", { path: source, start: "keep", newText: "BAD" }),
-          turn("inside", "replace", { path: source, start: "OLD", newText: "NEW" }),
+          turn("outside", "replace", { path: source, start: "keep", text: "BAD" }),
+          turn("inside", "replace", { path: source, start: "OLD", text: "NEW" }),
           assistantMessage([text("Done")]),
         ],
       }).run("Retain the original result selection while inspecting anchors");
@@ -215,15 +215,15 @@ test("issued Codemode Read, Search, match, AST match and capture values remain e
           code: `
 const requireValue = (value) => { if (value === null) throw new Error("Call failed"); return value; };
 const read = requireValue(await tools.read({path: "note.txt", offset: 2, limit: 1}));
-requireValue(await tools.replace({path: read, newText: "READ\\n"}));
+requireValue(await tools.replace({path: read, text: "READ\\n"}));
 const list = requireValue(await tools.search({path: "note.txt", query: "READ"}));
-requireValue(await tools.replace({path: list, newText: "LIST"}));
+requireValue(await tools.replace({path: list, text: "LIST"}));
 const found = requireValue(await tools.search({path: "note.txt", query: "LIST"}));
-requireValue(await tools.replace({path: "note.txt", start: found.matches[0], newText: "MATCH"}));
+requireValue(await tools.replace({path: "note.txt", start: found.matches[0], text: "MATCH"}));
 const ast = requireValue(await tools.ast_search({path: "code.ts", pattern: "function $NAME() { return 7; }"}));
-requireValue(await tools.replace({path: ast.matches[0], newText: "function astName() { return 8; }"}));
+requireValue(await tools.replace({path: ast.matches[0], text: "function astName() { return 8; }"}));
 const captures = requireValue(await tools.ast_search({path: "code.ts", pattern: "function $NAME() { return 8; }"}));
-requireValue(await tools.replace({path: "code.ts", start: captures.matches[0].captures.NAME[0], newText: "captureName"}));
+requireValue(await tools.replace({path: "code.ts", start: captures.matches[0].captures.NAME[0], text: "captureName"}));
 `,
         }),
         assistantMessage([text("Done")]),

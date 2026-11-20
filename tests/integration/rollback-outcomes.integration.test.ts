@@ -33,7 +33,7 @@ for (const native of [false, true]) {
         );
         const source = `rollback-${scenario}.txt`;
         // A literal selects only its characters; NEW goes after the line break.
-        const parameters = { path: source, anchor: "KEEP\n", newText: "NEW" };
+        const parameters = { path: source, anchor: "KEEP\n", text: "NEW" };
         const run = await new PiIntegrationTest({
           testName: `rollback-${native ? "native" : "standalone"}-${scenario}`,
           artifactsDir: testArtifactsDir(import.meta.filename),

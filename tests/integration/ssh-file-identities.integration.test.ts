@@ -137,7 +137,7 @@ test("identical absolute file paths stay target-owned across private mount names
           toolCall({
             id: "inherited",
             name: "replace",
-            arguments: { start: "left café", newText: "LEFT VERIFIED" },
+            arguments: { start: "left café", text: "LEFT VERIFIED" },
           }),
         ]),
         assistantMessage([

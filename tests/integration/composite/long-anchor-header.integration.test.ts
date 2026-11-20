@@ -53,7 +53,7 @@ for (const expanded of [false, true]) {
                   path: "monitor.txt",
                   start: anchor,
                   end: anchor,
-                  newText: "updated_value = 1",
+                  text: "updated_value = 1",
                 },
               }),
             ],

@@ -88,7 +88,7 @@ test("selectors with parameter types find, list and rename one overload", async 
         name: "replace",
         arguments: {
           path: "fixture:declaration:main.cpp#clamp(const Vec&, float, float)#name",
-          newText: "clampVec",
+          text: "clampVec",
         },
       },
     ]);
@@ -157,7 +157,7 @@ test("one overload can be selected and renamed when its declarations have no loc
         name: "replace",
         arguments: {
           path: `fixture:declaration:${declaration}#name`,
-          newText: "upperFloat",
+          text: "upperFloat",
         },
       },
     ]);

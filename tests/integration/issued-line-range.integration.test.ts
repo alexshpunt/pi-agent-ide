@@ -75,7 +75,7 @@ test.each(["delete", "replace", "move"] as const)(
         call("copy", "replace", {
           path: file,
           start: copySlot.trimEnd(),
-          newText: block.trimEnd(),
+          text: block.trimEnd(),
         }),
         call("ambiguous", "delete", { path: file, start: block.trimEnd() }),
         peerWrite(
@@ -84,7 +84,7 @@ test.each(["delete", "replace", "move"] as const)(
         call("edit", tool, {
           path: file,
           ...issued,
-          ...(tool === "replace" ? { newText: "REPLACED" } : {}),
+          ...(tool === "replace" ? { text: "REPLACED" } : {}),
           ...(tool === "move" ? { target: file, targetStart: "int keep_last;" } : {}),
         }),
       ]);

@@ -561,7 +561,7 @@ function transformInsertInput<State extends { readonly input: unknown }>(state: 
       ...state.input,
       anchor: "end",
       before: false,
-      newText: `${KEYS_PREFIX}${typeof state.input.newText === "string" ? state.input.newText : ""}`,
+      text: `${KEYS_PREFIX}${typeof state.input.text === "string" ? state.input.text : ""}`,
     },
   };
 }
@@ -649,7 +649,7 @@ function rememberOutputEnd(
 }
 function terminalInputLabel(tool: TerminalAction, input: Record<string, unknown>): string {
   if (tool === "delete") return "session";
-  const value = tool === "write" ? input.content : input.newText;
+  const value = tool === "write" ? input.content : input.text;
   const label = typeof value === "string" ? value : "";
   return tool === "write" ? `text ${JSON.stringify(label)}` : `keys ${label}`;
 }

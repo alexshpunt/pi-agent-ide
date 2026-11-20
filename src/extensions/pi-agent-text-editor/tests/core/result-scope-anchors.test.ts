@@ -172,7 +172,7 @@ test.each([false, true])(
       path: { id: f.whole },
       start: f.matches[0],
       ...(paired && { end: f.matches[0] }),
-      newText: "RED",
+      text: "RED",
     });
     expect(result.details.effect, text).not.toBe("not-applied");
     expect(await f.content("tokens.txt")).toBe("RED blue\n");
@@ -188,9 +188,7 @@ test.each([
   const f = await tokenFixture();
   const { result, text } = await f.run(tool, {
     path: { id: f.whole },
-    ...(tool.name === "insert"
-      ? { anchor: f.matches[0], newText: "NEW" }
-      : { start: f.matches[0] }),
+    ...(tool.name === "insert" ? { anchor: f.matches[0], text: "NEW" } : { start: f.matches[0] }),
     ...(["copy", "move"].includes(tool.name) && {
       target: "target.txt",
       targetStart: "SLOT",
@@ -220,7 +218,7 @@ test.each(["ONE", "ONE\nextra"])(
     const first = await f.run(replaceMutationTool, {
       path: { id: whole },
       start: { id: matches[0] },
-      newText: firstText,
+      text: firstText,
     });
     expect(first.result.details.effect).not.toBe("not-applied");
     const intermediate = `keep1\n${firstText}\nkeep2\nOLD\nkeep3\n`;
@@ -236,7 +234,7 @@ test.each(["ONE", "ONE\nextra"])(
       { path: { id: whole }, start: outside },
       { path: { id: whole }, start: "keep2" },
     ]) {
-      const refused = await f.run(replaceMutationTool, { ...input, newText: "BAD" });
+      const refused = await f.run(replaceMutationTool, { ...input, text: "BAD" });
       expect(refused.result.details.effect).toBe("not-applied");
       expect(await f.content("tokens.txt")).toBe(intermediate);
     }
@@ -244,7 +242,7 @@ test.each(["ONE", "ONE\nextra"])(
       path: { id: whole },
       start: { id: matches[1] },
       end: { id: matches[1] },
-      newText: "TWO",
+      text: "TWO",
     });
     expect(second.result.details.effect, second.text).not.toBe("not-applied");
     const final = `keep1\n${firstText}\nkeep2\nTWO\nkeep3\n`;
@@ -253,7 +251,7 @@ test.each(["ONE", "ONE\nextra"])(
     const emptyScope = await f.run(replaceMutationTool, {
       path: { id: whole },
       start: "keep2",
-      newText: "BAD",
+      text: "BAD",
     });
     expect(emptyScope.result.details.effect).toBe("not-applied");
     expect(await f.content("tokens.txt")).toBe(final);
@@ -261,11 +259,11 @@ test.each(["ONE", "ONE\nextra"])(
 );
 test("a scope never rescues its stale individual match", async () => {
   const f = await tokenFixture();
-  await f.run(replaceMutationTool, { path: f.matches[0], newText: "RED" });
+  await f.run(replaceMutationTool, { path: f.matches[0], text: "RED" });
   const { result } = await f.run(replaceMutationTool, {
     path: { id: f.whole },
     start: f.matches[0],
-    newText: "BAD",
+    text: "BAD",
   });
   expect(result.details.effect).toBe("not-applied");
   expect(await f.content("tokens.txt")).toBe("RED blue\n");
@@ -280,7 +278,7 @@ test.each(["whole", "whole-anchor", "cross-range", "outside", "incomplete"])(
         start: kind === "whole-anchor" ? f.whole : kind === "outside" ? " " : f.matches[0],
       }),
       ...(kind === "cross-range" && { end: f.matches[1] }),
-      newText: "BAD",
+      text: "BAD",
     });
     expect(result.details.effect).toBe("not-applied");
     expect(await f.content("tokens.txt")).toBe(f.original);
@@ -299,7 +297,7 @@ test.each([insertMutationTool, replaceMutationTool, deleteMutationTool])(
         const { result } = await f.run(tool, {
           path: objectValues ? [{ id: first }, { id: second }] : [first, second],
           ...(tool.name === "insert" ? { anchor: selector } : { start: selector, end: selector }),
-          ...(tool.name === "delete" ? {} : { newText: "CHANGED\n" }),
+          ...(tool.name === "delete" ? {} : { text: "CHANGED\n" }),
         });
         expect(result.details.effect).toBe("not-applied");
         expect(await f.content("one.txt")).toBe(original);
@@ -319,7 +317,7 @@ test.each([
   const last = await f.lines("one.txt", 3, 3);
   const { result } = await f.run(tool, {
     path: [first, last],
-    ...(tool.name === "delete" ? {} : { newText: "NEW\n" }),
+    ...(tool.name === "delete" ? {} : { text: "NEW\n" }),
   });
   expect(result.details.effect).not.toBe("not-applied");
   expect(await f.content("one.txt")).toBe(expected);
@@ -332,7 +330,7 @@ test("a single-element result list still scopes its selector", async () => {
   const { result } = await f.run(insertMutationTool, {
     path: [scope],
     anchor: lineAnchor("one.txt", original, 2),
-    newText: "NEW\n",
+    text: "NEW\n",
   });
   expect(result.details.effect).not.toBe("not-applied");
   expect(await f.content("one.txt")).toBe("first\nmiddle\nNEW\nlast\n");
@@ -355,7 +353,7 @@ test("start and end anchors inside a result replace the span between them", asyn
     path: read,
     start: lineAnchor("task.txt", content, 2),
     end: lineAnchor("task.txt", content, 3),
-    newText: "NEW\n",
+    text: "NEW\n",
   });
   expect(await f.content("task.txt")).toBe("keep\nNEW\ngamma\nlast\n");
 });
@@ -382,7 +380,7 @@ test("a result stays a scope after an edit changed lines it selects", async () =
 test("exact text resolves inside the result even when it also occurs elsewhere", async () => {
   const f = await fixture({ "task.txt": "value = 1\nvalue = 2\nvalue = 3\n" });
   const read = await f.lines("task.txt", 2, 2);
-  await f.run(replaceMutationTool, { path: read, start: "value", newText: "other" });
+  await f.run(replaceMutationTool, { path: read, start: "value", text: "other" });
   expect(await f.content("task.txt")).toBe("value = 1\nother = 2\nvalue = 3\n");
 });
 
@@ -399,7 +397,7 @@ test.each([
     const { result } = await f.run(replaceMutationTool, {
       path: read,
       start: query,
-      newText: "BAD",
+      text: "BAD",
     });
     expect(result.details.effect).toBe("not-applied");
     expect(result.details.results?.[0]?.errors[0]?.code).toBe("outside-scope");
@@ -416,7 +414,7 @@ test.each(["absent", "\uFEFF"])(
     const { result } = await f.run(replaceMutationTool, {
       path: read,
       start: query,
-      newText: "BAD",
+      text: "BAD",
     });
     expect(result.details.effect).toBe("not-applied");
     expect(result.details.results?.[0]?.errors[0]?.code).toBe("missing");
@@ -430,10 +428,10 @@ test("an anchor outside the result fails and changes nothing", async () => {
   const outside = await f.run(replaceMutationTool, {
     path: read,
     start: lineAnchor("task.txt", content, 3),
-    newText: "BAD",
+    text: "BAD",
   });
   expect(outside.result.details.effect).toBe("not-applied");
-  const exact = await f.run(replaceMutationTool, { path: read, start: "last", newText: "BAD" });
+  const exact = await f.run(replaceMutationTool, { path: read, start: "last", text: "BAD" });
   expect(exact.result.details.effect).toBe("not-applied");
   expect(await f.content("task.txt")).toBe(content);
 });
@@ -468,7 +466,7 @@ test("insert places text at an anchor inside the result", async () => {
   const content = "one\ntwo\nthree\n";
   const f = await fixture({ "task.txt": content });
   const read = await f.lines("task.txt", 1, 3);
-  await f.run(insertMutationTool, { path: read, anchor: "two", newText: "\nADDED" });
+  await f.run(insertMutationTool, { path: read, anchor: "two", text: "\nADDED" });
   expect(await f.content("task.txt")).toBe("one\ntwo\nADDED\nthree\n");
 });
 
@@ -488,7 +486,7 @@ test("a result of several files edits the one file that holds the anchor", async
     };
   };
   const read = f.store.register([await whole(sentence), await whole(other)], cwd);
-  await f.run(replaceMutationTool, { path: read, start: "START", end: "END", newText: "NEW" });
+  await f.run(replaceMutationTool, { path: read, start: "START", end: "END", text: "NEW" });
   expect(await f.content("sentence.txt")).toBe("left NEW right\n");
   expect(await f.content("other.txt")).toBe("nothing here\n");
 });
@@ -509,7 +507,7 @@ test("text the selections of two files of a result both hold is ambiguous", asyn
   const { result } = await f.run(replaceMutationTool, {
     path: read,
     start: "KEY",
-    newText: "X",
+    text: "X",
   });
   expect(result.details.effect).toBe("not-applied");
   expect(await f.content("one.txt")).toBe("KEY one\n");
@@ -566,7 +564,7 @@ test("a selector given as a value with an id selects that value's text", async (
   const { result, text } = await f.run(replaceMutationTool, {
     path: "task.txt",
     start: { id: match, text: "OLD" },
-    newText: "NEW",
+    text: "NEW",
   });
   expect(result.details.effect, text).not.toBe("not-applied");
   expect(await f.content("task.txt")).toBe("keep\nNEW\nlast\n");

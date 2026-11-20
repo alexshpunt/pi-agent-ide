@@ -154,18 +154,18 @@ check(last.text.includes('"remote café"'),"JSONL output window was not transfor
 for(const path of ["identity.json",root+"/identity.json"]) {
  const identity=await tools.read({path,views:["jq:."]});
  check(identity.text.includes("42"),"Identity jq output changed");
- await rejected(()=>tools.replace({path:identity,newText:"BAD"}),"jq edit authority");
+ await rejected(()=>tools.replace({path:identity,text:"BAD"}),"jq edit authority");
 }
 const environment=await tools.read({path:root+"/records.jsonl",views:["jq:env | keys"],limit:10});
 check(!environment.text.includes("SSH_AUTH_SOCK") && !environment.text.includes('"HOME"'),"jq inherited account environment");
 const picture=await tools.read({path:root+"/picture.data"});
 const pdf=await tools.read({path:root+"/document.data"});
 check(pdf.text.includes("Owned second page 43"),"PDF lost second page");
-await rejected(()=>tools.replace({path:pdf,newText:"BAD"}),"readonly edit authority");
+await rejected(()=>tools.replace({path:pdf,text:"BAD"}),"readonly edit authority");
 // Byte values carry no id, so they are not source parameters either.
-for(const result of [raw,zero]) await invalid(()=>tools.replace({path:result,newText:"BAD"}),"byte edit authority");
+for(const result of [raw,zero]) await invalid(()=>tools.replace({path:result,text:"BAD"}),"byte edit authority");
 check(picture?.type === "image","SSH image Read lost its image block");
-await invalid(()=>tools.replace({path:picture,newText:"BAD"}),"image edit authority");
+await invalid(()=>tools.replace({path:picture,text:"BAD"}),"image edit authority");
 for (const request of [
   {path:root+"/denied.txt"},
   {path:root+"/broken.jsonl",views:["jq:.id"]},

@@ -41,7 +41,7 @@ export interface TextAnchorSpan {
   readonly selection: boolean;
   /**
    * For a span selected by literal text: the line ending that line breaks in text written over
-   * the span take, as Pi's edit writes `newText`. Undefined writes text exactly as sent.
+   * the span take, as Pi's edit writes `newText`. Undefined writes text as sent.
    */
   readonly lineEnding?: string;
 }

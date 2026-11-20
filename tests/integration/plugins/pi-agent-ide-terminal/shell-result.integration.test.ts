@@ -167,10 +167,10 @@ test.runIf(process.platform !== "win32")(
         try {
           // Terminal input selects no text, so a script gets null rather than a file target.
           if ((await tools.write({path: source, content: "hello"})) !== null) throw Error("Input selected text");
-          if ((await tools.insert({path: source, newText: "Enter"})) !== null) throw Error("Keys selected text");
+          if ((await tools.insert({path: source, text: "Enter"})) !== null) throw Error("Keys selected text");
           const observed = await tools.read({path: source});
           if (!observed.text.includes("resource:hello")) throw Error("Input did not reach the live session");
-          const refused = (await tools.replace({path: observed, start: "hello", newText: "not a file"})) === null;
+          const refused = (await tools.replace({path: observed, start: "hello", text: "not a file"})) === null;
           if (!refused) throw Error("Terminal input granted file edit authority");
           text(observed.text);
         } finally {

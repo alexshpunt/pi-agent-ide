@@ -16,7 +16,7 @@ if (calls && typeof calls !== "string") {
   for (const call of calls.matches) {
     const [options] = call.captures.OPTIONS ?? [];
     if (options?.id) {
-      await tools.replace({ path: options.id, newText: `{ ...${options.text}, retry: true }` });
+      await tools.replace({ path: options.id, text: `{ ...${options.text}, retry: true }` });
     }
   }
 }

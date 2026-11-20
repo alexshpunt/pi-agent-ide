@@ -57,11 +57,11 @@ for (const mode of ["direct", "codemode"]) {
     const searchId = "RESULT#22222222-bbbb-4bbb-8bbb-222222222222";
     const args = [
       { path: "task.txt", views: ["anchors"] },
-      { path: "task.txt", start: "D07BBXQ", newText: "NEW" },
+      { path: "task.txt", start: "D07BBXQ", text: "NEW" },
       { path: "task.txt", anchor: "D07BBXQ" },
       { path: "task.txt", start: "D07BBXQ" },
       { path: "task.txt", query: "D07BBXQ" },
-      { path: { id: searchId }, newText: "TOKEN" },
+      { path: { id: searchId }, text: "TOKEN" },
     ];
     const receipts = { 0: "D07BBXQ|OLD", 4: `<uuid>${searchId.slice(7)}</uuid>` };
     // Search may overlap the second refusal, both refusals, or precede the edit.
@@ -79,9 +79,9 @@ for (const mode of ["direct", "codemode"]) {
   void test(`independent Insert and Copy recoveries may overlap (${mode})`, () => {
     const fixture = task("missing-edit-selector-recovery");
     const args = [
-      { path: "task.txt", newText: "added" },
+      { path: "task.txt", text: "added" },
       { path: "task.txt" },
-      { path: "task.txt", anchor: "OLD", newText: "added" },
+      { path: "task.txt", anchor: "OLD", text: "added" },
       { path: "task.txt", start: "OLD", target: "target.txt" },
       { path: "target.txt" },
       { path: "task.txt", start: "OLD", target: "target.txt", targetStart: "DEST" },
@@ -100,20 +100,20 @@ for (const mode of ["direct", "codemode"]) {
     const args = [
       { adapter: "debugpy", program: "task.py" },
       { path: source, views: ["anchors"] },
-      { path: source, newText: "breakpoint", anchor: "D07BBXQ" },
+      { path: source, text: "breakpoint", anchor: "D07BBXQ" },
       { path: source, views: ["breakpoints"] },
-      { path: resource, newText: "start" },
+      { path: resource, text: "start" },
       { path: resource },
-      { path: resource, newText: "step into" },
+      { path: resource, text: "step into" },
       { path: resource },
-      { path: resource, newText: "step over" },
+      { path: resource, text: "step over" },
       { path: resource },
-      { path: resource, newText: "evaluate result" },
-      { path: resource, newText: "step out" },
+      { path: resource, text: "evaluate result" },
+      { path: resource, text: "step out" },
       { path: resource },
       { path: `${resource}/breakpoint/one` },
       { path: resource },
-      { path: resource, newText: "continue" },
+      { path: resource, text: "continue" },
       { path: resource },
       { path: resource },
     ];
@@ -164,7 +164,7 @@ void test("a standalone post-edit Read does not wait for unrelated refusals", ()
     {},
     { path: "memory://demo/note", offset: 1, limit: 1 },
     { path: { id: readId }, query: "alpha" },
-    { path: { id: searchId }, newText: "changed" },
+    { path: { id: searchId }, text: "changed" },
     { path: "local.txt" },
     { path: "memory://other/note" },
     { path: "memory://demo/note", target: "local.txt" },

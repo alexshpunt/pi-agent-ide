@@ -34,7 +34,7 @@ test("literal control escapes refuse without mutation, recover by issued anchors
       {
         id: "refuse",
         name: "replace",
-        arguments: { path: "fixture.txt", start: refused, newText: "BAD" },
+        arguments: { path: "fixture.txt", start: refused, text: "BAD" },
       },
       { id: "after-refusal", name: "read", arguments: { path: "fixture.txt" } },
       { id: "snapshot", name: "bash", arguments: { command: "cp fixture.txt after-refusal.bin" } },
@@ -42,7 +42,7 @@ test("literal control escapes refuse without mutation, recover by issued anchors
       {
         id: "blocked",
         name: "replace",
-        arguments: { path: "fixture.txt", start: actual, newText: "BAD" },
+        arguments: { path: "fixture.txt", start: actual, text: "BAD" },
       },
       {
         id: "recover",
@@ -51,13 +51,13 @@ test("literal control escapes refuse without mutation, recover by issued anchors
           path: "fixture.txt",
           start: "$issued-anchor:refuse:2",
           end: "$issued-anchor:refuse:3",
-          newText: "recovered\n",
+          text: "recovered\n",
         },
       },
       {
         id: "literal",
         name: "replace",
-        arguments: { path: "fixture.txt", start: literal, newText: "literal-edited\n" },
+        arguments: { path: "fixture.txt", start: literal, text: "literal-edited\n" },
       },
       {
         id: "actual",
@@ -65,7 +65,7 @@ test("literal control escapes refuse without mutation, recover by issued anchors
         arguments: {
           path: "fixture.txt",
           start: "PREFIX\nrecovered",
-          newText: "character-edited\n",
+          text: "character-edited\n",
         },
       },
     ];

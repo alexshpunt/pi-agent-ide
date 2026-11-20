@@ -95,7 +95,7 @@ test("a symbol rename leaves names the compiler corrected from a misspelling as 
         name: "replace",
         arguments: {
           path: "fixture:declaration:main.cpp#call_normalize_routine#name",
-          newText: "renamed_routine",
+          text: "renamed_routine",
         },
       },
     ]);

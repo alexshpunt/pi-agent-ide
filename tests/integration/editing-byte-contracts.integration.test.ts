@@ -104,7 +104,7 @@ test.each(["direct", "codemode"] as const)(
         args: {
           path: entry.file,
           start: entry.start,
-          ...(entry.text === undefined ? {} : { newText: entry.text }),
+          ...(entry.text === undefined ? {} : { text: entry.text }),
         },
       }));
       const conversation =
@@ -139,9 +139,9 @@ test.each(["all", "allSettled"] as const)(
           ? 'for (const result of results) { if (result.status !== "fulfilled") throw result.reason; text(result.value); }'
           : "for (const result of results) text(result);";
       const code = `const results = await Promise.${method}([
-        tools.insert({path:"insert.txt",anchor:"first\\n",newText:"FIRST\\n"}),
-        tools.insert({path:"./insert.txt",anchor:"middle\\n",newText:"MIDDLE\\n"}),
-        tools.insert({path:"insert.txt",anchor:"last\\n",newText:"LAST\\n"}),
+        tools.insert({path:"insert.txt",anchor:"first\\n",text:"FIRST\\n"}),
+        tools.insert({path:"./insert.txt",anchor:"middle\\n",text:"MIDDLE\\n"}),
+        tools.insert({path:"insert.txt",anchor:"last\\n",text:"LAST\\n"}),
         tools.delete({path:"delete.txt",start:"first\\n"}),
         tools.delete({path:"./delete.txt",start:"middle\\n"}),
         tools.delete({path:"delete.txt",start:"last\\n"})
@@ -187,7 +187,7 @@ test.each(["direct", "codemode"] as const)(
     await withTempWorkspace(async (cwd) => {
       const initial = "alpha\r\nbeta\r\n";
       await writeFile(path.join(cwd, "undo.txt"), initial);
-      const edit = { path: "undo.txt", start: "beta", newText: "changed" };
+      const edit = { path: "undo.txt", start: "beta", text: "changed" };
       const undo = { file: "undo.txt", change: "last" };
       const result = await run(
         cwd,
