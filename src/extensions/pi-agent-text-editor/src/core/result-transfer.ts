@@ -6,7 +6,7 @@ import type {
 } from "#src/api/mutation-tool.ts";
 import { TextChangeDocument, type TextChange, type TextSpan } from "./text-change-engine.ts";
 import {
-  anchorSpanRange,
+  resolveAnchorSpanRange,
   insertionAfterAnchor,
   selectionRange,
   selectionSpan,
@@ -153,12 +153,12 @@ export async function prepareResultTransfer(
                       to: context.sourceDocument.length,
                     }),
                   }
-                : await anchorSpanRange(
+                : await resolveAnchorSpanRange(
                     context,
                     await context.resolveAnchors("start"),
-                    input.end === undefined ? undefined : await context.resolveAnchors("end"),
                     "start",
                     "end",
+                    input.end !== undefined,
                   ),
             ]
           : spans(current("path"));
@@ -196,12 +196,12 @@ export async function prepareResultTransfer(
             change,
           });
         } else {
-          const target = await anchorSpanRange(
+          const target = await resolveAnchorSpanRange(
             context,
             starts,
-            await context.resolveAnchors("targetEnd"),
             "targetStart",
             "targetEnd",
+            true,
           );
           planned.push({
             target,

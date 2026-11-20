@@ -376,6 +376,7 @@ export type ResolveResourceTextAnchor = (
   kinds?: readonly string[],
   /** Ranges of the source the anchor is limited to; see TextAnchorResolverContext.scope. */
   scope?: TextAnchorResolverContext["scope"],
+  endAfter?: number,
 ) => Promise<TextAnchor>;
 
 /** Input for resolving an anchor value against already-available text content. */
@@ -1386,7 +1387,7 @@ async function previewTextResources(
     }
 
     const texts = new Map([...prepared].map(([source, item]) => [source, item.before.content]));
-    const mutation = await operation(texts, (source, value, kinds, scope) => {
+    const mutation = await operation(texts, (source, value, kinds, scope, endAfter) => {
       const item = prepared.get(source);
 
       if (item === undefined) {
@@ -1395,7 +1396,11 @@ async function previewTextResources(
 
       return anchorResolvers.resolve(
         value,
-        scope === undefined ? item.anchorContext : { ...item.anchorContext, scope },
+        {
+          ...item.anchorContext,
+          ...(scope === undefined ? {} : { scope }),
+          ...(endAfter === undefined ? {} : { endAfter }),
+        },
         kinds === undefined ? undefined : new Set(kinds),
       );
     });
@@ -1505,7 +1510,7 @@ async function editTextResources<Result>(
   }
 
   const texts = new Map([...prepared].map(([source, item]) => [source, item.before.content]));
-  const mutation = await operation(texts, (source, value, kinds, scope) => {
+  const mutation = await operation(texts, (source, value, kinds, scope, endAfter) => {
     const item = prepared.get(source);
 
     if (item === undefined) {
@@ -1514,7 +1519,11 @@ async function editTextResources<Result>(
 
     return anchorResolvers.resolve(
       value,
-      scope === undefined ? item.anchorContext : { ...item.anchorContext, scope },
+      {
+        ...item.anchorContext,
+        ...(scope === undefined ? {} : { scope }),
+        ...(endAfter === undefined ? {} : { endAfter }),
+      },
       kinds === undefined ? undefined : new Set(kinds),
     );
   });

@@ -32,6 +32,13 @@ export interface TextMutation {
   readonly afterWrite?: () => void | Promise<void>;
 }
 
+/** The exclusive end of a unique first selector, in source offsets. */
+export interface PairedAnchorStart {
+  readonly source: string;
+  readonly offset: number;
+  readonly field: string;
+}
+
 export interface TextMutationContext {
   readonly cwd: string;
   readonly signal?: AbortSignal;
@@ -44,7 +51,10 @@ export interface TextMutationContext {
   targetDocument(field: string): TextChangeDocument;
   sourceFor(field: string): string;
   documentFor(source: string): TextChangeDocument;
-  resolveAnchors(field: string): Promise<ReadonlyMap<string, TextAnchor>>;
+  resolveAnchors(
+    field: string,
+    start?: PairedAnchorStart,
+  ): Promise<ReadonlyMap<string, TextAnchor>>;
   resolveAnchor(field: string): Promise<TextAnchor>;
 }
 

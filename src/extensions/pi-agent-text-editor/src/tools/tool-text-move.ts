@@ -7,7 +7,7 @@ import {
 } from "#src/tools/text-tool-schema-properties.ts";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
-import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
+import { resolveAnchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 import type { TextChange } from "#src/core/text-change-engine.ts";
@@ -68,8 +68,13 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
   pair: ["start", "end"],
   mutate: async (context, parameters: MoveParameters) => {
     const starts = await context.resolveAnchors("start");
-    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const sourceSpan = await anchorSpanRange(context, starts, ends, "start", "end");
+    const sourceSpan = await resolveAnchorSpanRange(
+      context,
+      starts,
+      "start",
+      "end",
+      parameters.end !== undefined,
+    );
     const copied = context.documentFor(sourceSpan.source).transfer(sourceSpan);
     const deletion = {
       ...context.documentFor(sourceSpan.source).delete(sourceSpan),
@@ -82,13 +87,12 @@ export const moveMutationTool: TextMutationToolRegistration<typeof moveSchema> =
     if (parameters.targetEnd === undefined) {
       [target, targetChange] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
     } else {
-      const targetEnds = await context.resolveAnchors("targetEnd");
-      const targetSpan = await anchorSpanRange(
+      const targetSpan = await resolveAnchorSpanRange(
         context,
         targetStarts,
-        targetEnds,
         "targetStart",
         "targetEnd",
+        true,
       );
       target = targetSpan.source;
       targetChange = context.documentFor(target).replace(targetSpan, copied);

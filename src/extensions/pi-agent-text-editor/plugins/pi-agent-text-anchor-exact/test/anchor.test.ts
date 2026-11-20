@@ -5,12 +5,13 @@ import { TextSelectionAnchor } from "pi-agent-text-editor/api/text-selection-anc
 import { textLineAnchors } from "pi-agent-text";
 import { findExactTextMatches, resolveExactTextAnchor } from "#src/anchor.ts";
 
-function resolve(value: string, content: string) {
+function resolve(value: string, content: string, endAfter?: number) {
   return resolveExactTextAnchor(value, {
     source: "fixture.txt",
     content,
     lines: content.split("\n"),
     cwd: "/project",
+    ...(endAfter === undefined ? {} : { endAfter }),
   });
 }
 
@@ -273,12 +274,14 @@ test("ambiguous displayed text lists the mapped source candidates", () => {
     kind: "rejected",
     rejection: { code: "ambiguous" },
   });
-  expect(findExactTextMatches("|alpha", context, 10)).toEqual({
+  const matches = [
+    { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 5 } },
+    { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
+  ];
+  expect(findExactTextMatches("|alpha", context, 1)).toEqual({
     total: 2,
-    ranges: [
-      { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 5 } },
-      { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
-    ],
+    ranges: matches.slice(0, 1),
+    allMatches: matches,
   });
 });
 
@@ -301,4 +304,53 @@ test("a copied missing-newline marker never makes the selected span include anot
 
 test("allows unique whitespace-only exact text", () => {
   expect(resolve("\t ", "alpha\t bravo")).toMatchObject({ kind: "resolved" });
+});
+
+test.each([
+  {
+    content: "end\r\nmark\r\nSTART\r\nend\r\nmark\r\nend\r\nmark",
+    value: "end\nmark",
+    after: 16,
+    line: 4,
+    endLine: 5,
+  },
+  {
+    content: "end mark\nSTART\nend mark\nend mark",
+    value: "end mark",
+    after: 14,
+    line: 3,
+    endLine: 3,
+  },
+])(
+  "selects the first eligible tolerant match for $value",
+  ({ content, value, after, line, endLine }) => {
+    expect(rangesOf(resolve(value, content, after))).toEqual([
+      {
+        start: { lineNumber: line, column: 0 },
+        end: { lineNumber: endLine, column: endLine === line ? 8 : 4 },
+      },
+    ]);
+  },
+);
+
+test("an anchored-view end skips earlier copies of the same displayed fragment", () => {
+  const content = "END line\nSTART\nEND line\nEND line\n";
+  // A trailing pipe plus source text is enough when the copy starts at the pipe.
+  expect(rangesOf(resolve("|END", content, 14))).toEqual([
+    { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 3 } },
+  ]);
+});
+
+test("earlier exact matches are not replaced by a fuzzy match after the start", () => {
+  expect(resolve("end mark", "end mark\nend mark\nSTART\nend mark", 23)).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "before-start" },
+  });
+});
+
+test("an ambiguous first selector is still refused", () => {
+  expect(resolve("START", "START first\nSTART second\nEND")).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "ambiguous" },
+  });
 });

@@ -63,6 +63,8 @@ export interface TextAnchorResolverContext {
    * ends where a line ends also covers that line's break, so whole-line text inside it counts.
    */
   readonly scope?: readonly TextAnchorRecoveryCandidateRange[];
+  /** Exclusive end of a paired start in UTF-16 source offsets. Used to disambiguate literals. */
+  readonly endAfter?: number;
 }
 
 /** Legacy line window used by anchor inspection. */
@@ -74,7 +76,7 @@ export interface TextAnchorRecoveryRange {
 /** Why an anchor could not resolve safely. */
 export interface TextAnchorRejection {
   /** outside-scope means the selector matches the source, but not within the requested ranges. */
-  readonly code: "invalid" | "stale" | "missing" | "ambiguous" | "outside-scope";
+  readonly code: "invalid" | "stale" | "missing" | "ambiguous" | "outside-scope" | "before-start";
   readonly reason: string;
   readonly contextRange?: TextAnchorRecoveryRange;
 }
@@ -235,6 +237,7 @@ const rejectionSchema = Type.Object({
     Type.Literal("stale"),
     Type.Literal("missing"),
     Type.Literal("outside-scope"),
+    Type.Literal("before-start"),
     Type.Literal("ambiguous"),
   ]),
   reason: Type.String(),

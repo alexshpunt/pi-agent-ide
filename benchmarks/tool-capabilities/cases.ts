@@ -1970,7 +1970,7 @@ add(
 add(
   "exact-range-replace",
   ["edit.replace-exact-range", "edit.leading-newline-range"],
-  'Use Replace with paired literal endpoints and these exact inputs: {"path":"sentence.txt","start":"START","end":"END","text":"NEW"} and {"path":"credit.txt","start":"\\n\\nBased on","end":"(credit).","text":""}. The first call removes both endpoint fragments along with the text between them; its final line must be left NEW right, followed by the existing newline. In the second input, decode each \\n as one newline character. Remove only that suffix, retaining the entire preceding paragraph and its punctuation. Do not rewrite either whole file or use line anchors.',
+  'Use Replace with paired literal endpoints and these exact inputs: {"path":"sentence.txt","start":"START","end":"END","text":"NEW"} and {"path":"credit.txt","start":"\\n\\nBased on","end":"(credit).","text":""}. The first call removes both endpoint fragments along with the text between them; its final line must be left NEW right END, with the earlier END line and both line breaks unchanged. In the second input, decode each \\n as one newline character. Remove only that suffix, retaining the entire preceding paragraph and its punctuation. Do not rewrite either whole file or use line anchors.',
   [
     {
       tool: "replace",
@@ -1988,11 +1988,11 @@ add(
   ],
   {
     files: {
-      "sentence.txt": "left START old words END right\n",
+      "sentence.txt": "END before\nleft START old words END right END\n",
       "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.\n\nBased on [source](credit).",
     },
     expected: {
-      "sentence.txt": "left NEW right\n",
+      "sentence.txt": "END before\nleft NEW right END\n",
       "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.",
     },
   },

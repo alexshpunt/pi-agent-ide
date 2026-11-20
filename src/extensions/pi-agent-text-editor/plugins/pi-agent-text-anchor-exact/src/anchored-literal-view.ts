@@ -2,7 +2,7 @@ import { createTextDocument, documentLineAnchors } from "pi-agent-text";
 import { NO_FINAL_LINE_BREAK } from "pi-agent-text-editor/api/mutation-result";
 import { normalizeToLF, splitBom } from "pi-agent-text-editor/api/pi-edit-text";
 
-import type { LiteralMatcher, LiteralSpan } from "./literal-match.ts";
+import type { BoundLiteralMatcher, LiteralMatcher, LiteralSpan } from "./literal-match.ts";
 
 interface View {
   readonly text: string;
@@ -19,46 +19,42 @@ export class AnchoredLiteralView {
     private readonly content: string,
   ) {}
 
-  find(
-    value: string,
-    matchers: readonly LiteralMatcher[],
-    accept: (span: LiteralSpan) => boolean,
-    limit: number,
-  ): LiteralSpan[] {
+  *matchers(value: string, matchers: readonly LiteralMatcher[]): Iterable<BoundLiteralMatcher> {
     const withoutLastBreak = value.replace(/\r?\n$/u, "");
     const marker = `\n${NO_FINAL_LINE_BREAK}`;
     const hasMarker = withoutLastBreak.endsWith(marker);
-    if (hasMarker && this.content.endsWith("\n")) return [];
+    if (hasMarker && this.content.endsWith("\n")) return;
     const beforeMarker = withoutLastBreak.slice(0, -marker.length);
     const query = hasMarker ? beforeMarker.replace(/\r$/u, "") : value;
     // A copied slice must cross a pipe, or stop partway through a later row's anchor.
-    if (!query.includes("|") && !/\n[0-9A-HJKMNP-TV-Z]{1,7}\s*$/u.test(query)) return [];
+    if (!query.includes("|") && !/\n[0-9A-HJKMNP-TV-Z]{1,7}\s*$/u.test(query)) return;
     const keepBom = splitBom(query).text.includes("\uFEFF");
     const view = keepBom
       ? (this.viewWithBom ??= createView(this.source, this.content, true))
       : (this.view ??= createView(this.source, this.content, false));
     const queryLines = normalizeToLF(splitBom(query).text).split("\n");
     for (const matcher of matchers) {
-      const spans: LiteralSpan[] = [];
-      matcher.find(
-        view.text,
-        query,
-        (span) => {
-          const mapped = view.toSource(span, queryLines);
-          if (
-            mapped === undefined ||
-            (hasMarker && mapped.to !== this.content.length) ||
-            !accept(mapped)
-          )
-            return false;
-          spans.push(mapped);
-          return true;
-        },
-        limit,
-      );
-      if (spans.length > 0) return spans;
+      yield (accept, limit) => {
+        const spans: LiteralSpan[] = [];
+        matcher.find(
+          view.text,
+          query,
+          (span) => {
+            const mapped = view.toSource(span, queryLines);
+            if (
+              mapped === undefined ||
+              (hasMarker && mapped.to !== this.content.length) ||
+              !accept(mapped)
+            )
+              return false;
+            spans.push(mapped);
+            return true;
+          },
+          limit,
+        );
+        return spans;
+      };
     }
-    return [];
   }
 }
 

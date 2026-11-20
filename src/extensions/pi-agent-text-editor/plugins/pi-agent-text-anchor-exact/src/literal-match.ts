@@ -112,6 +112,7 @@ const LITERAL_MATCHERS: readonly LiteralMatcher[] = [exactMatcher, lineEndingMat
 export type LiteralMatch =
   | { readonly kind: "unique"; readonly span: LiteralSpan }
   | { readonly kind: "ambiguous" }
+  | { readonly kind: "before-start" }
   | { readonly kind: "missing" };
 
 /** Finds the one source span the literal selects: the first phase that finds it decides. */
@@ -120,10 +121,28 @@ export function matchLiteral(
   value: string,
   anchored: AnchoredLiteralView,
   accept: (span: LiteralSpan) => boolean = () => true,
+  endAfter?: number,
 ): LiteralMatch {
-  const [first, second] = firstMatches(content, value, anchored, accept, 2);
-  if (second !== undefined) return { kind: "ambiguous" };
-  if (first !== undefined) return { kind: "unique", span: first };
+  for (const find of matchers(content, value, anchored)) {
+    if (endAfter === undefined) {
+      const [first, second] = find(accept, 2);
+      if (second !== undefined) return { kind: "ambiguous" };
+      if (first !== undefined) return { kind: "unique", span: first };
+      continue;
+    }
+    const earlier: LiteralSpan[] = [];
+    const [following] = find((span) => {
+      if (!accept(span)) return false;
+      if (span.from >= endAfter) return true;
+      if (earlier.length < 2) earlier.push(span);
+      return false;
+    }, 1);
+    if (following !== undefined) return { kind: "unique", span: following };
+    // Do not advance to a more tolerant phase if this one already matched.
+    const [first, second] = earlier;
+    if (second !== undefined) return { kind: "before-start" };
+    if (first !== undefined) return { kind: "unique", span: first };
+  }
   return { kind: "missing" };
 }
 
@@ -134,22 +153,28 @@ export function literalCandidates(
   anchored: AnchoredLiteralView,
   accept: (span: LiteralSpan) => boolean = () => true,
 ): readonly LiteralSpan[] {
-  return firstMatches(content, value, anchored, accept, Number.MAX_SAFE_INTEGER);
+  for (const find of matchers(content, value, anchored)) {
+    const spans = find(accept, Number.MAX_SAFE_INTEGER);
+    if (spans.length > 0) return spans;
+  }
+  return [];
 }
 
-function firstMatches(
+export type BoundLiteralMatcher = (
+  accept: (span: LiteralSpan) => boolean,
+  limit: number,
+) => LiteralSpan[];
+
+function* matchers(
   content: string,
   value: string,
   anchored: AnchoredLiteralView,
-  accept: (span: LiteralSpan) => boolean,
-  limit: number,
-): LiteralSpan[] {
-  if (value.length === 0) return [];
+): Iterable<BoundLiteralMatcher> {
+  if (value.length === 0) return;
   for (const matcher of LITERAL_MATCHERS) {
-    const spans = matcher.find(content, value, accept, limit);
-    if (spans.length > 0) return spans;
+    yield (accept, limit) => matcher.find(content, value, accept, limit);
   }
-  return anchored.find(value, LITERAL_MATCHERS, accept, limit);
+  yield* anchored.matchers(value, LITERAL_MATCHERS);
 }
 
 /** Overlapping occurrences of `query` in `text`, mapped to source spans and filtered. */

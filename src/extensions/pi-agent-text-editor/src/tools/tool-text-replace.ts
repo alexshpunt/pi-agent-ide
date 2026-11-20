@@ -8,7 +8,11 @@ import { refuseEndOfFileMarker } from "#src/tools/display-marker.ts";
 import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.ts";
 
 import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
-import { anchorSpanRange, selectionChanges, textSelections } from "#src/tools/text-selection.ts";
+import {
+  resolveAnchorSpanRange,
+  selectionChanges,
+  textSelections,
+} from "#src/tools/text-selection.ts";
 
 import {
   TextMutationInputError,
@@ -97,8 +101,13 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
       };
     }
 
-    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const span = await anchorSpanRange(context, starts, ends, "start", "end");
+    const span = await resolveAnchorSpanRange(
+      context,
+      starts,
+      "start",
+      "end",
+      parameters.end !== undefined,
+    );
     const change = context.documentFor(span.source).replace(span, parameters.text);
     refuseIdenticalReplacement(context, [{ source: span.source, ...change }]);
     return {
