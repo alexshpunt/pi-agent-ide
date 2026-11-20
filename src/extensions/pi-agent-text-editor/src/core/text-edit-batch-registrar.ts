@@ -136,7 +136,14 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
         arguments: {
           ...withoutEmptyOptionalAnchors(
             registration.anchors,
-            normalizeStructuredArguments(rawCall.arguments, registration.parameters),
+            normalizeStructuredArguments(rawCall.arguments, registration.parameters, {
+              cwd: context.cwd,
+              sourceFields: [
+                registration.source.field,
+                ...(registration.source.targets ?? []).map((target) => target.field),
+              ],
+              resolveSource: (value) => resultTargets.source(value, context.cwd, true),
+            }),
           ),
         },
       };

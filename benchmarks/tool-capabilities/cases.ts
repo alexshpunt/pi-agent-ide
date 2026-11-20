@@ -4356,7 +4356,7 @@ add(
 add(
   "json-structured-arguments",
   ["compose.json-text-structured-arguments"],
-  'Pass structured arguments as JSON text strings, not native arrays or objects. Read a.txt and b.txt together using path equal to the string ["a.txt","b.txt"]. Search those same two files for MARKER with that JSON-text path list. Then use diff with before and after equal to JSON-text objects {"path":"a.txt"} and {"path":"b.txt"}; report the added marker. Finally diff again with JSON-text objects {"path":"a.txt","limit":0} and {"path":"b.txt","limit":0}; this must show no file lines. Do not edit files.',
+  'Pass source lists as JSON text strings. Read a.txt and b.txt together using path equal to the string ["a.txt","b.txt"]. Search those same two files for MARKER with that JSON-text path list. Then use diff with native before and after objects {"path":"a.txt"} and {"path":"b.txt"}; report the added marker. Finally diff again with native objects {"path":"a.txt","limit":0} and {"path":"b.txt","limit":0}; this must show no file lines. Read a.txt separately by its path, then reread that completed result by passing path as the JSON text string of an object containing its actual issued id. Obtain the id from the successful Read; do not invent it. Do not edit files.',
   [
     { tool: "read", args: { path: ["a.txt", "b.txt"] }, contains: "OLD-MARKER" },
     {
@@ -4374,8 +4374,63 @@ add(
       args: { before: { path: "a.txt", limit: 0 }, after: { path: "b.txt", limit: 0 } },
       excludes: "MARKER",
     },
+    { tool: "read", args: { path: "a.txt" }, contains: "OLD-MARKER" },
+    { tool: "read", reuse: reuse(4), contains: "OLD-MARKER" },
   ],
   { files: { "a.txt": "OLD-MARKER\n", "b.txt": "NEW-MARKER\n" }, answer: "NEW-MARKER" },
+);
+const literalJsonPath = '["a.txt","b.txt"]';
+const legacyJsonSelector = '{"id":"checkout-5","feature":"legacyCheckout","retries":3}';
+const stableJsonSelector = legacyJsonSelector.replace("legacyCheckout", "stableCheckout");
+const jsonSelectorDocument = `[\n${legacyJsonSelector},\n{"id":"keep"}\n]\n`;
+const jsonObjectSelector = /^\s*\{[\s\S]*"id"\s*:[\s\S]*"feature"\s*:[\s\S]*\}\s*$/u;
+add(
+  "json-literal-selectors",
+  ["edit.literal-json-selectors", "read.literal-json-path"],
+  `Read the single file whose literal filename is ${JSON.stringify(literalJsonPath)} by passing that exact string as path, not an array. Report its marker. Read replace.json, insert.json, source.json and target.json before editing. Use the complete JSON object text as each selector, including its braces and all keys; do not use line anchors, result references or smaller fragments. In replace.json, use ${JSON.stringify(legacyJsonSelector)} as both start and end and replace it with ${JSON.stringify(stableJsonSelector)}. In insert.json, use ${JSON.stringify(legacyJsonSelector)} as anchor and insert exactly one space before it (before: true). Copy the complete ${JSON.stringify(stableJsonSelector)} object from source.json using it as both start and end, replacing the object in target.json using ${JSON.stringify(legacyJsonSelector)} as both targetStart and targetEnd. Keep adjacent commas and every other byte. Do not use Write.`,
+  [
+    { tool: "read", args: { path: literalJsonPath }, contains: "LITERAL-PATH-MARKER" },
+    {
+      tool: "replace",
+      args: { path: "replace.json", start: jsonObjectSelector, end: jsonObjectSelector },
+      exactText: ["start", "end"],
+    },
+    {
+      tool: "insert",
+      args: { path: "insert.json", anchor: jsonObjectSelector },
+      exactText: ["anchor"],
+    },
+    {
+      tool: "copy",
+      args: {
+        path: "source.json",
+        target: "target.json",
+        start: jsonObjectSelector,
+        end: jsonObjectSelector,
+        targetStart: jsonObjectSelector,
+        targetEnd: jsonObjectSelector,
+      },
+      exactText: ["start", "end", "targetStart", "targetEnd"],
+    },
+  ],
+  {
+    forbiddenTools: ["write"],
+    files: {
+      [literalJsonPath]: "LITERAL-PATH-MARKER\n",
+      "a.txt": "DECOY-A\n",
+      "b.txt": "DECOY-B\n",
+      "replace.json": jsonSelectorDocument,
+      "insert.json": jsonSelectorDocument,
+      "source.json": `[\n${stableJsonSelector}\n]\n`,
+      "target.json": jsonSelectorDocument,
+    },
+    expected: {
+      "replace.json": jsonSelectorDocument.replace("legacyCheckout", "stableCheckout"),
+      "insert.json": `[\n ${legacyJsonSelector},\n{"id":"keep"}\n]\n`,
+      "target.json": jsonSelectorDocument.replace("legacyCheckout", "stableCheckout"),
+    },
+    answer: "LITERAL-PATH-MARKER",
+  },
 );
 /** The same small tasks are used for every configured model. */
 export const capabilityCases: CapabilityCase[] = cases;

@@ -1,4 +1,7 @@
-export { normalizeStructuredArguments } from "./json-structured-arguments.ts";
+export {
+  normalizeStructuredArguments,
+  type StructuredSourceContext,
+} from "./json-structured-arguments.ts";
 export {
   EDIT_WAIT_TIMEOUT_MS,
   ResourceScheduler,

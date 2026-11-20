@@ -38,7 +38,8 @@ const files = {
 function calls(root: string, prefix: string, encoded: boolean): Call[] {
   const at = (file: string) => `${root}/${file}`;
   const composite = (value: JsonValue): JsonValue => (encoded ? JSON.stringify(value) : value);
-  const ref = (id: string): JsonValue => composite({ id: `$issued-uuid:${prefix}-${id}` });
+  const ref = (id: string): JsonValue => ({ id: `$issued-uuid:${prefix}-${id}` });
+  const sourceRef = (id: string): JsonValue => composite(ref(id));
   const call = (id: string, name: string, args: Record<string, JsonValue>): Call => ({
     id: `${prefix}-${id}`,
     name,
@@ -47,15 +48,18 @@ function calls(root: string, prefix: string, encoded: boolean): Call[] {
   const listed = composite([at("a"), at("b")]);
   return [
     call("read", "read", { path: at("source.txt") }),
-    call("reread", "read", { path: ref("read") }),
-    call("scoped", "search", { path: ref("read"), query: "DATA" }),
-    call("list", "read", { path: composite([at("source.txt"), at("target.txt")]) }),
+    call("reread", "read", { path: sourceRef("read") }),
+    call("scoped", "search", { path: sourceRef("read"), query: "DATA" }),
+    call("list", "read", {
+      path: composite([at("source.txt"), at("target.txt")]),
+      views: composite([]),
+    }),
     call("search", "search", { path: listed, query: "jsonToken" }),
     call("files", "file_search", { path: listed, pattern: "*.ts" }),
     call("ast", "ast_search", { path: listed, pattern: "jsonToken($$$ARGS)" }),
     call("lsp", "lsp_search", { path: listed, query: "jsonToken" }),
     call("left", "search", { path: at("target.txt"), query: "OLD" }),
-    call("copy", "copy", { path: ref("scoped"), target: ref("left") }),
+    call("copy", "copy", { path: sourceRef("scoped"), target: sourceRef("left") }),
     call("copy-destination", "search", { path: at("copy.txt"), query: "OLD" }),
     call("copy-range", "copy", {
       path: at("source.txt"),
@@ -66,7 +70,7 @@ function calls(root: string, prefix: string, encoded: boolean): Call[] {
       targetEnd: ref("copy-destination"),
     }),
     call("move-destination", "search", { path: at("move.txt"), query: "OLD" }),
-    call("move", "move", { path: ref("scoped"), target: ref("move-destination") }),
+    call("move", "move", { path: sourceRef("scoped"), target: sourceRef("move-destination") }),
     call("beta", "search", { path: at("edit.txt"), query: "beta" }),
     call("insert", "insert", {
       path: at("edit.txt"),
@@ -87,8 +91,8 @@ function calls(root: string, prefix: string, encoded: boolean): Call[] {
     call("literal", "read", { path: at("literal.json") }),
     call("malformed", "read", { path: at("[broken") }),
     call("diff", "diff", {
-      before: composite({ path: at("target.txt"), offset: 1, limit: 1, views: composite([]) }),
-      after: composite({ path: at("copy.txt"), offset: 1, limit: 1, views: composite([]) }),
+      before: { path: at("target.txt"), offset: 1, limit: 1, views: composite([]) },
+      after: { path: at("copy.txt"), offset: 1, limit: 1, views: composite([]) },
     }),
   ];
 }
@@ -186,16 +190,16 @@ text(JSON.stringify({ literal: results[${JSON.stringify(`script-${form}-literal`
     expect(data.lists.lsp).toEqual(expect.arrayContaining([expect.stringContaining("main.ts")]));
     for (const route of ["direct", "script"]) {
       const file = (name: string) => get(`${route}-${form}/${name}`);
-      expect(await file("source.txt")).toBe("head\n\ntail\n");
+      expect(await file("source.txt")).toBe("head\ntail\n");
       for (const name of ["target.txt", "copy.txt", "move.txt"])
         expect(await file(name)).toBe("left DATA right\n");
-      expect(await file("edit.txt")).toBe("alpha\ninserted\nBETA\n\nomega\n");
+      expect(await file("edit.txt")).toBe("alpha\ninserted\nBETA\nomega\n");
       expect(await file("literal.json")).toBe(literal);
     }
   }
 }
 
-test("JSON-text references survive streaming guards and parallel edit planning", async () => {
+test("JSON-text source references survive streaming guards and parallel edit planning", async () => {
   await withTempWorkspace(async (cwd) => {
     for (const name of ["direct.txt", "script.txt"])
       await writeFile(path.join(cwd, name), "keep\none\nmiddle\ntwo\nend\n");
@@ -265,7 +269,7 @@ text((await tools.read({ path: "script.txt" })).text);`,
         ]),
         assistantMessage([text("Done.")]),
       ],
-    }).run("Apply independent edits using JSON-text issued references.");
+    }).run("Apply independent edits using issued reference objects.");
     for (const id of ["replace-one", "replace-two", "script"])
       expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
     expect(codemodeFailures(getToolResultText(result, "script"))).toBe("");
@@ -274,7 +278,7 @@ text((await tools.read({ path: "script.txt" })).text);`,
   });
 }, 60000);
 for (const transport of ["local", "ssh"] as const) {
-  test(`JSON-text source objects, lists, selectors and Diff requests match native arguments over ${transport}`, async () => {
+  test(`JSON-text source objects, lists and view arrays compose with native selectors over ${transport}`, async () => {
     await withTempWorkspace(async (cwd) => {
       const binary =
         transport === "ssh"

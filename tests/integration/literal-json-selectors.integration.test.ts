@@ -34,7 +34,10 @@ test("JSON object selector strings keep their text through direct tools and Code
           const call = (name: string, args: Record<string, string | boolean>) =>
             steps.push({ id: `${label}-${steps.length}`, name, arguments: args });
           for (const operation of ["replace", "insert", "copy"]) {
-            const file = `${label}-${operation}.json`;
+            const file =
+              operation === "copy"
+                ? JSON.stringify([`${label}-a.json`, `${label}-b.json`])
+                : `${label}-${operation}.json`;
             await writeFile(path.join(cwd, file), body);
             call("read", { path: file });
             if (operation === "replace") {
@@ -49,7 +52,11 @@ test("JSON object selector strings keep their text through direct tools and Code
               call("insert", { path: file, anchor: selector, before: true, text: " " });
               expected.set(file, `[\n ${selector},\n{"id":"keep"}\n]\n`);
             } else {
-              const source = `${label}-source.json`;
+              for (const peer of [`${label}-a.json`, `${label}-b.json`]) {
+                await writeFile(path.join(cwd, peer), body);
+                expected.set(peer, body);
+              }
+              const source = JSON.stringify({ id: `${label}-source`, feature: "fixture" });
               const sourceSelector = selector.replace("legacyCheckout", "stableCheckout");
               await writeFile(path.join(cwd, source), `[\n${sourceSelector}\n]\n`);
               call("read", { path: source });

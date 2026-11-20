@@ -99,7 +99,14 @@ function createHandler(
       // Inspection may use a selection's owning resource, but must never replace the caller's
       // selection with that whole resource in the arguments that eventually authorize the edit.
       const arguments_ = {
-        ...normalizeStructuredArguments(context.partialArgs ?? context.args, schema.parameters),
+        ...normalizeStructuredArguments(context.partialArgs ?? context.args, schema.parameters, {
+          cwd: context.cwd,
+          sourceFields: [
+            schema.source.field,
+            ...(schema.source.targets ?? []).map((target) => target.field),
+          ],
+          resolveSource: (value) => resultTargets.source(value, context.cwd, true),
+        }),
       };
       try {
         for (const field of [
