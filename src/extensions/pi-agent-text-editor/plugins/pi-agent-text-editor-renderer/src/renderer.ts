@@ -1182,7 +1182,11 @@ function mutationFailureSummary(
   if (details?.effect === "unknown") return "Effects unknown · edit failed";
   if (details?.effect === "applied") return "Saved · post-write step failed";
   if (details?.metadata?.rollback === "restored") return "Rolled back · edit failed";
-  if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
+  // An ambiguity error that offers a way to change every match leads with that step instead.
+  const ambiguousCode = details?.results?.some((result) =>
+    result.data.errors?.some((error) => error.code === "ambiguous"),
+  );
+  if (ambiguousCode === true || /\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }
   if (/\banchor\b[\s\S]*\bis stale\./iu.test(agentOutput)) {
