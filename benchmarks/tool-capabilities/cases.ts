@@ -3601,6 +3601,48 @@ add(
 );
 
 add(
+  "result-selector-surviving-scope",
+  ["compose.result-selector-scope"],
+  "Read task.txt with anchors and keep the original anchors for lines 1, 3, 4 and 6. Read all of task.txt again and keep that second Read result unchanged as the scope for every Delete below. First delete the first template function: pass the second Read result as path with the original line-1 anchor as start and original line-4 anchor as end. After that succeeds, separately try Delete with that same scope and the original line-1 anchor, then with the original line-3 anchor: both must refuse without editing, since those lines belonged to the deleted copy. Finally delete only the surviving declaration T two(T v) {, using the same unchanged second Read result as path and the original line-6 anchor as start. Do not read again, refresh the scope, use literal selectors, or rewrite the file. Keep the surviving template line, return line and closing brace byte for byte.",
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "read", args: { path: "task.txt" }, after: [0] },
+    {
+      tool: "delete",
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, end: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, ["start", "end"], "anchor")],
+    },
+    {
+      tool: "delete",
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      after: [2],
+      error: true,
+    },
+    {
+      tool: "delete",
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      after: [3],
+      error: true,
+    },
+    {
+      tool: "delete",
+      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      after: [4],
+    },
+  ],
+  {
+    files: {
+      "task.txt":
+        "template <typename T>\nT one(T v) {\n  return v;\n}\ntemplate <typename T>\nT two(T v) {\n  return v;\n}\n",
+    },
+    expected: { "task.txt": "template <typename T>\n  return v;\n}\n" },
+  },
+);
+
+add(
   "result-selector-exact-retry",
   ["compose.result-selector-scope"],
   "Read only line 2 of task.txt. Pass that Read result unchanged as Replace's path with start last and text BAD. The text exists outside the selection, so the call must fail without editing. Then pass the explicit task.txt path to Replace with start last and text fixed. This exact-text edit must succeed without an intervening anchor edit. Preserve all other bytes.",
