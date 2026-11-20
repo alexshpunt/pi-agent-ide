@@ -64,7 +64,12 @@ import {
   TextAnchorResolutionError,
   TextAnchorResourceResolutionError,
 } from "#src/core/text-anchor-registry.ts";
-import { describeScope, resolveResultScope, scopeRangeIndex, scopeWindow } from "./result-scope.ts";
+import {
+  describeScope,
+  resolveResultScope,
+  scopeRangeIndices,
+  scopeWindow,
+} from "./result-scope.ts";
 import { executeTextToolWithBatch } from "#src/core/text-edit-batch-registrar.ts";
 import { retryWhenSourceChanged, SOURCE_CHANGED } from "#src/core/source-change-retry.ts";
 import {
@@ -1059,8 +1064,11 @@ export function createMutationContext(
 
     return document;
   };
-  /** Where each resolved anchor of a scoped source lies: its file and its range of the scope. */
-  const scopedPlacements = new Map<string, { readonly source: string; readonly index: number }>();
+  /** Where each independent selection lies in the scoped source. */
+  const scopedPlacements = new Map<
+    string,
+    { readonly source: string; readonly indices: readonly number[] }
+  >();
   /** Resolve an anchor inside the selection of the result passed as its source. */
   const resolveScopedAnchor = async (
     field: string,
@@ -1113,15 +1121,15 @@ export function createMutationContext(
             value,
           );
         }
-        const index =
-          ranges.length === 0 ? 0 : scopeRangeIndex(documentFor(target.source), anchor, ranges);
-        if (index === undefined)
+        const indices =
+          ranges.length === 0 ? [0] : scopeRangeIndices(documentFor(target.source), anchor, ranges);
+        if (indices === undefined)
           throw rejection(
             target,
             "invalid",
             `The anchor is outside the result's selection: ${describe(target)}. Use an anchor inside it, or pass the file path to edit elsewhere.`,
           );
-        return { target, anchor, index };
+        return { target, anchor, indices };
       }),
     );
     const resolved = attempts.flatMap((attempt) =>
@@ -1164,15 +1172,17 @@ export function createMutationContext(
         `The anchor is not inside the result's selection in any of its files: ${scope.map(describe).join("; ")}.`,
       );
     }
-    const { target, anchor, index } = placed;
-    // All anchors of one source select a part of a single range: an edit between two ranges
-    // would change text the result does not select.
+    const { target, anchor, indices } = placed;
+    // A lone selector may select independent ranges. Paired endpoints must each select one
+    // part of the same scope range, never the unselected text between ranges.
     for (const [other, placement] of scopedPlacements) {
       const sibling = (definition.anchors ?? []).find((candidate) => candidate.field === other);
       if (
         sibling?.sourceField === descriptor.sourceField &&
         placement.source === target.source &&
-        placement.index !== index
+        (placement.indices.length !== 1 ||
+          indices.length !== 1 ||
+          placement.indices[0] !== indices[0])
       ) {
         publishAnchorRenderState?.(field, { kind: "failed" });
         throw rejection(
@@ -1182,7 +1192,7 @@ export function createMutationContext(
         );
       }
     }
-    scopedPlacements.set(field, { source: target.source, index });
+    scopedPlacements.set(field, { source: target.source, indices });
     if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(target.source);
     const rendered = renderTextAnchor(anchor, value, { source: target.source, anchor });
     publishAnchorRenderState?.(field, {
