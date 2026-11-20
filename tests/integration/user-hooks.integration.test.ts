@@ -71,7 +71,7 @@ test("file hooks block resolved access and report saved-edit feedback", async ()
               id: "edit-locked",
               name: "codemode",
               arguments: {
-                code: 'text(await tools.replace({path:"locked.txt",start:"unchanged",text:"changed"}));',
+                code: 'text(await tools.replace({path:"locked.txt",start:"unchanged",newText:"changed"}));',
               },
             }),
           ],

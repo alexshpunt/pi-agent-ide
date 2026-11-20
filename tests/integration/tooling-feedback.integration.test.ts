@@ -64,7 +64,7 @@ test("whole-file Delete keeps its filesystem route beside a text edit batch", as
       {
         id: "edit",
         name: "insert",
-        arguments: { path: "note.txt", anchor: "keep", text: "\nADDED" },
+        arguments: { path: "note.txt", anchor: "keep", newText: "\nADDED" },
       },
       ...removed.map((file, index) => ({
         id: `remove${index}`,
@@ -101,7 +101,7 @@ const sameFileEdits = [
   {
     tool: "replace",
     kind: "searchmatch",
-    args: { text: "NEW" },
+    args: { newText: "NEW" },
     after: "keep1\nNEW\nkeep2\nNEW\nkeep3\nNEW\n",
   },
   { tool: "delete", kind: "uuid", args: {}, after: "keep1\nkeep2\nkeep3\n" },
@@ -109,13 +109,13 @@ const sameFileEdits = [
   {
     tool: "insert",
     kind: "search",
-    args: { text: "ADDED", before: true },
+    args: { newText: "ADDED", before: true },
     after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
   },
   {
     tool: "insert",
     kind: "uuid",
-    args: { text: "ADDED", before: true },
+    args: { newText: "ADDED", before: true },
     after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
   },
 ] as const;
@@ -240,7 +240,7 @@ test("batch output selections preserve shifted ranges and empty replacement posi
           toolCall({
             id: `${prefix}${index}`,
             name: "replace",
-            arguments: { path: issued(index), text: value },
+            arguments: { path: issued(index), newText: value },
           }),
         ),
         { stopReason: "toolUse" },
@@ -281,18 +281,18 @@ test("same-file selection batches reject overlaps and later reuse without losing
           toolCall({
             id: "accepted",
             name: "replace",
-            arguments: { path: "$issued-uuid:first", text: "FIRST\n" },
+            arguments: { path: "$issued-uuid:first", newText: "FIRST\n" },
           }),
           toolCall({ id: "overlap", name: "delete", arguments: { path: "$issued-uuid:first" } }),
           toolCall({
             id: "peer",
             name: "replace",
-            arguments: { path: "$issued-uuid:last", text: "LAST\n" },
+            arguments: { path: "$issued-uuid:last", newText: "LAST\n" },
           }),
         ],
         { stopReason: "toolUse" },
       ),
-      call("expired", "replace", { path: "$issued-uuid:last", text: "BAD\n" }),
+      call("expired", "replace", { path: "$issued-uuid:last", newText: "BAD\n" }),
     ]);
     expect(
       getToolExecution(result, "accepted").isError,
@@ -379,14 +379,14 @@ const consumers = [
     name: "replace-uuid",
     tool: "replace",
     kind: "uuid",
-    extra: { text: "NEW\n" },
+    extra: { newText: "NEW\n" },
     after: "first\nNEW\nlast\n",
   },
   {
     name: "insert-uuid",
     tool: "insert",
     kind: "uuid",
-    extra: { text: "BEFORE", before: true },
+    extra: { newText: "BEFORE", before: true },
     after: "first\nBEFORE\nOLD\nlast\n",
   },
 ] as const;
@@ -485,7 +485,7 @@ test("direct references reject a changed snapshot without deleting its file", as
     await writeFile(path.join(cwd, "note.txt"), "first\nOLD\nlast\n");
     const result = await run(cwd, "direct-issued-stale", [
       call("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
-      call("change", "replace", { path: "note.txt", start: "OLD", text: "NEW" }),
+      call("change", "replace", { path: "note.txt", start: "OLD", newText: "NEW" }),
       call("stale", "delete", { path: "$issued-uuid:selection" }),
     ]);
     expect(getToolExecution(result, "change").isError).toBe(false);
@@ -499,7 +499,7 @@ test("three sequential replacements report one file through native Codemode", as
     await writeFile(path.join(cwd, "note.txt"), "OLD\nOLD\nOLD\n");
     const result = await run(cwd, "grouped-one-file", [
       call("script", "codemode", {
-        code: `for (const line of [1,2,3]) { const selected = await tools.read({path:"note.txt",offset:line,limit:1}); await tools.replace({path:selected,text:"NEW\\n"}); } text("done");`,
+        code: `for (const line of [1,2,3]) { const selected = await tools.read({path:"note.txt",offset:line,limit:1}); await tools.replace({path:selected,newText:"NEW\\n"}); } text("done");`,
       }),
     ]);
     expect(getToolExecution(result, "script").isError, getToolResultText(result, "script")).toBe(
@@ -519,7 +519,7 @@ test.each([false, true])(
       const payload = 'text":"BLOCKED"}';
       const result = await run(cwd, `streamed-insert-before-payload-${queuedPayload}`, [
         call("original", "read", { path: "note.txt", views: ["anchors"] }),
-        call("shift", "replace", { path: "note.txt", start: "gamma", text: "gamma2\nadded" }),
+        call("shift", "replace", { path: "note.txt", start: "gamma", newText: "gamma2\nadded" }),
         assistantMessage(
           [
             toolCall({
@@ -536,7 +536,7 @@ test.each([false, true])(
         call("recovery", "insert", {
           path: "note.txt",
           anchor: "$issued-anchor:current:4",
-          text: "recovered",
+          newText: "recovered",
         }),
       ]);
       expect(getToolExecution(result, "shift").isError).toBe(false);
@@ -558,7 +558,7 @@ test.each([false, true])(
   },
 );
 
-test.each([{}, { text: "" }])(
+test.each([{}, { newText: "" }])(
   "a complete Insert with invalid payload %j still fails validation",
   async (payload) => {
     await withTempWorkspace(async (cwd) => {

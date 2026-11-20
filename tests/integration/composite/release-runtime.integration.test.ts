@@ -80,7 +80,7 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
       {
         id: "edit",
         name: "replace",
-        arguments: { path: "edit.txt", start: "before", text: "after" },
+        arguments: { path: "edit.txt", start: "before", newText: "after" },
       },
       { id: "pdf-first", name: "read", arguments: { path: "example.pdf" } },
       { id: "pdf-next", name: "read", arguments: { path: "example.pdf" } },

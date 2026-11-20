@@ -118,7 +118,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
     step(
       "replace-text",
       "replace",
-      { path: file, start: stepLine, text: `${stepLine} + ${cycle}` },
+      { path: file, start: stepLine, newText: `${stepLine} + ${cycle}` },
       (result) => expectAll(result, ["Replaced selected text", `${stepLine} + ${cycle}`]),
     ),
     step(
@@ -127,7 +127,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       {
         path: file,
         anchor: unitEnd(spec, agent, insertAfter),
-        text: spec.extraFunction(agent, cycle).trimEnd(),
+        newText: spec.extraFunction(agent, cycle).trimEnd(),
       },
       (result) => expectAll(result, ["Inserted new text", extraMarker(spec, agent, cycle)]),
     ),
@@ -137,7 +137,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       {
         path: file,
         anchor: unitEnd(spec, agent, insertAfter + 1),
-        text: spec.brokenLine(agent, cycle),
+        newText: spec.brokenLine(agent, cycle),
       },
       (result) => expectAll(result, ["Inserted new text", spec.brokenLine(agent, cycle)]),
     ),
@@ -210,7 +210,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       "replace-symbol",
       "codemode",
       {
-        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(file + "#" + unitName(agent, symbolUnit))}}); const edited = await tools.replace({path:declaration, text:${JSON.stringify(functionText(spec, agent, symbolUnit, cycle))}}); if (!edited) throw Error("Declaration edit failed"); text("declaration edited");`,
+        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(file + "#" + unitName(agent, symbolUnit))}}); const edited = await tools.replace({path:declaration, newText:${JSON.stringify(functionText(spec, agent, symbolUnit, cycle))}}); if (!edited) throw Error("Declaration edit failed"); text("declaration edited");`,
       },
       (result) => expectAll(result, ["declaration edited"]),
     ),
@@ -254,7 +254,7 @@ const page = (await tools.read({ path: file, offset: ${lineOf(files, index)}, li
 const line = page.split("\\n").find((candidate) => candidate.includes(stepLine));
 const match = line && /^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|(.*)$/.exec(line);
 if (!match) throw new Error("no anchored line with " + stepLine);
-await tools.replace({ path: file, start: match[1], text: match[2].replace(stepLine, stepLine + " + ${cycle}") });
+await tools.replace({ path: file, start: match[1], newText: match[2].replace(stepLine, stepLine + " + ${cycle}") });
 const [found, calls, diagnostics] = await Promise.all([
   tools.search({ query: stepLine + " + ${cycle}", path: file }),
   tools.ast_search({ pattern: ${JSON.stringify(`${name}($A)`)}, path: file, language: ${JSON.stringify(spec.astLanguage)} }),

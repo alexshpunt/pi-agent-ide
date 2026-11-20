@@ -62,7 +62,7 @@ test("a direct replace with the text it selects is refused without a write", asy
       toolCall({
         id: "same",
         name: "replace",
-        arguments: { path: "names.cpp", start: "FuncA(y)", text: "FuncA(y)" },
+        arguments: { path: "names.cpp", start: "FuncA(y)", newText: "FuncA(y)" },
       }),
     ]);
     const output = getToolResultText(result, "same");
@@ -85,12 +85,12 @@ test("a list of anchors applies the remaining targets and names the already-done
         `const found = await tools.search({path:"names.cpp",query:"regex:call_a|FuncA"});
 const anchors = found.matches.map((match) => match.id);
 check(anchors.length===4,"Expected four name anchors: "+JSON.stringify(found));
-text(await tools.replace({path:anchors,text:"FuncA"}));`,
+text(await tools.replace({path:anchors,newText:"FuncA"}));`,
       ),
       codemode(
         "rename-all",
         `const found = await tools.search({path:"names.cpp",query:"FuncA"});
-text(await tools.replace({path:found.matches,text:"FuncB"}));`,
+text(await tools.replace({path:found.matches,newText:"FuncB"}));`,
       ),
     ]);
     const partial = getToolResultText(result, "partial");
@@ -141,7 +141,7 @@ test("a symbol rename to its current name succeeds without a write", async () =>
         toolCall({
           id: "rename",
           name: "replace",
-          arguments: { path: "fixture:declaration:lib.ts#alpha#name", text: "alpha" },
+          arguments: { path: "fixture:declaration:lib.ts#alpha#name", newText: "alpha" },
         }),
       ],
       ["ide.lint"],

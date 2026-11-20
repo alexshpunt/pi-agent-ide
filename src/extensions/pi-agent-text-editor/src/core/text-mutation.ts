@@ -1271,7 +1271,7 @@ export function createMutationContext(
           example[selector.field] = "exact existing text";
         }
         if (definition.name === "insert" || definition.name === "replace")
-          example.text = "new text";
+          example.newText = "new text";
         throw new Error(
           `Missing "${field}" for ${definition.name} with a file path in "${descriptor.sourceField}". ` +
             `Read the file and supply "${field}" as exact existing text or an issued selection reference. ` +

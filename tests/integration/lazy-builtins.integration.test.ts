@@ -109,7 +109,7 @@ test("the reduced text configuration keeps AST, anchors and edits working", asyn
         call("insert", "insert", {
           path: "example.ts",
           anchor: "  return value + 1;",
-          text: "  // Keep the increment.\n",
+          newText: "  // Keep the increment.\n",
           before: true,
         }),
         assistantMessage([text("Done")]),

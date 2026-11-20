@@ -79,12 +79,12 @@ test("references found from a Search match stay usable as an all-match anchor af
         {
           id: "elsewhere",
           name: "replace",
-          arguments: { path: "main.cpp", start: "// header", text: "// header\n// added" },
+          arguments: { path: "main.cpp", start: "// header", newText: "// header\n// added" },
         },
         {
           id: "rename",
           name: "replace",
-          arguments: { path: "$issued-searchallmatch:references", text: "dot_product" },
+          arguments: { path: "$issued-searchallmatch:references", newText: "dot_product" },
         },
       ],
     );
@@ -115,7 +115,7 @@ test("a limited all-match anchor says how to get every match and prints no file 
           id: "rename",
           name: "replace",
           // A limited result prints no all-anchor; agents write one from its numbered anchors.
-          arguments: { path: "$issued-searchid:found:all:match", text: "amount" },
+          arguments: { path: "$issued-searchid:found:all:match", newText: "amount" },
         },
       ],
     );

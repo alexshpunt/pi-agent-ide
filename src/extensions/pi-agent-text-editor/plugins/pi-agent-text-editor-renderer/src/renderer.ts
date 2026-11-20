@@ -779,7 +779,7 @@ function generatedField(tool: string): string | undefined {
   return tool === "write"
     ? "content"
     : tool === "insert" || tool === "replace"
-      ? "text"
+      ? "newText"
       : undefined;
 }
 

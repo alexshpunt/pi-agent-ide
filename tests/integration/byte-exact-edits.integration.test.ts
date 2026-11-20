@@ -25,6 +25,7 @@ const BOMB = [
   '  { id: "cart\u200B", retries: 2 },\t\n',
   '  { id: "checkout", retries: 3 }, // keep\rthis\r\n',
   '  { id: "search\u202F", retries: 4 },\n',
+  '  { id: "promo",\u00A0retries: 6 },  \n',
   "];\r\n",
   "export default routes;",
 ].join("");
@@ -44,7 +45,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
       {
         id: "literal",
         name: "replace",
-        arguments: { path: "routes.ts", start: "retries: 3", text: "retries: 5" },
+        arguments: { path: "routes.ts", start: "retries: 3", newText: "retries: 5" },
       },
       // A CRLF line replaced through its line anchor with LF-ended text keeps that LF.
       {
@@ -53,14 +54,14 @@ test("edits through the real tools change exactly the selected bytes", async () 
         arguments: {
           path: "routes.ts",
           start: "$issued-anchor:read:3",
-          text: '\t{ id: "home", retries: 1 },\n',
+          newText: '\t{ id: "home", retries: 1 },\n',
         },
       },
       { id: "search", name: "search", arguments: { path: "routes.ts", query: "search\u202F" } },
       {
         id: "match",
         name: "replace",
-        arguments: { path: "routes.ts", start: "$issued-searchmatch:search:1", text: "find" },
+        arguments: { path: "routes.ts", start: "$issued-searchmatch:search:1", newText: "find" },
       },
       { id: "find-cart", name: "search", arguments: { path: "routes.ts", query: "cart\u200B" } },
       { id: "line-delete", name: "delete", arguments: { start: "$issued-search:find-cart:1" } },
@@ -68,19 +69,35 @@ test("edits through the real tools change exactly the selected bytes", async () 
       {
         id: "last",
         name: "replace",
-        arguments: { path: "routes.ts", start: "default routes;", text: "default routeTable;" },
+        arguments: { path: "routes.ts", start: "default routes;", newText: "default routeTable;" },
       },
-      // A selector with LF where the file has CRLF is refused and changes nothing.
+      // A selector with LF matches CRLF text; sent line breaks take the CRLF of that line.
+      {
+        id: "normalized",
+        name: "replace",
+        arguments: { path: "routes.ts", start: "];\nexport", newText: "];\n\nexport" },
+      },
+      // A plain space matches the no-break space; trailing spaces outside the match stay.
+      {
+        id: "fuzzy",
+        name: "replace",
+        arguments: {
+          path: "routes.ts",
+          start: 'id: "promo", retries',
+          newText: 'id: "sale", retries',
+        },
+      },
+      // A literal that is not in the file is refused and changes nothing.
       {
         id: "refused",
         name: "replace",
-        arguments: { path: "routes.ts", start: "];\nexport", text: "BAD" },
+        arguments: { path: "routes.ts", start: 'id: "nowhere"', newText: "BAD" },
       },
       // The first line keeps its BOM when the text after it changes.
       {
         id: "first",
         name: "replace",
-        arguments: { path: "routes.ts", start: "// routes", text: "// table" },
+        arguments: { path: "routes.ts", start: "// routes", newText: "// table" },
       },
     ];
     const result = await new PiIntegrationTest({
@@ -124,7 +141,8 @@ test("edits through the real tools change exactly the selected bytes", async () 
       '\t{ id: "home", retries: 1 },\n',
       '  { id: "checkout", retries: 5 }, // keep\rthis\r\n',
       '  { id: "find", retries: 4 },\n',
-      "];\r\n",
+      '  { id: "sale", retries: 6 },  \n',
+      "];\r\n\r\n",
       "export default routeTable;",
     ].join("");
     expect((await readFile(file)).equals(Buffer.from(expected))).toBe(true);

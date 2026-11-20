@@ -100,7 +100,7 @@ test.each(["direct", "codemode"] as const)(
             args: {
               path: file,
               start: `${anchor}|OLD`,
-              text: `${prefix}${anchor}|NEW`,
+              newText: `${prefix}${anchor}|NEW`,
             },
             error: true,
             code: "COPIED_LINE_ANCHOR",
@@ -117,12 +117,16 @@ test.each(["direct", "codemode"] as const)(
             path: "retry.txt",
             start: anchor,
             end: anchor,
-            text: `${anchor}|NEW`,
+            newText: `${anchor}|NEW`,
           },
           error: true,
         },
         // A line anchor selects the line with its LF; the text keeps the line by ending with one.
-        { id: "retry", tool: "replace", args: { path: "retry.txt", start: anchor, text: "NEW\n" } },
+        {
+          id: "retry",
+          tool: "replace",
+          args: { path: "retry.txt", start: anchor, newText: "NEW\n" },
+        },
       );
       await writeFile(path.join(cwd, "literal-prefix.txt"), initial);
       await writeFile(path.join(cwd, "other-prefix.txt"), initial);
@@ -133,7 +137,7 @@ test.each(["direct", "codemode"] as const)(
           args: {
             path: "literal-prefix.txt",
             start: "OLD",
-            text: `${anchor}|NEW`,
+            newText: `${anchor}|NEW`,
           },
         },
         {
@@ -142,7 +146,7 @@ test.each(["direct", "codemode"] as const)(
           args: {
             path: "other-prefix.txt",
             start: anchor,
-            text: "ZZZZZZZ|NEW\n",
+            newText: "ZZZZZZZ|NEW\n",
           },
         },
       );
@@ -175,7 +179,7 @@ test.each(["direct", "codemode"] as const)(
           {
             id: `change-${tool}`,
             tool: "replace",
-            args: { path: file, start: anchor, text: "NEW\n" },
+            args: { path: file, start: anchor, newText: "NEW\n" },
           },
           {
             id: `stale-${tool}`,
@@ -183,7 +187,7 @@ test.each(["direct", "codemode"] as const)(
             args: {
               path: file,
               [tool === "insert" ? "anchor" : "start"]: anchor,
-              text: "BLOCKED",
+              newText: "BLOCKED",
             },
             error: true,
           },
@@ -196,7 +200,7 @@ test.each(["direct", "codemode"] as const)(
         args: {
           path: "literal.txt",
           start: `literal ${anchor}|payload`,
-          text: "literal recovered",
+          newText: "literal recovered",
         },
       });
       await run(cwd, route, "stale-anchor-collision", steps);

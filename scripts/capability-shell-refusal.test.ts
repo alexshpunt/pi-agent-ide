@@ -43,7 +43,7 @@ function executions(
   };
   call("bash", { command: "read value; printf '%s\\n' \"$value\"", background: true }, shell);
   call("write", { path: shell, content: "hello" }, result(1));
-  call("insert", { path: shell, text: "Enter" }, result(2));
+  call("insert", { path: shell, newText: "Enter" }, result(2));
   if (mode === "direct") {
     call("read", { path: uuid(1) }, result(3));
     call("read", { path: uuid(2) }, result(4));
@@ -87,7 +87,7 @@ for (const mode of ["direct", "codemode"]) {
 
   test(`${mode} rejects a raw-shell shortcut even with the correct refusal`, () => {
     expect(
-      validateRoute(task, executions(mode, { path: shell, start: "hello", text: "BAD" }), mode)
+      validateRoute(task, executions(mode, { path: shell, start: "hello", newText: "BAD" }), mode)
         .passed,
     ).toBe(false);
   });

@@ -37,7 +37,7 @@ test("result scopes work when an extension with an older SDK created the shared 
       {
         id: "replace",
         name: "replace",
-        arguments: { path: "$issued-searchallmatch:text", text: "gamma" },
+        arguments: { path: "$issued-searchallmatch:text", newText: "gamma" },
       },
     ];
     const result = await new PiIntegrationTest({

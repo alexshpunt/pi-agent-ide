@@ -33,7 +33,7 @@ const created = await tools.debug({ backend: "vscode", program: "app.exe" });
 const native = await tools.debug({ adapter: "debugpy", program: "missing-module.py" });
 const session = /debug:[a-f\\d]{12}/u.exec(String(native))?.[0];
 // Failed IDE calls resolve to null; their reasons end the Codemode result.
-const started = await tools.insert({ path: session, text: "start" });
+const started = await tools.insert({ path: session, newText: "start" });
 const after = await tools.read({ path: session });
 await tools.delete({ path: session });
 return { created: String(created), started: String(started), after: after.text };

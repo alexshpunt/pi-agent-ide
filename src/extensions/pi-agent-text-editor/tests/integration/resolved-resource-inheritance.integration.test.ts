@@ -62,7 +62,7 @@ test("inherits the last resolved resource in a later edit call", async () => {
             toolCall({
               id: "replace-line",
               name: "replace",
-              arguments: { start: textLineAnchors(file, "alpha\nbeta\n")[0], text: "changed" },
+              arguments: { start: textLineAnchors(file, "alpha\nbeta\n")[0], newText: "changed" },
             }),
           ],
           { stopReason: "toolUse" },

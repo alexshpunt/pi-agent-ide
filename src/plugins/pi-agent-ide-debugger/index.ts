@@ -266,11 +266,11 @@ export async function registerDebuggerWithOwner(
           const parameters = input as {
             readonly path: string;
             readonly anchor?: string;
-            readonly text: string;
+            readonly newText: string;
           };
           const session = requiredSession(manager, parameters.path);
           if (manager.sourceFile(parameters.path) !== undefined) {
-            if (parameters.text !== "breakpoint" || parameters.anchor === undefined) {
+            if (parameters.newText !== "breakpoint" || parameters.anchor === undefined) {
               throw new Error('A debug source accepts text "breakpoint" with one anchor');
             }
             const anchor = await context.resolveAnchor("anchor");
@@ -300,7 +300,7 @@ export async function registerDebuggerWithOwner(
             evaluation = await executeSessionCommand(
               manager,
               session,
-              parameters.text,
+              parameters.newText,
               context.signal,
             );
           } catch (error) {
@@ -309,9 +309,9 @@ export async function registerDebuggerWithOwner(
             const message = error instanceof Error ? error.message : String(error);
             return {
               source: session.source,
-              summary: `${parameters.text.trim()} failed: ${message}\n\n${renderDebugSession(session)}`,
+              summary: `${parameters.newText.trim()} failed: ${message}\n\n${renderDebugSession(session)}`,
               data: {
-                ...debugActionData(manager, session, parameters.text),
+                ...debugActionData(manager, session, parameters.newText),
                 ok: false,
                 effect: "not-applied",
                 error: { code: "DEBUG_ACTION_FAILED", message },
@@ -324,7 +324,7 @@ export async function registerDebuggerWithOwner(
               evaluation === undefined
                 ? renderDebugSession(session)
                 : `${evaluation.expression} = ${evaluation.result}${evaluation.type === undefined ? "" : ` (${evaluation.type})`}`,
-            data: debugActionData(manager, session, parameters.text, evaluation),
+            data: debugActionData(manager, session, parameters.newText, evaluation),
           };
         },
       });
@@ -369,7 +369,7 @@ export async function registerDebuggerWithOwner(
             );
           },
           renderCall(arguments_, theme, context) {
-            const input = arguments_ as { readonly path?: string; readonly text?: string };
+            const input = arguments_ as { readonly path?: string; readonly newText?: string };
             const session = input.path === undefined ? undefined : manager.get(input.path);
             const deletedSnapshot =
               input.path === undefined ? undefined : deletedSnapshots.get(input.path);
@@ -394,9 +394,9 @@ export async function registerDebuggerWithOwner(
                 ? breakpoint === undefined
                   ? "delete-session"
                   : `delete-breakpoint ${path.basename(breakpoint.file)}:${breakpoint.line}`
-                : input.text === "breakpoint" && sourceFile !== undefined
+                : input.newText === "breakpoint" && sourceFile !== undefined
                   ? `breakpoint ${path.basename(sourceFile)}:${breakpointAnchor(input)}`
-                  : (input.text ?? "debug action");
+                  : (input.newText ?? "debug action");
             return renderDebugActionCall(snapshot, action, theme);
           },
           renderResult(result, options, theme) {
@@ -583,7 +583,8 @@ export async function registerDebuggerWithOwner(
       insert: {
         parameters: {
           path: "debug:<session> controls the debugger; debug:<session>/source with a line anchor sets a breakpoint.",
-          text: "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
+          newText:
+            "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
           anchor: "Omit for debug:<session>.",
         },
         promptGuidelines: [editingGuideline],
@@ -672,7 +673,7 @@ function createDebugResourceResolver(manager: DebugSessionManager, id: string): 
 }
 
 function matchesDebugInsert(input: unknown, manager: DebugSessionManager): boolean {
-  if (!isRecord(input) || typeof input.path !== "string" || typeof input.text !== "string")
+  if (!isRecord(input) || typeof input.path !== "string" || typeof input.newText !== "string")
     return false;
   const session = manager.get(input.path);
   return (

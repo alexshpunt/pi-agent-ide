@@ -34,7 +34,7 @@ function fixture(lineCount: number) {
       ? // A line anchor selects the line with its line break; the text keeps it.
         {
           name: "replace",
-          args: { path: file, start: anchor(line), text: `replacement-${line}\n` },
+          args: { path: file, start: anchor(line), newText: `replacement-${line}\n` },
         }
       : { name: "delete", args: { path: file, start: anchor(line) } };
   });
@@ -51,7 +51,7 @@ function fixture(lineCount: number) {
     expected: `${expected.join("\n")}\n`,
     edits: [
       ...edits,
-      { name: "insert", args: { path: file, anchor: anchor(65), text: "inserted" } },
+      { name: "insert", args: { path: file, anchor: anchor(65), newText: "inserted" } },
       { name: "move", args: { path: file, start: anchor(60), targetStart: anchor(75) } },
       { name: "write", args: { path: "written.txt", content: "small" } },
     ],

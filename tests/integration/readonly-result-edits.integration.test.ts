@@ -80,7 +80,7 @@ const found = await tools.search({path: report, query: "FIXTURE42"});
 if (!reread || found?.matches.length !== 1) throw Error("Report lost readable text");
 for (const value of [report, reread, found, found.matches[0]]) {
   for (const scoped of [false, true]) {
-    if (await tools.replace({path: value, ...(scoped ? {start: "broken"} : {}), text: "changed"}) !== null)
+    if (await tools.replace({path: value, ...(scoped ? {start: "broken"} : {}), newText: "changed"}) !== null)
       throw Error("Read-only result granted edit authority");
   }
 }

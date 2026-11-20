@@ -12,7 +12,7 @@ A direct readable result starts with a labelled system-result envelope containin
 const source = await tools.read({ path: "notes.txt", offset: 10, limit: 20 });
 if (source !== null) {
   const matches = await tools.search({ path: source, query: "regex:old\\w*" });
-  if (matches !== null) text(await tools.replace({ path: matches, text: "new" }));
+  if (matches !== null) text(await tools.replace({ path: matches, newText: "new" }));
 }
 ```
 

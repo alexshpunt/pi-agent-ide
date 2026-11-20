@@ -61,12 +61,12 @@ test("native scripts compose Search and Read and keep empty scopes empty", async
 const found=await tools.search({query:"beta",path:"note.txt"});
 const shown=await tools.read({path:found});
 if(typeof shown?.text!=="string"||!shown.text.includes("beta")) throw Error("Selected text missing");
-await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+await tools.replace({path:"note.txt",start:"beta",newText:"BETA"});
 const after=await tools.read({path:"note.txt"});
 if(after.text!=="alpha\\nBETA\\ngamma\\n") throw Error("Continued before commit");
 const empty=await tools.search({query:"__nothing__",path:"note.txt"});
 if(empty.matches.length!==0||empty.complete!==true) throw Error("Empty search found matches");
-text(await tools.replace({path:empty,text:"BAD"}));
+text(await tools.replace({path:empty,newText:"BAD"}));
 `,
     );
     expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
@@ -156,13 +156,13 @@ for(const args of [{path:"raw:data.json"},{path:"data.json",views:["jq:.value"]}
     if("id" in value) throw Error("A non-text value carries an id: "+Object.keys(value));
     continue;
   }
-  if((await tools.replace({path:value,text:"BAD"})) !== null) throw Error("Transformed output gained edit authority: "+value.text);
+  if((await tools.replace({path:value,newText:"BAD"})) !== null) throw Error("Transformed output gained edit authority: "+value.text);
   const again=await tools.read({path:value});
   text(again.text);
 }
 const anchored=await tools.read({path:"data.json",views:["anchors"]});
 const selected=await tools.search({path:anchored,query:"regex:\\S.*\\S"});
-text(await tools.replace({path:selected,text:'{"value":"changed"}'}));
+text(await tools.replace({path:selected,newText:'{"value":"changed"}'}));
 `,
     );
     const output = getToolResultText(run, "script");

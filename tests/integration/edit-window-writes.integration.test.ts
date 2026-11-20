@@ -155,7 +155,7 @@ const found=await tools.search({path:file,query:"rename_me"});
 const refs=found.matches.map((match)=>match.id);
 check(refs.length===12,"Expected 12 references: "+JSON.stringify(found).slice(0,400));
 await window({prepend:"// peer one\n// peer two\n"});
-await tools.replace({path:refs.filter((_,index)=>index%2===0),text:"renamed"});`,
+await tools.replace({path:refs.filter((_,index)=>index%2===0),newText:"renamed"});`,
     );
     const expected = rows.map((line, index) => (index % 2 === 0 ? row(index, "renamed") : line));
     expect(final).toBe(`// peer one\n// peer two\n${expected.join("\n")}\n`);
@@ -193,9 +193,9 @@ const refs=found.matches.map((match)=>match.id);
 const keeps=(await tools.search({path:file,query:"keep(4)"})).matches.map((match)=>match.id);
 check(refs.length===6&&keeps.length===1,"Unexpected references: "+JSON.stringify(found).slice(0,400));
 await window({replace:["rename_me(2)","rename_ME(2)"]});
-await rejects(()=>tools.replace({path:[refs[1],refs[2]],text:"renamed"}));
-await tools.replace({path:[refs[0],refs[3]],text:"renamed"});
-await tools.replace({path:keeps,text:"kept"});`,
+await rejects(()=>tools.replace({path:[refs[1],refs[2]],newText:"renamed"}));
+await tools.replace({path:[refs[0],refs[3]],newText:"renamed"});
+await tools.replace({path:keeps,newText:"kept"});`,
     );
     // The refusal shows the current line of the changed reference.
     const failures = codemodeFailures(output);

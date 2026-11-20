@@ -64,12 +64,12 @@ describe("pi-agent-text-editor batch recovery", () => {
               call("insert", "insert-first", {
                 path: "original-anchors.txt",
                 anchor: formatLineHashAnchor(content, 1),
-                text: "NORMAL-INSERT-1",
+                newText: "NORMAL-INSERT-1",
               }),
               call("insert", "insert-second", {
                 path: "original-anchors.txt",
                 anchor: formatLineHashAnchor(content, 3),
-                text: "NORMAL-INSERT-2",
+                newText: "NORMAL-INSERT-2",
               }),
             ],
             { stopReason: "toolUse" },
@@ -120,13 +120,13 @@ describe("pi-agent-text-editor batch recovery", () => {
               call("insert", "mixed-insert", {
                 path: "transaction.ts",
                 anchor: formatLineHashAnchor(source, 1),
-                text: '    const env = process.env.NODE_ENV ?? "development";',
+                newText: '    const env = process.env.NODE_ENV ?? "development";',
               }),
               call("replace", "mixed-replace", {
                 path: "transaction.ts",
                 start: formatLineHashAnchor(source, 3),
                 // A line anchor selects the line with its line break; the text keeps it.
-                text: "    const retries = 4;\n",
+                newText: "    const retries = 4;\n",
               }),
               call("delete", "mixed-delete", {
                 path: "transaction.ts",
@@ -188,22 +188,22 @@ describe("pi-agent-text-editor batch recovery", () => {
               call("replace", "atomic-first", {
                 path: "atomic-first.txt",
                 start: formatLineHashAnchor(firstContent, 2),
-                text: "first-change\n",
+                newText: "first-change\n",
               }),
               call("replace", "atomic-second", {
                 path: "atomic-second.txt",
                 start: formatLineHashAnchor(secondContent, 2),
-                text: "second-change\n",
+                newText: "second-change\n",
               }),
               call("replace", "atomic-stale", {
                 path: "atomic-first.txt",
                 start: outdatedAnchor,
-                text: "must-not-apply",
+                newText: "must-not-apply",
               }),
               call("replace", "atomic-after-stale", {
                 path: "atomic-second.txt",
                 start: formatLineHashAnchor(secondContent, 3),
-                text: "omega-change",
+                newText: "omega-change",
               }),
             ],
             { stopReason: "toolUse" },
@@ -287,11 +287,11 @@ describe("pi-agent-text-editor batch recovery", () => {
               call("replace", "safe-first", {
                 path: "streamed-batch.txt",
                 start: formatLineHashAnchor(source, 2),
-                text: "first-change\n",
+                newText: "first-change\n",
               }),
               call("replace", "safe-second", {
                 start: formatLineHashAnchor(source, 3),
-                text: "second-change\n",
+                newText: "second-change\n",
               }),
               ...tailChunks.map(({ id, contentIndex, argumentsJson, chunks }) =>
                 toolCall({

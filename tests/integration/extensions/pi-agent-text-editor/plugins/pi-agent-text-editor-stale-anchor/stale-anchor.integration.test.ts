@@ -34,7 +34,7 @@ async function runInsert(directory: string, callId: string, anchor: string) {
           toolCall({
             id: callId,
             name: "insert",
-            arguments: { path: "subject.txt", anchor, text: "inserted" },
+            arguments: { path: "subject.txt", anchor, newText: "inserted" },
           }),
         ],
         { stopReason: "toolUse" },

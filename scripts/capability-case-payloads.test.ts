@@ -32,8 +32,13 @@ function trace(text = "BETA\n"): RunEvent[] {
     end("search", searchText),
     start("read", "read", { path: ".pi/issued-search.txt" }),
     end("read", searchText),
-    start("insert", "insert", { path: "task.txt", anchor: "alpha", before: true, text: "added\n" }),
-    start("replace", "replace", { start: reference(1), text }),
+    start("insert", "insert", {
+      path: "task.txt",
+      anchor: "alpha",
+      before: true,
+      newText: "added\n",
+    }),
+    start("replace", "replace", { start: reference(1), newText: text }),
     start("delete", "delete", { start: reference(2) }),
     end("insert"),
     end("replace"),
@@ -75,7 +80,7 @@ test.each(["BETA", "BETA\n"])(
           };
         }
         if (event.toolCallId === "replace" && event.type === "tool_execution_start")
-          return { ...event, args: { path: { id }, text } };
+          return { ...event, args: { path: { id }, newText: text } };
         if (event.toolCallId === "delete" && event.type === "tool_execution_start")
           return { ...event, args: { path: "task.txt", start: "gamma" } };
         return event;

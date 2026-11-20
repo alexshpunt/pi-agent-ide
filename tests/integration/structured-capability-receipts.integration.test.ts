@@ -45,7 +45,7 @@ test("the structured capability case proves real alias receipts without exposing
               id: "receipts",
               name: "codemode",
               arguments: {
-                code: 'for (const effect of ["applied","not-applied","unknown"]) { const receipt = await tools.mcp__agent_ide__insert({path:"fixture:semantic-script/"+effect,text:"probe"}); text(receipt); } for (const effect of ["applied","not-applied","unknown"]) { const receipt = await tools.write({path:"fixture:semantic/"+effect,content:"probe"}); text(receipt === null ? {legacyNull:effect} : {legacyKind:typeof receipt}); }',
+                code: 'for (const effect of ["applied","not-applied","unknown"]) { const receipt = await tools.mcp__agent_ide__insert({path:"fixture:semantic-script/"+effect,newText:"probe"}); text(receipt); } for (const effect of ["applied","not-applied","unknown"]) { const receipt = await tools.write({path:"fixture:semantic/"+effect,content:"probe"}); text(receipt === null ? {legacyNull:effect} : {legacyKind:typeof receipt}); }',
               },
             }),
           ],

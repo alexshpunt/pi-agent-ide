@@ -36,7 +36,7 @@ export default function subscriptionAliasProvider(pi: ExtensionAPI): void {
               type: "toolCall",
               id: "subscription-direct-alias",
               name: "mcp__agent_ide__replace",
-              arguments: { path: "note.txt", start: "OLD", text: "DIRECT" },
+              arguments: { path: "note.txt", start: "OLD", newText: "DIRECT" },
             },
           ]
         : turn === 2
@@ -46,7 +46,7 @@ export default function subscriptionAliasProvider(pi: ExtensionAPI): void {
                 id: "subscription-nested-alias",
                 name: "codemode",
                 arguments: {
-                  code: 'text((await tools.read({path:"docs:terminal"})).text); text(await tools.mcp__agent_ide__replace({path:"note.txt",start:"DIRECT",text:"NESTED"})); text((await tools.read({path:"note.txt"})).text);',
+                  code: 'text((await tools.read({path:"docs:terminal"})).text); text(await tools.mcp__agent_ide__replace({path:"note.txt",start:"DIRECT",newText:"NESTED"})); text((await tools.read({path:"note.txt"})).text);',
                 },
               },
             ]

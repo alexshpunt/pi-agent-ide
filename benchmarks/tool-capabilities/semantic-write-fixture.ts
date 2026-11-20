@@ -86,7 +86,7 @@ export default async function semanticWriteFixture(pi: ExtensionAPI): Promise<vo
       });
       for (const [tool, field, sources] of [
         ["write", "content", semanticSource],
-        ["insert", "text", scriptSource],
+        ["insert", "newText", scriptSource],
       ] as const) {
         api.tool(tool).addSemanticHandler({
           matches: (input) =>
