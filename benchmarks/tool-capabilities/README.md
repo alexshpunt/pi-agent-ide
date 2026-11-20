@@ -298,6 +298,8 @@ The `write-json-text` case checks that Write saves JSON text byte for byte, incl
 
 Windows executable discovery ignores extensionless project shims, including POSIX launchers in WSL-installed `node_modules`. The existing edit cases cover the unchanged editing route, not this Windows/WSL setup. Focused executable and registry tests cover availability; unrun paid routes remain unverified.
 
+Whole-line cases check the written bytes across selector types. `search-anchor-insert` and `read-window-insert` distinguish line insertion from inline text; `delete-selection` removes a complete match line with its separator. `replace-line-boundary-*` and `exact-eof-*` distinguish empty text from newline-only text over complete lines, including CRLF and unterminated EOF. `exact-range-copy` uses the same whole-line source at an inline slot, a line edge and a whole-line replacement target. Direct and Codemode routes remain unverified until paid execution.
+
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
