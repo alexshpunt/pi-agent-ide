@@ -12,7 +12,7 @@ import {
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { nestedResultTexts } from "#integration/support/nested-results.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 
@@ -135,7 +135,7 @@ if(${JSON.stringify(mode)} === "scope") {
  // A refused call resolves to null; the Codemode result lists its reason.
  const stale = await tools.lsp_search({query:"label",path:seed});
  if(stale !== null) throw Error("Changed snapshot was accepted: "+JSON.stringify(stale));
- text({staleRefused:true});
+ text(JSON.stringify({staleRefused:true}));
 }
 
 `,
@@ -167,10 +167,9 @@ if(${JSON.stringify(mode)} === "scope") {
         const [, position = "", file = ""] = definition ?? [];
         expect(position.startsWith(`${file}:`), navigation).toBe(true);
         expect(references[0]?.[2], navigation).toBe(position);
-      } else
-        expect(codemodeFailures(getToolResultText(run, "scoped"))).toMatch(
-          /^1 of \d+ IDE calls failed:\n- lsp_search \S+\n[\s\S]*(?:stale|changed|expired)/u,
-        );
+      } else {
+        expect(getToolResultText(run, "scoped")).toContain(JSON.stringify({ staleRefused: true }));
+      }
       expect((await backend.read(`${fixture.workspace}/note.ts`)).bytes.toString("utf8")).toBe(
         mode === "mutation" ? source.replace("label", "renamed") : source,
       );

@@ -121,8 +121,6 @@ test("Search selector objects work as edit sources and anchors without granting 
             selector === "all"
               ? `$issued-searchallmatch:find-${id}`
               : `$issued-searchmatch:find-${id}:1`,
-          path: "wrong.txt",
-          ranges: [],
         };
         const args: Record<string, JsonValue> = { path: reference };
         expected[file] = original;
@@ -162,8 +160,19 @@ test("Search selector objects work as edit sources and anchors without granting 
       steps.push({
         id: `refuse-${id}`,
         name: "replace",
-        arguments: { path: { id: value, path: "wrong.txt", ranges: [] }, text: "BAD" },
+        arguments: { path: { id: value }, text: "BAD" },
       });
+    steps.push(
+      { id: "find-tampered", name: "search", arguments: { path: "wrong.txt", query: "OLD" } },
+      {
+        id: "refuse-tampered",
+        name: "replace",
+        arguments: {
+          path: { id: "$issued-searchallmatch:find-tampered", path: "wrong.txt", ranges: [] },
+          text: "BAD",
+        },
+      },
+    );
     const result = await run(cwd, "search-object-edit-scope", steps);
     for (const step of steps)
       expect(getToolExecution(result, step.id).isError, getToolResultText(result, step.id)).toBe(

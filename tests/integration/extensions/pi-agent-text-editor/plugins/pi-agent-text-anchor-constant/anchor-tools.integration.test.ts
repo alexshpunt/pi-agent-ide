@@ -40,7 +40,7 @@ describe("constant anchors through text editor tools", () => {
       "constant-delete",
       "delete",
       { start: "end", end: "end" },
-      ["alpha", "bravo", "charlie", "delta", ""].join("\n"),
+      ["alpha", "bravo", "charlie", "delta"].join("\n"),
     );
   });
 
@@ -49,7 +49,8 @@ describe("constant anchors through text editor tools", () => {
       "constant-copy",
       "copy",
       { start: "begin", end: "begin", targetStart: "end" },
-      ["alpha", "bravo", "charlie", "delta", "echo", "alpha", ""].join("\n"),
+      // The destination has no final line ending; copying preserves that boundary.
+      ["alpha", "bravo", "charlie", "delta", "echo", "alpha"].join("\n"),
     );
   });
 
@@ -58,7 +59,7 @@ describe("constant anchors through text editor tools", () => {
       "constant-move",
       "move",
       { start: "begin", end: "begin", targetStart: "end" },
-      ["bravo", "charlie", "delta", "echo", "alpha", ""].join("\n"),
+      ["bravo", "charlie", "delta", "echo", "alpha"].join("\n"),
     );
   });
 });

@@ -109,7 +109,7 @@ test("a name capture retains LSP semantics beside an independent native batch ed
 const name = declaration.matches[0].captures.name[0];
 await tools.write({path:"independent.txt",content:"before"});
 const results = await Promise.all([
-  tools.replace({path:{...name, text:"forged", path:"usage.ts", line:999},text:"total"}),
+  tools.replace({path:name,text:"total"}),
   tools.replace({path:"independent.txt",start:"before",text:"after"})
 ]);
 if (results.some(result => result === null)) throw Error("Concurrent edit failed");`,
@@ -128,6 +128,7 @@ test("invalid and mixed name-capture requests never fall back to text replacemen
     `const declaration = await tools.lsp_search({declaration:"source.ts#count"});
 const name = declaration.matches[0].captures.name[0];
 for (const args of [
+  {path:{...name,start:"count"},text:"total"},
   {path:name,text:""}, {path:name,start:"count",text:"total"},
   {path:[name,declaration.matches[0]],text:"total"}
 ]) if (await tools.replace(args) !== null) throw Error("Invalid capture edit succeeded");`,

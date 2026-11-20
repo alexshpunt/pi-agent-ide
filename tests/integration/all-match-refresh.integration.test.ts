@@ -97,7 +97,7 @@ test("references found from a Search match stay usable as an all-match anchor af
   });
 }, 180_000);
 
-test("a limited all-match anchor says how to get every match and prints no file text", async () => {
+test("a limited Search result cannot authorize an all-match edit", async () => {
   await withTempWorkspace(async (cwd) => {
     const source = "const value = 1;\nconst other = value + value;\n";
     await writeFile(path.join(cwd, "note.ts"), source);
@@ -120,11 +120,7 @@ test("a limited all-match anchor says how to get every match and prints no file 
       ],
     );
     expect(getToolExecution(result, "rename").isError).toBe(true);
-    const failure = getToolResultText(result, "rename");
-    expect(failure).toMatch(/path anchor "SEARCH#[A-F\d]+:all:match" was not found: /u);
-    expect(failure).toContain("search again with a higher limit or a narrower path");
-    expect(failure).not.toContain("const other");
-    expect(failure).not.toContain("represented below");
+    expect(getToolResultText(result, "rename")).not.toContain("const other");
     expect(await readFile(path.join(cwd, "note.ts"), "utf8")).toBe(source);
   });
 }, 120_000);

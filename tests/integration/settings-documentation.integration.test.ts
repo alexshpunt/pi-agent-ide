@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionResult,
   getToolResultMessage,
   PiIntegrationTest,
   testArtifactsDir,
@@ -52,7 +53,7 @@ async function run(
                     id: call.id,
                     name: "codemode",
                     arguments: {
-                      code: `text(await tools.${call.name}(${JSON.stringify(call.arguments)}));`,
+                      code: `const value = await tools.${call.name}(${JSON.stringify(call.arguments)}); text(${call.name === "read" ? "value.text" : "value"});`,
                     },
                   },
             ),
@@ -102,8 +103,29 @@ test.each(["direct", "codemode"] as const)(
     expect(catalog.preferences.some(({ id }) => id.startsWith("vision."))).toBe(false);
     for (const id of ["scoped", "all"]) {
       expect(getToolExecution(result, id).isError).toBe(false);
-      expect(resultText(result, id)).toMatch(/docs:ide-settings:\d+:/);
-      expect(resultText(result, id)).not.toContain("SEARCH#");
+      const matches =
+        mode === "codemode"
+          ? (
+              (getToolExecutionResult(result, `${id}/1`) as { structuredContent: unknown })
+                .structuredContent as {
+                matches: { path: string; line: number; id?: string }[];
+              }
+            ).matches
+          : (
+              getToolResultMessage(result, id).details as {
+                payload: { matches: { source: string; lineNumber: number; id?: string }[] };
+              }
+            ).payload.matches.map((match) => ({
+              path: match.source,
+              line: match.lineNumber,
+              id: match.id,
+            }));
+      expect(matches.length).toBeGreaterThan(0);
+      for (const match of matches) {
+        expect(match.path).toBe("docs:ide-settings");
+        expect(match.line).toBeGreaterThan(0);
+        expect(match.id).toBeUndefined();
+      }
     }
   },
 );

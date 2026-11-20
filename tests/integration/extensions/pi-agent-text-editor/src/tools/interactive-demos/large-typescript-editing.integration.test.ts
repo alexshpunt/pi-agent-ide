@@ -34,6 +34,7 @@ afterAll(() => extensions.dispose());
 interface EditPlan {
   readonly arguments: Readonly<Record<string, unknown>>;
   readonly after: string;
+  readonly inspection: { readonly offset: number; readonly limit: number };
 }
 
 const searchMethods = [
@@ -288,8 +289,8 @@ describe("interactive text editor demos", () => {
         exportedUtilities,
         demoFile,
       );
-      // The final insert does not request a trailing newline at EOF.
-      const expected = applyFinalBatch(batchSource).slice(0, -1);
+      // Inserting whole lines preserves the destination file's final line ending.
+      const expected = applyFinalBatch(batchSource);
       const callIds = [
         "demo-write-large-file",
         "demo-replace-hash-section",
@@ -323,9 +324,15 @@ describe("interactive text editor demos", () => {
             ],
             { stopReason: "toolUse" },
           ),
+          inspectPlan(callIds[1], hashPlan),
           singleCall(callIds[1], "replace", hashPlan.arguments),
+          inspectPlan(callIds[2], searchPlan),
           singleCall(callIds[2], "insert", searchPlan.arguments),
+          inspectPlan(callIds[3], undoPlan),
           singleCall(callIds[3], "replace", undoPlan.arguments),
+          ...[displayPlan, importPlan, viewPlan, utilitiesPlan].map((plan, index) =>
+            inspectPlan(`batch-${index}`, plan),
+          ),
           assistantMessage(
             [
               pacedToolCall(callIds[4], "replace", displayPlan.arguments),
@@ -348,6 +355,18 @@ describe("interactive text editor demos", () => {
   }, 180_000);
 });
 
+function inspectPlan(id: string, plan: EditPlan) {
+  return assistantMessage(
+    [
+      toolCall({
+        id: `${id}-read`,
+        name: "read",
+        arguments: { path: plan.arguments.path, ...plan.inspection, views: ["anchors"] },
+      }),
+    ],
+    { stopReason: "toolUse" },
+  );
+}
 function singleCall(
   id: string,
   name: "replace" | "insert",
@@ -388,6 +407,7 @@ function replaceUntil(
       text: replacement,
     },
     after: afterLines.join("\n"),
+    inspection: { offset: startIndex + 1, limit: endIndex - startIndex + 1 },
   };
 }
 
@@ -409,6 +429,7 @@ function insertAfter(
       text: insertion,
     },
     after: afterLines.join("\n"),
+    inspection: { offset: anchorIndex + 1, limit: 1 },
   };
 }
 

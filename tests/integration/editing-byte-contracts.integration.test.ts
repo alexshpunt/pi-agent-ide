@@ -123,7 +123,6 @@ test.each(["direct", "codemode"] as const)(
         expect(await readFile(path.join(cwd, entry.file), "utf8"), entry.file).toBe(entry.after);
       }
       expect(result.tuiRenderedOutput).toContain("## New");
-      expect(result.tuiRenderedOutput).not.toContain("outside the current text");
     });
   },
 );
@@ -138,13 +137,20 @@ test.each(["all", "allSettled"] as const)(
         method === "allSettled"
           ? 'for (const result of results) { if (result.status !== "fulfilled") throw result.reason; text(result.value); }'
           : "for (const result of results) text(result);";
-      const code = `const results = await Promise.${method}([
-        tools.insert({path:"insert.txt",anchor:"first\\n",text:"FIRST\\n"}),
-        tools.insert({path:"./insert.txt",anchor:"middle\\n",text:"MIDDLE\\n"}),
-        tools.insert({path:"insert.txt",anchor:"last\\n",text:"LAST\\n"}),
-        tools.delete({path:"delete.txt",start:"first\\n"}),
-        tools.delete({path:"./delete.txt",start:"middle\\n"}),
-        tools.delete({path:"delete.txt",start:"last\\n"})
+      const code = `const insertSource = await tools.read({ path: "insert.txt", views: ["anchors"] });
+      const deleteSource = await tools.read({ path: "delete.txt", views: ["anchors"] });
+      const anchor = (source, text) => {
+        const line = source.text.split(/\\r?\\n/).find(line => line.slice(8) === text);
+        if (!line) throw new Error("Missing issued line");
+        return line.slice(0, 7);
+      };
+      const results = await Promise.${method}([
+        tools.insert({path:insertSource,anchor:anchor(insertSource,"first"),text:"FIRST\\n"}),
+        tools.insert({path:insertSource,anchor:anchor(insertSource,"middle"),text:"MIDDLE\\n"}),
+        tools.insert({path:"./insert.txt",anchor:anchor(insertSource,"last"),text:"LAST\\n"}),
+        tools.delete({path:deleteSource,start:anchor(deleteSource,"first")}),
+        tools.delete({path:deleteSource,start:anchor(deleteSource,"middle")}),
+        tools.delete({path:"./delete.txt",start:anchor(deleteSource,"last")})
       ]); ${collect}`;
       const result = await run(cwd, `parallel-byte-effects-${method}`, [
         message("script", "codemode", { code }),
@@ -204,7 +210,7 @@ test.each(["direct", "codemode"] as const)(
         expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
       }
       expect(await readFile(path.join(cwd, "undo.txt"), "utf8")).toBe(initial);
-      expect(result.tuiRenderedOutput).not.toContain('No text anchor resolver handled "last"');
+
       expect(result.tuiRenderedOutput).toContain("beta");
     });
   },

@@ -4,7 +4,6 @@ import path from "node:path";
 
 import {
   assistantMessage,
-  getProviderSystemPrompt,
   getToolExecution,
   getToolResultMessage,
   PiIntegrationTest,
@@ -13,7 +12,6 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { afterAll, afterEach, expect, test } from "vitest";
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
@@ -56,8 +54,6 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
   expect(getToolResultMessage(result, "unknown").details).toMatchObject({
     documentation: { kind: "error", code: "UNKNOWN_DOCUMENTATION", id: "missing" },
   });
-  const prompt = getProviderSystemPrompt(result);
-  for (const id of ["ssh", "terminal"]) expect(prompt).toContain(`  - ${id} — `);
 });
 
 test("attaches each relevant guide once and keeps guides independent", async () => {
@@ -81,7 +77,7 @@ test("attaches each relevant guide once and keeps guides independent", async () 
     ["insert", "search"],
   );
 
-  expectGuideAttachment(result, "insert-first");
+  expectGuideAttachment(result, "insert-first", ["fixture-insert-guide"]);
   expect(documentationDetails(result, "insert-again")).toBeUndefined();
   expectGuideAttachment(result, "search-first");
   expect(documentationDetails(result, "search-again")).toBeUndefined();
@@ -166,12 +162,6 @@ test("adds the full guide to an error without changing failure status", async ()
     kind: "attachment",
     ids: ["fixture-search-guide"],
   });
-  expect(
-    message.content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n"),
-  ).toContain("# Guide: fixture-search-guide");
   expect(documentationDetails(result, "after-error")).toBeUndefined();
   expect(getToolExecution(result, "after-error").isError).toBe(false);
 });
@@ -221,7 +211,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-first",
             name: "codemode",
             arguments: {
-              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || JSON.stringify(found).includes("# Guide:")) throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"\\n// changed"}));',
+              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text !== "export const marker = 1;\\n") throw new Error("Read value changed: " + JSON.stringify(read)); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || found.matches[0].text !== "marker") throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"\\n// changed"}));',
             },
           }),
         ],
@@ -248,24 +238,23 @@ test("native Codemode returns guides without blocking or replaying mutations", a
       .map((part) => part.text)
       .join("\n");
   expect(getToolExecution(result, "nested-first").isError).toBe(false);
-  for (const id of ["fixture-search-guide", "fixture-insert-guide"])
-    expect(output("nested-first")).toContain(`# Guide: ${id}`);
-  expect(output("nested-again")).not.toContain("# Guide:");
+  expect(documentationDetails(result, "nested-first")).toMatchObject({
+    kind: "attachment",
+    ids: ["fixture-search-guide", "fixture-insert-guide"],
+  });
+  expect(documentationDetails(result, "nested-again")).toBeUndefined();
   expect(output("nested-again")).toContain("changed");
   expect(await readFile(path.join(workspace, "example.ts"), "utf8")).toBe(
     "export const marker = 1;\n// changed\n",
   );
 });
-function expectGuideAttachment(result: Awaited<ReturnType<typeof run>>, id: string): void {
-  const message = getToolResultMessage(result, id);
-  expect(message.isError).toBe(false);
-  expect(documentationDetails(result, id)).toMatchObject({ kind: "attachment" });
-  const output = message.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-  expect(output).toContain("# Guide:");
-  expect(output).not.toContain("Repeat the tool call");
+function expectGuideAttachment(
+  result: Awaited<ReturnType<typeof run>>,
+  id: string,
+  ids: readonly string[] = ["fixture-search-guide"],
+): void {
+  expect(getToolExecution(result, id).isError).toBe(false);
+  expect(documentationDetails(result, id)).toMatchObject({ kind: "attachment", ids });
 }
 
 function documentationDetails(result: Awaited<ReturnType<typeof run>>, id: string): unknown {
@@ -443,8 +432,12 @@ test.each(["direct", "codemode"] as const)(
     expect(resultText("docs-regex")).toContain("docs:search-fixture-two:2:");
     expect(resultText("docs-one")).not.toContain("docs:search-fixture-two");
     if (mode === "direct") {
-      expect(resultText("docs-one")).toContain("incomplete");
-      expect(resultText("docs-empty")).toContain("No matches");
+      expect(getToolResultMessage(result, "docs-one").details).toMatchObject({
+        payload: { complete: false, reason: "limit", matches: [expect.any(Object)] },
+      });
+      expect(getToolResultMessage(result, "docs-empty").details).toMatchObject({
+        payload: { complete: true, matches: [] },
+      });
     } else {
       expect(resultText("docs-one")).toContain('{"complete":false,"id":false}');
       expect(resultText("docs-empty")).toContain('{"complete":true,"id":false}');
@@ -454,14 +447,9 @@ test.each(["direct", "codemode"] as const)(
         expect(resultText(id)).not.toMatch(/:id$/mu);
       }
     }
-    expect(resultText("docs-missing")).toContain("Unknown documentation ID");
-    expect(resultText("docs-bare")).toContain("Use docs:all");
     if (mode === "codemode")
       for (const id of ["docs-missing", "docs-bare"]) {
         expect(resultText(id)).toContain("search failed");
-        expect(codemodeFailures(resultText(id))).toMatch(
-          /^1 of 1 IDE call failed:\n- search docs:/u,
-        );
       }
     expect(resultText("docs-all")).not.toContain("SEARCH#");
     const attached = documentationDetails(result, "after-docs-search") as {

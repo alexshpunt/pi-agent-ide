@@ -4,7 +4,9 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
+  getToolResultMessage,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -12,7 +14,6 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 type Call = Parameters<typeof toolCall>[0];
@@ -56,10 +57,15 @@ async function run(
 
 const script = (id: string, code: string): Call => ({ id, name: "codemode", arguments: { code } });
 
-function failureBlock(output: string): string {
-  const block = codemodeFailures(output);
-  expect(block, output).not.toBe("");
-  return block;
+function calls(result: Awaited<ReturnType<typeof run>>, id: string) {
+  const details = getToolExecutionDetails(getToolExecution(result, id)) as {
+    calls: { name: string; status: string; args: string }[];
+  };
+  return details.calls.map((call) => ({
+    name: call.name,
+    status: call.status,
+    args: JSON.parse(call.args) as unknown,
+  }));
 }
 
 test("a failed IDE call resolves to null, the script continues and its result lists the failure", async () => {
@@ -81,22 +87,27 @@ throw new Error("stopped after " + value);`,
     const reads = getToolResultText(result, "reads");
     expect(getToolExecution(result, "reads").isError, reads).toBe(false);
     expect(reads).toContain('shape:["object",null,"object"]');
-    const block = failureBlock(reads);
-    expect(block.startsWith("1 of 3 IDE calls failed:\n- read missing.txt\n")).toBe(true);
-    expect(block).toContain("Search for the correct path.");
-    expect(block).not.toContain("<system-result");
-    expect(reads.indexOf("shape:")).toBeLessThan(reads.indexOf("1 of 3 IDE calls failed"));
+    expect(reads).toContain("missing.txt");
+    expect(calls(result, "reads")).toEqual([
+      { name: "read", status: "ok", args: { path: "a.txt" } },
+      { name: "read", status: "error", args: { path: "missing.txt" } },
+      { name: "read", status: "ok", args: { path: "c.txt" } },
+    ]);
 
     const thrown = getToolResultText(result, "throws");
     expect(getToolExecution(result, "throws").isError).toBe(true);
     expect(thrown).toContain("stopped after null");
-    expect(failureBlock(thrown).startsWith("1 of 1 IDE call failed:\n- read missing.txt\n")).toBe(
-      true,
-    );
+    expect(thrown).toContain("missing.txt");
+    expect(calls(result, "throws")).toEqual([
+      { name: "read", status: "error", args: { path: "missing.txt" } },
+    ]);
 
     const direct = getToolResultText(result, "direct");
     expect(getToolExecution(result, "direct").isError).toBe(true);
-    expect(direct).toContain("Search for the correct path.");
+    expect(getToolExecutionDetails(getToolExecution(result, "direct"))).toHaveProperty(
+      "failure.code",
+      "READ_FAILED",
+    );
     expect(direct).not.toContain("<system-result");
   });
 });
@@ -166,21 +177,26 @@ text("rejected:" + (rejected !== ""));`,
     const refused = getToolResultText(result, "refused");
     expect(getToolExecution(result, "refused").isError, refused).toBe(false);
     expect(refused).toContain("refused:true:true:true");
-    const block = failureBlock(refused);
-    expect(block).toContain("3 of 4 IDE calls failed:");
-    // Several sources of one field are a list; an arrow is kept for a target.
-    expect(block).toContain("- search a.txt, missing-dir\n");
-    // The block is last, after any guide the result carries.
-    expect(block).not.toContain("# Guide:");
-    expect(block).toContain("- read RESULT#00000000-0000-4000-8000-000000000000");
-    expect(block).toContain("Result reference expired");
-    expect(block).toContain("- replace a.txt");
-    expect(block).toContain("A system result reference is not file content.");
+    expect(refused).toContain("RESULT#00000000-0000-4000-8000-000000000000");
+    expect(refused).toContain("missing-dir");
+    expect(calls(result, "refused")).toMatchObject([
+      {
+        name: "read",
+        status: "error",
+        args: { path: "RESULT#00000000-0000-4000-8000-000000000000" },
+      },
+      { name: "search", status: "ok", args: { path: "a.txt" } },
+      { name: "replace", status: "error", args: { path: "a.txt" } },
+      { name: "search", status: "error", args: { path: ["a.txt", "missing-dir"] } },
+    ]);
+
     expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("alpha\n");
 
     const invalid = getToolResultText(result, "invalid");
     expect(invalid).toContain("rejected:true");
-    expect(codemodeFailures(invalid)).toBe("");
+    expect(calls(result, "invalid")).toEqual([
+      { name: "search", status: "error", args: { path: "a.txt" } },
+    ]);
   });
 });
 
@@ -198,11 +214,24 @@ text("after:" + after);`,
 
     const output = getToolResultText(result, "partial");
     expect(output).toContain("after:null");
-    const block = failureBlock(output);
-    expect(block).toContain("2 of 3 IDE calls failed:");
-    expect(block).toContain(
-      "- receipt_edit a.txt\n  Changed: a.txt. Do not repeat this edit blindly; Read the files first.\n  The edit was accepted, then its editor batch failed when it was saved.\n  Fixture failed after writing\n- read a.txt\n  Editor batch failed before this tool.",
-    );
+    const lastBlock = getToolResultMessage(result, "partial").content.findLast(
+      (block) => block.type === "text",
+    )?.text;
+    expect(lastBlock).toContain("a.txt");
+    expect(lastBlock).toContain("Fixture failed after writing");
+    expect(lastBlock).not.toContain("b.txt");
+    expect(calls(result, "partial")).toMatchObject([
+      { name: "receipt_edit", status: "ok", args: { path: "a.txt" } },
+      { name: "receipt_edit", status: "ok", args: { path: "b.txt" } },
+      { name: "read", status: "error", args: { path: "a.txt" } },
+    ]);
+    const details = getToolExecutionDetails(getToolExecution(result, "partial"));
+    expect(details).toHaveProperty("editorBatchResults.0.status", "partial");
+    expect(details).toHaveProperty("editorBatchResults.0.data.operations.0.effect", "unknown");
+    expect(details).toHaveProperty("editorBatchResults.0.data.operations.1.effect", "applied");
     expect(await readFile(path.join(cwd, "a.txt"), "utf8")).toBe("A\n");
+    expect(await readFile(path.join(cwd, "b.txt"), "utf8")).toBe("B\n");
+    for (const file of ["a.txt", "b.txt"])
+      expect(await readFile(path.join(cwd, file + ".writes"), "utf8")).toBe("write\n");
   });
 });

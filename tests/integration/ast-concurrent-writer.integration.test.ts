@@ -126,7 +126,7 @@ for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
 for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   // The whole result as an edit source: the matched definition is rewritten.
   const whole = await found("edit.cpp", ${JSON.stringify(definition)}, round, "definition", 1, ["NAME","ADD"]);
-  const rewritten = await tools.replace({path:whole,text:"int ${edited.token}(int value) { return value + " + String(round) + "; }"});
+  const rewritten = await tools.replace({path:whole,text:"int ${edited.token}(int value) { return value + " + String(round + 1) + "; }"});
   check(typeof rewritten === "string", "Round " + round + ": whole-result rewrite returned " + JSON.stringify(rewritten));
   // A capture of a result with several matches: the argument of the first call is replaced.
   const uses = await found("edit.cpp", ${JSON.stringify(`${edited.token}($ARG)`)}, round, "call", ${String(calls)}, ["ARG"]);

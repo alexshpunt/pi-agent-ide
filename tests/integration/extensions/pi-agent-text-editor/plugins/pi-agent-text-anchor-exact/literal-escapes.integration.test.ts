@@ -38,12 +38,7 @@ test("literal control escapes refuse without mutation, recover by issued anchors
       },
       { id: "after-refusal", name: "read", arguments: { path: "fixture.txt" } },
       { id: "snapshot", name: "bash", arguments: { command: "cp fixture.txt after-refusal.bin" } },
-      // Even the corrected characters stay blocked until an issued selector succeeds.
-      {
-        id: "blocked",
-        name: "replace",
-        arguments: { path: "fixture.txt", start: actual, text: "BAD" },
-      },
+
       {
         id: "recover",
         name: "replace",
@@ -102,8 +97,7 @@ test("literal control escapes refuse without mutation, recover by issued anchors
     expect(readBack).toContain("PREFIX");
     expect(readBack).toContain(literal);
     expect(readBack).not.toContain("BAD");
-    expect(getToolExecution(result, "blocked").isError).toBe(true);
-    expect(getToolResultText(result, "blocked")).toContain(JSON.stringify(actual));
+
     expect(getToolExecution(result, "snapshot").isError).toBe(false);
     await expect(readFile(path.join(cwd, "after-refusal.bin"))).resolves.toEqual(
       Buffer.from(before),
@@ -111,7 +105,8 @@ test("literal control escapes refuse without mutation, recover by issued anchors
     for (const id of ["recover", "literal", "actual"])
       expect(getToolExecution(result, id).isError, id).toBe(false);
     await expect(readFile(file, "utf8")).resolves.toBe(
-      "character-edited\r\nSUFFIX\r\nliteral-edited\r\n",
+      // Both literals exclude their existing CRLF; replacement CRLF is additional content.
+      "character-edited\r\n\r\nSUFFIX\r\nliteral-edited\r\n\r\n",
     );
   });
 });

@@ -93,8 +93,8 @@ test.each(["direct", "codemode"])(
           },
           events,
           mode,
-        ).passed,
-      ).toBe(true);
+        ),
+      ).toEqual({ passed: true, reasons: [] });
       const initial = Object.fromEntries(
         Object.entries(files).map(([file, content]) => [file, Buffer.from(content)]),
       );
@@ -240,7 +240,9 @@ text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),text:"Fin
         {
           files,
           steps: [
-            { tool: "read" },
+            { tool: "read", args: { path: "source.txt", views: ["anchors"] } },
+            { tool: "read", args: { path: "target.txt", views: ["anchors"] } },
+            { tool: "read", args: { path: "last.txt", views: ["anchors"] } },
             {
               tool: "move",
               args: {
@@ -249,12 +251,15 @@ text(await tools.replace({path:{id:last.id},start:finalLine.slice(0,7),text:"Fin
                 target: "target.txt",
                 targetStart: "top\n",
               },
-              reuse: { from: 0, field: "path" },
+              reuse: [
+                { from: 0, field: "path" },
+                { from: 1, field: "target" },
+              ],
             },
             {
               tool: "replace",
               args: { path: "last.txt", start: "Last", text: "Final" },
-              reuse: { from: 0, field: "start", kind: "anchor" },
+              reuse: { from: 2, field: "start", kind: "anchor" },
             },
           ],
         },

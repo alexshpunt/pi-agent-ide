@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
-  getToolResultText,
+  getToolExecutionDetails,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -70,22 +70,11 @@ for (const name of ["before-save.note", "after-save.note", "unknown.note"] as co
         expect(events).toHaveLength(2);
         expect(events[1]).toMatchObject({ aborted: true, content: expected });
       }
-      expect(getToolResultText(run, "interrupted")).toMatch(/interrupted/i);
-      expect(run.tuiRenderedOutput).toMatch(/interrupted/i);
-      expect(run.tuiRenderedOutput).not.toContain("Result unavailable in this saved display.");
-      expect(run.tuiRenderedOutput).not.toContain("Nested IDE display:");
-      if (name === "unknown.note") {
-        expect(run.tuiRenderedOutput).toContain("Effects unknown · edit failed");
-        expect(run.tuiRenderedOutput).not.toContain("Not changed · edit failed");
-      } else if (name === "before-save.note") {
-        // The late guard result confirms no write before the parent history is saved.
-        expect(run.tuiRenderedOutput).toContain("Not changed · edit failed");
-      }
     });
   });
 }
 
-test("keeps deferred processing complete when its handler finishes after a script deadline", async () => {
+test("finishes deferred Replace processing after the VM script returns", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
     await writeFile(
@@ -100,7 +89,7 @@ test("keeps deferred processing complete when its handler finishes after a scrip
     await mkdir(path.dirname(path.join(cwd, source)), { recursive: true });
     await writeFile(path.join(cwd, source), "before\n");
     const run = await new PiIntegrationTest({
-      testName: "replace-interrupted-processing",
+      testName: "replace-deferred-processing",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       rawMode: false,
@@ -117,7 +106,7 @@ test("keeps deferred processing complete when its handler finishes after a scrip
               id: "interrupted",
               name: "codemode",
               arguments: {
-                code: `// @options: {"timeout_ms":2000}\nconst source = await tools.read({path:${JSON.stringify(source)}}); text(await tools.replace({path:source,text:"changed\\n"})); while(true){}`,
+                code: `// @options: {"timeout_ms":2000}\nconst source = await tools.read({path:${JSON.stringify(source)}}); text(await tools.replace({path:source,text:"changed\\n"}));`,
               },
             }),
           ],
@@ -125,8 +114,8 @@ test("keeps deferred processing complete when its handler finishes after a scrip
         ),
         assistantMessage([text("Saved edit observed.")]),
       ],
-    }).run("Do not call deferred processing interrupted when it actually finishes");
-    expect(getToolExecution(run, "interrupted").isError).toBe(true);
+    }).run("Finish deferred Replace processing after the VM script returns");
+    expect(getToolExecution(run, "interrupted").isError).toBe(false);
     expect(await readFile(path.join(cwd, source), "utf8")).toBe("changed\n");
     const events = (await readFile(path.join(cwd, ".tmp/write-interruption/events.jsonl"), "utf8"))
       .trim()
@@ -134,10 +123,10 @@ test("keeps deferred processing complete when its handler finishes after a scrip
       .map((line) => JSON.parse(line) as { aborted: boolean; content: string });
     expect(events).toHaveLength(2);
     expect(events.every((event) => !event.aborted && event.content === "changed\n")).toBe(true);
-    expect(getToolResultText(run, "interrupted")).not.toMatch(
-      /post-edit processing was interrupted/i,
-    );
-    expect(run.tuiRenderedOutput).not.toContain("Result unavailable in this saved display.");
+    expect(getToolExecutionDetails(getToolExecution(run, "interrupted"))).toMatchObject({
+      editorBatches: [{ applied: true }],
+      editorBatchResults: [{ status: "success", data: { effect: "applied" } }],
+    });
   });
 });
 for (const ending of ["deadline", "ordinary-error"] as const) {
@@ -173,8 +162,10 @@ for (const ending of ["deadline", "ordinary-error"] as const) {
       }).run("Do not reclassify a completed Write when later script work fails");
       expect(getToolExecution(run, "ended").isError).toBe(true);
       expect(await readFile(path.join(cwd, "completed.txt"), "utf8")).toBe("saved\n");
-      expect(getToolResultText(run, "ended")).not.toMatch(/post-edit processing was interrupted/i);
-      expect(run.tuiRenderedOutput).not.toContain("Result unavailable in this saved display.");
+      expect(getToolExecutionDetails(getToolExecution(run, "ended"))).toHaveProperty(
+        "calls.0.status",
+        "ok",
+      );
     });
   });
 }

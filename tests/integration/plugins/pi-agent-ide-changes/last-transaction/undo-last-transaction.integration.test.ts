@@ -69,15 +69,16 @@ describe("undo last text transaction", () => {
         path.join(directory, ".pi/pi-agent-ide/extensions.json"),
         JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
       );
+      // An issued match retains the complete block even when the display clips its text.
       const move = (id: string, file: string) =>
         toolCall({
           id,
-          name: "move",
+          name: "codemode",
           arguments: {
-            path: file,
-            start: block.split("\n", 1)[0],
-            end: block.trimEnd().split("\n").at(-1),
-            targetStart: "// destination",
+            code: `const selected = await tools.search(${JSON.stringify({ path: file, query: "regex:^// moved_0 [^\\n]*\\n(?:// moved_[0-9]+ [^\\n]*\\n){2899}", multiline: true })});
+if (selected === null || selected.matches.length !== 1) throw Error("Large block selection failed");
+const receipt = await tools.move({path:selected,target:${JSON.stringify(file)},targetStart:"end"});
+if (receipt === null) throw Error("Large move failed");`,
           },
           delayMs: 0,
         });
@@ -90,11 +91,12 @@ describe("undo last text transaction", () => {
         rawMode: true,
         timeoutMs: 30_000,
         traceToolDetails: false,
-        extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: ["move", "undo", "bash", "delete"],
+        extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+        tools: ["codemode", "search", "move", "undo", "bash", "delete"],
         conversation: [
           toolMessage(move("move-unchanged", unchangedName)),
           toolMessage(undo("undo-unchanged", unchangedName)),
+
           toolMessage(move("move-shared", sharedName)),
           toolMessage(
             toolCall({

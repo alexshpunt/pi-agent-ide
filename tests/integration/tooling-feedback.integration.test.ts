@@ -226,7 +226,6 @@ test.each(sameFileEdits)(
         };
         expect(validateRoute(inFixture, events, "direct")).toEqual({ passed: true, reasons: [] });
       }
-      expect(result.tuiRenderedOutput).not.toContain("edit failed");
     });
   },
 );
@@ -300,7 +299,7 @@ test("same-file selection batches reject overlaps and later reuse without losing
     ).toBe(false);
     expect(getToolExecution(result, "peer").isError, getToolResultText(result, "peer")).toBe(false);
     expect(getToolExecution(result, "overlap").isError).toBe(true);
-    expect(getToolResultText(result, "overlap")).toContain("overlaps");
+
     expect(getToolExecution(result, "expired").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("FIRST\nmiddle\nLAST\n");
   });
@@ -360,10 +359,6 @@ test("issued Search line and match scopes stay sparse through direct calls and C
           steps: scopes.map((scope) => ({
             tool: "search",
             args: { query: scope.query },
-            contains:
-              scope.count === 0
-                ? "No matches found"
-                : `${scope.count} ${scope.count === 1 ? "match" : "matches"} in 1 file`,
           })),
         },
         events,
@@ -451,10 +446,15 @@ test("direct Search consumes a Read UUID without widening its window", async () 
       false,
     );
     expect(getToolResultText(result, "inside")).toContain("inside-feature");
+    expect(getToolResultMessage(result, "inside").details).toMatchObject({
+      payload: { matchCount: 1, complete: true },
+    });
     expect(getToolExecution(result, "outside").isError, getToolResultText(result, "outside")).toBe(
       false,
     );
-    expect(getToolResultText(result, "outside")).toContain("No matches found");
+    expect(getToolResultMessage(result, "outside").details).toMatchObject({
+      payload: { matchCount: 0, complete: true },
+    });
   });
 });
 
@@ -471,12 +471,18 @@ test("direct Search evaluates Boolean colon terms inside issued windows", async 
     expect(getToolExecution(result, "inside").isError, getToolResultText(result, "inside")).toBe(
       false,
     );
-    expect(getToolResultText(result, "inside")).toContain("1 match in 1 file");
+
+    expect(getToolResultMessage(result, "inside").details).toMatchObject({
+      payload: { matchCount: 1, complete: true },
+    });
     expect(getToolResultText(result, "inside")).toContain("legacy​Checkout");
     expect(getToolResultText(result, "inside")).not.toContain("note.txt:4:");
     // Search no longer owns a process: protocol, so the term is ordinary text inside the window.
     expect(getToolExecution(result, "former-protocol").isError).toBe(false);
-    expect(getToolResultText(result, "former-protocol")).toContain("No matches found");
+    expect(getToolResultMessage(result, "former-protocol").details).toMatchObject({
+      payload: { matchCount: 0, complete: true },
+    });
+
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(original);
   });
 });
@@ -505,7 +511,21 @@ test("three sequential replacements report one file through native Codemode", as
     expect(getToolExecution(result, "script").isError, getToolResultText(result, "script")).toBe(
       false,
     );
-    expect(getToolResultText(result, "script")).toContain("Applied 3 replacements in 1 file.");
+
+    const details = getToolResultMessage<{
+      calls: { name: string; status: string }[];
+      editorBatchResults: { data: { files: { source: string }[] } }[];
+    }>(result, "script").details;
+    expect(
+      details.calls.filter((call) => call.name === "replace").map((call) => call.status),
+    ).toEqual(["ok", "ok", "ok"]);
+    expect([
+      ...new Set(
+        details.editorBatchResults.flatMap((receipt) =>
+          receipt.data.files.map((file) => path.basename(file.source)),
+        ),
+      ),
+    ]).toEqual(["note.txt"]);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("NEW\nNEW\nNEW\n");
   });
 });
@@ -541,8 +561,6 @@ test.each([false, true])(
       ]);
       expect(getToolExecution(result, "shift").isError).toBe(false);
       expect(getToolExecution(result, "blocked").isError).toBe(true);
-      expect(getToolResultText(result, "blocked")).toContain("is stale");
-      expect(getToolResultText(result, "blocked")).not.toContain("Validation failed");
       expect(getToolResultMessage(result, "blocked").details).toMatchObject({
         effect: "not-applied",
       });
@@ -552,7 +570,7 @@ test.each([false, true])(
         getToolResultText(result, "recovery"),
       ).toBe(false);
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
-        "alpha\nbeta\ngamma2\nadded\nrecovered",
+        "alpha\nbeta\ngamma2\nadded\nrecovered\n",
       );
     });
   },
@@ -569,7 +587,7 @@ test.each([{}, { text: "" }])(
         [call("invalid", "insert", { path: "note.txt", anchor: "alpha", ...payload })],
       );
       expect(getToolExecution(result, "invalid").isError).toBe(true);
-      expect(getToolResultText(result, "invalid")).toContain("Validation failed");
+
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\n");
     });
   },

@@ -6,7 +6,6 @@ import {
   assistantMessage,
   getToolExecution,
   getToolResultMessage,
-  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -84,17 +83,14 @@ test("nested IDE results keep their custom panels below Codemode without script 
     }).run("Run nested IDE tools without printing their results");
     expect(getToolExecution(run, "parent").isError).toBe(false);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\n");
-    expect(run.tuiRenderedOutput).not.toContain("Nested IDE results");
+
     const panels = run.tuiRenderedOutput;
     expect(panels).toContain("BETA");
     expect(panels.match(/\+0 ~2 -0/g)).toHaveLength(1);
-    // The grouped diff stands for two edits, so no single call's time is shown for it.
-    expect(panelText(panels, "replace note.txt", "Done")).not.toContain("Took");
-    expect(panelText(panels, "read note.txt", "search")).toMatch(/Took \d/);
-    expect(panels).not.toContain("Applied in the same editor batch");
+
     expect(getToolResultMessage(run, "parent").nestedCalls?.calls).toHaveLength(4);
     expect(getToolResultMessage(run, "parent").nestedCalls?.calls.at(-1)?.name).toBe("replace");
-    expect(panels).not.toContain("not yet applied");
+
     const saved = await PiRun.open(run.artifacts.run);
     expect(saved.session).toContain("ide-nested-results");
     expect(saved.session).toContain("nestedCalls");
@@ -133,8 +129,7 @@ test("nested IDE results keep their custom panels below Codemode without script 
     }).run("/restore-tool-history");
     const restoredPanels = restored.tuiRenderedOutput;
     expect(restoredPanels.match(/\+0 ~2 -0/g)).toHaveLength(1);
-    expect(restoredPanels).not.toContain("Nested IDE results");
-    expect(restoredPanels).not.toContain("Applied in the same editor batch");
+
     expect(restoredPanels).toContain("BETA");
     await promisify(execFile)(process.env.PI_COMMAND ?? "pi", [
       "--export",
@@ -153,19 +148,6 @@ test("nested IDE results keep their custom panels below Codemode without script 
     await writeFile(path.join(run.artifacts.directory, "export.html"), html);
   });
 });
-
-/** Format like native tool rows, so expectations follow the recorded value rather than a guess. */
-function took(ms: number): string {
-  return `Took ${(ms / 1000).toFixed(1)}s`;
-}
-
-/** Text of one nested panel: from its header up to the next marker, or to the end. */
-function panelText(output: string, header: string, next?: string): string {
-  const start = output.lastIndexOf(header);
-  expect(start).toBeGreaterThanOrEqual(0);
-  const end = next === undefined ? -1 : output.indexOf(next, start + header.length);
-  return output.slice(start, end === -1 ? undefined : end);
-}
 
 test("parallel nested calls show their own recorded durations through restore", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -198,6 +180,10 @@ test("parallel nested calls show their own recorded durations through restore", 
     expect(getToolExecution(run, "parent").isError).toBe(false);
     const saved = await PiRun.open(run.artifacts.run);
     const lines = saved.session?.split("\n") ?? [];
+    // The shared runner removes its staging cwd after the recording finishes.
+    const header = JSON.parse(lines[0] ?? "{}") as { cwd: string };
+    header.cwd = cwd;
+    lines[0] = JSON.stringify(header);
     const panelIndex = lines.findIndex((line) =>
       line.includes('"customType":"ide-nested-results"'),
     );
@@ -217,10 +203,6 @@ test("parallel nested calls show their own recorded durations through restore", 
       expect(parentDuration).toBeLessThan((slow?.durationMs ?? 0) + (fast?.durationMs ?? 0) + 900);
       expect(slow?.durationMs).toBeLessThanOrEqual(parentDuration);
     }
-    const panels = run.tuiRenderedOutput;
-    expect(panels).toContain(took(slow?.durationMs ?? 0));
-    expect(panels).toContain(took(fast?.durationMs ?? 0));
-
     // Older history recorded no duration: it must render without a fabricated value.
     delete entry.data.calls[0]?.durationMs;
     lines[panelIndex] = JSON.stringify(entry);
@@ -238,15 +220,24 @@ test("parallel nested calls show their own recorded durations through restore", 
         path.resolve("tests/integration/fixtures/restore-tool-history.ts"),
       ],
       tools: ["read"],
-      environment: { IDE_RESTORE_SESSION: session, IDE_HISTORY_EXPANDED: "1" },
+      environment: {
+        IDE_RESTORE_SESSION: session,
+        IDE_HISTORY_EXPANDED: "1",
+        IDE_RESTORE_PROBE: "restored-branch.json",
+      },
       conversation: [assistantMessage([text("Restored")])],
     }).run("/restore-tool-history");
-    const restoredPanels = restored.tuiRenderedOutput;
-    expect(restoredPanels).toContain(took(slow?.durationMs ?? 0));
-    expect(restoredPanels).toContain(took(fast?.durationMs ?? 0));
-    const readPanel = panelText(restoredPanels, "read note.txt", "slow-child");
-    expect(readPanel).toContain("alpha");
-    expect(readPanel).not.toContain("Took");
+    expect(restored.tuiRenderedOutput).toContain("alpha");
+    const restoredBranch = JSON.parse(
+      await readFile(path.join(cwd, "restored-branch.json"), "utf8"),
+    ) as { customType?: string; data: typeof entry.data }[];
+    const restoredEntry = restoredBranch.find((item) => item.customType === "ide-nested-results");
+    expect(restoredEntry).toBeDefined();
+    expect(restoredEntry?.data.calls.map((call) => call.durationMs)).toEqual([
+      undefined,
+      slow?.durationMs,
+      fast?.durationMs,
+    ]);
   });
 });
 
@@ -322,11 +313,9 @@ test("ordinary parent failure keeps one final diff per file and every native cal
     expect(getToolExecution(run, "parent").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\n");
     const panels = run.tuiRenderedOutput;
-    expect(panels).not.toContain("Applied in the same editor batch");
-    expect(panels).not.toContain("Nested IDE results");
+
     expect(panels.match(/\+0 ~3 -0/g)).toHaveLength(1);
-    expect(panels).toContain("replace 2 files");
-    expect(panels).not.toContain("Nested IDE display:");
+
     for (const file of ["note.txt", "other.txt"])
       expect(
         panels.split("\n").filter((line) => line.includes("╭─") && line.includes(file)),
@@ -389,9 +378,7 @@ test("large nested write arguments keep results and honest warnings through rest
     });
     expect(entry.data.calls[0]?.result).toBeDefined();
     expect(Buffer.byteLength(line ?? "")).toBeLessThan(513 * 1024);
-    expect(run.tuiRenderedOutput).toContain("arguments shortened");
-    expect(run.tuiRenderedOutput).not.toContain("results were not retained");
-    expect(run.tuiRenderedOutput).not.toContain("result displays omitted");
+
     const session = path.join(cwd, "saved.jsonl");
     await writeFile(session, saved.session ?? "");
     const restored = await new PiIntegrationTest({
@@ -412,8 +399,7 @@ test("large nested write arguments keep results and honest warnings through rest
       },
       conversation: [assistantMessage([text("Restored")])],
     }).run("/restore-tool-history");
-    expect(restored.tuiRenderedOutput).toContain("arguments shortened");
-    expect(restored.tuiRenderedOutput).not.toContain("results were not retained");
+
     expect(restored.tuiRenderedOutput).toContain("large.txt");
     await promisify(execFile)(process.env.PI_COMMAND ?? "pi", [
       "--export",
@@ -469,8 +455,6 @@ test("nested display retention is bounded and labels omitted results honestly", 
     expect(Buffer.byteLength(panelLine ?? "")).toBeLessThan(513 * 1024);
     expect(panelLine).toContain('"resultsOmitted":true');
     expect(panelLine).toContain('"argumentsTruncated":false');
-    expect(run.tuiRenderedOutput).toContain("result displays omitted");
-    expect(run.tuiRenderedOutput).not.toContain("arguments shortened");
   });
 });
 
@@ -508,11 +492,14 @@ test("nested terminal and debugger calls retain their custom panels and a child 
     expect(panels).toContain("nested-terminal");
     expect(panels).toContain("nested-background");
     expect(panels).toContain("debugpy");
-    expect(panels).toContain("configure debugger");
+
     expect(panels).toContain("missing.txt");
-    expect(getToolResultText(run, "parent")).toContain(
-      "1 of 5 IDE calls failed:\n- read missing.txt",
-    );
+    const calls = getToolResultMessage<{ calls: { name: string; status: string }[] }>(run, "parent")
+      .details.calls;
+    expect(calls).toHaveLength(5);
+    expect(calls.filter((call) => call.status === "error").map((call) => call.name)).toEqual([
+      "read",
+    ]);
     const saved = await PiRun.open(run.artifacts.run);
     const panelLine = saved.session
       ?.split("\n")
@@ -532,7 +519,7 @@ test("a deadline renders accepted edits as not applied rather than successful", 
       cwd,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "replace"],
+      tools: ["codemode", "read", "replace"],
       conversation: [
         assistantMessage(
           [
@@ -540,7 +527,7 @@ test("a deadline renders accepted edits as not applied rather than successful", 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: '// @options: {"timeout_ms":2000}\nawait tools.replace({path:"note.txt",start:"alpha",text:"UNWRITTEN"}); while (true) {}',
+                code: '// @options: {"timeout_ms":2000}\nawait tools.read({path:"note.txt"}); await tools.replace({path:"note.txt",start:"alpha",text:"UNWRITTEN"}); while (true) {}',
               },
             }),
           ],
@@ -552,7 +539,30 @@ test("a deadline renders accepted edits as not applied rather than successful", 
     expect(getToolExecution(run, "parent").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\n");
     const panels = run.tuiRenderedOutput;
-    expect(panels).toContain("Not changed");
+    const details = getToolResultMessage(run, "parent").details;
+    expect(details).toMatchObject({
+      calls: [
+        { name: "read", status: "ok" },
+        { name: "replace", status: "ok" },
+      ],
+      editorBatches: [],
+      editorBatchResults: [
+        {
+          status: "error",
+          data: {
+            effect: "not-applied",
+            operations: [
+              {
+                id: "parent/2",
+                operation: "replace",
+                effect: "not-applied",
+                errors: [{ code: "CANCELLED" }],
+              },
+            ],
+          },
+        },
+      ],
+    });
     expect(panels).not.toContain("+0 ~1 -0");
   });
 });

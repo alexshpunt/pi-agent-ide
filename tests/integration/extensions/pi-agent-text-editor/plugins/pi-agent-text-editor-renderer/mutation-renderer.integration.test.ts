@@ -311,6 +311,16 @@ describe("text mutation renderer", () => {
           assistantMessage(
             [
               toolCall({
+                id: "read-streaming",
+                name: "read",
+                arguments: { path: "streaming.ts", views: ["anchors"] },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
                 id: "replace-streaming",
                 name: "replace",
                 argumentsJson,
