@@ -5,6 +5,7 @@ import {
   isTextAnchorRecoveryOutcome,
   isTextAnchorResolutionAttempt,
   type TextAnchor,
+  type TextAnchorRecoveryCandidateRange,
   type TextAnchorRecoveryOutcome,
   type TextAnchorRecoveryRange,
   type TextAnchorRejection,
@@ -50,7 +51,7 @@ export class TextAnchorResolutionError extends Error {
     private readonly recoverAgain?: (
       context: TextAnchorResolverContext,
     ) => Promise<TextAnchorRecoveryOutcome>,
-    private readonly originalRecoveryContext?: TextAnchorResolverContext,
+    private recoveryContext?: TextAnchorResolverContext,
   ) {
     super(message, options);
   }
@@ -74,15 +75,38 @@ export class TextAnchorResolutionError extends Error {
       },
       this.recovery,
       this.recoverAgain,
-      this.originalRecoveryContext,
+      this.recoveryContext,
     );
+  }
+
+  /** The complete selection of the same snapshot used to produce the recovery. */
+  public allMatchesTarget():
+    | (TextTarget & {
+        readonly expectedContent: string;
+        readonly ranges: readonly TextAnchorRecoveryCandidateRange[];
+      })
+    | undefined {
+    const context = this.recoveryContext;
+    if (
+      this.rejection?.code !== "ambiguous" ||
+      this.recovery?.kind !== "candidates" ||
+      this.recovery.allMatches === undefined ||
+      context === undefined
+    )
+      return undefined;
+    return {
+      source: context.source,
+      ranges: this.recovery.allMatches,
+      expectedContent: context.content,
+    };
   }
 
   /** Recomputes recovery against a supplied or original immutable source snapshot. */
   public async refreshRecovery(context?: TextAnchorResolverContext): Promise<void> {
-    const recoveryContext = context === undefined ? this.originalRecoveryContext : context;
+    const recoveryContext = context ?? this.recoveryContext;
     if (this.recoverAgain !== undefined && recoveryContext !== undefined) {
       this.recovery = await this.recoverAgain(recoveryContext);
+      this.recoveryContext = recoveryContext;
     }
   }
 }
@@ -383,20 +407,33 @@ function isSelectionWithinContext(
   }
 
   return anchor.ranges.every((range) => {
-    const startLine = context.lines[range.start.lineNumber - 1];
-    const endLine = context.lines[range.end.lineNumber - 1];
-    const virtualTrailingLine =
-      endLine === undefined &&
-      range.end.lineNumber === context.lines.length + 1 &&
-      range.end.column === 0 &&
-      context.content.endsWith("\n");
-    return (
-      startLine !== undefined &&
-      (endLine !== undefined || virtualTrailingLine) &&
-      range.start.column <= startLine.length &&
-      (virtualTrailingLine || range.end.column <= (endLine?.length ?? -1))
-    );
+    return rangeFitsContext(range, context);
   });
+}
+
+function rangeFitsContext(
+  range: TextAnchorRecoveryCandidateRange,
+  context: TextAnchorResolverContext,
+): boolean {
+  const startLine = context.lines[range.start.lineNumber - 1];
+  const endLine = context.lines[range.end.lineNumber - 1];
+  const virtualTrailingLine =
+    endLine === undefined &&
+    range.end.lineNumber === context.lines.length + 1 &&
+    range.end.column === 0 &&
+    context.content.endsWith("\n");
+  return (
+    startLine !== undefined &&
+    range.start.column <= startLine.length &&
+    (virtualTrailingLine || range.end.column <= (endLine?.length ?? -1))
+  );
+}
+
+function comparePositions(
+  left: TextAnchorRecoveryCandidateRange["start"],
+  right: TextAnchorRecoveryCandidateRange["start"],
+): number {
+  return left.lineNumber - right.lineNumber || left.column - right.column;
 }
 
 function renderResolverDescription(resolver: TextAnchorResolver): string | undefined {
@@ -443,16 +480,23 @@ function recoveryFitsContext(
   if (recovery.kind !== "candidates" || recovery.total < recovery.candidates.length) {
     return recovery.kind !== "candidates";
   }
-  return recovery.candidates.every(({ rank, range }, index) => {
-    const startLine = context.lines[range.start.lineNumber - 1];
-    const endLine = context.lines[range.end.lineNumber - 1];
-    return (
-      rank === index + 1 &&
-      startLine !== undefined &&
-      endLine !== undefined &&
-      range.start.column <= startLine.length &&
-      range.end.column <= endLine.length &&
-      (range.start.lineNumber < range.end.lineNumber || range.start.column <= range.end.column)
-    );
-  });
+  return (
+    recovery.candidates.every(
+      ({ rank, range }, index) =>
+        rank === index + 1 &&
+        rangeFitsContext(range, context) &&
+        comparePositions(range.start, range.end) <= 0,
+    ) &&
+    (recovery.allMatches === undefined ||
+      (recovery.allMatches.length === recovery.total &&
+        recovery.allMatches.length > 1 &&
+        recovery.allMatches.every((range, index, ranges) => {
+          const previous = ranges[index - 1];
+          return (
+            rangeFitsContext(range, context) &&
+            comparePositions(range.start, range.end) < 0 &&
+            (previous === undefined || comparePositions(previous.end, range.start) <= 0)
+          );
+        })))
+  );
 }

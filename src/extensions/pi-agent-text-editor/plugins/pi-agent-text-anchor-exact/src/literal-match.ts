@@ -127,16 +127,14 @@ export function matchLiteral(
   return { kind: "missing" };
 }
 
-/** Every span of the first phase that finds the literal, up to `limit`, and their number. */
+/** Every source span from the first matching phase, including overlaps. */
 export function literalCandidates(
   content: string,
   value: string,
   anchored: AnchoredLiteralView,
-  limit: number,
   accept: (span: LiteralSpan) => boolean = () => true,
-): { readonly spans: readonly LiteralSpan[]; readonly total: number } {
-  const spans = firstMatches(content, value, anchored, accept, Number.MAX_SAFE_INTEGER);
-  return { spans: spans.slice(0, limit), total: spans.length };
+): readonly LiteralSpan[] {
+  return firstMatches(content, value, anchored, accept, Number.MAX_SAFE_INTEGER);
 }
 
 function firstMatches(

@@ -356,11 +356,23 @@ export class ResultTargetStore {
       throw new Error("A Search reference needs a registered result target from this worktree.");
     // A writer can change one match before publication. Bind its original target so use of this
     // selector reports the loss without failing the search or hiding its other matches.
+    this.#bindSearchReference(reference, target);
+  }
+
+  /** Issue a fixed selection of every match of a rejected literal, not a live Search query. */
+  public registerAllMatchesReference(target: ResultSourceTarget, cwd: string): string {
+    const id = randomUUID().replaceAll("-", "").toUpperCase();
+    const reference = `SEARCH#${id}:all:match`;
+    this.#bindSearchReference(reference, this.register([target], cwd));
+    return reference;
+  }
+
+  #bindSearchReference(reference: string, target: string): void {
     this.#matchReferences.set(reference, target);
     this.#referenceNames.set(target, reference);
   }
 
-  /** Whether `registerSearchReference` bound this numbered Search reference to a snapshot. */
+  /** Whether a Search reference is bound to a registered snapshot. */
   public hasSearchReference(reference: string): boolean {
     return this.#matchReferences.has(reference);
   }
@@ -370,8 +382,8 @@ export class ResultTargetStore {
     return this.#referenceNames.get(handle) ?? handle;
   }
   /**
-   * Targets of a numbered Search reference bound by `registerSearchReference`, or `undefined` when
-   * none is bound. A bound reference that cannot be used throws the reason, with current lines.
+   * Targets of a Search reference bound to a snapshot, or `undefined` when none is bound.
+   * A bound reference that cannot be used throws the reason, with current lines.
    */
   public resolveSearchReference(reference: string, cwd: string): ResolvedResultTargets | undefined {
     const target = this.#matchReferences.get(reference);

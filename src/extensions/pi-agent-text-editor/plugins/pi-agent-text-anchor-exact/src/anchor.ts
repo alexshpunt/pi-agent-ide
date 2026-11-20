@@ -104,21 +104,49 @@ export function findExactTextMatches(
   value: string,
   context: TextAnchorResolverContext,
   limit: number,
-): { readonly ranges: readonly TextAnchorRecoveryCandidateRange[]; readonly total: number } {
+): {
+  readonly ranges: readonly TextAnchorRecoveryCandidateRange[];
+  readonly total: number;
+  readonly allMatches?: readonly TextAnchorRecoveryCandidateRange[];
+} {
   const { content, source } = context;
-  const matches = literalCandidates(
+  const spans = literalCandidates(
     content,
     value,
     new AnchoredLiteralView(source, content),
-    limit,
     scopeFilter(context),
   );
+  const disjoint =
+    spans.length > 1 &&
+    spans.every(({ from, to }, index) => from < to && (spans[index - 1]?.to ?? 0) <= from);
+  // For a disjoint selection, both endpoints progress in source order. Walk the lines once,
+  // even when there are many more matches than will be shown.
+  let lineStart = 0;
+  let lineNumber = 1;
+  let nextBreak = content.indexOf("\n");
+  const orderedPosition = (offset: number): TextSelectionPosition => {
+    while (nextBreak !== -1 && nextBreak < offset) {
+      lineStart = nextBreak + 1;
+      lineNumber++;
+      nextBreak = content.indexOf("\n", lineStart);
+    }
+    return { lineNumber, column: offset - lineStart };
+  };
+  const allMatches = disjoint
+    ? spans.map(({ from, to }) => ({
+        start: orderedPosition(from),
+        end: orderedPosition(to),
+      }))
+    : undefined;
   return {
-    total: matches.total,
-    ranges: matches.spans.map((span) => ({
-      start: positionAt(context.content, span.from),
-      end: positionAt(context.content, span.to),
-    })),
+    total: spans.length,
+    ranges:
+      allMatches?.slice(0, limit) ??
+      spans.slice(0, limit).map(({ from, to }) => ({
+        start: positionAt(content, from),
+        end: positionAt(content, to),
+      })),
+    ...(allMatches !== undefined && { allMatches }),
   };
 }
 

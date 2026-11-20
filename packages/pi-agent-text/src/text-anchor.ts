@@ -109,6 +109,8 @@ export type TextAnchorRecoveryOutcome =
       readonly kind: "candidates";
       readonly candidates: readonly TextAnchorRecoveryCandidate[];
       readonly total: number;
+      /** Every disjoint match of the original selector, not guessed recovery candidates. */
+      readonly allMatches?: readonly TextAnchorRecoveryCandidateRange[];
     }
   | { readonly kind: "timed-out" }
   | { readonly kind: "failed"; readonly error: unknown };
@@ -207,10 +209,11 @@ const positionSchema = Type.Object(
   },
   objectOptions,
 );
+const rangeSchema = Type.Object({ start: positionSchema, end: positionSchema }, objectOptions);
 const candidateSchema = Type.Object(
   {
     rank: Type.Integer({ minimum: 1 }),
-    range: Type.Object({ start: positionSchema, end: positionSchema }, objectOptions),
+    range: rangeSchema,
   },
   objectOptions,
 );
@@ -273,6 +276,7 @@ const recoveryOutcomeSchema = Type.Union([
       kind: Type.Literal("candidates"),
       candidates: Type.Array(candidateSchema),
       total: Type.Integer({ minimum: 0 }),
+      allMatches: Type.Optional(Type.Array(rangeSchema)),
     },
     objectOptions,
   ),

@@ -26,7 +26,11 @@ import {
   planRegisteredTextBatch,
   type PlannedTextBatch,
 } from "./text-edit-batch-registrar.ts";
-import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.ts";
+import {
+  allMatchesRetry,
+  buildFailedTextMutationResult,
+  mutationSources,
+} from "./text-mutation.ts";
 import { isWholeFileInvocation } from "./file-operation-tools.ts";
 import { isResultInput } from "./result-transfer.ts";
 import { resolveResultScope } from "./result-scope.ts";
@@ -1014,6 +1018,8 @@ class NativeTextEditBatchCoordinator {
           cause: planning.cause,
         },
         context,
+        "not-applied",
+        allMatchesRetry(registration.name, input, this.resultTargets),
       );
       return { ...result, isError: true };
     }
