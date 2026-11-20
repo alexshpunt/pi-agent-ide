@@ -16,7 +16,7 @@ Raw text carries bytes that neither the model nor most readers see: a BOM, CRLF 
 
 Matching and writing follow different rules.
 
-- Matching uses general heuristics: exact, then normalized, then fuzzy, and the anchored view of the file. A literal that names the intended span selects it even when invisible bytes differ.
+- Match the literal against file text first: exact, then normalized, then fuzzy. Only then try the current Read `anchors` view. A copied `HASH|text` fragment may start or end partway through a line; the hashes must still match, and only source characters are selected. A copied final no-newline marker is display-only and selects no bytes.
 - Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. Principle 4 gives the rules.
 - An ambiguous match is refused. The tools never pick between candidates; the error lists them so the next call can select one.
 

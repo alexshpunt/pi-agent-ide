@@ -41,6 +41,8 @@ The scripted `lsp-selector-retry` integration tests cover exact C++ `calls` and 
 
 Shared-server tests cover another retry trigger: when one session syncs newer disk text, a session whose older text will not get diagnostics is told to resync rather than wait for the old report. The quiet paid case does not cover shared-server diagnostics.
 
+The `replace-anchored-display` case checks that Replace refuses a stale displayed prefix, accepts a current prefix with only part of the line, and uses literal file bytes when the same selector also matches the anchored view. It checks the resulting file bytes on both routes. Direct and Codemode paid routes remain unverified.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:
