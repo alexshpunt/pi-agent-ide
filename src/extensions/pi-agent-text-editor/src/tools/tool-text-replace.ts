@@ -102,11 +102,10 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
 
     const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
     const span = await anchorSpanRange(context, starts, ends, "start", "end");
-    refuseIdenticalReplacement(context, [{ ...span, insert: parameters.newText }]);
+    const change = replaceAnchorSpan(span, parameters.newText);
+    refuseIdenticalReplacement(context, [{ source: span.source, ...change }]);
     return {
-      edits: new Map([
-        [span.source, { changes: [replaceAnchorSpan(span, parameters.newText)], action: "edited" }],
-      ]),
+      edits: new Map([[span.source, { changes: [change], action: "edited" }]]),
     };
   },
 };

@@ -10,6 +10,11 @@ export class TextSelectionAnchor extends TextAnchor {
   public readonly ranges: readonly TextSelectionRange[];
   /** Unexpanded selector extents for paired range endpoints; defaults to ranges. */
   public readonly endpointRanges?: readonly TextSelectionRange[];
+  /**
+   * Whether the selection was given as literal text. Text written there takes the line ending
+   * of the line where it lands, as Pi's edit writes `newText`.
+   */
+  public readonly literal: boolean;
 
   public static is(value: unknown): value is TextSelectionAnchor {
     if (!TextAnchor.is(value)) {
@@ -41,6 +46,7 @@ export class TextSelectionAnchor extends TextAnchor {
     readonly source: string,
     ranges: readonly TextSelectionRange[],
     endpointRanges?: readonly TextSelectionRange[],
+    options?: { readonly literal?: boolean },
   ) {
     const copied = ranges.map((range) => ({
       start: { ...range.start },
@@ -55,6 +61,7 @@ export class TextSelectionAnchor extends TextAnchor {
     }
 
     this.ranges = copied;
+    this.literal = options?.literal === true;
     if (endpointRanges !== undefined) {
       const endpoints = endpointRanges.map((range) => ({
         start: { ...range.start },

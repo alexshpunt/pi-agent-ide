@@ -3,13 +3,18 @@
  * reference model `file[:start] + text + file[end:]`, byte for byte, on files built from the
  * pieces that tools used to rewrite: a BOM, CRLF, lone CR, NUL, invisible and combining
  * characters, astral characters, trailing whitespace, and a missing final LF.
+ *
+ * Literal text selects and writes the way Pi's edit does: a selected span never splits a CRLF,
+ * and line breaks in the sent text take the line ending of the line where the span starts. A
+ * literal that is not in the file matches without the BOM and with CRLF and CR as LF, and then
+ * fuzzily; Pi's own normalization functions are the reference for both.
  */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { ResultTargetStore, type ResultRange } from "pi-agent-resource";
 import { createTextContentConverter, linesWithAnchor, textLineAnchors } from "pi-agent-text";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
 import { createExactTextAnchorResolver } from "#pi-agent-text-anchor-exact/src/anchor.ts";
 import { createLineHashAnchorResolver } from "#pi-agent-text-anchor-line-hash/src/anchor.ts";
@@ -54,6 +59,59 @@ const PIECES = [
   BOM,
 ] as const;
 const WORDS = ["alpha", "beta", "gamma", "delta", "value", "export", "const", "x"] as const;
+
+/** Pi's own edit normalization, loaded from the installed Pi as the reference for literals. */
+let pi: {
+  normalizeToLF(text: string): string;
+  normalizeForFuzzyMatch(text: string): string;
+};
+beforeAll(async () => {
+  const entry = import.meta.resolve("@earendil-works/pi-coding-agent");
+  pi = (await import(new URL("./core/tools/edit-diff.js", entry).href)) as typeof pi;
+}, 30_000);
+
+/** A literal's span never splits a CRLF: it covers the whole CRLF, as in Pi's edit. */
+function literalSpan(
+  content: string,
+  span: { from: number; to: number },
+): { from: number; to: number } {
+  return {
+    from:
+      content[span.from] === "\n" && content[span.from - 1] === "\r" ? span.from - 1 : span.from,
+    to: content[span.to - 1] === "\r" && content[span.to] === "\n" ? span.to + 1 : span.to,
+  };
+}
+
+/**
+ * The line ending Pi's edit gives line breaks it writes at `at`: that of the line holding `at`,
+ * or of the last line break for an unterminated last line. A file without LF uses a lone CR if
+ * it has one.
+ */
+function lineEndingAt(content: string, at: number): string {
+  if (!content.includes("\n")) return content.includes("\r") ? "\r" : "\n";
+  const next = content.indexOf("\n", at);
+  const lineFeed = next === -1 ? content.lastIndexOf("\n") : next;
+  return content[lineFeed - 1] === "\r" ? "\r\n" : "\n";
+}
+
+/** Text sent for a literal selection as written at `at`. */
+function sentText(content: string, at: number, text: string): string {
+  return text.replace(/\r\n?/gu, "\n").replaceAll("\n", lineEndingAt(content, at));
+}
+
+/** The source offset of an offset in `normalizeToLF(text)`: before the CR of a CRLF at its LF. */
+function sourceOffset(text: string, normalized: number): number {
+  let at = 0;
+  for (let seen = 0; seen < normalized; seen += 1) at += text.startsWith("\r\n", at) ? 2 : 1;
+  return at;
+}
+
+function starts(content: string, value: string): number[] {
+  const result: number[] = [];
+  for (let at = content.indexOf(value); at !== -1; at = content.indexOf(value, at + 1))
+    result.push(at);
+  return result;
+}
 
 /** A small deterministic PRNG, so a failing seed replays exactly. */
 function random(seed: number) {
@@ -315,7 +373,7 @@ function randomOperation(
     const effect = (result.result.details as { effect?: string }).effect;
     return outcome(effect !== "not-applied" && result.result.isError !== true, result);
   };
-  const kind = rng.int(14);
+  const kind = rng.int(15);
   const lines = lineSpans(main);
   const anchors = textLineAnchors(file("main.txt"), main);
   const uniqueLine = () => {
@@ -332,6 +390,7 @@ function randomOperation(
       const span = uniqueSpan(rng, main, near);
       if (span === undefined) return undefined;
       const insert = kind === 1 ? "" : text;
+      const { from, to } = literalSpan(main, span);
       return {
         name: `${kind === 1 ? "delete" : "replace"} literal ${JSON.stringify(main.slice(span.from, span.to))} -> ${JSON.stringify(insert)}`,
         run: call(kind === 1 ? deleteMutationTool : replaceMutationTool, {
@@ -339,7 +398,7 @@ function randomOperation(
           start: main.slice(span.from, span.to),
           ...(kind === 1 ? {} : { newText: insert }),
         }),
-        expected: { "main.txt": splice(main, span.from, span.to, insert) },
+        expected: { "main.txt": splice(main, from, to, sentText(main, from, insert)) },
       };
     }
     case 2: {
@@ -361,7 +420,11 @@ function randomOperation(
           end: main.slice(second.from, second.to),
           newText: text,
         }),
-        expected: { "main.txt": splice(main, first.from, second.to, text) },
+        expected: (() => {
+          const from = literalSpan(main, first).from;
+          const to = literalSpan(main, second).to;
+          return { "main.txt": splice(main, from, to, sentText(main, from, text)) };
+        })(),
       };
     }
     case 3:
@@ -423,7 +486,8 @@ function randomOperation(
       const span = uniqueSpan(rng, main, near);
       if (span === undefined || text.length === 0) return undefined;
       const before = rng.chance(0.5);
-      const at = before ? span.from : span.to;
+      const literal = literalSpan(main, span);
+      const at = before ? literal.from : literal.to;
       return {
         name: `insert ${before ? "before" : "after"} literal`,
         run: call(insertMutationTool, {
@@ -432,7 +496,7 @@ function randomOperation(
           newText: text,
           before,
         }),
-        expected: { "main.txt": splice(main, at, at, text) },
+        expected: { "main.txt": splice(main, at, at, sentText(main, at, text)) },
       };
     }
     case 8:
@@ -441,20 +505,24 @@ function randomOperation(
       const source = uniqueSpan(rng, main, near);
       const target = uniqueSpan(rng, other);
       if (source === undefined || target === undefined) return undefined;
-      const moved = main.slice(source.from, source.to);
+      const literal = main.slice(source.from, source.to);
+      // Transferred text is file text: it keeps its bytes.
+      const from = literalSpan(main, source);
+      const to = literalSpan(other, target);
+      const moved = main.slice(from.from, from.to);
       const tool = kind === 8 ? copyMutationTool : moveMutationTool;
       return {
-        name: `${tool.name} literal ${JSON.stringify(moved)}`,
+        name: `${tool.name} literal ${JSON.stringify(literal)}`,
         run: call(tool, {
           path: "main.txt",
-          start: moved,
+          start: literal,
           target: "other.txt",
           targetStart: other.slice(target.from, target.to),
           targetEnd: other.slice(target.from, target.to),
         }),
         expected: {
-          "main.txt": kind === 8 ? main : splice(main, source.from, source.to, ""),
-          "other.txt": splice(other, target.from, target.to, moved),
+          "main.txt": kind === 8 ? main : splice(main, from.from, from.to, ""),
+          "other.txt": splice(other, to.from, to.to, moved),
         },
       };
     }
@@ -468,7 +536,8 @@ function randomOperation(
       };
     }
     case 11: {
-      // A literal whose line breaks or BOM differ from the file is refused: nothing is guessed.
+      // A literal whose line breaks or BOM differ from the file matches as in Pi's edit, unless
+      // the normalized file holds it more than once.
       const span = uniqueSpan(rng, main, near);
       if (span === undefined) return undefined;
       const selected = main.slice(span.from, span.to);
@@ -482,10 +551,21 @@ function randomOperation(
               ? selected.replaceAll("\r", "\n")
               : undefined;
       if (variant === undefined || variant.length === 0 || main.includes(variant)) return undefined;
+      const bom = main.startsWith(BOM) ? 1 : 0;
+      const body = main.slice(bom);
+      const query = pi.normalizeToLF(variant.startsWith(BOM) ? variant.slice(1) : variant);
+      const found = starts(pi.normalizeToLF(body), query);
+      if (query.length === 0 || found.length === 0) return undefined;
+      const at = found[0] ?? 0;
+      const from = bom + sourceOffset(body, at);
+      const to = bom + sourceOffset(body, at + query.length);
       return {
-        name: `refuse variant ${JSON.stringify(variant)}`,
-        run: call(replaceMutationTool, { path: "main.txt", start: variant, newText: "BAD" }),
-        expected: undefined,
+        name: `replace normalized ${JSON.stringify(variant)}`,
+        run: call(replaceMutationTool, { path: "main.txt", start: variant, newText: text }),
+        expected:
+          found.length === 1
+            ? { "main.txt": splice(main, from, to, sentText(main, from, text)) }
+            : undefined,
       };
     }
     case 12: {
@@ -496,6 +576,45 @@ function randomOperation(
         name: `refuse ambiguous ${JSON.stringify(repeated)}`,
         run: call(replaceMutationTool, { path: "main.txt", start: repeated, newText: "BAD" }),
         expected: undefined,
+      };
+    }
+    case 14: {
+      // A literal with plain spaces or a composed character instead of the file's matches
+      // fuzzily, as in Pi's edit, and replaces only the characters it matched.
+      const span = uniqueSpan(rng, main, near);
+      if (span === undefined) return undefined;
+      const selected = main.slice(span.from, span.to);
+      const variant = selected
+        .replaceAll("\u00A0", " ")
+        .replaceAll("\u202F", " ")
+        .replaceAll("e\u0301", "\u00E9");
+      const firstLine = selected.split("\n")[0] ?? "";
+      if (
+        variant === selected ||
+        main.includes(variant) ||
+        /[\r\uFEFF]/u.test(selected) ||
+        selected.trim() === "" ||
+        /\s$/u.test(selected) ||
+        (firstLine !== selected && firstLine !== "" && firstLine.trim() === "") ||
+        /^\p{M}/u.test(selected) ||
+        /^\p{M}/u.test(main.slice(span.to))
+      )
+        return undefined;
+      const body = pi.normalizeToLF(main.startsWith(BOM) ? main.slice(1) : main);
+      if (starts(body, pi.normalizeToLF(variant)).length > 0) return undefined;
+      const found = starts(
+        pi.normalizeForFuzzyMatch(body),
+        pi.normalizeForFuzzyMatch(pi.normalizeToLF(variant)),
+      );
+      if (found.length === 0) return undefined;
+      const { from, to } = literalSpan(main, span);
+      return {
+        name: `replace fuzzy ${JSON.stringify(variant)}`,
+        run: call(replaceMutationTool, { path: "main.txt", start: variant, text }),
+        expected:
+          found.length === 1
+            ? { "main.txt": splice(main, from, to, sentText(main, from, text)) }
+            : undefined,
       };
     }
     default: {
@@ -532,6 +651,8 @@ function refuseIdenticalReplace(
 
 /** The kinds of operation the seeds ran, so a generator change cannot silently drop one. */
 const covered = new Set<string>();
+/** The kinds of operation that applied an edit at least once. */
+const appliedKinds = new Set<string>();
 
 describe("byte-exact edits on bomb files", () => {
   test.each(Array.from({ length: 12 }, (_, index) => index + 1))(
@@ -575,6 +696,7 @@ describe("byte-exact edits on bomb files", () => {
         main = expectedMain;
         other = expectedOther;
         applied += 1;
+        appliedKinds.add(operation.name.split(" ").slice(0, 2).join(" "));
       }
       expect(applied).toBeGreaterThan(5);
     },
@@ -582,6 +704,9 @@ describe("byte-exact edits on bomb files", () => {
   );
 
   test("the seeds cover every selector form and operation", () => {
+    expect([...appliedKinds]).toEqual(
+      expect.arrayContaining(["replace normalized", "replace fuzzy", "replace literal"]),
+    );
     expect([...covered].sort()).toEqual(
       [
         "copy literal",
@@ -591,7 +716,8 @@ describe("byte-exact edits on bomb files", () => {
         "insert before",
         "move literal",
         "refuse ambiguous",
-        "refuse variant",
+        "replace fuzzy",
+        "replace normalized",
         "replace line",
         "replace lines",
         "replace literal",
@@ -659,33 +785,47 @@ describe("byte-exact regressions", () => {
     expect((await bytes("main.txt")).toString("utf8")).toBe("a\rb\rc\n");
   });
 
-  test("sent CRLF and LF are written as sent, whatever the file uses", async () => {
+  test("line breaks sent for a literal take the line ending of the line where they land", async () => {
     const h = await harness();
-    await put("main.txt", "one\r\ntwo\r\n");
+    await put("main.txt", "one\r\ntwo\r\nlf\n");
     await h.run(replaceMutationTool, { path: "main.txt", start: "one", newText: "1\n1\r\n1" });
-    expect((await bytes("main.txt")).toString("utf8")).toBe("1\n1\r\n1\r\ntwo\r\n");
+    expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nlf\n");
     await h.run(insertMutationTool, { path: "main.txt", anchor: "two", newText: "\nmore" });
-    expect((await bytes("main.txt")).toString("utf8")).toBe("1\n1\r\n1\r\ntwo\nmore\r\n");
+    expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nmore\r\nlf\n");
+    await h.run(replaceMutationTool, { path: "main.txt", start: "lf", newText: "l\r\nf" });
+    expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nmore\r\nl\nf\n");
   });
 
-  test("an LF selector does not match CRLF text and changes nothing", async () => {
+  test("an LF selector matches CRLF text and keeps the file's line endings", async () => {
     const h = await harness();
-    const content = "one\r\ntwo\r\n";
-    await put("main.txt", content);
-    const { result } = await h.run(replaceMutationTool, {
+    await put("main.txt", "zero\none\r\ntwo\r\nthree\n");
+    const { result, text } = await h.run(replaceMutationTool, {
       path: "main.txt",
       start: "one\ntwo",
-      newText: "X",
+      newText: "1\n2",
     });
-    expect(result.details.effect).toBe("not-applied");
-    expect((await bytes("main.txt")).toString("utf8")).toBe(content);
+    expect(result.isError, text).not.toBe(true);
+    expect((await bytes("main.txt")).toString("utf8")).toBe("zero\n1\r\n2\r\nthree\n");
   });
 
-  test("an edit between CR and LF splits the CRLF exactly", async () => {
+  test("a literal without the BOM selects text after it and keeps the BOM", async () => {
+    const h = await harness();
+    await put("main.txt", `${BOM}// first\r\nsecond\n`);
+    await h.run(replaceMutationTool, {
+      path: "main.txt",
+      start: "// first\nsecond",
+      text: "/* first */\nsecond",
+    });
+    expect((await bytes("main.txt")).toString("utf8")).toBe(`${BOM}/* first */\r\nsecond\n`);
+  });
+
+  test("a literal never splits a CRLF", async () => {
     const h = await harness();
     await put("main.txt", "a\r\nb");
     await h.run(insertMutationTool, { path: "main.txt", anchor: "a\r", newText: "|" });
-    expect((await bytes("main.txt")).toString("utf8")).toBe("a\r|\nb");
+    expect((await bytes("main.txt")).toString("utf8")).toBe("a\r\n|b");
+    await h.run(replaceMutationTool, { path: "main.txt", start: "\n|b", newText: "\nb" });
+    expect((await bytes("main.txt")).toString("utf8")).toBe("a\r\nb");
   });
 
   test("the result view shows a missing final line break", async () => {
@@ -716,13 +856,28 @@ describe("byte-exact regressions", () => {
     expect([...shownFinalLines(text).values()]).toEqual(["1\r", "two\rx"]);
   });
 
-  test("a fuzzy match is only guidance in a refusal", async () => {
+  test("a fuzzy literal replaces only the characters it matched", async () => {
     const h = await harness();
-    const content = "function alpha() {\r\n  return 1;\r\n}\r\n";
+    const line = `  { id: "checkout-30",\u00A0feature: "legacy\u200BCheckout", retries: 3\u202F},`;
+    await put("main.txt", `${line}  \r\nnext\n`);
+    const { result, text } = await h.run(replaceMutationTool, {
+      path: "main.txt",
+      start: "retries: 3 },",
+      text: "retries: 5 },",
+    });
+    expect(result.isError, text).not.toBe(true);
+    expect((await bytes("main.txt")).toString("utf8")).toBe(
+      `${line.replace("retries: 3\u202F},", "retries: 5 },")}  \r\nnext\n`,
+    );
+  });
+
+  test("a literal that matches fuzzily twice is refused", async () => {
+    const h = await harness();
+    const content = "a\u00A0b\na\u202Fb\n";
     await put("main.txt", content);
     const { result } = await h.run(replaceMutationTool, {
       path: "main.txt",
-      start: "function alpha() {\n  return 1;\n}",
+      start: "a b",
       newText: "X",
     });
     expect(result.details.effect).toBe("not-applied");

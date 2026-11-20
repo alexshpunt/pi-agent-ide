@@ -3,6 +3,7 @@ import { TextSelectionAnchor, type TextSelectionRange } from "#src/api/text-sele
 
 import { TextMutationInputError, type TextMutationContext } from "#src/api/mutation-tool.ts";
 import type { TextAnchor } from "pi-agent-text";
+import { getLineEndingAt, normalizeToLF } from "#src/api/pi-edit-text.ts";
 
 export function textSelections(
   anchors: ReadonlyMap<string, TextAnchor>,
@@ -38,6 +39,30 @@ export interface TextAnchorSpan {
   readonly from: number;
   readonly to: number;
   readonly selection: boolean;
+  /**
+   * For a span selected by literal text: the line ending that line breaks in text written over
+   * the span take, as Pi's edit writes `newText`. Undefined writes text exactly as sent.
+   */
+  readonly lineEnding?: string;
+}
+
+/** The line ending text written at `offset` of a literal selection takes, as in Pi's edit. */
+function literalLineEnding(
+  context: TextMutationContext,
+  source: string,
+  anchor: TextSelectionAnchor,
+  range: TextSelectionRange,
+  offset: number,
+): string | undefined {
+  if (!anchor.literal || range.linewise === true) return undefined;
+  return getLineEndingAt(context.documentFor(source).content, offset);
+}
+
+/** Text as written at a span: as sent, or with Pi's line endings for a literal selection. */
+function writtenText(text: string, lineEnding: string | undefined): string {
+  if (lineEnding === undefined) return text;
+  const lf = normalizeToLF(text);
+  return lineEnding === "\n" ? lf : lf.replaceAll("\n", lineEnding);
 }
 
 /** Resolves one anchor to one character span, converting line anchors to whole-line spans. */
@@ -69,7 +94,13 @@ export function singleAnchorSpan(
       const range = document.lineRange(selectedRange.start.lineNumber, endLine);
       return { source, ...range, selection: false };
     }
-    return { source, ...exactRange, selection: true };
+    const lineEnding = literalLineEnding(context, source, anchor, selectedRange, exactRange.from);
+    return {
+      source,
+      ...exactRange,
+      selection: true,
+      ...(lineEnding !== undefined && { lineEnding }),
+    };
   }
 
   const range = context.documentFor(source).lineRange(anchor.lineNumber, anchor.lineNumber);
@@ -126,15 +157,21 @@ export async function anchorSpanRange(
     from: start.from,
     to: end.to,
     selection: start.selection || end.selection,
+    // Text keeps Pi's line endings only when both endpoints are literal text.
+    ...(start.lineEnding !== undefined &&
+      end.lineEnding !== undefined && { lineEnding: start.lineEnding }),
   };
 }
 
-/** Replaces exactly the resolved extent with exactly `text`; empty text deletes it. */
+/**
+ * Replaces exactly the resolved extent with `text`, written as sent or, for a literal
+ * selection, with Pi's line endings; empty text deletes it.
+ */
 export function replaceAnchorSpan(
-  span: Pick<TextAnchorSpan, "from" | "to">,
+  span: Pick<TextAnchorSpan, "from" | "to" | "lineEnding">,
   text: string,
 ): { readonly from: number; readonly to: number; readonly insert: string } {
-  return { from: span.from, to: span.to, insert: text };
+  return { from: span.from, to: span.to, insert: writtenText(text, span.lineEnding) };
 }
 
 /** Deletes exactly the resolved extent, including only its own line separator. */
@@ -218,7 +255,11 @@ export function selectionChanges(
     [...selections].map(([source, anchor]) => [
       source,
       (insert.length === 0 ? coalesceAdjacentLinewiseRanges(anchor.ranges) : anchor.ranges).map(
-        (range) => replaceAnchorSpan(selectionRange(context, source, range), insert),
+        (range) => {
+          const span = selectionRange(context, source, range);
+          const lineEnding = literalLineEnding(context, source, anchor, range, span.from);
+          return replaceAnchorSpan({ ...span, lineEnding }, insert);
+        },
       ),
     ]),
   );
@@ -238,15 +279,17 @@ export function insertionChanges(
   return new Map(
     [...selections].map(([source, anchor]) => [
       source,
-      anchor.ranges.map((range) =>
-        insertionAtSpan(
+      anchor.ranges.map((range) => {
+        const span = selectionRange(context, source, range);
+        const at = before ? span.from : span.to;
+        return insertionAtSpan(
           context,
-          { source, ...selectionRange(context, source, range), selection: range.linewise !== true },
-          insert,
+          { source, ...span, selection: range.linewise !== true },
+          writtenText(insert, literalLineEnding(context, source, anchor, range, at)),
           before,
           separation,
-        ),
-      ),
+        );
+      }),
     ]),
   );
 }

@@ -11,6 +11,7 @@ import {
 
 import { quoteAnchorExcerpt } from "pi-agent-text-editor/api/anchor-excerpt";
 import type { ExactTextRecoveryConfig } from "./config.ts";
+import { literalCandidates, matchLiteral, type LiteralSpan } from "./literal-match.ts";
 import { recoverExactText } from "./recovery.ts";
 
 /** Creates the catch-all resolver for unique exact text spans. */
@@ -35,8 +36,9 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
 }
 
 /**
- * Resolves the one place where the file holds exactly the characters of `value`. Nothing is
- * normalized: CR, CRLF, a BOM and every other character match only themselves.
+ * Resolves the one place the literal `value` selects, matching the way Pi's edit matches
+ * `oldText`: exact characters first, then without the BOM and with CRLF and CR as LF, then
+ * fuzzily. The first way that finds the literal decides; more than one match is refused.
  */
 export function resolveExactTextAnchor(
   value: string,
@@ -50,26 +52,25 @@ export function resolveExactTextAnchor(
   const scope = context.scope?.map((range) => scopeOffsets(content, range));
   // In a scope, only matches inside it count: text that occurs elsewhere in the file too is
   // still unique there. Diagnostic candidates must respect the same character boundaries.
-  const matchesFor = (candidate: string, limit: number) =>
-    overlappingMatches(
-      content,
-      candidate,
-      limit,
-      scope === undefined
-        ? undefined
-        : (start) =>
-            scope.some((range) => start >= range.from && start + candidate.length <= range.to),
-    );
-  const matches = matchesFor(value, 2);
+  const inScope =
+    scope === undefined
+      ? undefined
+      : (span: LiteralSpan) =>
+          scope.some((range) => span.from >= range.from && span.to <= range.to);
+  const match = matchLiteral(content, value, inScope);
 
-  if (matches.length === 0) {
-    const outsideScope = scope !== undefined && content.includes(value);
+  if (match.kind === "missing") {
+    const outsideScope = scope !== undefined && matchLiteral(content, value).kind !== "missing";
     // Interpret only single backslash control escapes, and only to explain a refusal.
     // Never resolve or edit the decoded candidate, or reinterpret escaped backslashes.
     const decoded = value.replace(/(?<!\\)\\[nrt]/gu, (escape) =>
       escape === "\\n" ? "\n" : escape === "\\r" ? "\r" : "\t",
     );
-    if (!outsideScope && decoded !== value && matchesFor(decoded, 1).length > 0) {
+    if (
+      !outsideScope &&
+      decoded !== value &&
+      matchLiteral(content, decoded, inScope).kind !== "missing"
+    ) {
       return rejected(
         "missing",
         `Exact-text selector ${quoteAnchorExcerpt(value)} contains literal backslash escapes; the character form ${quoteAnchorExcerpt(decoded)} matches text inside the ${scope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
@@ -83,7 +84,7 @@ export function resolveExactTextAnchor(
     );
   }
 
-  if (matches.length > 1) {
+  if (match.kind === "ambiguous") {
     return rejected(
       "ambiguous",
       scope === undefined
@@ -92,35 +93,31 @@ export function resolveExactTextAnchor(
     );
   }
 
-  const start = matches[0];
-  if (start === undefined) {
-    return { kind: "failed", error: new Error("Exact match index is missing") };
-  }
-
-  // Literal text selects exactly its characters, even when they form complete lines.
+  // Literal text selects exactly the characters it matched, even when they form complete lines.
   return {
     kind: "resolved",
-    anchor: new TextSelectionAnchor(value, context.source, [
-      { start: positionAt(content, start), end: positionAt(content, start + value.length) },
-    ]),
+    anchor: new TextSelectionAnchor(
+      value,
+      context.source,
+      [{ start: positionAt(content, match.span.from), end: positionAt(content, match.span.to) }],
+      undefined,
+      { literal: true },
+    ),
   };
 }
 
-/** Finds exact matches and returns their source positions. */
+/** Finds the matches of the literal and returns their source positions. */
 export function findExactTextMatches(
   value: string,
   context: TextAnchorResolverContext,
   limit: number,
 ): { readonly ranges: readonly TextAnchorRecoveryCandidateRange[]; readonly total: number } {
-  if (value.length === 0) {
-    return { ranges: [], total: 0 };
-  }
-  const matches = scanMatches(context.content, value, limit);
+  const matches = literalCandidates(context.content, value, limit);
   return {
     total: matches.total,
-    ranges: matches.starts.map((start) => ({
-      start: positionAt(context.content, start),
-      end: positionAt(context.content, start + value.length),
+    ranges: matches.spans.map((span) => ({
+      start: positionAt(context.content, span.from),
+      end: positionAt(context.content, span.to),
     })),
   };
 }
@@ -130,28 +127,6 @@ function rejected(
   reason: string,
 ): TextAnchorResolutionAttempt {
   return { kind: "rejected", rejection: { code, reason } };
-}
-
-function overlappingMatches(
-  content: string,
-  query: string,
-  limit: number,
-  accept: (start: number) => boolean = () => true,
-): number[] {
-  if (query.length === 0) {
-    return [];
-  }
-  const starts: number[] = [];
-  let from = 0;
-  while (starts.length < limit && from <= content.length - query.length) {
-    const match = content.indexOf(query, from);
-    if (match === -1) {
-      break;
-    }
-    if (accept(match)) starts.push(match);
-    from = match + 1;
-  }
-  return starts;
 }
 
 /**
@@ -177,31 +152,6 @@ function offsetAt(content: string, position: TextSelectionPosition): number {
     offset = next + 1;
   }
   return Math.min(content.length, offset + position.column);
-}
-
-function scanMatches(
-  content: string,
-  query: string,
-  limit: number,
-): { readonly starts: number[]; readonly total: number } {
-  if (query.length === 0) {
-    return { starts: [], total: 0 };
-  }
-  const starts: number[] = [];
-  let total = 0;
-  let from = 0;
-  while (from <= content.length - query.length) {
-    const match = content.indexOf(query, from);
-    if (match === -1) {
-      break;
-    }
-    total += 1;
-    if (starts.length < limit) {
-      starts.push(match);
-    }
-    from = match + 1;
-  }
-  return { starts, total };
 }
 
 /** The position of an offset. Only LF ends a line; CR is an ordinary character. */
