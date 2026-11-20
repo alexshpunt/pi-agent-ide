@@ -443,7 +443,7 @@ void test("native Search insertion checks reuse and its final match-boundary byt
       args: { path: "task.txt", query: "OLD" },
       value: { matches: [{ id: result }] },
     },
-    { tool: "insert", args: { path: { id: result }, text: "\nNEW" } },
+    { tool: "insert", args: { path: { id: result }, text: "\nNEW\n" } },
   ];
   const route = steps("search-anchor-insert");
   assert.ok(check(route, calls, "codemode"));

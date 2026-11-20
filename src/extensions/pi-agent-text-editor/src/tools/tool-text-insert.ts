@@ -56,7 +56,7 @@ interface InsertParameters {
 export const insertMutationTool: TextMutationToolRegistration<typeof insertSchema> = {
   name: "insert",
   description:
-    "Use insert to add text at a selection boundary without changing selected text, to send keys to a terminal session, or to control a debugger.",
+    "Use insert to add text at a selection boundary without changing selected text, to send keys to a terminal session, or to control a debugger. At a line edge, use one leading or trailing line break in a text block as a separator and add more breaks for blank lines.",
 
   promptSnippet: "Insert file text, send terminal keys, or perform debugger actions",
   parameters: insertSchema,

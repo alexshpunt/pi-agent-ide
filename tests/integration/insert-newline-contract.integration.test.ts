@@ -18,7 +18,7 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
       const cwd = await mkdtemp(path.join(root, "case-"));
       const separator = before ? "\r\n" : "\n";
       const original = ["BEFORE", "left ANCHOR right", "SECOND", "AFTER", ""].join(separator);
-      const payloads = ["NEW", "\nNEW", "NEW\n\n"];
+      const payloads = ["NEW", "\nNEW", "NEW\n\n", "\nFIRST\nLAST\n", "\n\nNEW\n"];
       const expected: string[] = [];
       const conversation = [];
       const call = (id: string, name: string, args: Record<string, unknown>) =>
@@ -60,6 +60,7 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
             const lines = original.split(separator);
             const at = before ? 1 : kind === "multiline" ? 3 : 2;
             const inserted = payload.split("\n");
+            if (inserted[0] === "") inserted.shift();
             if (inserted.at(-1) === "") inserted.pop();
             lines.splice(at, 0, ...inserted);
             expected.push(lines.join(separator));
