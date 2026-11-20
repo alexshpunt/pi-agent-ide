@@ -17,12 +17,13 @@ const Parameters = Type.Object({
   entries: Type.Optional(Type.Array(Type.Object({ value: Type.String() }))),
 });
 
-function block(content: string) {
+function block(content: string, details?: Record<string, unknown>) {
   return {
     message: {
       customType: "tool-interceptor-integration-block",
       content,
       display: false,
+      ...(details === undefined ? {} : { details }),
     },
   };
 }
@@ -56,7 +57,9 @@ export default function registerToolInterceptorIntegrationExtension(pi: Extensio
     name: "partial-block",
     toolNames: ["intercept_partial"],
     intercept: (context) =>
-      context.partialArgs ? block(`partial:${String(context.partialArgs.value)}`) : undefined,
+      context.partialArgs?.value === "streamed"
+        ? block("partial-block", { partialValue: context.partialArgs.value })
+        : undefined,
   });
 
   registerToolCallInterceptor(pi, {

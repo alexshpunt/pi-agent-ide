@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -12,7 +13,6 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 type Call = Parameters<typeof toolCall>[0];
@@ -56,7 +56,9 @@ text("transfers-complete");`,
     ]);
     const output = getToolResultText(result, "transfers");
     expect(getToolExecution(result, "transfers").isError, output).toBe(false);
-    expect(codemodeFailures(output)).toBe("");
+    expect(getToolExecutionDetails(getToolExecution(result, "transfers"))).toMatchObject({
+      calls: Array.from({ length: 27 }, () => ({ status: "ok" })),
+    });
     expect(output).toContain("transfers-complete");
     for (const form of ["value", "object", "id"]) {
       const contents = (suffix: string) =>
@@ -95,18 +97,31 @@ test("a value with an id selects the same text as its id, directly and in Codemo
   await withTempWorkspace(async (cwd) => {
     const result = await run(cwd, [
       {
+        id: "tampered",
+        name: "codemode",
+        arguments: {
+          code: `
+const issued = await tools.read({ path: "a.txt" });
+const changed = { ...issued, path: "c.txt", status: "error", target: "RESULT#missing", matches: [] };
+const refusedSearch = await tools.search({ path: changed, query: "alpha" });
+const refusedEdit = await tools.replace({ path: changed, text: "BAD" });
+const original = await tools.read({ path: "a.txt" });
+text(JSON.stringify({ refusedSearch: refusedSearch === null, refusedEdit: refusedEdit === null, unchanged: original.text === issued.text }));`,
+        },
+      },
+      {
         id: "search",
         name: "codemode",
         arguments: {
           code: `
 const read = await tools.read({ path: "a.txt" });
-const readValue = { ...read, path: "c.txt", status: "error", target: "RESULT#missing", matches: [] };
+const readValue = read;
 const byValue = await tools.search({ path: readValue, query: "beta" });
 const byId = await tools.search({ path: read.id, query: "beta" });
 const other = await tools.read({ path: "c.txt" });
 const listed = await tools.search({ path: [readValue, { id: other.id }], query: "regex:a$" });
 const compared = await tools.diff({ before: readValue, after: "a.txt" });
-// The value's own path names another file; only its id counts, so both sides are equal.
+// An unchanged issued value and its id refer to the same captured bytes.
 const equal = typeof compared === "string" && !/^[+-](?![+-])/mu.test(compared);
 const same = (a, b) => a.path === b.path && a.line === b.line && a.text === b.text;
 text("search:" + JSON.stringify([byValue.matches.length === 1, same(byValue.matches[0], byId.matches[0]), listed.matches.length === 3, equal]));`,
@@ -123,7 +138,7 @@ const pair = async (a, c) => [
 ];
 const [search, window] = await pair("a.txt", "c.txt");
 const byValue = await tools.replace({
-  path: [search, { ...window, text: "x" }],
+  path: [search, window],
   text: "done",
 });
 const [searchId, windowId] = await pair("a-id.txt", "c-id.txt");
@@ -143,14 +158,21 @@ text("unknown:" + (unknown === null) + ":" + (named === null));`,
       { id: "direct", name: "read", arguments: { path: { id: unknownId, text: "alpha" } } },
     ]);
 
+    expect(getToolResultText(result, "tampered")).toContain(
+      '{"refusedSearch":true,"refusedEdit":true,"unchanged":true}',
+    );
     const search = getToolResultText(result, "search");
     expect(getToolExecution(result, "search").isError, search).toBe(false);
     expect(search).toContain("search:[true,true,true,true]");
-    expect(codemodeFailures(search)).toBe("");
+    expect(getToolExecutionDetails(getToolExecution(result, "search"))).toMatchObject({
+      calls: Array.from({ length: 6 }, () => ({ status: "ok" })),
+    });
 
     const replace = getToolResultText(result, "replace");
     expect(replace).toContain("replace:true:true");
-    expect(codemodeFailures(replace)).toBe("");
+    expect(getToolExecutionDetails(getToolExecution(result, "replace"))).toMatchObject({
+      calls: Array.from({ length: 6 }, () => ({ status: "ok" })),
+    });
     const contents = async (name: string) => readFile(path.join(cwd, name), "utf8");
     expect(await contents("a.txt")).not.toBe("alpha\nbeta\n");
     expect(await contents("c.txt")).not.toBe("one\ngamma\n");
@@ -159,10 +181,18 @@ text("unknown:" + (unknown === null) + ":" + (named === null));`,
 
     const unknown = getToolResultText(result, "unknown");
     expect(unknown).toContain("unknown:true:true");
-    const block = codemodeFailures(unknown);
-    expect(block).toContain(`- read ${unknownId}`);
-    expect(block).toContain("- search a.txt");
-    expect(block.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(2);
+    expect(unknown).toContain(unknownId);
+    expect(unknown).toContain("a.txt");
+    expect(getToolExecutionDetails(getToolExecution(result, "unknown"))).toMatchObject({
+      calls: [
+        { name: "read", status: "error", args: JSON.stringify({ path: { id: unknownId } }) },
+        {
+          name: "search",
+          status: "error",
+          args: JSON.stringify({ path: { id: "a.txt" }, query: "alpha" }),
+        },
+      ],
+    });
 
     expect(getToolExecution(result, "direct").isError).toBe(true);
   });

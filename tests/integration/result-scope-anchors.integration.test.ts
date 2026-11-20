@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -12,7 +13,6 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 async function run(
   cwd: string,
@@ -293,7 +293,7 @@ text(JSON.stringify({ miss, retry: retry !== null }));
 );
 
 test.each(["direct", "codemode"] as const)(
-  "%s: an absent exact selector blocks retries until a returned anchor edits the file",
+  "%s: an absent exact selector leaves later exact and anchored edits enabled",
   async (route) => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "task.txt"), "keep\nOLD\nlast\n");
@@ -310,12 +310,12 @@ test.each(["direct", "codemode"] as const)(
                 arguments: { path: "$issued-uuid:scope", start: "absent", text: "BAD" },
               },
               {
-                id: "blocked",
+                id: "exact",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", text: "BAD" },
+                arguments: { path: "task.txt", start: "last", text: "intermediate" },
               },
               {
-                id: "recover",
+                id: "anchored",
                 name: "replace",
                 arguments: {
                   path: "task.txt",
@@ -326,7 +326,7 @@ test.each(["direct", "codemode"] as const)(
               {
                 id: "retry",
                 name: "replace",
-                arguments: { path: "task.txt", start: "last", text: "fixed" },
+                arguments: { path: "task.txt", start: "intermediate", text: "fixed" },
               },
             ]
           : [
@@ -339,9 +339,9 @@ const anchors = await tools.read({ path: "task.txt", views: ["anchors"] });
 const anchor = anchors.text.split("\n")[1].split("|")[0];
 const scope = await tools.read({ path: "task.txt", offset: 2, limit: 1 });
 const miss = await tools.replace({ path: scope, start: "absent", text: "BAD" });
-const blocked = await tools.replace({ path: "task.txt", start: "last", text: "BAD" });
-const recover = await tools.replace({ path: "task.txt", start: anchor, text: "NEW\n" });
-text(JSON.stringify({ miss, blocked, recover: recover !== null }));
+const exact = await tools.replace({ path: "task.txt", start: "last", text: "intermediate" });
+const anchored = await tools.replace({ path: "task.txt", start: anchor, text: "NEW\n" });
+text(JSON.stringify({ miss, exact: exact !== null, anchored: anchored !== null }));
 `,
                 },
               },
@@ -350,7 +350,7 @@ text(JSON.stringify({ miss, blocked, recover: recover !== null }));
                 name: "codemode",
                 arguments: {
                   code: `
-const retry = await tools.replace({ path: "task.txt", start: "last", text: "fixed" });
+const retry = await tools.replace({ path: "task.txt", start: "intermediate", text: "fixed" });
 text(JSON.stringify({ retry: retry !== null }));
 `,
                 },
@@ -358,14 +358,13 @@ text(JSON.stringify({ retry: retry !== null }));
             ],
       );
       if (route === "direct") {
-        for (const id of ["miss", "blocked"])
-          expect(getToolExecution(result, id).isError).toBe(true);
-        for (const id of ["recover", "retry"])
+        expect(getToolExecution(result, "miss").isError).toBe(true);
+        for (const id of ["exact", "anchored", "retry"])
           expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
       } else {
         expect(getToolExecution(result, "code").isError).toBe(false);
         expect(getToolResultText(result, "code")).toContain(
-          JSON.stringify({ miss: null, blocked: null, recover: true }),
+          JSON.stringify({ miss: null, exact: true, anchored: true }),
         );
         expect(getToolExecution(result, "retry-code").isError).toBe(false);
         expect(getToolResultText(result, "retry-code")).toContain(JSON.stringify({ retry: true }));
@@ -407,7 +406,9 @@ text(JSON.stringify({ deleted, inserted: inserted !== null, copied: copied !== n
     ]);
     const output = getToolResultText(result, "code");
     expect(getToolExecution(result, "code").isError, output).toBe(false);
-    expect(codemodeFailures(output), output).toBe("");
+    expect(getToolExecutionDetails(getToolExecution(result, "code"))).toMatchObject({
+      calls: Array.from({ length: 7 }, () => ({ status: "ok" })),
+    });
     expect(output).toContain('{"deleted":null,"inserted":true,"copied":true}');
     expect(await readFile(path.join(cwd, "line.txt"), "utf8")).toBe("First\n");
     expect(await readFile(path.join(cwd, "list.txt"), "utf8")).toBe("one\ntwo\nADDED\nthree\n");

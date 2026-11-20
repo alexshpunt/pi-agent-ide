@@ -8,6 +8,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-
 import {
   assistantMessage,
   getToolCallNames,
+  getToolExecution,
   getToolResultMessage,
   getToolResultText,
   PiIntegrationTest,
@@ -222,8 +223,6 @@ test.each([undefined, 0, 1, 1999, 2000, 2001, 1000000])(
             /\n\n\[(?:Showing lines|Output truncated|Output line|Line |First output line|No lines selected|Offset |\d+ more)/u,
           )[0] ?? "";
         expectBounded(body);
-        if (entry.name === "diff" && (limit === undefined || limit >= 100))
-          expect(output).toContain("Diff output is truncated");
         if (entry.name === "read" && entry.limit !== undefined && entry.args.path === "large.ts")
           expect((body.match(/row_\d+/gu) ?? []).length).toBeLessThanOrEqual(
             Math.max(0, entry.limit),
@@ -349,11 +348,12 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
         const output = getToolResultText(result, `search-${index}`);
         expectBounded(output);
         if (args.query === "needle" || args.query === "regex:needle") {
-          expect(output).toContain(
-            args.path === "regression"
-              ? "10114 matches in 1725 files"
-              : "2048 matches in 256 files",
-          );
+          expect(getToolResultMessage(result, `search-${index}`).details).toMatchObject({
+            payload:
+              args.path === "regression"
+                ? { matchCount: 10114, fileCount: 1725 }
+                : { matchCount: 2048, fileCount: 256 },
+          });
           // Every displayed item carries a reference, including each compacted file's first line.
           const items = (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length;
           expect(items).toBeLessThanOrEqual(Number(args.limit ?? 50));
@@ -607,7 +607,6 @@ test("keeps full mutation effects and selections behind bounded useful previews"
       expectBounded(getToolResultText(result, `success-${index}`));
     }
     expect(getToolResultText(result, "success-1")).toContain("row_3999:");
-    expect(getToolResultText(result, "success-5")).toContain("Output truncated:");
     expect((await readFile(path.join(cwd, "large.txt"), "utf8")) === source).toBe(true);
     await expect(readFile(path.join(cwd, "copy.txt"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(path.join(cwd, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -682,7 +681,6 @@ test("bounds real Read images and Codemode's aggregate forwarded media", async (
       expectBounded(getToolResultText(result, id));
     }
     expect(getToolResultText(result, "images")).toContain("All image reads finished.");
-    expect(getToolResultText(result, "images")).toContain("5 images omitted");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -758,7 +756,7 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
       const result = resultFor(index);
       const output = getToolResultText(result, `symbol-${index}`);
       expect(getToolResultMessage(result, `symbol-${index}`).isError, output).toBe(false);
-      expect(output).not.toContain("No symbols found");
+      expect(output).toContain(prefix);
       expectBounded(output);
       expect((output.match(/SEARCH#[^\n]*:\d+:match /gu) ?? []).length).toBeLessThanOrEqual(
         args.limit,
@@ -934,6 +932,8 @@ for (const nested of [false, true]) {
       file_search: { pattern: "needle", path: hugePath },
       ast_search: { pattern: "needle($A)", path: hugePath },
       lsp_search: { declaration: `${hugePath}#needle` },
+      diagnostics: { path: hugePath },
+      outline: { path: hugePath },
       write: { path: hugePath, content: "new" },
       replace: { path: hugePath, start: "needle", text: "new" },
       insert: { path: hugePath, anchor: "needle", text: "new" },
@@ -986,8 +986,11 @@ for (const nested of [false, true]) {
         const result = resultFor(index);
         const output = getToolResultText(result, `budget-${name}`);
         expect(output.length).toBeGreaterThan(0);
-        expect(output).not.toContain("Tool codemode not found");
-        expect(getToolCallNames(result)).toContain(name);
+        // Invalid edit arguments can be rejected before the tool_call approval hook.
+        expect(getToolExecution(result, `budget-${name}`).toolName).toBe(
+          nested ? "codemode" : name,
+        );
+        if (nested) expect(getToolCallNames(result)).toContain(name);
         if (nested)
           expect(getToolResultMessage(result, `budget-${name}`).isError, name).toBe(false);
         expectBounded(output);

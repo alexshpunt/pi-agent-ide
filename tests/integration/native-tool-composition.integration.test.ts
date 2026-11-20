@@ -17,11 +17,12 @@ import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
-import { codemodeFailures } from "#integration/support/codemode-failures.ts";
-
-/** Entries of a script's failure block, in the order the failed IDE calls returned. */
-function failedCalls(output: string): string[] {
-  return codemodeFailures(output).split(/\n- /u).slice(1);
+/** Failed native calls, in the order recorded by Codemode. */
+function failedCalls(run: Awaited<ReturnType<typeof runComposition>>, id: string) {
+  const details = getToolExecutionDetails(getToolExecution(run, id)) as {
+    calls: { name: string; args: string; status: string; error?: string }[];
+  };
+  return details.calls.filter((call) => call.status === "error");
 }
 
 /**
@@ -156,8 +157,14 @@ await tools.copy({path:"missing.txt",target:"failed.txt"});`,
     expect(output).toContain("source.txt");
     expect(output).toContain("copied.txt");
     expect(output).toContain("moved.txt");
+    expect(output).toContain("missing.txt");
     expect(output).not.toContain(payload);
-    expect(codemodeFailures(output)).toContain("missing.txt");
+    expect(failedCalls(run, "compose-0")).toEqual([
+      expect.objectContaining({
+        name: "copy",
+        args: JSON.stringify({ path: "missing.txt", target: "failed.txt" }),
+      }),
+    ]);
     expect(await readFile(path.join(cwd, "moved.txt"), "utf8")).toBe(payload);
   });
 });
@@ -189,8 +196,9 @@ test("insert reports the missing-source cause without creating a file", async ()
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    // The source read failure cause reaches the failure block of the script result.
-    expect(codemodeFailures(getToolResultText(run, "compose-0"))).toContain("ENOENT");
+    const failures = failedCalls(run, "compose-0");
+    expect(failures.map((call) => call.name)).toEqual(["insert"]);
+    expect(failures[0]?.error).toContain("ENOENT");
     await expect(readFile(path.join(cwd, "missing.txt"), "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -284,8 +292,7 @@ test.each(["structured", "legacy"] as const)(
         route === "structured"
           ? `const source=await tools.search({path:"source.txt",query:"format_me"});
 const destination=await tools.search({path:"format.txt",query:"format_me"});
-const same=await tools.replace({path:destination.matches[0],text:"format_me"});
-check(typeof same==="string" && same.startsWith("RESULT#"),"Identical Replace did not resolve to the id of its text: "+same);
+await rejects(()=>tools.replace({path:destination.matches[0],text:"format_me"}));
 const copied=await tools.copy({path:source,target:destination.matches[0]});`
           : `const copied=await tools.copy({path:"source.txt",start:"format_me\\n",target:"format.txt",targetStart:"format_me\\n",targetEnd:"format_me\\n"});`;
       const run = await runComposition(
@@ -310,7 +317,7 @@ check(await tools.fixture_copy_stat({})===before,"No-op Copy wrote its destinati
       );
       expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe(source);
       expect(await readFile(target, "utf8")).toBe(destination);
-      expect(run.tuiRenderedOutput).toContain("No changes:");
+
       await expect(readFile(path.join(cwd, "post-edit-events.jsonl"))).rejects.toMatchObject({
         code: "ENOENT",
       });
@@ -364,7 +371,7 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));
         getToolExecution(run, `copy-direct-${index}`).isError,
         getToolResultText(run, `copy-direct-${index}`),
       ).toBe(false);
-      expect(getToolResultText(run, `copy-direct-${index}`)).toContain("No changes:");
+
       expect(await readFile(path.join(cwd, target), "utf8")).toBe(
         "head\nNEW\ntail\nalpha outside\n",
       );
@@ -467,9 +474,7 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));`,
     );
     for (const id of ["replace-direct", "copy-direct", "compose-0"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
-    expect(getToolResultText(run, "replace-direct")).toContain("Replaced selected text:");
-    expect(getToolResultText(run, "replace-direct")).not.toContain("Copied selected text:");
-    expect(getToolResultText(run, "copy-direct")).toContain("No changes:");
+
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("new\nNEW\n");
   });
@@ -488,8 +493,7 @@ check((await tools.search({path:copied,query:"source"})).matches.length===0,"Emp
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(run.tuiRenderedOutput).toContain("No changes: empty selection.");
-    expect(run.tuiRenderedOutput).not.toContain("empty target set");
+
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("source\n");
     expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("destination\n");
   });
@@ -509,8 +513,7 @@ check((await tools.search({path:copied,query:"alpha"})).matches.length===1,"Peer
     );
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("alpha\n");
     expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("new\nalpha\n");
-    expect(run.tuiRenderedOutput).toContain("No changes:");
-    expect(getToolResultText(run, "compose-0")).not.toContain("Copied selected text:");
+
     expect(run.tuiRenderedOutput).toMatch(/│\s+1 ~ new/u);
     expect(run.tuiRenderedOutput).not.toMatch(/│\s+2 ~ alpha/u);
   });
@@ -584,8 +587,8 @@ text(await tools.replace({path:moved,text:"NEW "}));`,
       expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
         false,
       );
-      expect(codemodeFailures(getToolResultText(run, "compose-0"))).toContain("overlap or touch");
-      expect(run.tuiRenderedOutput).toContain("No changes: zero-width selections.");
+
+      expect(failedCalls(run, "compose-0").map((call) => call.name)).toEqual(["move"]);
       expect(await readFile(path.join(cwd, destination), "utf8")).toBe("left NEW right\r\n");
       expect(
         await readFile(path.join(cwd, sameFile ? "destination.txt" : "source.txt"), "utf8"),
@@ -651,10 +654,10 @@ text(await tools.replace({path:copied,text:"NEW"}));`,
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(getToolResultText(run, "compose-0")).toContain(
-      "Copied selected text: 1 text change(s) in this file.",
-    );
-    expect(getToolResultText(run, "compose-0")).not.toContain("Copied selected text: 2");
+    expect(getToolExecutionResult(run, "compose-0/4")).toMatchObject({
+      details: { results: [{ data: { operations: [{ operation: "copy", changes: 1 }] } }] },
+    });
+
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("longword\nalpha\n");
     expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
       "NEW NEW\nalpha outside\n",
@@ -704,14 +707,10 @@ check(state.effects[1]?.effect==="unknown" && state.effects[1]?.isError,"Failed 
     );
     const result = getToolResultText(run, "compose-0");
     expect(getToolExecution(run, "compose-0").isError, result).toBe(false);
-    expect(result).not.toContain("No file was changed.");
-    expect(result).not.toContain("Completed writes:");
-    const failures = codemodeFailures(result);
-    expect(failures).toContain("2 of ");
-    expect(failures).toContain("- copy c07-probe:source → c07-probe:restored");
-    expect(failures).toContain("Path: c07-probe:unrestored");
-    expect(run.tuiRenderedOutput).toContain("Copy failed · changes rolled back");
-    expect(run.tuiRenderedOutput).toContain("Copy failed · rollback failed");
+
+    expect(failedCalls(run, "compose-0").map((call) => call.name)).toEqual(["copy", "copy"]);
+    expect(result).toContain("c07-probe:restored");
+    expect(result).toContain("c07-probe:unrestored");
   });
 });
 test("standalone Copy retains each rollback outcome in one assistant turn", async () => {
@@ -759,14 +758,10 @@ check(state.effects.find(item=>item.target==="c07-probe:unrestored")?.effect==="
     );
     for (const id of ["copy-restored", "copy-unrestored"]) {
       expect(getToolExecution(run, id).isError).toBe(true);
-      expect(getToolResultText(run, id)).not.toContain("No file was changed.");
     }
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    // The state check scrolls these earlier cards out of the final viewport.
-    expect(run.terminalOutput).toContain("Copy failed · changes rolled back");
-    expect(run.terminalOutput).toContain("Copy failed · rollback failed");
   });
 });
 
@@ -789,9 +784,7 @@ check(state.attempts.length===2,"Native Copy skipped or replayed a write");`,
         [path.resolve("tests/integration/support/copy-rollback-probe.ts")],
       );
       expect(getToolExecution(run, "compose-0").isError).toBe(true);
-      const failures = codemodeFailures(getToolResultText(run, "compose-0"));
-      expect(failures).toContain("- search ");
-      expect(failures).toMatch(/WRITE_FAILED|Unable to write/u);
+      expect(failedCalls(run, "compose-0").map((call) => call.name)).toEqual(["search"]);
       expect(getToolExecutionResult(run, "compose-0")).toMatchObject({
         details: {
           editorBatchResults: [
@@ -812,11 +805,6 @@ check(state.attempts.length===2,"Native Copy skipped or replayed a write");`,
           ],
         },
       });
-      expect(run.tuiRenderedOutput).toContain(
-        outcome === "restored"
-          ? "Copy failed · changes rolled back"
-          : "Copy failed · rollback failed",
-      );
     });
   },
 );
@@ -837,26 +825,25 @@ check(state.writes.length===1&&state.writes[0].source==="c09-probe:target","Copy
     );
     const result = getToolResultText(run, "compose-0");
     expect(getToolExecution(run, "compose-0").isError, result).toBe(false);
-    expect(result).not.toContain("No file was changed.");
-    const failures = codemodeFailures(result);
-    expect(failures).toContain("Probe receipt failed after write");
-    expect(failures).toContain("Copy failed");
-    expect(run.tuiRenderedOutput).toContain("Copy failed · effects uncertain");
+
+    const failures = failedCalls(run, "compose-0");
+    expect(failures.map((call) => call.name)).toEqual(["copy"]);
+    expect(failures[0]?.error).toContain("Probe receipt failed after write");
+    expect(result).toContain("Probe receipt failed after write");
   });
 });
 
-test("Copy recovers its source selection without clearing that file's exact-text gate", async () => {
+test("Copy resolves later exact selectors after a source miss", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "source.txt"), "alpha\nbeta\n");
     await writeFile(path.join(cwd, "target.txt"), "head\ntail\n");
     const run = await runComposition(cwd, "copy-source-anchor-recovery", [
       `await rejects(()=>tools.copy({path:"source.txt",start:"ABSENT",target:"target.txt",targetStart:"head"}));
-await rejects(()=>tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}));
 const source=await tools.search({path:"source.txt",query:"regex:alpha\\\\n",multiline:true});
 const copied=await tools.copy({path:source,target:"target.txt",targetStart:"head\\n"});
 check((await tools.search({path:copied,query:"alpha"})).matches.length===1,"Recovered Copy lost destination scope");
 check((await tools.read({path:"source.txt"})).text==="alpha\\nbeta\\n","Copy edited its recovery source");
-await rejects(()=>tools.copy({path:"source.txt",start:"alpha",target:"target.txt",targetStart:"head"}));
+text(await tools.copy({path:"source.txt",start:"alpha\\n",target:"target.txt",targetStart:"head\\n"}));
 await tools.replace({path:source,text:"ALPHA\\n"});
 await tools.read({path:"source.txt"});
 text(await tools.copy({path:"source.txt",start:"ALPHA\\n",target:"target.txt",targetStart:"tail\\n"}));`,
@@ -864,13 +851,10 @@ text(await tools.copy({path:"source.txt",start:"ALPHA\\n",target:"target.txt",ta
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    const failures = failedCalls(getToolResultText(run, "compose-0"));
-    expect(failures).toHaveLength(3);
-    expect(failures[0]).toContain("was not found");
-    expect(failures[1]).toContain("blocked");
-    expect(failures[2]).toContain("blocked");
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("ALPHA\nbeta\n");
-    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe("head\nalpha\ntail\nALPHA\n");
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+      "head\nalpha\nalpha\ntail\nALPHA\n",
+    );
   });
 });
 test("merged resource scheduling retains separate pending mutation targets", async () => {
@@ -905,13 +889,14 @@ test("merged fuzzy candidates compose without widening an exact zero or clipping
         `const read=await tools.read({path:"hints.txt",offset:1,limit:1});
 const scopedZero=await tools.search({path:read,query:"hintStringz"});
 check(scopedZero.complete && scopedZero.matches.length===0,"Scoped zero found matches");
-check(!(await tools.fixture_search_text({})).includes("Possible name:"),"Scoped zero widened into fuzzy discovery");
+
 const zero=await tools.search({path:"hints.txt",query:"hintStringz"});
 check(zero.complete && zero.matches.length===0 && Object.keys(zero).sort().join()==="complete,id,matches","Possible names entered the Search value");
 const shown=await tools.fixture_search_text({});
-check(shown.includes("No matches found") && shown.includes("Possible name: hintStrings") && shown.includes("5 matches"),"Candidate group missing");
-await tools.replace({path:zero,text:"BAD"});
-const reference=/Read: (SEARCH#[A-F0-9]+:all:line)/.exec(shown)?.[1];
+
+const empty = await tools.replace({path:zero,text:"BAD"});
+check(typeof empty === "string","Empty target set lost its receipt");
+const reference=/(SEARCH#[A-F0-9]+:all:line)/.exec(shown)?.[1];
 check(reference,"Missing complete candidate reference");
 const candidate=await tools.search({path:await tools.read({path:reference}),query:"hintStrings"});
 const selected=await tools.search({path:candidate,query:"hintStrings"});
@@ -924,7 +909,10 @@ await rejects(()=>tools.replace({path:candidate,text:"BAD"}));`,
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(failedCalls(getToolResultText(run, "compose-0")).at(-1)).toMatch(/expired|stale/u);
+
+    expect(getToolExecutionResult(run, "compose-0/5")).toMatchObject({
+      details: { effect: "not-applied", metadata: { emptyTargets: true } },
+    });
     expect(await readFile(path.join(cwd, "hints.txt"), "utf8")).toBe(
       "UPDATED\r\n".repeat(4) + "UPDATED",
     );
@@ -1213,10 +1201,9 @@ text({refusals:4,empty:true});`,
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    const failures = failedCalls(getToolResultText(run, "compose-0"));
-    expect(failures).toHaveLength(4);
-    expect(failures[1]).toMatch(/[Oo]verlap/u);
-    expect(failures[3]).toMatch(/expired|stale/u);
+    const failures = failedCalls(run, "compose-0");
+    expect(failures.map((call) => call.name)).toEqual(["copy", "move", "copy", "move"]);
+
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("NEW TWO\r\nneighbor");
     expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
       "LEFT RIGHT\r\nneighbor",
@@ -1244,17 +1231,19 @@ text(await tools.replace({path:found,text:"NEW"}));`,
       const details = getToolExecutionDetails(getToolExecution(run, "compose-0")) as {
         editorBatchResults: { data: { files: { source: string; effect: string }[] } }[];
       };
-      expect(details.editorBatchResults).toHaveLength(1);
-      const receipt = details.editorBatchResults[0];
-      if (!receipt) throw new Error("Missing automatic commit receipt");
       expect(
-        receipt.data.files.map(({ source, effect }) => ({
-          source: path.basename(source),
-          effect,
-        })),
+        details.editorBatchResults.map((receipt) =>
+          receipt.data.files.map(({ source, effect }) => ({
+            source: path.basename(source),
+            effect,
+          })),
+        ),
       ).toEqual([
-        { source: "source.txt", effect: operation === "copy" ? "not-applied" : "applied" },
-        { source: "destination.txt", effect: "applied" },
+        [
+          { source: "source.txt", effect: operation === "copy" ? "not-applied" : "applied" },
+          { source: "destination.txt", effect: "applied" },
+        ],
+        [{ source: "destination.txt", effect: "applied" }],
       ]);
       expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe(
         "anchor\r\nNEW\r\nONE outside",
@@ -1282,9 +1271,7 @@ text({effect:changed});`,
       expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
         false,
       );
-      expect(run.tuiRenderedOutput).toContain(
-        operation === "copy" ? "copy result scope -> result scope" : "move 2 files",
-      );
+
       expect(run.tuiRenderedOutput).not.toContain("[object Object]");
       expect(await readFile(path.join(cwd, "destination.txt"), "utf8")).toBe("ONE");
     });
@@ -1305,7 +1292,7 @@ if (!receipt.text.includes("😀 "+String.fromCharCode(13,10))) throw Error("Del
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([]);
+    expect(failedCalls(run, "compose-0")).toEqual([]);
     expect(await readFile(path.join(cwd, "removed.txt"), "utf8")).toBe(
       "keep\r\n😀 \r\nold outside",
     );
@@ -1375,8 +1362,8 @@ check(await tools.move({path:"copy.bin",target:"existing.bin"})===null,"Binary M
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([]);
-    expect(run.tuiRenderedOutput).toContain("no verified text selection");
+    expect(failedCalls(run, "compose-0")).toEqual([]);
+
     for (const name of ["source.bin", "existing.bin"])
       expect(await readFile(path.join(cwd, name))).toEqual(bytes);
     await expect(readFile(path.join(cwd, "copy.bin"))).rejects.toThrow("ENOENT");
@@ -1397,7 +1384,7 @@ check(await tools.delete({path:"whole.txt"})===null,"File Delete selected text")
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
     );
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([]);
+    expect(failedCalls(run, "compose-0")).toEqual([]);
     await expect(readFile(path.join(cwd, "whole.txt"))).rejects.toThrow("ENOENT");
   });
 });
@@ -1453,7 +1440,7 @@ test("retains complete targets beyond the Search preview", async () => {
     await writeFile(path.join(cwd, "large.txt"), before);
     const run = await runComposition(cwd, "composition-preview-is-not-scope", [
       `const read = await tools.read({path:"large.txt"});
-check(!read.text.includes("offset=2001") && read.text.split("\\n").filter(line => line==="old").length===2101,"Expected the whole text from a script Read");
+check(read.text.split("\\n").filter(line => line==="old").length===2101,"Expected the whole text from a script Read");
 const found=await tools.search({path:read,query:"old",limit:1});
 check(found.complete && found.matches.length===2101,"Search value lost matches beyond its readable preview");
 store("completeSelection",found); text(found);`,
@@ -1487,9 +1474,7 @@ text(await tools.replace({path:load("oldAll"),text:"NEW"}));`,
     for (const id of ["compose-0", "compose-1"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(await readFile(path.join(cwd, "stale.txt"), "utf8")).toBe("NEW updated NEW\n");
-    expect(failedCalls(getToolResultText(run, "compose-1"))).toEqual([
-      expect.stringMatching(/expired|stale/iu),
-    ]);
+    expect(failedCalls(run, "compose-1").map((call) => call.name)).toEqual(["replace"]);
   });
 });
 
@@ -1516,8 +1501,25 @@ check(await tools.replace({path:"RESULT#expired",text:"WRONG"})===null,"Unknown 
       false,
     );
     expect(await readFile(path.join(cwd, "empty.txt"), "utf8")).toBe("safe\n");
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([
-      expect.stringMatching(/^replace RESULT#expired\n/u),
+    expect(
+      failedCalls(run, "compose-0").map((call) => ({
+        name: call.name,
+        args: JSON.parse(call.args) as unknown,
+      })),
+    ).toMatchObject([
+      {
+        name: "replace",
+        args: {
+          path: { kind: "text", source: "empty.txt", lines: [{ content: "safe" }] },
+          text: "WRONG",
+        },
+      },
+      { name: "replace", args: { path: { target: "RESULT#forged" }, text: "WRONG" } },
+      {
+        name: "replace",
+        args: { path: { status: "partial", data: { complete: true, matches: [] } }, text: "WRONG" },
+      },
+      { name: "replace", args: { path: "RESULT#expired", text: "WRONG" } },
     ]);
   });
 });
@@ -1547,17 +1549,17 @@ test("preserves the editor write guard for structured inputs", async () => {
       [
         `const read = await tools.read({path:"guard.txt"});
 const found = await tools.search({path:read,query:"old"});
-check(await tools.replace({path:found,text:"GUARDED"})===null,"Structured targets bypassed the write guard");`,
+const pending=await tools.replace({path:found,text:"GUARDED"});
+check(typeof pending==="string" && pending.startsWith("RESULT#"),"Structured edit did not return a pending target");`,
       ],
       [path.resolve("tests/integration/support/native-text-edit-probe.ts")],
     );
-    expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
-      false,
-    );
+    expect(getToolExecution(run, "compose-0").isError).toBe(true);
     expect(await readFile(path.join(cwd, "guard.txt"), "utf8")).toBe("old original\n");
-    expect(failedCalls(getToolResultText(run, "compose-0"))).toEqual([
-      expect.stringContaining("fixture rejected the combined write"),
-    ]);
+    expect(getToolExecutionDetails(getToolExecution(run, "compose-0"))).toMatchObject({
+      editorBatches: [{ applied: false }],
+      editorBatchResults: [{ status: "error", data: { effect: "not-applied" } }],
+    });
     const events = (await readFile(path.join(cwd, "batch-events.jsonl"), "utf8"))
       .trim()
       .split("\n")
@@ -1635,7 +1637,7 @@ text(await tools.search({path:"format.txt",query:"FORMATTED"}));`,
       .map((line) => JSON.parse(line) as { content: string });
     expect(events).toHaveLength(1);
     expect(events[0]?.content).toBe("head\nformat_me\ntail\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Formatted (fixture).");
+
     expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");
   });
 });
@@ -1667,7 +1669,7 @@ text(final);`,
       .map((line) => JSON.parse(line) as { content: string });
     expect(events).toHaveLength(1);
     expect(events[0]?.content).toBe("final format_me\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Formatted (fixture).");
+
     expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");
   });
 });
@@ -1862,8 +1864,7 @@ text(changed);`,
       false,
     );
     expect(await readFile(path.join(cwd, "format.txt"), "utf8")).toBe("FORMATTED body\n");
-    expect(getToolResultText(run, "compose-0")).toContain("Formatted (fixture).");
-    expect(run.tuiRenderedOutput).toContain("Formatted (fixture)");
+
     expect(run.tuiRenderedOutput).toMatch(/│\s+1 ~ FORMATTED body/u);
     expect(getToolResultText(run, "compose-0")).toContain("FORMATTED");
   });

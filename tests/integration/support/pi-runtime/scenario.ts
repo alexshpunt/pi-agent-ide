@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { diffLines } from "diff";
 import {
   assistantMessage,
@@ -36,6 +38,8 @@ export interface TextToolScenarioResult {
   readonly mutationCallId: string;
   readonly preflightCallIds: readonly string[];
   readonly postflightCallIds: readonly string[];
+  readonly beforeContents: Readonly<Record<string, string>>;
+  readonly afterContents: Readonly<Record<string, string>>;
 }
 
 export async function runTextToolScenario(
@@ -48,6 +52,15 @@ export async function runTextToolScenario(
   }
 
   const files = editedFiles(scenario.arguments);
+  const captureContents = async () =>
+    Object.fromEntries(
+      await Promise.all(
+        files.map(
+          async (file) => [file, await readFile(resolve(scenario.cwd, file), "utf8")] as const,
+        ),
+      ),
+    );
+  const beforeContents = await captureContents();
   const preflightCallIds = files.map((_file, index) => `${scenario.testName}-read-before-${index}`);
   const postflightCallIds = files.map((_file, index) => `${scenario.testName}-read-after-${index}`);
   const mutationCallId = `${scenario.testName}-${scenario.tool}`;
@@ -83,7 +96,15 @@ export async function runTextToolScenario(
     expect(getToolExecution(result, callId).isError, callId).toBe(false);
   }
 
-  return { result, mutationCallId, preflightCallIds, postflightCallIds };
+  const afterContents = await captureContents();
+  return {
+    result,
+    mutationCallId,
+    preflightCallIds,
+    postflightCallIds,
+    beforeContents,
+    afterContents,
+  };
 }
 
 export function expectTextToolDiff(
@@ -113,10 +134,13 @@ export function expectTextToolDiff(
   expect(data).toMatchObject({
     addedLines: expected.added.length,
     removedLines: expected.removed.length,
-    beforeContentMap: { [path]: before },
-    afterContent: after,
   });
-  expect(Array.isArray(data.diffs) && data.diffs.length > 0).toBe(true);
+  expect(scenario.beforeContents[path]).toBe(before);
+  expect(scenario.afterContents[path]).toBe(after);
+  // RPC receipts retain counts, not engine snapshots or unbounded diff payloads.
+  for (const field of ["beforeContentMap", "afterContent", "afterDocument", "snapshot", "diffs"]) {
+    expect(data).not.toHaveProperty(field);
+  }
 }
 
 function expectedDiff(

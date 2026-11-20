@@ -30,6 +30,7 @@ const cases: {
   error?: boolean;
   input?: string;
   offset?: number;
+  readLimit?: number;
   destinationQuery?: string;
   ast?: boolean;
 }[] = [
@@ -47,6 +48,7 @@ const cases: {
     input: large,
     offset: 20,
     destinationQuery: "SUFFIX",
+    readLimit: largeBlock.split("\n").length - 1,
     expected: `${prefix}// SUFFIX\n${largeBlock}`,
   },
   {
@@ -120,6 +122,15 @@ const cases: {
     expected: original,
     error: true,
   },
+  {
+    name: "move",
+    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination },
+    input: large,
+    offset: 20,
+    destinationQuery: "SUFFIX",
+    expected: large,
+    error: true,
+  },
 ];
 
 for (const [index, scenario] of cases.entries()) {
@@ -154,7 +165,7 @@ for (const [index, scenario] of cases.entries()) {
           call("read", "read", {
             path: "fixture.ts",
             offset: scenario.offset ?? 2,
-            limit: 1,
+            limit: scenario.readLimit ?? 1,
             views: scenario.ast ? ["anchors", "ast"] : ["anchors"],
           }),
           call("end", "search", { path: "fixture.ts", query: "END" }),

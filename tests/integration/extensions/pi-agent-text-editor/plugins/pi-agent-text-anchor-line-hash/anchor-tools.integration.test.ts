@@ -83,7 +83,7 @@ describe("line-hash anchors through text editor tools", () => {
       "copy",
       { start, end, targetStart: target },
       [start, end, target],
-      ["alpha", "bravo", "charlie", "delta", "echo", "bravo", "charlie", ""].join("\n"),
+      ["alpha", "bravo", "charlie", "delta", "echo", "bravo", "charlie"].join("\n"),
     );
   });
 
@@ -96,7 +96,7 @@ describe("line-hash anchors through text editor tools", () => {
       "move",
       { start, end, targetStart: target },
       [start, end, target],
-      ["alpha", "delta", "echo", "bravo", "charlie", ""].join("\n"),
+      ["alpha", "delta", "echo", "bravo", "charlie"].join("\n"),
     );
   });
 });

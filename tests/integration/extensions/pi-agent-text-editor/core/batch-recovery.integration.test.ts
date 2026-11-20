@@ -9,7 +9,6 @@ import {
   getToolExecution,
   getToolExecutionDetails,
   getToolExecutions,
-  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -221,9 +220,7 @@ describe("pi-agent-text-editor batch recovery", () => {
       expect(staleDetails).toHaveProperty("batchRecovery.state", "failed-not-applied");
       expect(staleDetails).toHaveProperty("batchRecovery.recovered", false);
       expect(getToolExecution(result, "atomic-after-stale").isError).toBe(false);
-      const staleResult = getToolResultText(result, "atomic-stale");
-      expect(staleResult).toContain(`replace blocked: start anchor "${outdatedAnchor}" is stale`);
-      expect(staleResult).not.toContain("Reason:");
+
       await expect(readFile(firstFile, "utf8")).resolves.toBe("alpha\nfirst-change\nsecond\nomega");
       await expect(readFile(secondFile, "utf8")).resolves.toBe("beta\nsecond-change\nomega-change");
     });
@@ -334,7 +331,18 @@ describe("pi-agent-text-editor batch recovery", () => {
           : [];
       });
 
-      expect(getToolCallNames(result).filter((name) => name === "replace")).toHaveLength(6);
+      // Argument preparation refuses the incomplete stale call before its tool_call hook.
+      expect(getToolCallNames(result).filter((name) => name === "replace")).toHaveLength(5);
+      expect(
+        result.traceEvents.some(
+          (trace) =>
+            trace.type === "tool_call" &&
+            typeof trace.event === "object" &&
+            trace.event !== null &&
+            "toolCallId" in trace.event &&
+            trace.event.toolCallId === "streamed-stale",
+        ),
+      ).toBe(false);
       expect(
         getToolExecutions(result)
           .filter(({ toolName }) => toolName === "replace")

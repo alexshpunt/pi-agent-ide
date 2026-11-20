@@ -66,7 +66,8 @@ describe("AST scope anchors through text editor tools", () => {
         start: second.beginAnchor.value,
         end: second.endScopeAnchor.value,
       }),
-      [...firstFunction, "", ""].join("\n"),
+      // Removing an unterminated final scope also removes its preceding separator.
+      [...firstFunction, ""].join("\n"),
     );
   });
 
@@ -79,7 +80,7 @@ describe("AST scope anchors through text editor tools", () => {
         end: first.endScopeAnchor.value,
         targetStart: second.endScopeAnchor.value,
       }),
-      [...lines, ...firstFunction, ""].join("\n"),
+      [...lines, ...firstFunction].join("\n"),
     );
   });
 
@@ -92,7 +93,7 @@ describe("AST scope anchors through text editor tools", () => {
         end: first.endScopeAnchor.value,
         targetStart: second.endScopeAnchor.value,
       }),
-      ["", ...secondFunction, ...firstFunction, ""].join("\n"),
+      ["", ...secondFunction, ...firstFunction].join("\n"),
     );
   });
 });

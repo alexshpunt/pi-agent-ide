@@ -122,7 +122,7 @@ test("refreshes a complete all-result read anchor after a matched file changes",
   });
 }, 180_000);
 
-test("keeps a per-result search read anchor snapshot-only after a matched file changes", async () => {
+test("follows a per-result search read anchor after unrelated lines are inserted", async () => {
   await withTempWorkspace(async (directory) => {
     const source = path.join(directory, "first.txt");
     await writeFile(source, "needle first\n", "utf8");
@@ -160,7 +160,10 @@ test("keeps a per-result search read anchor snapshot-only after a matched file c
       ],
     }).run("Search, change the matched file, then read the per-result anchor");
 
-    expect(getToolExecution(result, "read-stale").isError).toBe(true);
+    expect(getToolExecution(result, "read-stale").isError).toBe(false);
+    const output = getToolResultText(result, "read-stale");
+    expect(output).toContain("needle first");
+    expect(output).not.toContain("changed");
     await expect(readFile(source, "utf8")).resolves.toBe("changed\nneedle first\n");
   });
 }, 180_000);
