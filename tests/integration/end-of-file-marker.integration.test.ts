@@ -86,7 +86,7 @@ test("Read shows the marker only after the last line of a file without a final l
       // The marker is no line: the three file lines carry anchors, the marker none.
       expect(
         anchored.slice(0, 3).every((line) => ANCHOR_PREFIX.test(line)),
-        file,
+        `${file}: ${JSON.stringify(anchored)}`,
       ).toBe(true);
       expect(anchored).toHaveLength(4);
     }
