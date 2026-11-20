@@ -293,9 +293,8 @@ export function createTextTool<TParameters extends TSchema>(
                     input = {
                       ...input,
                       [definition.source.field]:
-                        scoped ||
-                        (Array.isArray(expanded) &&
-                          !core.hasMatchingPreEditHandler(definition.name, input))
+                        (scoped || Array.isArray(expanded)) &&
+                        !core.hasMatchingPreEditHandler(definition.name, input)
                           ? resultTargets.register(selected.targets, context.cwd, selected.complete)
                           : resultTargets.source(expanded, context.cwd),
                     };

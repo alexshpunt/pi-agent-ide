@@ -4,6 +4,8 @@ const RECEIPT_BYTES = 16 * 1024;
 
 export interface CompactMutationReceipt extends FileMutationBatchResult {
   readonly mutationDetailsTruncated?: true;
+  /** Guide identity metadata from the progressive-documentation result hook. */
+  readonly documentation?: unknown;
 }
 
 /** Keep bounded machine receipts, without engine snapshots or display data. */
@@ -15,6 +17,7 @@ export function compactMutationReceipt(details: FileMutationBatchResult): Compac
   const receipt = {
     effect: details.effect,
     metadata: details.metadata,
+    documentation: source.documentation,
     phases: details.phases,
     anchorRecoveries: details.anchorRecoveries,
     agenticIdeBatch: source.agenticIdeBatch,

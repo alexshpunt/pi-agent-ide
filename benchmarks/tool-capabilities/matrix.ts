@@ -280,6 +280,7 @@ const groups: [string[], string[]][] = [
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["read.diff-omission"], ["diff-omission"]],
   [["codemode.diff-complete"], ["diff-script-complete"]],
+  [["edit.hash-shaped-literal"], ["hash-shaped-literal"]],
   // These recipes explicitly require literal text and an omitted end, across LF/CRLF/EOF.
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
   // A retyped line keeps the original look-alike bytes (non-breaking space) outside its change.
@@ -390,6 +391,7 @@ const groups: [string[], string[]][] = [
       "lsp.rename-keeps-unrelated-names",
       // Refusals must be actionable INVALID_REQUEST results, not plugin crashes.
       "lsp.rename-refusal-recovery",
+      "lsp.rename-selector-refusal",
       "compose.symbol-read-rename",
     ],
     ["lsp-rename"],

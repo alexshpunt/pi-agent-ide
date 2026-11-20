@@ -2917,6 +2917,21 @@ for (const [name, eol] of [
     },
   );
 }
+add(
+  "hash-shaped-literal",
+  ["edit.hash-shaped-literal"],
+  'Read task.txt with anchors. Delete only PACKAGE and its following newline using the exact literal string "PACKAGE\\n" as start (decode the JSON escape to an actual newline). Omit end. Do not use a line anchor or Search reference. Preserve First and Last.',
+  [
+    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    {
+      tool: "delete",
+      args: { path: "task.txt", start: "PACKAGE\n", end: undefined },
+      exactText: ["start"],
+      after: [0],
+    },
+  ],
+  { files: { "task.txt": "First\nPACKAGE\nLast\n" }, expected: { "task.txt": "First\nLast\n" } },
+);
 for (const [name, eol, ending] of [
   ["lf", "\n", "\n"],
   ["crlf", "\r\n", "\r\n"],
@@ -4036,10 +4051,11 @@ add(
     "lsp.rename-cross-file",
     "lsp.rename-keeps-unrelated-names",
     "lsp.rename-refusal-recovery",
+    "lsp.rename-selector-refusal",
     "compose.symbol-read-rename",
     "compose.capture-uuid-source",
   ],
-  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Wait for that refusal result before replacing the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
+  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Wait for that refusal result, then try replacing the same name capture with start: "count" and text: "total"; this mixed semantic-name/literal-selector request must also fail without changes. Wait for its refusal before replacing the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
   [
     { tool: "lsp_search", args: { declaration: /^task\.ts#.*count$/ }, contains: "count" },
     {
@@ -4056,8 +4072,18 @@ add(
     },
     {
       tool: "replace",
+      args: { start: "count", text: "total" },
       reuse: reuse(0, "path", "capture:name"),
       after: [1],
+      error: true,
+      contains: "INVALID_REQUEST",
+      excludes: "PLUGIN_FAILED",
+    },
+    {
+      tool: "replace",
+      args: { text: "total", start: undefined, end: undefined },
+      reuse: reuse(0, "path", "capture:name"),
+      after: [2],
     },
   ],
   {
