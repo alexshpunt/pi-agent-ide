@@ -5,6 +5,30 @@ import { normalizeStructuredArguments } from "./json-structured-arguments.ts";
 const reference = Type.Object({ id: Type.String() });
 const source = Type.Union([Type.String(), reference]);
 const sources = Type.Union([source, Type.Array(source)]);
+test.each(
+  [false, true].flatMap((multiline) => [false, true].map((indented) => ({ multiline, indented }))),
+)("string-capable fields preserve literal JSON objects: %j", ({ multiline, indented }) => {
+  const raw = JSON.stringify(
+    { id: "checkout-5", feature: "legacyCheckout", retries: 3 },
+    null,
+    multiline ? 2 : undefined,
+  );
+  const literal = indented ? raw.replaceAll(/^/gm, "    ") : raw;
+  for (const field of [
+    "path",
+    "target",
+    "start",
+    "end",
+    "anchor",
+    "targetStart",
+    "targetEnd",
+    "before",
+    "after",
+  ]) {
+    const input = { [field]: literal };
+    expect(normalizeStructuredArguments(input, parameters), field).toBe(input);
+  }
+});
 const parameters = Type.Object({
   path: Type.Optional(sources),
   target: Type.Optional(sources),
