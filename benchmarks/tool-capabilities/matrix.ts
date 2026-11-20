@@ -109,6 +109,7 @@ const groups: [string[], string[]][] = [
   // Guard metadata and identical execution/transcript refusals protect early payload truncation.
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [["edit.copied-line-prefix-refusal"], ["copied-line-prefix-recovery"]],
+  [["edit.replace-anchored-display"], ["replace-anchored-display"]],
   // Stale checks follow the edit; literal Search is independent of either refusal.
   // Early streaming cutoffs remain refusals, even when their payload has not arrived.
   [
@@ -322,7 +323,10 @@ const groups: [string[], string[]][] = [
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
   // Out-of-scope selectors fail; a scope-only exact miss leaves later exact edits enabled.
   // Anchor-rejection card causes are presentation only; renderer tests decode all four codes.
-  [["compose.result-selector-scope"], ["result-selector-scope", "result-selector-exact-retry"]],
+  [
+    ["compose.result-selector-scope"],
+    ["result-selector-scope", "result-selector-surviving-scope", "result-selector-exact-retry"],
+  ],
   [
     [
       // Fresh-session follow-up operations exercise metadata activated by the first Bash call.

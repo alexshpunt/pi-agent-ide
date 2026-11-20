@@ -9,7 +9,7 @@ CI may run automatically on `develop`, but it is not a merge requirement. Do not
 
 Before you run any test, read the running-tests skill: it says which machine each run goes to. During feature development, run only relevant unit tests, typecheck/lint, a targeted integration case, or a small live smoke check. Full integration suites and other broad, heavy test runs belong only in CI/CD, including through an umbrella check command. Keep live tool and TUI verification for changed behavior; it is an internal check, not a separate user acceptance gate.
 
-Do not test prose: tool descriptions, prompts, skills, documentation, or human-readable log, UI, and error wording. Delete any test found to pin that wording immediately; do not weaken its assertion or leave it for later. Machine-parsed protocol and file-format contracts are exempt.
+Do not pin exact wording of tool descriptions, prompts, skills, documentation, or human-readable log, UI, and error messages. Preserve behavioral coverage and contracts an agent relies on: update such tests to assert structured outcomes or fixture data without fixing surrounding wording. Delete a test only when it checks intentionally changeable description or guidance wording and its behavioral intent is covered elsewhere; name that coverage in the issue and report. Machine-parsed protocol and file-format contracts are exempt.
 
 Run one integration file with `npx pi-test run -- vitest run --config vitest.integration.config.mjs <file>`. `pnpm test:integration -- <file>` does not filter: it runs the whole integration suite.
 

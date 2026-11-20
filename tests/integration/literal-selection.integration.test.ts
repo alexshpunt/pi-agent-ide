@@ -9,6 +9,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
+import { textLineAnchors } from "pi-agent-text";
 
 import { createExtensionSet } from "#integration/support/pi-runtime/extension-set.ts";
 
@@ -77,6 +78,52 @@ test("literal selectors edit exact characters while :line references edit whole 
       content.replace("// END block\n", "// END block\n// X\n"),
     );
     expect(await read("delete-line")).toBe(content.replace("body line\n", ""));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("Read anchors view text selects source characters in a real edit", async () => {
+  await mkdir(tempRoot, { recursive: true });
+  const cwd = await mkdtemp(path.join(tempRoot, "run-"));
+  const source = path.join(cwd, "fixture.txt");
+  const original = "keep this\r\nchange this part\r\nkeep that";
+  try {
+    await writeFile(source, original);
+    const anchor = textLineAnchors(source, original)[1];
+    const selector = `${anchor}|change this`.slice(3);
+    await new PiIntegrationTest({
+      testName: "copied-anchored-view",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      isolateUserResources: true,
+      cwd,
+      extensions: extensions.paths,
+      tools: ["read", "replace"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "read-anchors",
+              name: "read",
+              arguments: { path: "fixture.txt", views: ["anchors"] },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-copy",
+              name: "replace",
+              arguments: { path: "fixture.txt", start: selector, text: "edited" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Read the middle line with its anchor, then edit only the selected phrase.");
+    expect(await readFile(source, "utf8")).toBe("keep this\r\nedited part\r\nkeep that");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

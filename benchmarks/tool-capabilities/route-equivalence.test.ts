@@ -8,7 +8,7 @@ import { capabilityCases } from "./cases.ts";
 import { checkCoverage, validateRoute, type RouteStep, type RunEvent } from "./validation.ts";
 
 for (const mode of ["direct", "codemode"]) {
-  void test(`whole-line transfers accept issued source and destination selectors (${mode})`, () => {
+  void test(`whole-line transfers require literal sources and accept issued destinations (${mode})`, () => {
     const task = capabilityCases.find((entry) => entry.id === "exact-range-copy");
     assert.ok(task);
     const route = task.steps.slice(3).map((step) => ({ ...step, sameAssistantWith: undefined }));
@@ -19,7 +19,7 @@ for (const mode of ["direct", "codemode"]) {
         tool: "copy",
         args: {
           path: "whole.txt",
-          start: "T286A4V",
+          start: "段🙂\r\n",
           target: "inline.txt",
           targetStart: "SLOT",
           targetEnd: "SLOT",
@@ -29,13 +29,22 @@ for (const mode of ["direct", "codemode"]) {
         tool: "copy",
         args: {
           path: "whole.txt",
-          start: "T286A4V",
+          start: "段🙂\r\n",
           target: "inserted.txt",
           targetStart: "6QG98NT",
         },
       },
     ];
     assert.ok(validateRoute({ ...task, steps: route }, events(calls, mode), mode).passed);
+    for (const index of [2, 3]) {
+      const issuedSource = calls.map((call, at) =>
+        at === index ? { ...call, args: { ...call.args, start: "T286A4V" } } : call,
+      );
+      assert.equal(
+        validateRoute({ ...task, steps: route }, events(issuedSource, mode), mode).passed,
+        false,
+      );
+    }
     assert.ok(
       !validateRoute({ ...task, steps: route }, events(calls.slice(0, -1), mode), mode).passed,
     );

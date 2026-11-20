@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { requiredValue } from "pi-agent-invariant";
-import { TextAnchor } from "pi-agent-text";
+import { TextAnchor, textLineAnchors } from "pi-agent-text";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
 import type { TextMutationContext } from "#src/api/mutation-tool.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
@@ -74,6 +74,70 @@ async function run(
 }
 
 const file = "// PREFIX\n// BEGIN block\nbody line\n// END block\n// SUFFIX\n";
+function displayLine(content: string, line: number, copiedText: string) {
+  return `${textLineAnchors("fixture.txt", content)[line - 1]}|${copiedText}`;
+}
+
+test("replace accepts a copied CRLF and BOM display using LF and fuzzy text", async () => {
+  const source = "\uFEFFalpha\u00A0one\r\nbravo chunk\r\ncharlie";
+  const start = [displayLine(source, 1, "alpha one"), displayLine(source, 2, "bravo")].join("\n");
+  expect(await run(replaceMutationTool, { source }, { start }, { text: "revised\nbeta" })).toEqual({
+    source: "\uFEFFrevised\r\nbeta chunk\r\ncharlie",
+  });
+});
+
+test("insert uses the exact content boundary of a copied prefix and partial line", async () => {
+  expect(
+    await run(
+      insertMutationTool,
+      { source: file },
+      { anchor: displayLine(file, 3, "body") },
+      { text: " of" },
+    ),
+  ).toEqual({ source: file.replace("body line", "body of line") });
+});
+
+test("delete maps both copied endpoints back to their original characters", async () => {
+  expect(
+    await run(
+      deleteMutationTool,
+      { source: file },
+      {
+        start: displayLine(file, 2, "// BEGIN"),
+        end: displayLine(file, 4, "// END"),
+      },
+    ),
+  ).toEqual({ source: "// PREFIX\n block\n// SUFFIX\n" });
+});
+
+test("copy replaces the span between copied destination selectors with the source bytes", async () => {
+  const target = "alpha\nbeta\ngamma\n";
+  expect(
+    await run(
+      copyMutationTool,
+      { source: file, target },
+      {
+        start: displayLine(file, 3, "body"),
+        targetStart: displayLine(target, 1, "alpha"),
+        targetEnd: displayLine(target, 2, "bet"),
+      },
+    ),
+  ).toEqual({ source: file, target: "bodya\ngamma\n" });
+});
+
+test("move removes only the copied selector's characters and transfers no prefixes", async () => {
+  const target = "left\nright\n";
+  expect(
+    await run(
+      moveMutationTool,
+      { source: file, target },
+      {
+        start: displayLine(file, 3, "body"),
+        targetStart: displayLine(target, 1, "left"),
+      },
+    ),
+  ).toEqual({ source: file.replace("body line", " line"), target: "leftbody\nright\n" });
+});
 
 test("insert after a literal that covers a whole line adds the text right after it", async () => {
   expect(

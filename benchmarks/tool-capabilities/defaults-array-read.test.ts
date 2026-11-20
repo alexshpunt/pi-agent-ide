@@ -301,9 +301,24 @@ void test("standalone discovery may load each tool before its first use", () => 
     { tool: "demo_search", args: { path: readId, query: "alpha" }, text: `alpha ${searchId}` },
     { tool: "tool_search", args: {}, loaded: ["demo_replace"] },
     { tool: "demo_replace", args: { path: searchId, text: "changed" } },
-    { tool: "demo_read", args: { path: "local.txt" }, error: true },
-    { tool: "demo_read", args: { path: "memory://other/note" }, error: true },
-    { tool: "demo_copy", args: { path: "memory://demo/note", target: "local.txt" }, error: true },
+    {
+      tool: "demo_read",
+      args: { path: "local.txt" },
+      error: true,
+      text: "RESOURCE_HOST_LOCAL_PATH",
+    },
+    {
+      tool: "demo_read",
+      args: { path: "memory://other/note" },
+      error: true,
+      text: "RESOURCE_HOST_FOREIGN_SOURCE",
+    },
+    {
+      tool: "demo_copy",
+      args: { path: "memory://demo/note", target: "local.txt" },
+      error: true,
+      text: "RESOURCE_HOST_LOCAL_PATH",
+    },
     { tool: "demo_read", args: { path: "memory://demo/note" }, text: "changed\nomega" },
   ];
   assert.ok(validateRoute(task, events(calls, "direct"), "direct").passed);
