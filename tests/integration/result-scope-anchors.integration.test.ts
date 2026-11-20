@@ -91,40 +91,30 @@ test("an ordered pair stays inside the Read result and preserves CRLF", async ()
   await withTempWorkspace(async (cwd) => {
     const file = path.join(cwd, "task.txt");
     await writeFile(file, "OPEN\r\nCLOSE\r\nCLOSE\r\nOPEN\r\nbody\r\nCLOSE\r\nkeep\r\nCLOSE\r\n");
-    const result = await run(
-      cwd,
-      "ordered-read-scope-end",
-      [
-        { id: "narrow", name: "read", arguments: { path: "task.txt", offset: 2, limit: 4 } },
-        {
-          id: "outside-end",
-          name: "replace",
-          arguments: {
-            path: { id: "$issued-uuid:narrow" },
-            start: "OPEN",
-            end: "CLOSE",
-            text: "BAD",
-          },
+    const result = await run(cwd, "ordered-read-scope-end", [
+      {
+        id: "outside-end",
+        name: "codemode",
+        arguments: {
+          code: `const scope = await tools.read({ path: "task.txt", offset: 2, limit: 4 });
+await tools.replace({ path: scope, start: "OPEN", end: "CLOSE", text: "BAD" });`,
         },
-        { id: "wide", name: "read", arguments: { path: "task.txt", offset: 2, limit: 7 } },
-        {
-          id: "inside-end",
-          name: "replace",
-          arguments: {
-            path: { id: "$issued-uuid:wide" },
-            start: "OPEN",
-            end: "CLOSE",
-            text: "new",
-          },
+      },
+      {
+        id: "inside-end",
+        name: "codemode",
+        arguments: {
+          code: `const scope = await tools.read({ path: "task.txt", offset: 2, limit: 7 });
+await tools.replace({ path: scope, start: "OPEN", end: "CLOSE", text: "new" });`,
         },
-      ],
-      "tui",
-    );
-    expect(getToolExecution(result, "outside-end").isError).toBe(true);
-    expect(
-      getToolExecution(result, "inside-end").isError,
-      getToolResultText(result, "inside-end"),
-    ).toBe(false);
+      },
+    ]);
+    expect(getToolExecutionDetails(getToolExecution(result, "outside-end"))).toMatchObject({
+      calls: [{ status: "ok" }, { status: "error" }],
+    });
+    expect(getToolExecutionDetails(getToolExecution(result, "inside-end"))).toMatchObject({
+      calls: [{ status: "ok" }, { status: "ok" }],
+    });
     await expect(readFile(file, "utf8")).resolves.toBe(
       "OPEN\r\nCLOSE\r\nCLOSE\r\nnew\r\nkeep\r\nCLOSE\r\n",
     );

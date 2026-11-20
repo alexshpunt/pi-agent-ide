@@ -36,7 +36,6 @@ export interface TextMutation {
 export interface PairedAnchorStart {
   readonly source: string;
   readonly offset: number;
-  readonly field: string;
 }
 
 export interface TextMutationContext {

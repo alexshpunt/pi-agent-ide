@@ -111,7 +111,6 @@ export async function resolveAnchorSpanRange(
   const ends = await context.resolveAnchors(endField, {
     source: start.source,
     offset: start.to,
-    field: startField,
   });
   const end = ends.get(start.source);
   let selectedEnds = ends;
