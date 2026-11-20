@@ -153,14 +153,6 @@ describe("fuzzy matching", () => {
   });
 });
 
-test("a literal selection is marked as literal", () => {
-  const result = resolve("bravo", "alpha bravo");
-  if (result.kind !== "resolved" || !TextSelectionAnchor.is(result.anchor)) {
-    throw new Error("Expected a text selection anchor");
-  }
-  expect(result.anchor.literal).toBe(true);
-});
-
 test("a CRLF selector selects the CR and LF bytes it names", () => {
   expect(rangesOf(resolve("bravo\r\ncharlie", "alpha\r\nbravo\r\ncharlie\r\ndelta"))).toEqual([
     { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 3, column: 7 } },

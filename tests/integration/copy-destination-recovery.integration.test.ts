@@ -107,7 +107,8 @@ text(await tools.copy(${corrected}));
       expect(await readFile(file, "utf8")).toBe(
         field === "targetStart"
           ? "alpha\nbeta\ngap\n});\nINSERT_HERE\nalpha\nbeta\n});\ntail\n"
-          : "alpha\nbeta\nalpha\nbeta\n});\ntail\n",
+          : // The line-anchor end keeps its line ending, and the copied block brings its own LF.
+            "alpha\nbeta\nalpha\nbeta\n\n});\ntail\n",
       );
     });
   },

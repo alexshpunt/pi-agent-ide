@@ -74,7 +74,9 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
 
     const targetStarts = await context.resolveAnchors("targetStart");
     if (parameters.targetEnd === undefined) {
-      const [target, change] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
+      const [target, change] = insertionAfterAnchor(context, targetStarts, "targetStart", copied, {
+        verbatim: true,
+      });
       return {
         edits: new Map([
           [target, { changes: [{ ...change, selectorFields: ["targetStart"] }], action: "edited" }],
@@ -97,9 +99,9 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
           {
             changes: [
               {
-                from: targetSpan.from,
-                to: targetSpan.to,
-                insert: copied,
+                ...context
+                  .documentFor(targetSpan.source)
+                  .replace(targetSpan, copied, { verbatim: true }),
                 selectorFields: ["targetStart", "targetEnd"],
               },
             ],

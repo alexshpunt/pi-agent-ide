@@ -56,7 +56,8 @@ const cases: {
   },
   {
     name: "copy",
-    args: { start: "LINE#RUNTIME:1", end: anchor, target: destination, targetEnd: "TAIL\n" },
+    // Copied whole lines carry their content; the target's final line break stays outside the span.
+    args: { start: "LINE#RUNTIME:1", end: anchor, target: destination, targetEnd: "TAIL" },
     expected: original.replace("prefix DEST suffix\nTAIL\n", selected),
   },
   {
@@ -74,7 +75,7 @@ const cases: {
   { name: "delete", args: { start: "prefix", end: anchor }, expected: original, error: true },
   {
     name: "replace",
-    // Two line endpoints select whole lines with their LFs; the text keeps one line.
+    // Two line endpoints select whole lines; the text replaces them and the last LF stays.
     args: { start: "LINE#RUNTIME:1", end: anchor, text: "NEW\n" },
     expected: original.replace(selected, "NEW\n"),
   },
@@ -105,7 +106,7 @@ const cases: {
   },
   {
     name: "copy",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination, targetEnd: "TAIL\n" },
+    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination, targetEnd: "TAIL" },
     expected: original.replace("prefix DEST suffix\nTAIL\n", selected),
   },
   {

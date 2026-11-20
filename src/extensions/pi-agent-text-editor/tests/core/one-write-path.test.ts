@@ -1,0 +1,414 @@
+import { describe, expect, test } from "vitest";
+import { requiredValue } from "pi-agent-invariant";
+import { TextAnchor } from "pi-agent-text";
+import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
+import type { TextMutationContext, TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
+import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
+import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
+import { copyMutationTool } from "#src/tools/tool-text-copy.ts";
+import { deleteMutationTool } from "#src/tools/tool-text-delete.ts";
+import { insertMutationTool } from "#src/tools/tool-text-insert.ts";
+import { moveMutationTool } from "#src/tools/tool-text-move.ts";
+import { replaceMutationTool } from "#src/tools/tool-text-replace.ts";
+
+/** A line anchor, such as a line-hash anchor from Read. */
+class LineAnchor extends TextAnchor {
+  public constructor(lineNumber: number) {
+    super(`line ${lineNumber}`, lineNumber);
+  }
+}
+
+/**
+ * A file around one target line: `prefix + content + ending + suffix`. `startEnding` is the line
+ * ending of the target line, or of the line before it when it has none. `afterEnding` is the line
+ * ending at the start of the line after it, where an insertion after the line lands.
+ */
+interface Shape {
+  readonly name: string;
+  readonly prefix: string;
+  readonly content: string;
+  readonly ending: string;
+  readonly suffix: string;
+  readonly startEnding: string;
+  readonly afterEnding: string;
+}
+
+const shapes: readonly Shape[] = [
+  {
+    name: "BOM and LF",
+    prefix: "\uFEFF",
+    content: "TARGET",
+    ending: "\n",
+    suffix: "next\n",
+    startEnding: "\n",
+    afterEnding: "\n",
+  },
+  {
+    name: "CRLF",
+    prefix: "one\r\n",
+    content: "TARGET",
+    ending: "\r\n",
+    suffix: "last\r\n",
+    startEnding: "\r\n",
+    afterEnding: "\r\n",
+  },
+  {
+    name: "mixed endings",
+    prefix: "one\n",
+    content: "TARGET",
+    ending: "\r\n",
+    suffix: "last\n",
+    startEnding: "\r\n",
+    afterEnding: "\n",
+  },
+  {
+    name: "a lone CR inside the line",
+    prefix: "one\n",
+    content: "TAR\rGET",
+    ending: "\n",
+    suffix: "last\n",
+    startEnding: "\n",
+    afterEnding: "\n",
+  },
+  {
+    name: "the last line of a CRLF file without a final line break",
+    prefix: "one\r\n",
+    content: "TARGET",
+    ending: "",
+    suffix: "",
+    startEnding: "\r\n",
+    afterEnding: "\r\n",
+  },
+  {
+    name: "the last line of a BOM file that ends with LF",
+    prefix: "\uFEFFone\n",
+    content: "TARGET",
+    ending: "\n",
+    suffix: "",
+    startEnding: "\n",
+    afterEnding: "\n",
+  },
+];
+
+const source = "file.txt";
+
+function contentOf(shape: Shape): string {
+  return shape.prefix + shape.content + shape.ending + shape.suffix;
+}
+
+function targetLine(shape: Shape): number {
+  return shape.prefix.split("\n").length;
+}
+
+/** How a selector names the target; every kind resolves only a span. */
+interface Selector {
+  readonly name: string;
+  /** Whether it selects the whole line or only the line's characters. */
+  readonly lines: boolean;
+  readonly anchors: (shape: Shape) => {
+    readonly start: TextAnchor;
+    readonly end?: TextAnchor;
+  };
+}
+
+function exactText(shape: Shape): TextAnchor {
+  const content = contentOf(shape);
+  const resolved = resolveExactTextAnchor(shape.content, {
+    source,
+    content,
+    lines: content.split("\n"),
+    cwd: process.cwd(),
+  });
+  if (resolved.kind !== "resolved") throw new Error("The exact text did not resolve");
+  return resolved.anchor;
+}
+
+/** A selection of the target line, as SEARCH :line, a Read result or an AST outline makes it. */
+function lineSelection(shape: Shape): TextSelectionAnchor {
+  const line = targetLine(shape);
+  return new TextSelectionAnchor("SEARCH#1:1:line", source, [
+    {
+      start: { lineNumber: line, column: 0 },
+      end:
+        shape.ending === ""
+          ? { lineNumber: line, column: shape.content.length }
+          : { lineNumber: line + 1, column: 0 },
+      linewise: true,
+    },
+  ]);
+}
+
+/** A selection of the line's characters, as SEARCH :match, an LSP or an AST match makes it. */
+function matchSelection(shape: Shape): TextSelectionAnchor {
+  const line = targetLine(shape);
+  const column = line === 1 ? shape.prefix.length : 0;
+  return new TextSelectionAnchor("SEARCH#1:1:match", source, [
+    {
+      start: { lineNumber: line, column },
+      end: { lineNumber: line, column: column + shape.content.length },
+    },
+  ]);
+}
+
+const selectors: readonly Selector[] = [
+  { name: "exact text", lines: false, anchors: (shape) => ({ start: exactText(shape) }) },
+  {
+    name: "a line anchor",
+    lines: true,
+    anchors: (shape) => ({ start: new LineAnchor(targetLine(shape)) }),
+  },
+  { name: "SEARCH :line", lines: true, anchors: (shape) => ({ start: lineSelection(shape) }) },
+  { name: "SEARCH :match", lines: false, anchors: (shape) => ({ start: matchSelection(shape) }) },
+  {
+    name: "a line range",
+    lines: true,
+    anchors: (shape) => ({
+      start: new LineAnchor(targetLine(shape)),
+      end: new LineAnchor(targetLine(shape)),
+    }),
+  },
+  {
+    name: "exact text to a line anchor",
+    lines: false,
+    anchors: (shape) => ({ start: exactText(shape), end: new LineAnchor(targetLine(shape)) }),
+  },
+];
+
+function context(content: string, anchors: Readonly<Record<string, TextAnchor>>) {
+  const document = new TextChangeDocument(content);
+  const resolve = (field: string) => new Map([[source, requiredValue(anchors[field])]]);
+  const mutationContext: TextMutationContext = {
+    cwd: process.cwd(),
+    sourceDocument: document,
+    documentFor: () => document,
+    sourceFor: () => source,
+    targetDocument: () => document,
+    resolveAnchors: async (field) => resolve(field),
+    resolveAnchor: async (field) => requiredValue(anchors[field]),
+  };
+  return mutationContext;
+}
+
+async function run(
+  tool: TextMutationToolRegistration,
+  content: string,
+  anchors: Readonly<Record<string, TextAnchor>>,
+  parameters: Record<string, unknown>,
+): Promise<string> {
+  const result = await tool.mutate(context(content, anchors), parameters);
+  return applyTextChanges(content, requiredValue(result.edits.get(source)).changes).content;
+}
+
+describe.each(shapes)("on $name", (shape) => {
+  const content = contentOf(shape);
+  const { prefix, ending, suffix, startEnding: start, afterEnding: after } = shape;
+  const sent = "A\nB";
+
+  describe.each(selectors)("$name", (selector) => {
+    const { start: startAnchor, end } = selector.anchors(shape);
+    const anchors: Record<string, TextAnchor> =
+      end === undefined ? { start: startAnchor } : { start: startAnchor, end };
+    const range = end === undefined ? {} : { end: "end" };
+
+    test("replace writes line breaks with the line's ending and keeps the rest", async () => {
+      expect(
+        await run(replaceMutationTool, content, anchors, { start: "start", ...range, text: sent }),
+      ).toBe(`${prefix}A${start}B${ending}${suffix}`);
+    });
+
+    test("replace with a trailing line break", async () => {
+      expect(
+        await run(replaceMutationTool, content, anchors, {
+          start: "start",
+          ...range,
+          text: `${sent}\n`,
+        }),
+      ).toBe(
+        selector.lines
+          ? `${prefix}A${start}B${ending}${suffix}`
+          : `${prefix}A${start}B${start}${ending}${suffix}`,
+      );
+    });
+
+    test("delete removes the span and nothing outside it", async () => {
+      const removedLine =
+        ending === "" ? prefix.slice(0, prefix.length - start.length) : prefix + suffix;
+      expect(await run(deleteMutationTool, content, anchors, { start: "start", ...range })).toBe(
+        selector.lines ? removedLine : `${prefix}${ending}${suffix}`,
+      );
+    });
+
+    if (end !== undefined) return;
+
+    test("insert before", async () => {
+      expect(
+        await run(
+          insertMutationTool,
+          content,
+          { anchor: startAnchor },
+          {
+            anchor: "anchor",
+            text: sent,
+            before: true,
+          },
+        ),
+      ).toBe(
+        selector.lines
+          ? `${prefix}A${start}B${start}${shape.content}${ending}${suffix}`
+          : `${prefix}A${start}B${shape.content}${ending}${suffix}`,
+      );
+    });
+
+    test("insert after", async () => {
+      const lineInsertion =
+        ending === ""
+          ? `${prefix}${shape.content}${after}A${after}B`
+          : `${prefix}${shape.content}${ending}A${after}B${after}${suffix}`;
+      expect(
+        await run(
+          insertMutationTool,
+          content,
+          { anchor: startAnchor },
+          {
+            anchor: "anchor",
+            text: sent,
+          },
+        ),
+      ).toBe(
+        selector.lines ? lineInsertion : `${prefix}${shape.content}A${start}B${ending}${suffix}`,
+      );
+    });
+
+    if (!selector.lines) return;
+
+    test("insert after, then delete the inserted line, restores the original bytes", async () => {
+      const inserted = await run(
+        insertMutationTool,
+        content,
+        { anchor: startAnchor },
+        {
+          anchor: "anchor",
+          text: "added",
+        },
+      );
+      const addedLine = targetLine(shape) + 1;
+      expect(
+        await run(
+          deleteMutationTool,
+          inserted,
+          { start: new LineAnchor(addedLine) },
+          {
+            start: "start",
+          },
+        ),
+      ).toBe(content);
+    });
+  });
+});
+
+describe("whole-line replacement", () => {
+  test("cannot join a line with the next one", async () => {
+    const content = "one\ntwo\nthree\n";
+    expect(
+      await run(
+        replaceMutationTool,
+        content,
+        { start: new LineAnchor(2) },
+        {
+          start: "start",
+          text: "TWO",
+        },
+      ),
+    ).toBe("one\nTWO\nthree\n");
+  });
+
+  test("of several lines keeps each untouched ending and the last line's own", async () => {
+    const content = "one\r\ntwo\nthree\r\nfour";
+    expect(
+      await run(
+        replaceMutationTool,
+        content,
+        { start: new LineAnchor(2), end: new LineAnchor(3) },
+        { start: "start", end: "end", text: "X\nY\n" },
+      ),
+    ).toBe("one\r\nX\nY\r\nfour");
+  });
+});
+
+describe("selections of several ranges", () => {
+  test("a merged selection writes every range with its line's ending (LPT-1726)", async () => {
+    // An explicit literal selector merged with a typed-path line selection in one anchor.
+    const content = "keep\r\nalpha\r\nbeta\r\nend\r\n";
+    const merged = new TextSelectionAnchor("start", source, [
+      { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
+      { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 4, column: 0 }, linewise: true },
+    ]);
+    expect(
+      await run(replaceMutationTool, content, { start: merged }, { start: "start", text: "A\nB" }),
+    ).toBe("keep\r\nA\r\nB\r\nA\r\nB\r\nend\r\n");
+  });
+
+  test("deleting adjacent whole lines that end the file leaves no empty line", async () => {
+    const content = "keep\nalpha\nbeta";
+    const lines = new TextSelectionAnchor("start", source, [
+      { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 3, column: 0 }, linewise: true },
+      { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 4 }, linewise: true },
+    ]);
+    expect(await run(deleteMutationTool, content, { start: lines }, { start: "start" })).toBe(
+      "keep",
+    );
+  });
+});
+
+describe("copy and move", () => {
+  test("keep the copied bytes and separate them with the target's line ending", async () => {
+    const content = "one\ntwo\r\nthree\r\nfour\n";
+    const anchors = {
+      start: new LineAnchor(2),
+      end: new LineAnchor(3),
+      targetStart: new LineAnchor(4),
+    };
+    expect(
+      await run(copyMutationTool, content, anchors, {
+        start: "start",
+        end: "end",
+        targetStart: "targetStart",
+      }),
+    ).toBe("one\ntwo\r\nthree\r\nfour\ntwo\r\nthree\n");
+    expect(
+      await run(moveMutationTool, content, anchors, {
+        start: "start",
+        end: "end",
+        targetStart: "targetStart",
+      }),
+    ).toBe("one\nfour\ntwo\r\nthree\n");
+  });
+
+  test("moving the last line of a file without a final line break keeps it without", async () => {
+    const content = "one\r\ntwo\r\nlast";
+    expect(
+      await run(
+        moveMutationTool,
+        content,
+        { start: new LineAnchor(3), targetStart: new LineAnchor(1) },
+        { start: "start", targetStart: "targetStart" },
+      ),
+    ).toBe("one\r\nlast\r\ntwo");
+  });
+
+  test("copy over whole lines replaces their content and keeps the last line's ending", async () => {
+    const content = "SOURCE\nold\r\nkeep\n";
+    expect(
+      await run(
+        copyMutationTool,
+        content,
+        {
+          start: new LineAnchor(1),
+          targetStart: new LineAnchor(2),
+          targetEnd: new LineAnchor(2),
+        },
+        { start: "start", targetStart: "targetStart", targetEnd: "targetEnd" },
+      ),
+    ).toBe("SOURCE\nSOURCE\r\nkeep\n");
+  });
+});

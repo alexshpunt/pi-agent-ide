@@ -2011,7 +2011,7 @@ add(
     "edit.copy-source-range",
     "compose.search-range-endpoints",
   ],
-  "First Search target.txt separately for TARGET_BEGIN and TARGET_END. Use the two actual :match references as objects {id: reference} in Copy targetStart and targetEnd (in Codemode, pass the corresponding match values). Perform three transfers: (1) Copy the inline span in source.txt over that inclusive destination span in target.txt. Pass the literal strings COPY_BEGIN as start and COPY_END as end; do not use Search references or line anchors for these two source fields. (2) Copy the whole line 段🙂 from whole.txt, including its CRLF line break, with a single start and no end over the exact SLOT fragment in inline.txt, passing the literal string SLOT as both targetStart and targetEnd. Issue transfers (1) and (2) together, direct in the same assistant message or in Codemode with Promise.all. (3) Copy that same whole.txt line, including its CRLF, so it becomes its own line after the ANCHOR line in inserted.txt, with targetStart selecting the whole ANCHOR line including its line break and no targetEnd. Preserve the selected source line\u0027s CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
+  "First Search target.txt separately for TARGET_BEGIN and TARGET_END. Use the two actual :match references as objects {id: reference} in Copy targetStart and targetEnd (in Codemode, pass the corresponding match values). Perform three transfers: (1) Copy the inline span in source.txt over that inclusive destination span in target.txt. Pass the literal strings COPY_BEGIN as start and COPY_END as end; do not use Search references or line anchors for these two source fields. (2) Copy the whole line 段🙂 from whole.txt, including its CRLF line break, over the exact SLOT fragment in inline.txt: pass the literal string 段🙂 followed by CRLF as the single start with no end, and the literal string SLOT as both targetStart and targetEnd. Issue transfers (1) and (2) together, direct in the same assistant message or in Codemode with Promise.all. (3) Copy that same whole.txt line, including its CRLF, so it becomes its own line after the ANCHOR line in inserted.txt: pass the same literal string 段🙂 followed by CRLF as start with no end, and select the whole ANCHOR line as targetStart with no targetEnd. Preserve the selected source line\u0027s CRLF in both destinations, even though their existing lines use LF. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
   [
     { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
     { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
@@ -2034,7 +2034,7 @@ add(
         end: undefined,
         target: "inline.txt",
       },
-      exactText: ["targetStart", "targetEnd"],
+      exactText: ["start", "targetStart", "targetEnd"],
     },
     {
       tool: "copy",
@@ -2044,6 +2044,7 @@ add(
         target: "inserted.txt",
         targetEnd: undefined,
       },
+      exactText: ["start"],
     },
   ],
   {
@@ -2667,7 +2668,7 @@ add(
     "compose.read-window-copy",
     "compose.read-window-move",
   ],
-  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result to dest.txt with targetStart selecting the whole DEST line, including its line break, and no targetEnd. Read the second line of task.txt again and Move that result to dest.txt with targetStart selecting the whole TAIL line, including its line break, and no targetEnd. Then Read only the second line of copy-source.txt (offset 2, limit 1). Copy that returned window over only COPY_SLOT in copy-replaced.txt using paired targetStart/targetEnd, then copy the same window after the exact fragment COPY_POINT in copy-inserted.txt with targetStart and no targetEnd. Read two lines from move-replace-source.txt (offset 2, limit 2) and move that window over only MOVE_SLOT in move-replaced.txt using paired targetStart/targetEnd. Read two lines from move-insert-source.txt the same way and move that window after the exact fragment MOVE_POINT in move-inserted.txt with no targetEnd. Pass each returned Read result or its UUID unchanged as the source. Preserve the selected Unicode and CRLF bytes in these LF destinations, the surrounding destination text, and each Move source's preceding CRLF.",
+  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result to dest.txt with targetStart selecting the whole DEST line, including its line break, and no targetEnd. Read the second line of task.txt again and Move that result to dest.txt with targetStart selecting the whole TAIL line, including its line break, and no targetEnd. Then Read only the second line of copy-source.txt (offset 2, limit 1). Copy that returned window over only COPY_SLOT in copy-replaced.txt using paired targetStart/targetEnd, then copy the same window after the exact fragment COPY_POINT in copy-inserted.txt with targetStart and no targetEnd. Read two lines from move-replace-source.txt (offset 2, limit 2) and move that window over only MOVE_SLOT in move-replaced.txt using paired targetStart/targetEnd. Read two lines from move-insert-source.txt the same way and move that window after the exact fragment MOVE_POINT in move-inserted.txt with no targetEnd. Pass each returned Read result or its UUID unchanged as the source. Preserve the selected Unicode bytes, the CRLF between selected lines in these LF destinations, and the surrounding destination text.",
   [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     { tool: "copy", args: { target: "dest.txt" }, reuse: reuse(0) },
@@ -2729,11 +2730,13 @@ add(
       "task.txt": "keep\nlast\n",
       "dest.txt": "DEST\nOLD\nTAIL\nOLD\n",
       "copy-source.txt": "keep\r\n段🙂\r\nafter\r\n",
-      "copy-replaced.txt": "left 段🙂\r\n right\n",
-      "copy-inserted.txt": "left COPY_POINT段🙂\r\n right\n",
-      "move-replace-source.txt": "keep\r\n",
+      // A window of whole lines carries their content without the last line's ending.
+      "copy-replaced.txt": "left 段🙂 right\n",
+      "copy-inserted.txt": "left COPY_POINT段🙂 right\n",
+      // Removing final lines without a final line break also removes the ending before them.
+      "move-replace-source.txt": "keep",
       "move-replaced.txt": "left 段🙂\r\n尾🙂 right\n",
-      "move-insert-source.txt": "keep\r\n",
+      "move-insert-source.txt": "keep",
       "move-inserted.txt": "left MOVE_POINT段🙂\r\n尾🙂 right\n",
     },
   },
@@ -2922,7 +2925,7 @@ for (const [name, eol, ending] of [
   add(
     `exact-eof-${name}`,
     ["edit.exact-eof", "edit.delete-empty-replace"],
-    `In last.txt, use Replace with the literal string Last as start and Final as text, omitting end entirely. Do not use an issued reference or line anchor for this replacement. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For both block edits, pass the literal string ${JSON.stringify(`Last${eol}Block${ending}`)} as start and omit the end parameter entirely. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line and its own separator in every deletion, including when the selected final line or block has no final newline. Keep unrelated bytes and each file's existing newline style.`,
+    `In last.txt, use Replace with the literal string Last as start and Final as text, omitting end entirely. Do not use an issued reference or line anchor for this replacement. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For both block edits, pass the literal string ${JSON.stringify(`Last${eol}Block${ending}`)} as start and omit the end parameter entirely. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. Preserve the preceding First line in every file. Keep unrelated bytes and each file's existing newline style.`,
     [
       {
         tool: "replace",
@@ -2957,7 +2960,8 @@ for (const [name, eol, ending] of [
         "last.txt": `First${eol}Final${ending}`,
         "block.txt": `First${eol}`,
         "empty.txt": `First${eol}`,
-        "line.txt": `First${eol}`,
+        // A deleted final line without a final line break takes the ending before it.
+        "line.txt": ending === "" ? "First" : `First${eol}`,
       },
     },
   );

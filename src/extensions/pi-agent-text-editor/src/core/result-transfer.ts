@@ -4,8 +4,13 @@ import type {
   TextMutationContext,
   TextMutationEdit,
 } from "#src/api/mutation-tool.ts";
-import { TextChangeDocument, type TextChange } from "./text-change-engine.ts";
-import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
+import { TextChangeDocument, type TextChange, type TextSpan } from "./text-change-engine.ts";
+import {
+  anchorSpanRange,
+  insertionAfterAnchor,
+  selectionRange,
+  selectionSpan,
+} from "#src/tools/text-selection.ts";
 import { wholeFileResultSource } from "./result-input.ts";
 import { resolveResultScope } from "./result-scope.ts";
 import { SOURCE_CHANGED } from "./source-change-retry.ts";
@@ -15,10 +20,8 @@ export function isResultInput(value: unknown): boolean {
   return value !== undefined && (typeof value !== "string" || value.startsWith("RESULT#"));
 }
 
-interface TransferSpan {
+interface TransferSpan extends TextSpan {
   readonly source: string;
-  readonly from: number;
-  readonly to: number;
 }
 
 interface PreparedTransfer {
@@ -136,21 +139,20 @@ export async function prepareResultTransfer(
             );
           const range = target.ranges[0];
           if (range === undefined) throw new Error("Transfer selection has no range.");
-          return {
-            source: target.source,
-            ...document.range(
-              range.start.lineNumber,
-              range.start.column,
-              range.end.lineNumber,
-              range.end.column,
-            ),
-          };
+          selectionRange(context, target.source, range);
+          return { source: target.source, ...selectionSpan(document, range) };
         });
       const sources =
         source === undefined
           ? [
               input.start === undefined
-                ? { source: context.sourceFor("path"), from: 0, to: context.sourceDocument.length }
+                ? {
+                    source: context.sourceFor("path"),
+                    ...context.sourceDocument.charSpan({
+                      from: 0,
+                      to: context.sourceDocument.length,
+                    }),
+                  }
                 : await anchorSpanRange(
                     context,
                     await context.resolveAnchors("start"),
@@ -182,13 +184,17 @@ export async function prepareResultTransfer(
         if (destinationSpan !== undefined) {
           planned.push({
             target: destinationSpan,
-            change: { from: destinationSpan.from, to: destinationSpan.to, insert: copied },
+            change: context
+              .documentFor(destinationSpan.source)
+              .replace(destinationSpan, copied, { verbatim: true }),
           });
           continue;
         }
         const starts = await context.resolveAnchors("targetStart");
         if (input.targetEnd === undefined) {
-          const [target, change] = insertionAfterAnchor(context, starts, "targetStart", copied);
+          const [target, change] = insertionAfterAnchor(context, starts, "targetStart", copied, {
+            verbatim: true,
+          });
           planned.push({
             target: { source: target, from: change.from, to: change.to },
             change,
@@ -203,7 +209,7 @@ export async function prepareResultTransfer(
           );
           planned.push({
             target,
-            change: { from: target.from, to: target.to, insert: copied },
+            change: context.documentFor(target.source).replace(target, copied, { verbatim: true }),
           });
         }
       }
@@ -213,7 +219,7 @@ export async function prepareResultTransfer(
           planned.map((transfer) => transfer.target),
         );
         for (const span of sources)
-          append(span, { from: span.from, to: span.to, insert: "" }, false);
+          append(span, context.documentFor(span.source).delete(span), false);
       }
       for (const transfer of planned) append(transfer.target, transfer.change, true);
       return { edits };

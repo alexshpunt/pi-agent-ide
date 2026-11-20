@@ -91,13 +91,9 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
     }
 
     const insertion = parameters.before === true ? insertionBeforeAnchor : insertionAfterAnchor;
-    const [source, change] = insertion(
-      context,
-      anchors,
-      "anchor",
-      parameters.text,
-      parameters.separation,
-    );
+    const [source, change] = insertion(context, anchors, "anchor", parameters.text, {
+      separation: parameters.separation,
+    });
     return {
       edits: new Map([[source, { changes: [change], action: "edited" }]]),
     };

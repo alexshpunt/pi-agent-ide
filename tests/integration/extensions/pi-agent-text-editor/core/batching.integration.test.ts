@@ -165,10 +165,11 @@ describe("pi-agent-text-editor batching", () => {
       expect(getToolResultText(result, "all-move")).toContain("moved.txt");
       expect(getToolResultText(result, "all-copy")).toContain("edited.txt");
       await expect(readFile(writtenFile, "utf8")).resolves.toBe("created");
+      // Lines added after a last line without a line break leave the file without one.
       await expect(readFile(editedFile, "utf8")).resolves.toBe(
-        "alpha\nreplaced\ncopy-me\ninsert-anchor\ninserted\nomega\ncopy-me\n",
+        "alpha\nreplaced\ncopy-me\ninsert-anchor\ninserted\nomega\ncopy-me",
       );
-      await expect(readFile(movedFile, "utf8")).resolves.toBe("alpha\nkeep\nomega\nmove-me\n");
+      await expect(readFile(movedFile, "utf8")).resolves.toBe("alpha\nkeep\nomega\nmove-me");
     });
   });
 
@@ -217,7 +218,7 @@ describe("pi-agent-text-editor batching", () => {
         expect(getToolResultText(result, `grouped-${id}-insert`)).toContain(deferredResult);
         expect(getToolResultText(result, `grouped-${id}-copy`)).toContain(file);
         await expect(readFile(path.join(directory, file), "utf8")).resolves.toBe(
-          `alpha\nchanged-${id}\nanchor\nadded-${id}\ntail\nalpha\n`,
+          `alpha\nchanged-${id}\nanchor\nadded-${id}\ntail\nalpha`,
         );
       }
     });
@@ -307,14 +308,12 @@ describe("pi-agent-text-editor batching", () => {
       expect(getToolResultText(result, "mixed-second-copy")).toContain("second-mixed.txt");
       expect(getToolResultText(result, "mixed-third-copy")).toContain("third-mixed.txt");
       await expect(readFile(firstFile, "utf8")).resolves.toBe(
-        "alpha\nchanged-first\nanchor\nadded-first\ntail\nalpha\n",
+        "alpha\nchanged-first\nanchor\nadded-first\ntail\nalpha",
       );
       await expect(readFile(secondFile, "utf8")).resolves.toBe(
-        "alpha\nanchor\nadded-second\ntail\nalpha\n",
+        "alpha\nanchor\nadded-second\ntail\nalpha",
       );
-      await expect(readFile(thirdFile, "utf8")).resolves.toBe(
-        "changed-third\nanchor\ntail\nalpha\n",
-      );
+      await expect(readFile(thirdFile, "utf8")).resolves.toBe("changed-third\nanchor\ntail\nalpha");
     });
   });
   test("keeps a failed call visible while routing final state to the last successful call", async () => {

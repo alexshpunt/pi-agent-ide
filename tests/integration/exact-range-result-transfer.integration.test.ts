@@ -85,7 +85,8 @@ for (const route of ["direct", "codemode"] as const) {
       for (const id of ids) expect(getToolExecution(result, id).isError).toBe(false);
       const expected = {
         "copy-source.txt": source,
-        "move-source.txt": "keep\r\n",
+        // The moved lines end the file without a line break, so the one before them goes too.
+        "move-source.txt": "keep",
         "copy-target.txt": `left ${selected} right\n`,
         "move-target.txt": `left ${selected} right\n`,
         "inline-target.txt": `left TARGET${selected} right\n`,

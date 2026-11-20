@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { getLineEndingAt, normalizeToLF } from "#src/api/pi-edit-text.ts";
 
 export interface TextRange {
   readonly from: number;
@@ -25,13 +26,41 @@ export interface TextChangeResult {
 
 export type LineSeparation = "line" | "blank-line";
 
+/**
+ * The place a selector resolved. Selectors only locate: every edit writes through the document's
+ * `replace`, `delete` and `insert`, whatever selected the span.
+ */
+export interface TextSpan extends TextRange {
+  /**
+   * Set when the span selects whole lines. Then `from` is the first line's content start (after a
+   * BOM) and `to` the last line's content end (before its line ending).
+   */
+  readonly lines?: { readonly first: number; readonly last: number };
+}
+
+export interface TextWriteOptions {
+  /** Text copied from a file keeps its own line breaks; text sent by a model takes the file's. */
+  readonly verbatim?: boolean;
+}
+
+export interface TextInsertOptions extends TextWriteOptions {
+  /** Insert at the start of the span instead of its end. */
+  readonly before?: boolean;
+  /**
+   * How whole-line insertions are separated; default "line". Over a character span, "line"
+   * inserts exactly at the boundary.
+   */
+  readonly separation?: LineSeparation;
+}
+
 export class TextChangeDocument {
   readonly #lineStarts: readonly number[];
-  readonly #separator: "\n" | "\r\n";
+  /** Length of a leading BOM: it belongs to no line and no span. */
+  readonly #bom: number;
 
   public constructor(public readonly content: string) {
     this.#lineStarts = findLineStarts(content);
-    this.#separator = content.includes("\r\n") ? "\r\n" : "\n";
+    this.#bom = content.startsWith("\uFEFF") ? 1 : 0;
   }
 
   public get length(): number {
@@ -51,6 +80,7 @@ export class TextChangeDocument {
     return first;
   }
 
+  /** Raw extent of lines with their line endings, and on line 1 with the BOM. */
   public lineRange(firstLine: number, lastLine: number): TextRange {
     const first = Math.min(firstLine, lastLine);
     const last = Math.max(firstLine, lastLine);
@@ -61,6 +91,34 @@ export class TextChangeDocument {
       from: requiredValue(this.#lineStarts[first - 1]),
       to: this.#lineStarts[last] ?? this.content.length,
     };
+  }
+
+  /** Whole lines as a span: their content, without a BOM and the last line's ending. */
+  public lineSpan(firstLine: number, lastLine: number): TextSpan {
+    const first = Math.min(firstLine, lastLine);
+    const last = Math.max(firstLine, lastLine);
+    this.#assertLine(first);
+    this.#assertLine(last);
+    return {
+      from: this.lineContentStart(first),
+      to: this.lineContentEnd(last),
+      lines: { first, last },
+    };
+  }
+
+  /** Offset where a line's content starts: after a BOM on line 1. */
+  public lineContentStart(lineNumber: number): number {
+    this.#assertLine(lineNumber);
+    return Math.max(requiredValue(this.#lineStarts[lineNumber - 1]), this.#bom);
+  }
+
+  /** Offset where a line's content ends: before its LF or CRLF. */
+  public lineContentEnd(lineNumber: number): number {
+    this.#assertLine(lineNumber);
+    const next = this.#lineStarts[lineNumber];
+    if (next === undefined) return this.content.length;
+    const start = this.lineContentStart(lineNumber);
+    return next - 2 >= start && this.content[next - 2] === "\r" ? next - 2 : next - 1;
   }
 
   public range(
@@ -84,78 +142,109 @@ export class TextChangeDocument {
     return this.content.slice(range.from, range.to);
   }
 
-  /** Replaces the lines with their LFs by exactly `text`; no line break is added. */
-  public replaceLines(firstLine: number, lastLine: number, text: string): TextChange {
-    return { ...this.lineRange(firstLine, lastLine), insert: text };
+  /**
+   * Writes `text` over a span; empty text deletes it. Line breaks in the text take the line ending
+   * of the line where the span starts. Over whole lines, their content is replaced and the last
+   * line keeps its own ending, so one trailing line break of the text is dropped.
+   */
+  public replace(span: TextSpan, text: string, options: TextWriteOptions = {}): TextChange {
+    if (text.length === 0) return this.delete(span);
+    const range = this.charSpan(span);
+    return { ...range, insert: this.#written(text, range.from, options, span.lines !== undefined) };
   }
 
-  public deleteLines(firstLine: number, lastLine: number): TextChange {
-    return this.replaceLines(firstLine, lastLine, "");
-  }
-
-  /** Insert at a character boundary; separators are added only when requested. */
-  public insertAt(from: number, text: string, separation?: LineSeparation): TextChange {
-    this.#assertRange({ from, to: from });
-    if (text.length === 0) throw new Error("Insert text must not be empty.");
-    if (separation === undefined) return { from, to: from, insert: text };
-    const prefix =
-      from > 0 && !endsWithLineBreak(this.content.slice(0, from)) ? this.#separator : "";
+  /**
+   * Deletes a span. Whole lines go with their line endings, leaving no empty line; when the last
+   * of them has no ending, the ending before them goes instead.
+   */
+  public delete(span: TextSpan): TextChange {
+    if (span.lines === undefined) return { ...this.charSpan(span), insert: "" };
+    const { first, last } = span.lines;
+    const from = this.lineContentStart(first);
+    const next = this.#lineStarts[last];
+    if (next !== undefined) return { from, to: next, insert: "" };
     return {
-      from,
-      to: from,
-      insert: this.#lineInsertion(from, text, separation, from < this.content.length, prefix),
+      from: first > 1 ? this.lineContentEnd(first - 1) : from,
+      to: this.content.length,
+      insert: "",
     };
   }
 
-  public insertBeforeLine(
-    lineNumber: number,
-    text: string,
-    separation: LineSeparation = "line",
-  ): TextChange {
-    return this.insertAt(this.lineRange(lineNumber, lineNumber).from, text, separation);
-  }
-
-  public insertAfterLine(
-    lineNumber: number,
-    text: string,
-    separation: LineSeparation = "line",
-  ): TextChange {
-    return this.insertAt(this.lineRange(lineNumber, lineNumber).to, text, separation);
+  /**
+   * Inserts `text` at the start or end of a span. Its line breaks, and the separators added around
+   * whole lines, take the line ending at the insertion point. A file that ends with a line break
+   * keeps it; one that does not stays without.
+   */
+  public insert(span: TextSpan, text: string, options: TextInsertOptions = {}): TextChange {
+    if (text.length === 0) throw new Error("Insert text must not be empty.");
+    const range = this.charSpan(span);
+    const at =
+      options.before === true
+        ? range.from
+        : span.lines === undefined
+          ? range.to
+          : (this.#lineStarts[span.lines.last] ?? this.content.length);
+    const separation = options.separation ?? "line";
+    const written = this.#written(text, at, options, false);
+    if (span.lines === undefined && separation === "line")
+      return { from: at, to: at, insert: written };
+    return {
+      from: at,
+      to: at,
+      insert: this.#lineInsertion(at, written, separation, getLineEndingAt(this.content, at)),
+    };
   }
 
   public replaceAll(text: string): TextChange {
     return { from: 0, to: this.content.length, insert: text };
   }
 
-  #lineInsertion(
-    from: number,
-    text: string,
-    separation: LineSeparation,
-    following: boolean,
-    prefix = "",
-  ): string {
-    if (text.length === 0) throw new Error("Insert text must not be empty.");
-    if (separation === "blank-line") {
-      if (
-        from > 0 &&
-        !this.content.slice(0, from).endsWith(this.#separator + this.#separator) &&
-        !text.startsWith(this.#separator)
-      ) {
-        prefix += this.#separator;
-      }
-      if (
-        following &&
-        !text.endsWith(this.#separator + this.#separator) &&
-        !this.content.slice(from).startsWith(this.#separator)
-      ) {
-        return (
-          prefix +
-          text +
-          (endsWithLineBreak(text) ? this.#separator : this.#separator + this.#separator)
-        );
-      }
+  /**
+   * Text as written at `offset`: as sent for copied bytes, else with the line's ending. With
+   * `lines`, one trailing line break is dropped first, since the last line keeps its own ending.
+   */
+  #written(text: string, offset: number, options: TextWriteOptions, lines: boolean): string {
+    if (options.verbatim === true) return lines ? withoutFinalLineBreak(text) : text;
+    const lf = normalizeToLF(text);
+    const sent = lines && lf.endsWith("\n") ? lf.slice(0, -1) : lf;
+    const lineEnding = getLineEndingAt(this.content, offset);
+    return lineEnding === "\n" ? sent : sent.replaceAll("\n", lineEnding);
+  }
+
+  /** A character span; it never includes the BOM. */
+  public charSpan(span: TextRange): TextRange {
+    this.#assertRange(span);
+    return { from: Math.max(span.from, this.#bom), to: Math.max(span.to, this.#bom) };
+  }
+
+  #lineInsertion(at: number, text: string, separation: LineSeparation, separator: string): string {
+    const atLineStart = at <= this.#bom || this.content[at - 1] === "\n";
+    const following = at < this.content.length;
+    let prefix = atLineStart ? "" : separator;
+    if (
+      separation === "blank-line" &&
+      at > this.#bom &&
+      !endsWithBlankLine(this.content, at, this.#bom) &&
+      !/^\r?\n/u.test(text)
+    ) {
+      prefix += separator;
     }
-    return prefix + (following && !endsWithLineBreak(text) ? text + this.#separator : text);
+    let suffix = "";
+    if (following) {
+      if (
+        separation === "blank-line" &&
+        !/\n\r?\n$/u.test(text) &&
+        !/^\r?\n/u.test(this.content.slice(at, at + 2))
+      ) {
+        suffix = endsWithLineBreak(text) ? separator : separator + separator;
+      } else if (!endsWithLineBreak(text)) {
+        suffix = separator;
+      }
+    } else if (atLineStart && at > this.#bom && !endsWithLineBreak(text)) {
+      // The file ended with a line break: the inserted line keeps it last.
+      suffix = separator;
+    }
+    return prefix + text + suffix;
   }
 
   #offsetAt(lineNumber: number, column: number): number {
@@ -273,4 +362,18 @@ function findLineStarts(text: string): number[] {
 
 function endsWithLineBreak(text: string): boolean {
   return text.endsWith("\n");
+}
+
+/** Drops one trailing LF or CRLF. */
+function withoutFinalLineBreak(text: string): string {
+  if (text.endsWith("\r\n")) return text.slice(0, -2);
+  return text.endsWith("\n") ? text.slice(0, -1) : text;
+}
+
+/** Whether the text before `end` finishes with an empty line, or is empty after `start`. */
+function endsWithBlankLine(text: string, end: number, start: number): boolean {
+  if (end <= start || text[end - 1] !== "\n") return false;
+  let lineEnd = end - 1;
+  if (lineEnd > start && text[lineEnd - 1] === "\r") lineEnd -= 1;
+  return lineEnd <= start || text[lineEnd - 1] === "\n";
 }

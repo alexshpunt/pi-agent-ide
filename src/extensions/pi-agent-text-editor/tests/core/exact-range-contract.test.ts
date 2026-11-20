@@ -4,7 +4,7 @@ import { TextAnchor } from "pi-agent-text";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
 import type { TextMutationContext } from "#src/api/mutation-tool.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
-import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.ts";
+import { anchorSpanRange } from "#src/tools/text-selection.ts";
 import { copyMutationTool } from "#src/tools/tool-text-copy.ts";
 import { moveMutationTool } from "#src/tools/tool-text-move.ts";
 import { insertMutationTool } from "#src/tools/tool-text-insert.ts";
@@ -56,36 +56,41 @@ function fixture(
 
 for (const eol of ["\n", "\r\n"]) {
   test.each([`keep${eol}`, `keep${eol}${eol}`, ""])(
-    "line deletion owns no preceding separator (%j)",
+    "deleting an unterminated last line also removes the line ending before it (%j)",
     async (prefix) => {
       const content = `${prefix}尾🙂`;
       const line = prefix.split(eol).length;
       const f = fixture({ source: content }, { start: ["source", line] });
       const span = await anchorSpanRange(f.context, f.resolve("start"), undefined, "start", "end");
-      const expected = { from: prefix.length, to: content.length, insert: "" };
-      expect(f.documentFor("source").deleteLines(line, line)).toEqual(expected);
-      expect(f.documentFor("source").replaceLines(line, line, "")).toEqual(expected);
-      expect(deleteAnchorSpan(span)).toEqual(expected);
-      expect(replaceAnchorSpan(span, "")).toEqual(expected);
-      expect(applyTextChanges(content, [deleteAnchorSpan(span)]).content).toBe(prefix);
+      const document = f.documentFor("source");
+      const kept = prefix.slice(0, Math.max(0, prefix.length - eol.length));
+      const expected = { from: kept.length, to: content.length, insert: "" };
+      expect(document.delete(span)).toEqual(expected);
+      expect(document.replace(span, "")).toEqual(expected);
+      expect(applyTextChanges(content, [document.delete(span)]).content).toBe(kept);
     },
   );
 
   test("empty whole-line replacement removes the line's own terminator", () => {
     const content = `keep${eol}尾🙂${eol}${eol}after`;
     const document = new TextChangeDocument(content);
-    expect(document.replaceLines(2, 2, "")).toEqual(document.deleteLines(2, 2));
-    expect(applyTextChanges(content, [document.replaceLines(2, 2, "")]).content).toBe(
+    const line = document.lineSpan(2, 2);
+    expect(document.replace(line, "")).toEqual(document.delete(line));
+    expect(applyTextChanges(content, [document.replace(line, "")]).content).toBe(
       `keep${eol}${eol}after`,
     );
   });
+}
 
-  test("append then delete restores the original terminated EOF", () => {
-    const original = `base${eol}`;
+for (const original of ["base\n", "base\r\n", "base", "\uFEFFbase\r\n"]) {
+  test(`insert after the last line, then delete it, restores the original bytes (${JSON.stringify(original)})`, () => {
     const document = new TextChangeDocument(original);
-    const appended = applyTextChanges(original, [document.insertAfterLine(1, "added")]).content;
+    const appended = applyTextChanges(original, [
+      document.insert(document.lineSpan(1, 1), "added"),
+    ]).content;
     const after = new TextChangeDocument(appended);
-    expect(applyTextChanges(appended, [after.deleteLines(2, 2)]).content).toBe(original);
+    expect(after.text(after.lineSpan(2, 2))).toBe("added");
+    expect(applyTextChanges(appended, [after.delete(after.lineSpan(2, 2))]).content).toBe(original);
   });
 }
 

@@ -47,7 +47,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
         name: "replace",
         arguments: { path: "routes.ts", start: "retries: 3", text: "retries: 5" },
       },
-      // A CRLF line replaced through its line anchor with LF-ended text keeps that LF.
+      // A CRLF line replaced through its line anchor keeps its CRLF, even for LF-ended text.
       {
         id: "line",
         name: "replace",
@@ -138,7 +138,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
     const expected = [
       "\uFEFF// table\r\n",
       "export const routes = [\n",
-      '\t{ id: "home", retries: 1 },\n',
+      '\t{ id: "home", retries: 1 },\r\n',
       '  { id: "checkout", retries: 5 }, // keep\rthis\r\n',
       '  { id: "find", retries: 4 },\n',
       '  { id: "sale", retries: 6 },  \n',
