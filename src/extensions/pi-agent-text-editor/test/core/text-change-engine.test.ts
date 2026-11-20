@@ -175,6 +175,100 @@ describe("text change document", () => {
     );
   });
 
+  for (const ending of ["\n", "\r\n"]) {
+    for (const before of [false, true]) {
+      test(`uses one break at each edge as a separator or terminator (before=${before}, ending=${JSON.stringify(ending)})`, () => {
+        const document = new TextChangeDocument(["prev", "// END X", "next", ""].join(ending));
+        for (const leading of [0, 1, 2]) {
+          for (const trailing of [0, 1, 2]) {
+            const text = "\n".repeat(leading) + "BLOCK1\r\nBLOCK2" + "\n".repeat(trailing);
+            const lines = [
+              "prev",
+              ...(before ? [] : ["// END X"]),
+              ...(leading === 2 ? [""] : []),
+              "BLOCK1",
+              "BLOCK2",
+              ...(trailing === 2 ? [""] : []),
+              ...(before ? ["// END X"] : []),
+              "next",
+              "",
+            ];
+            expect(
+              apply(document, document.insert(document.lineSpan(2, 2), text, { before })),
+              `leading=${leading}, trailing=${trailing}`,
+            ).toBe(lines.join(ending));
+          }
+        }
+      });
+    }
+
+    for (const finalBreak of [false, true]) {
+      test(`preserves the original EOF ending unless an extra blank line is requested (finalBreak=${finalBreak}, ending=${JSON.stringify(ending)})`, () => {
+        const eof = finalBreak ? ending : "";
+        const document = new TextChangeDocument(`prev${ending}anchor${eof}`);
+        for (const breaks of [0, 1, 2]) {
+          const text = ending.repeat(breaks) + `a${ending}b` + ending.repeat(breaks);
+          const extra = breaks === 2 ? ending : "";
+          expect(apply(document, document.insert(document.lineSpan(2, 2), text))).toBe(
+            `prev${ending}anchor${ending}${extra}a${ending}b${extra}${eof}`,
+          );
+        }
+      });
+    }
+
+    test(`inserts one empty line per break when the payload is only breaks (${JSON.stringify(ending)})`, () => {
+      const document = new TextChangeDocument(["prev", "anchor", "next", ""].join(ending));
+      const anchor = document.lineSpan(2, 2);
+      for (const count of [1, 2]) {
+        const text = ending.repeat(count);
+        expect(apply(document, document.insert(anchor, text))).toBe(
+          `prev${ending}anchor${ending}${text}next${ending}`,
+        );
+        expect(apply(document, document.insert(anchor, text, { before: true }))).toBe(
+          `prev${ending}${text}anchor${ending}next${ending}`,
+        );
+      }
+    });
+  }
+
+  test.each([0, 1, 2, 3])(
+    "blank-line separation counts extra payload breaks (%i at each edge)",
+    (count) => {
+      const document = new TextChangeDocument("prev\nanchor\nnext\n");
+      const edge = "\n".repeat(count);
+      const text = `${edge}first\nlast${edge}`;
+      const gap = count === 3 ? "\n\n\n" : "\n\n";
+      const anchor = document.lineSpan(2, 2);
+      expect(apply(document, document.insert(anchor, text, { separation: "blank-line" }))).toBe(
+        `prev\nanchor${gap}first\nlast${gap}next\n`,
+      );
+      expect(
+        apply(document, document.insert(anchor, text, { separation: "blank-line", before: true })),
+      ).toBe(`prev${gap}first\nlast${gap}anchor\nnext\n`);
+    },
+  );
+
+  test("retains edge breaks mid-line and inserts single-line text as characters at a line edge", () => {
+    const document = new TextChangeDocument("anchor\nnext\n");
+    expect(apply(document, document.insert({ from: 0, to: 3 }, "\nBLOCK\n"))).toBe(
+      "anc\nBLOCK\nhor\nnext\n",
+    );
+    expect(apply(document, document.insert(document.lineSpan(1, 1), "BLOCK"))).toBe(
+      "anchorBLOCK\nnext\n",
+    );
+    expect(
+      apply(document, document.insert(document.lineSpan(1, 1), "BLOCK", { before: true })),
+    ).toBe("BLOCKanchor\nnext\n");
+  });
+
+  test("preserves blank edge lines and mixed endings in a whole-line transfer", () => {
+    const source = new TextChangeDocument("\nBLOCK\r\n\r\nafter\r\n");
+    const target = new TextChangeDocument("before\r\nnext\r\n");
+    expect(
+      apply(target, target.insert(target.lineSpan(1, 1), source.transfer(source.lineSpan(1, 3)))),
+    ).toBe("before\r\n\nBLOCK\r\n\r\nnext\r\n");
+  });
+
   test.each(["\n", "\r\n"])("inserts before or after a selected empty line (%j)", (ending) => {
     const document = new TextChangeDocument(["one", "", "two", ""].join(ending));
     const blank = document.lineSpan(2, 2);

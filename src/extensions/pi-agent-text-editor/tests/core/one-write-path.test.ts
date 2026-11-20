@@ -269,7 +269,7 @@ describe.each(shapes)("on $name", (shape) => {
 
     if (end !== undefined) return;
 
-    test("insert before", async () => {
+    test.each([sent, `\n${sent}\n`])("insert before with text %j", async (text) => {
       expect(
         await run(
           insertMutationTool,
@@ -277,14 +277,14 @@ describe.each(shapes)("on $name", (shape) => {
           { anchor: startAnchor },
           {
             anchor: "anchor",
-            text: sent,
+            text,
             before: true,
           },
         ),
       ).toBe(`${prefix}A${start}B${start}${shape.content}${ending}${suffix}`);
     });
 
-    test("insert after", async () => {
+    test.each([sent, `\n${sent}\n`])("insert after with text %j", async (text) => {
       const lineInsertion =
         ending === ""
           ? `${prefix}${shape.content}${after}A${after}B`
@@ -296,7 +296,7 @@ describe.each(shapes)("on $name", (shape) => {
           { anchor: startAnchor },
           {
             anchor: "anchor",
-            text: sent,
+            text,
           },
         ),
       ).toBe(lineInsertion);
