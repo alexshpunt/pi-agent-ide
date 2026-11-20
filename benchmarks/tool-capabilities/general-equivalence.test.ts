@@ -116,7 +116,7 @@ for (const mode of ["direct", "codemode"]) {
       const extra = ["copy", "move"].includes(tool)
         ? { target: "target.txt", targetStart: "SLOT", targetEnd: "SLOT" }
         : ["insert", "replace"].includes(tool)
-          ? { text: "NEW" }
+          ? { newText: "NEW" }
           : {};
       const required = { path: "task.txt", [field]: "段🙂\r\n尾界", ...extra };
       const steps: RouteStep[] = [{ tool: "search" }, { tool, args: required }];

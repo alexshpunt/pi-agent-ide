@@ -378,9 +378,9 @@ for (const mode of ["direct", "codemode"]) {
       const selector = tool === "insert" ? "anchor" : "start";
       const extra =
         tool === "insert"
-          ? { text: "]", before: false }
+          ? { newText: "]", before: false }
           : tool === "replace"
-            ? { text: "NEW" }
+            ? { newText: "NEW" }
             : ["copy", "move"].includes(tool)
               ? { target: "target.txt" }
               : {};

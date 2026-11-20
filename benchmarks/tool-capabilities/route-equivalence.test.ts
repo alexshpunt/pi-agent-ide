@@ -642,7 +642,7 @@ for (const mode of ["direct", "codemode"]) {
       assert.ok(
         !validate([
           calls[0],
-          { ...calls[1], args: { ...calls[1].args, text: "OLD" } },
+          { ...calls[1], args: { ...calls[1].args, newText: "OLD" } },
           ...calls.slice(2),
         ]),
         id,
@@ -1073,7 +1073,7 @@ void test("Codemode skips every discovery step without changing later reuse indi
             ...calls.slice(0, 2),
             {
               tool: "demo_replace",
-              args: { path: { id: result }, text: "changed" },
+              args: { path: { id: result }, newText: "changed" },
             },
           ],
           "codemode",
@@ -1658,7 +1658,7 @@ void test("shifted repeated-line route checks issued anchors and final line sepa
   assert.ok(
     check(route, [
       calls[0],
-      { ...calls[1], args: { ...calls[1].args, text: "top\n\n" } },
+      { ...calls[1], args: { ...calls[1].args, newText: "top\n\n" } },
       calls[2],
     ]),
   );
@@ -1750,7 +1750,7 @@ void test("token edit accepts an issued selection in start but rejects fabricate
     assert.ok(
       !check(route, [
         ...calls.slice(0, 3),
-        { ...calls[3], args: { start, text: "GREEN" } },
+        { ...calls[3], args: { start, newText: "GREEN" } },
         ...calls.slice(4),
       ]),
     );
@@ -1786,7 +1786,7 @@ void test("whole Search scopes preserve individual-match route equivalence", () 
   for (const mode of ["direct", "codemode"]) {
     for (const path of [{ id: uuid }, result]) {
       for (const end of [undefined, "SEARCH#ABCD:1:match"]) {
-        const args = { path, start: "SEARCH#ABCD:1:match", ...(end && { end }), text: "RED" };
+        const args = { path, start: "SEARCH#ABCD:1:match", ...(end && { end }), newText: "RED" };
         assert.ok(check(route, [search, { tool: "replace", args }], mode));
       }
     }

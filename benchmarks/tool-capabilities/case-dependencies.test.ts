@@ -61,7 +61,7 @@ for (const mode of ["direct", "codemode"]) {
       { path: "task.txt", anchor: "D07BBXQ" },
       { path: "task.txt", start: "D07BBXQ" },
       { path: "task.txt", query: "D07BBXQ" },
-      { path: { id: searchId }, text: "TOKEN" },
+      { path: { id: searchId }, newText: "TOKEN" },
     ];
     const receipts = { 0: "D07BBXQ|OLD", 4: `<uuid>${searchId.slice(7)}</uuid>` };
     // Search may overlap the second refusal, both refusals, or precede the edit.
@@ -164,7 +164,7 @@ void test("a standalone post-edit Read does not wait for unrelated refusals", ()
     {},
     { path: "memory://demo/note", offset: 1, limit: 1 },
     { path: { id: readId }, query: "alpha" },
-    { path: { id: searchId }, text: "changed" },
+    { path: { id: searchId }, newText: "changed" },
     { path: "local.txt" },
     { path: "memory://other/note" },
     { path: "memory://demo/note", target: "local.txt" },

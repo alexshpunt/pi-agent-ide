@@ -90,7 +90,7 @@ function chain(mode: string, scope: unknown = "."): Call[] {
     },
     {
       tool: "replace",
-      args: { path: { id: `RESULT#${ids[1]}` }, text: second.replace("9", "10") },
+      args: { path: { id: `RESULT#${ids[1]}` }, newText: second.replace("9", "10") },
     },
   ];
 }

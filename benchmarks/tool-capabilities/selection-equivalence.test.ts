@@ -253,8 +253,8 @@ for (const mode of ["direct", "codemode"]) {
     const single = { ...read, args: { ...read.args, path: ["source.txt"] }, value: { id } };
     assert.ok(passed(files, route, [single, replace], mode));
     for (const args of [
-      { path: { id }, text: "Final" },
-      { path: "source.txt", start: { id }, text: "Final" },
+      { path: { id }, newText: "Final" },
+      { path: "source.txt", start: { id }, newText: "Final" },
     ])
       assert.ok(!passed(files, route, [read, { tool: "replace", args }], mode));
     // Literal paths must also restrict evidence to the selected array element.
@@ -295,7 +295,7 @@ for (const mode of ["direct", "codemode"]) {
     ];
     const targetEdit: Call = {
       tool: "replace",
-      args: { path: { id: matchId }, start: "765ABCD", text: "Final" },
+      args: { path: { id: matchId }, start: "765ABCD", newText: "Final" },
     };
     assert.ok(passed(files, targetRoute, [partial, targetEdit], mode));
     assert.ok(!passed(files, route, [partial, replace], mode));
@@ -305,7 +305,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read" },
       {
         tool: "replace",
-        args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, text: "NEW" },
+        args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, newText: "NEW" },
         reuse: { from: 0, field: "start", kind: "anchor" },
       },
     ];
@@ -608,7 +608,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "search" },
       {
         tool: "replace",
-        args: { text: "NEW" },
+        args: { newText: "NEW" },
         reuse: { from: 0, field: ["path", "start"], kind: "whole-result" },
       },
     ];
@@ -675,7 +675,7 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "lsp_search" },
       {
         tool: "replace",
-        args: { text: "total" },
+        args: { newText: "total" },
         reuse: { from: 0, field: "path", kind: "capture:name" },
       },
     ];
