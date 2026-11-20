@@ -132,7 +132,7 @@ async function renameOverload(
           name: "replace",
           arguments: {
             path: { id: `fixture:declaration:${declaration}#name` },
-            text: "normalizeVec",
+            newText: "normalizeVec",
           },
         }),
       ],
@@ -355,7 +355,7 @@ async function renameInWindow(
             toolCall({
               id: "rename",
               name: "replace",
-              arguments: { path: "fixture:declaration:source.ts#greet#name", text: "welcome" },
+              arguments: { path: "fixture:declaration:source.ts#greet#name", newText: "welcome" },
             }),
           ],
           { stopReason: "toolUse" },

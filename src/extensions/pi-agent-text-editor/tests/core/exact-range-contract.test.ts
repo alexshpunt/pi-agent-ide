@@ -144,7 +144,11 @@ for (const before of [false, true]) {
   test(`exact insertion uses the selected boundary (before=${before})`, async () => {
     const content = "pre α🙂 end\n";
     const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
-    const result = await insertMutationTool.mutate(f.context, { anchor: "α🙂", text: "+", before });
+    const result = await insertMutationTool.mutate(f.context, {
+      anchor: "α🙂",
+      newText: "+",
+      before,
+    });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,
     ).toBe(before ? "pre +α🙂 end\n" : "pre α🙂+ end\n");
@@ -155,7 +159,7 @@ for (const before of [false, true]) {
     const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
     const result = await insertMutationTool.mutate(f.context, {
       anchor: "α🙂",
-      text: "+",
+      newText: "+",
       before,
       separation: "blank-line",
     });
@@ -168,7 +172,7 @@ for (const before of [false, true]) {
     const f = fixture({ source: content }, { anchor: ["source", "α\r\nβ"] });
     const result = await insertMutationTool.mutate(f.context, {
       anchor: "α\r\nβ",
-      text: "+",
+      newText: "+",
       before,
     });
     expect(

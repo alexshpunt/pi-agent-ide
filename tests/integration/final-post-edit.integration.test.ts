@@ -53,7 +53,7 @@ check(await tools.write({path:"a.note",content:"first"}));
 check(await tools.write({path:"b.note",content:"second"}));
 const seen=(await tools.read({path:"a.note"})).text;
 if(seen!=="FIRST") throw Error("Write was not formatted before returning");
-check(await tools.replace({path:"a.note",start:"FIRST",text:"final"}));
+check(await tools.replace({path:"a.note",start:"FIRST",newText:"final"}));
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,
                 },
@@ -134,8 +134,8 @@ test.each(["path", "result"] as const)(
                   code: `
 ${input === "result" ? 'const selected = await tools.read({path:"a.note",offset:1,limit:1});' : ""}
 await Promise.all([
-  ${input === "result" ? 'tools.insert({path:selected,text:"A"})' : 'tools.insert({path:"a.note",anchor:"anchor",text:"\\nA"})'},
-  tools.insert({path:"b.note",anchor:"anchor",text:"\\nB"})
+  ${input === "result" ? 'tools.insert({path:selected,newText:"A"})' : 'tools.insert({path:"a.note",anchor:"anchor",newText:"\\nA"})'},
+  tools.insert({path:"b.note",anchor:"anchor",newText:"\\nB"})
 ]);
 await tools.read({path:"a.note"});
 await tools.post_edit_external_change({path:"a.note",content:"EXTERNAL\\n"});

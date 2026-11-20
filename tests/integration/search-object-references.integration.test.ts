@@ -127,12 +127,12 @@ test("Search selector objects work as edit sources and anchors without granting 
         const args: Record<string, JsonValue> = { path: reference };
         expected[file] = original;
         if (operation === "replace") {
-          args.text = "NEW";
+          args.newText = "NEW";
           expected[file] = original.replace("OLD", "NEW");
         } else if (operation === "insert") {
           // Exercise an object anchor as well as the object source path.
           args.anchor = reference;
-          args.text = "ADDED";
+          args.newText = "ADDED";
           args.before = true;
           expected[file] = original.replace("OLD", "ADDEDOLD");
         } else if (operation === "delete") {
@@ -162,7 +162,7 @@ test("Search selector objects work as edit sources and anchors without granting 
       steps.push({
         id: `refuse-${id}`,
         name: "replace",
-        arguments: { path: { id: value, path: "wrong.txt", ranges: [] }, text: "BAD" },
+        arguments: { path: { id: value, path: "wrong.txt", ranges: [] }, newText: "BAD" },
       });
     const result = await run(cwd, "search-object-edit-scope", steps);
     for (const step of steps)

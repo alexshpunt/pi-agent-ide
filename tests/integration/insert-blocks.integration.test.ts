@@ -41,7 +41,7 @@ for (const [name, original, payload, mode, expected] of [
                   path: "standalone.txt",
                   // A line anchor selects the whole first line; a literal would select only its text.
                   anchor: formatLineHashAnchor(original, 1),
-                  text: payload,
+                  newText: payload,
                   separation: mode,
                 },
               }),
@@ -72,7 +72,7 @@ test("real Pi rejects empty insert without changing EOF bytes", async () => {
             toolCall({
               id: "insert",
               name: "insert",
-              arguments: { path: "standalone.txt", anchor: "anchor", text: "" },
+              arguments: { path: "standalone.txt", anchor: "anchor", newText: "" },
             }),
           ],
           { stopReason: "toolUse" },

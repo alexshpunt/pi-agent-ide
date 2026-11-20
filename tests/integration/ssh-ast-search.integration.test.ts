@@ -94,7 +94,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
           toolCall({
             id: "replace-search",
             name: "replace",
-            arguments: { start: "SEARCH#0000:all:match", text: "console.info(label)" },
+            arguments: { start: "SEARCH#0000:all:match", newText: "console.info(label)" },
           }),
         ]),
         assistantMessage([toolCall({ id: "read", name: "read", arguments: { path: note } })]),
@@ -127,7 +127,7 @@ const hit = await tools.search({path:outline,query:"greet"});
 if (hit.matches.length !== 1 || hit.matches[0].path !== ${JSON.stringify(outlineFile)}) throw Error(JSON.stringify(hit));
 const hidden = await tools.search({path:outline,query:"const count"});
 if (hidden.matches.length !== 0) throw Error("Outline exposed a hidden body");
-text(await tools.replace({path:hit.matches[0],text:"welcome"}));`,
+text(await tools.replace({path:hit.matches[0],newText:"welcome"}));`,
             },
           }),
         ]),

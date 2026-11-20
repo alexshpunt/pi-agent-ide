@@ -3,7 +3,7 @@
 This plugin is the final text anchor fallback. A non-empty value that is not a structured anchor selects one unique text span in the current file.
 
 ```text
-replace(path="src/store.ts", start="old call()", text="new call()")
+replace(path="src/store.ts", start="old call()", newText="new call()")
 ```
 
 Exact text may cover part of a line, one complete line, or several complete lines. It always selects exactly its characters: a match that covers complete lines does not take their line breaks, so Insert adds text right at its boundary and Delete leaves the line break in place. Include the newline in the text to select it. Nothing is normalized: LF text matches only LF, CRLF text only CRLF, and a BOM only a BOM. Copy and Move preserve the selected source text, including its line breaks. Replace and Insert write their text exactly as given; unselected bytes, including a BOM, remain unchanged.
@@ -11,7 +11,7 @@ Exact text may cover part of a line, one complete line, or several complete line
 A start and end may use different anchor formats:
 
 ```text
-replace(path="src/store.ts", start="function load() {", end="K7M2QX4", text="replacement")
+replace(path="src/store.ts", start="function load() {", end="K7M2QX4", newText="replacement")
 ```
 
 In a pair, exact-text endpoints keep the literal match boundaries, including any newlines supplied in the text. They do not expand to containing lines or include an unsupplied trailing line ending. The range starts at the left edge of `start` and ends at the right edge of `end`; a line-anchor endpoint keeps its complete line. The same rule applies to paired copy and move destination selectors.

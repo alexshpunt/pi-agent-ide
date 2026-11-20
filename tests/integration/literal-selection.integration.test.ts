@@ -30,7 +30,7 @@ test("literal selectors edit exact characters while :line references edit whole 
       {
         id: "insert-literal",
         name: "insert",
-        arguments: { path: "insert-literal.txt", anchor: "// END block", text: "// X" },
+        arguments: { path: "insert-literal.txt", anchor: "// END block", newText: "// X" },
       },
       {
         id: "delete-literal",
@@ -45,7 +45,7 @@ test("literal selectors edit exact characters while :line references edit whole 
       {
         id: "insert-line",
         name: "insert",
-        arguments: { path: "insert-line.txt", anchor: "SEARCH#RUNTIME:1:1:line", text: "// X" },
+        arguments: { path: "insert-line.txt", anchor: "SEARCH#RUNTIME:1:1:line", newText: "// X" },
       },
       {
         id: "search-delete",

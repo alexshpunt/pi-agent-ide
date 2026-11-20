@@ -40,7 +40,7 @@ test.each(["on", "only"] as const)(
               toolCall({
                 id: "direct-alias",
                 name: "mcp__fixture__replace",
-                arguments: { path: "note.txt", start: "OLD", text: "NEW" },
+                arguments: { path: "note.txt", start: "OLD", newText: "NEW" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -167,7 +167,7 @@ test("a local MCP mutation preserves the native diff and its file effect", async
             toolCall({
               id: "alias-replace",
               name: "mcp__fixture__replace",
-              arguments: { path: "note.txt", start: "OLD", text: "NEW" },
+              arguments: { path: "note.txt", start: "OLD", newText: "NEW" },
             }),
           ],
           { stopReason: "toolUse" },

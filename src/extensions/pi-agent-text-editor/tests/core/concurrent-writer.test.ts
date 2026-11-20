@@ -79,7 +79,7 @@ async function sharedFile(changes: number) {
   const result = await executeTextMutation(
     core,
     replaceMutationTool,
-    { path: source, start: "beta", text: "gamma" },
+    { path: source, start: "beta", newText: "gamma" },
     undefined,
     { cwd: process.cwd() } as ExtensionContext,
   );
@@ -112,7 +112,7 @@ test("a standalone tool call is applied again when another process changed its f
     new Map([["replace", replaceMutationTool]]),
     {
       edits: [
-        { callId: "replace-call", op: "replace", path: source, start: "beta", text: "gamma" },
+        { callId: "replace-call", op: "replace", path: source, start: "beta", newText: "gamma" },
       ],
     },
     undefined,

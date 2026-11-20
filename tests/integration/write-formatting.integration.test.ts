@@ -33,7 +33,7 @@ test("the shared Replace result keeps formatting separate from an ordinary edit"
             toolCall({
               id: "formatted",
               name: "replace",
-              arguments: { path: source, start: "before", text: "after" },
+              arguments: { path: source, start: "before", newText: "after" },
             }),
           ],
           { stopReason: "toolUse" },

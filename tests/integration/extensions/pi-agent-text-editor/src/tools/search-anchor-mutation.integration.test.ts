@@ -104,7 +104,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 start: "LINE#RUNTIME:1",
-                text: "changed",
+                newText: "changed",
               },
             }),
           ],
@@ -119,7 +119,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-begin",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:2:all:match", start: "begin", text: "top" },
+              arguments: { path: "SEARCH#RUNTIME:2:all:match", start: "begin", newText: "top" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -133,7 +133,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-end",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:3:all:match", start: "end", text: "bottom" },
+              arguments: { path: "SEARCH#RUNTIME:3:all:match", start: "end", newText: "bottom" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -471,7 +471,7 @@ test("inserts after a final no-LF end anchor with a path union", async () => {
             toolCall({
               id: "insert-final",
               name: "insert",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", anchor: "end", text: "inserted" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", anchor: "end", newText: "inserted" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -504,7 +504,7 @@ test("deduplicates a final no-LF linewise target with end", async () => {
             toolCall({
               id: "replace-final",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end", text: "changed" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end", newText: "changed" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -588,7 +588,7 @@ test("inserts after a final no-LF line when exact and linewise endpoints merge",
               arguments: {
                 anchor: "needle",
                 path: "SEARCH#RUNTIME:1:all:line",
-                text: "inserted",
+                newText: "inserted",
               },
             }),
           ],
@@ -624,7 +624,7 @@ test("inserts into every file selected by a complete search anchor", async () =>
             toolCall({
               id: "insert-search-all",
               name: "insert",
-              arguments: { path: "SEARCH#RUNTIME:1:all:match", text: "!" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:match", newText: "!" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -661,7 +661,7 @@ test("accepts search anchors in both replace span endpoints", async () => {
               arguments: {
                 start: "SEARCH#RUNTIME:1:1:match",
                 end: "SEARCH#RUNTIME:1:2:match",
-                text: "merged",
+                newText: "merged",
               },
             }),
           ],
@@ -780,7 +780,7 @@ test("rejects a mutation without a typed target or source anchor", async () => {
             toolCall({
               id: "replace-missing-source",
               name: "replace",
-              arguments: { text: "changed" },
+              arguments: { newText: "changed" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -822,7 +822,7 @@ test("mutates the complete selection retained by compacted search results", asyn
               name: "replace",
               arguments: {
                 start: "SEARCH#RUNTIME:1:all:match",
-                text: "changed",
+                newText: "changed",
               },
             }),
           ],
@@ -868,7 +868,7 @@ test("replaces a list of match anchors from different searches in one call", asy
                   "SEARCH#RUNTIME:1:3:match",
                   "SEARCH#RUNTIME:2:1:match",
                 ],
-                text: "gamma",
+                newText: "gamma",
               },
             }),
           ],
@@ -905,7 +905,7 @@ test("rejects a whole anchor list without changes and names the unknown anchor",
               name: "replace",
               arguments: {
                 path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#FFFF:1:match"],
-                text: "gamma",
+                newText: "gamma",
               },
             }),
           ],
@@ -946,7 +946,7 @@ test("rejects a whole anchor list without changes when one search result is stal
             toolCall({
               id: "change-second",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:2:1:match", text: "delta" },
+              arguments: { path: "SEARCH#RUNTIME:2:1:match", newText: "delta" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -958,7 +958,7 @@ test("rejects a whole anchor list without changes when one search result is stal
               name: "replace",
               arguments: {
                 path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#RUNTIME:2:1:match"],
-                text: "gamma",
+                newText: "gamma",
               },
             }),
           ],
@@ -1024,7 +1024,7 @@ test("inserts after every reference of a list from different searches", async ()
     ["insert"],
     {
       path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#RUNTIME:2:1:line"],
-      text: "added",
+      newText: "added",
     },
   );
   expect(run.failed).toBe(false);
@@ -1068,7 +1068,7 @@ test("rejects a plain path in a reference list and names it", async () => {
     ["needle"],
     "replace",
     ["replace"],
-    { path: ["SEARCH#RUNTIME:1:1:match", "a.txt"], text: "x" },
+    { path: ["SEARCH#RUNTIME:1:1:match", "a.txt"], newText: "x" },
   );
   expect(run.failed).toBe(true);
   expect(run.text).toContain("Reference a.txt cannot be used");

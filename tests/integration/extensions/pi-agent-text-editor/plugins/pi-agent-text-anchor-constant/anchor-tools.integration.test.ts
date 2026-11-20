@@ -21,7 +21,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-insert",
       "insert",
-      { anchor: "begin", text: "inserted" },
+      { anchor: "begin", newText: "inserted" },
       ["alpha", "inserted", "bravo", "charlie", "delta", "echo"].join("\n"),
     );
   });
@@ -30,7 +30,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-replace",
       "replace",
-      { start: "begin", end: "begin", text: "replaced" },
+      { start: "begin", end: "begin", newText: "replaced" },
       ["replaced", "bravo", "charlie", "delta", "echo"].join("\n"),
     );
   });

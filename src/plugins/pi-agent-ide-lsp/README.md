@@ -24,7 +24,7 @@ When a selector names several declarations, the error lists a selector for each.
 
 Pass an `lsp_search` declaration result or its match to `replace`, `copy`, `move` or `delete` to edit its text. Imports and references stay unchanged. Complete-line selections include their final newline; include that newline in replacement text when keeping adjacent declarations on separate lines.
 
-A declaration also exposes `capture name: RESULT#…`. Pass that capture reference as `replace.path` and the new identifier as `text` to rename through the language server. In Codemode, use `declaration.matches[0].captures.name[0]` or its `id`. A rename requires one capture, non-empty text and no start/end. The server updates references, imports and shorthand forms, and the result identifies the native rename. A stale capture fails without a text-replacement fallback; repeat `lsp_search` to acquire a fresh one.
+A declaration also exposes `capture name: RESULT#…`. Pass that capture reference as `replace.path` and the new identifier as `newText` to rename through the language server. In Codemode, use `declaration.matches[0].captures.name[0]` or its `id`. A rename requires one capture, non-empty text and no start/end. The server updates references, imports and shorthand forms, and the result identifies the native rename. A stale capture fails without a text-replacement fallback; repeat `lsp_search` to acquire a fresh one.
 
 ## Server lifecycle
 

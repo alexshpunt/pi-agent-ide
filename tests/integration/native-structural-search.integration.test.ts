@@ -81,7 +81,7 @@ const options=found.matches[0].captures.OPTIONS;
 check(options.length===1 && options[0].text==="{ timeout: 20 }","Capture lost association");
 const timeout=await tools.search({path:options,query:"20"});
 check(timeout.matches.length===1,"Capture cannot be searched");
-text(await tools.replace({path:timeout,text:"99"}));`,
+text(await tools.replace({path:timeout,newText:"99"}));`,
     ]);
     expectScriptsPassed(run, 1);
     expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(source.replace("20", "99"));
@@ -98,14 +98,14 @@ test("searches the current text of a Read window whose lines other sessions chan
     );
     const run = await runAstComposition(cwd, "ast-changed-window", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:3});
-await tools.replace({path:"calls.ts",start:"other();",text:"changed();"});
-await tools.replace({path:"calls.ts",start:"legacyRequest(a);",text:"legacyRequest(top);\\nlegacyRequest(a);"});
+await tools.replace({path:"calls.ts",start:"other();",newText:"changed();"});
+await tools.replace({path:"calls.ts",start:"legacyRequest(a);",newText:"legacyRequest(top);\\nlegacyRequest(a);"});
 const found=await tools.ast_search({path:window,pattern:"legacyRequest($ARG)"});
 check(found.matches.map(match=>match.line+":"+match.text).join()==="3:legacyRequest(b),5:legacyRequest(c)","Wrong matches for the current region");
 const stale=await tools.search({path:window,query:"changed"});
 check(stale.matches.length===1 && stale.matches[0].line===4,"Search lost the changed region");
-await rejects(()=>tools.replace({path:window,text:"BAD"}));
-text(await tools.replace({path:found.matches[1],text:"legacyRequest(z)"}));`,
+await rejects(()=>tools.replace({path:window,newText:"BAD"}));
+text(await tools.replace({path:found.matches[1],newText:"legacyRequest(z)"}));`,
     ]);
     expectScriptsPassed(run, 1);
     expect(codemodeFailures(getToolResultText(run, "ast-0"))).toMatch(
@@ -135,7 +135,7 @@ check(groups.map(group=>group.map(node=>node.text).join("")).join()==="a,b,c,d,e
 for(const group of groups) check((await tools.search({path:group,query:"ignored"})).matches.length===0,"Capture escaped");
 const partial=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)",limit:1});
 check(partial.matches.length===1 && partial.complete===false,"Limited Search must report one match and incomplete coverage");
-await rejects(()=>tools.replace({path:partial,text:"BAD"}));
+await rejects(()=>tools.replace({path:partial,newText:"BAD"}));
 text({groups:3,complete:true});`,
     ]);
     expectScriptsPassed(run, 1);
@@ -193,7 +193,7 @@ check(external,"External reference missing");
 const selected=await tools.read({path:external});
 const textHit=await tools.search({path:selected,query:"ping"});
 check(textHit.matches.length===1 && textHit.matches[0].path==="consumer.ts" && textHit.matches[0].line===3,"LSP target cannot be searched");
-text(await tools.replace({path:textHit,text:"PING"}));`,
+text(await tools.replace({path:textHit,newText:"PING"}));`,
       ],
       true,
     );
@@ -237,12 +237,12 @@ for(const input of [window,window.id.slice("RESULT#".length),window.id]) {
 }
 text({saved:true});`,
       `const old=load("ast-capture");
-const changed=await tools.replace({path:old,text:"{ timeout: 99 }"});
+const changed=await tools.replace({path:old,newText:"{ timeout: 99 }"});
 const found=await tools.ast_search({path:changed,pattern:"{ timeout: $VALUE }"});
 check(found.matches.length===1,"AST cannot consume mutation");
 const values=await tools.search({path:found.matches[0].captures.VALUE,query:"99"});
 check(values.matches.length===1,"Capture VALUE lost authority");
-await rejects(()=>tools.replace({path:old,text:"BAD"}));
+await rejects(()=>tools.replace({path:old,newText:"BAD"}));
 text({pendingAst:1,staleRejected:true});`,
     ]);
     expectScriptsPassed(run, 2);

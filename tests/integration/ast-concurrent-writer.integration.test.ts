@@ -126,12 +126,12 @@ for (let round = 1; round <= ${String(searchRounds)}; round += 1) {
 for (let round = 1; round <= ${String(editRounds)}; round += 1) {
   // The whole result as an edit source: the matched definition is rewritten.
   const whole = await found("edit.cpp", ${JSON.stringify(definition)}, round, "definition", 1, ["NAME","ADD"]);
-  const rewritten = await tools.replace({path:whole,text:"int ${edited.token}(int value) { return value + " + String(round) + "; }"});
+  const rewritten = await tools.replace({path:whole,newText:"int ${edited.token}(int value) { return value + " + String(round) + "; }"});
   check(typeof rewritten === "string", "Round " + round + ": whole-result rewrite returned " + JSON.stringify(rewritten));
   // A capture of a result with several matches: the argument of the first call is replaced.
   const uses = await found("edit.cpp", ${JSON.stringify(`${edited.token}($ARG)`)}, round, "call", ${String(calls)}, ["ARG"]);
   const argument = uses.matches[0].captures.ARG[0].id;
-  const replaced = await tools.replace({path:argument,text:String(1000 + round)});
+  const replaced = await tools.replace({path:argument,newText:String(1000 + round)});
   check(typeof replaced === "string", "Round " + round + ": capture replace returned " + JSON.stringify(replaced));
   // Wait up to 5 s for a new peer write before the next round, even when the edits run quickly.
   // A stopped peer then fails the write-count check below instead of hanging the script.
