@@ -68,7 +68,7 @@ test.each(["direct", "codemode"])(
       };
       expect(result.route, execution.stdout).toEqual({ passed: true, reasons: [] });
       expect(result.errors).toEqual([]);
-      expect(result.rejectedCount).toBe(mode === "direct" ? 2 : 4);
+      expect(result.rejectedCount).toBe(4);
       for (const refusal of result.refusals) {
         expect(refusal.effect).toBe("not-applied");
         expect(refusal.errors).toHaveLength(1);

@@ -37,15 +37,13 @@ const invalidRequests = [
   { id: "malformed-rename", arguments: { start: "count", text: "total" } },
   { id: "end-rename", arguments: { end: "count", text: "total" } },
 ];
-const invalidCalls = invalidRequests
-  .filter(({ id }) => id === "whitespace-rename")
-  .map(({ id, arguments: args }) =>
-    toolCall({
-      id,
-      name: "replace",
-      arguments: { path: "fixture:declaration:task.ts#count#name", ...args },
-    }),
-  );
+const invalidCalls = invalidRequests.map(({ id, arguments: args }) =>
+  toolCall({
+    id,
+    name: "replace",
+    arguments: { path: "fixture:declaration:task.ts#count#name", ...args },
+  }),
+);
 const inspect = toolCall({ id: "after-rejection", name: "read", arguments: { path: "task.ts" } });
 const calls =
   mode === "direct"
