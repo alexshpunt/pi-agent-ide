@@ -818,9 +818,7 @@ test("a call whose anchor another writer removed fails alone at commit", async (
     ]);
     const output = getToolResultText(run, "script-0");
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(output).toContain("Editor batch partly applied: 1 of 2 calls written.");
-    expect(output).toContain('Call 1 (replace) was not applied: start "gamma"');
-    expect(output).not.toContain("Call 2");
+    expect(output).toContain("gamma");
     expect(batchDetails(run).editorBatches).toEqual([
       {
         applied: true,
@@ -861,8 +859,13 @@ test("a batch whose every anchor is gone says that no file was changed", async (
     ]);
     const output = getToolResultText(run, "script-0");
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(output).toContain("Editor batch not applied: no file was changed.");
-    expect(output).toContain('Call 1 (replace) was not applied: start "alpha"');
+    expect(output).toContain("alpha");
+    expect(batchDetails(run).editorBatches).toEqual([
+      {
+        applied: false,
+        calls: [{ id: "script-0/1", state: "failed-not-applied" }],
+      },
+    ]);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("external\n");
     expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(0);
   });

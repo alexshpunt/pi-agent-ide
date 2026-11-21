@@ -390,11 +390,14 @@ describe("text mutation renderer", () => {
         (_, index) => `const value${index + 1} = ${index + 1};`,
       ).join("\n");
       await createFixture(directory, "post-edit-viewport.ts", before);
-      const firstRun = await runSingleMutation(directory, "replace", {
-        path: "post-edit-viewport.ts",
-        at: uniqueLineAnchor("const value20 = 20;"),
-        text: "const value20 = computeValue();\n",
-      });
+      // A shared runner would persist the path of its temporary workspace, which it removes.
+      const firstRun = await runInSeparatePi(() =>
+        runSingleMutation(directory, "replace", {
+          path: "post-edit-viewport.ts",
+          at: uniqueLineAnchor("const value20 = 20;"),
+          text: "const value20 = computeValue();\n",
+        }),
+      );
       const sessionData = await readSessionArtifact(firstRun.artifacts.run);
       const sessionFile = path.join(directory, "persisted-mutation-session.jsonl");
       await writeFile(sessionFile, sessionData, "utf8");
