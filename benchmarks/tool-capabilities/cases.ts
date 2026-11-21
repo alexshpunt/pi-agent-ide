@@ -1999,6 +1999,34 @@ add(
 );
 
 add(
+  "replace-exclusive-range",
+  ["edit.replace-exclusive-range"],
+  'Use Replace to change only the text between // BEGIN and the first // END that follows it in task.txt: pass "// BEGIN" as after, "// END" as before, and "new" as text. Keep all markers and later content. In empty.txt use the same boundaries to insert two lines, one containing first and one containing second, between adjacent markers.',
+  [
+    {
+      tool: "replace",
+      args: { path: "task.txt", after: "// BEGIN", before: "// END", text: "new" },
+      exactText: ["after", "before"],
+    },
+    {
+      tool: "replace",
+      args: { path: "empty.txt", after: "// BEGIN", before: "// END", text: "first\nsecond" },
+      exactText: ["after", "before"],
+    },
+  ],
+  {
+    files: {
+      "task.txt": "// END\n// BEGIN\nold\n\n// END\nkeep\n// END\n",
+      "empty.txt": "// BEGIN\r\n// END",
+    },
+    expected: {
+      "task.txt": "// END\n// BEGIN\nnew\n// END\nkeep\n// END\n",
+      "empty.txt": "// BEGIN\r\nfirst\r\nsecond\r\n// END",
+    },
+  },
+);
+
+add(
   "exact-range-delete",
   ["edit.delete-exact-range", "compose.search-range-endpoints"],
   "Search sentence.txt separately for DELETE_BEGIN and DELETE_END. Use the exact :match reference from each Search (in Codemode, the id of its match) as Delete start and end, respectively. Delete the inclusive span between those endpoints, retaining left, right, both surrounding spaces and the line ending. Do not use :line references, a whole-file deletion, or one combined Search result as the source.",

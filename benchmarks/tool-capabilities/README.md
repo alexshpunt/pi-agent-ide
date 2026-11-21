@@ -45,6 +45,8 @@ The `replace-anchored-display` case checks that Replace refuses a stale displaye
 
 The `exact-range-replace` case checks that a paired literal end skips an earlier match and stops at the first following match, leaving later matches untouched. The revised direct and Codemode paid routes remain unverified.
 
+The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the nearest closing marker, and support insertion between adjacent CRLF marker lines. Its paid routes remain unverified.
+
 ### Case contracts
 
 Check the subject of the case, not an example call:

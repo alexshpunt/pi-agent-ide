@@ -159,6 +159,7 @@ const groups: [string[], string[]][] = [
   ],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
+  [["edit.replace-exclusive-range"], ["replace-exclusive-range"]],
   [["edit.delete-exact-range"], ["exact-range-delete"]],
   // Exact destination cases require object-form Search endpoints alongside a peer transfer.
   // Copy separately requires literal source endpoints and literal peer SLOT destination fields;

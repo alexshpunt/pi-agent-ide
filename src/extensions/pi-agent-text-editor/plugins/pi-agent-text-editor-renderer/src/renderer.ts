@@ -919,6 +919,17 @@ function renderAnchorRange(
       ? singleLine(expanded ? state.full : state.compact)
       : undefined;
   };
+  if (registration.name === "replace" && sourceField === registration.source.field) {
+    const after = renderField("after");
+    const before = renderField("before");
+    if (after !== undefined || before !== undefined) {
+      return range(
+        after === undefined ? renderField("start") : `after ${after}`,
+        before === undefined ? renderField("end") : `before ${before}`,
+        theme,
+      );
+    }
+  }
   return range(renderField(fields.at(0)), renderField(fields.at(1)), theme);
 }
 function resourceLink(

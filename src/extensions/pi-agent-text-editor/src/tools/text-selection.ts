@@ -43,6 +43,13 @@ export function lineAnchor(anchors: ReadonlyMap<string, TextAnchor>, field: stri
 /** A resolved selector: only a place in one resource. The document writes every edit there. */
 export interface TextAnchorSpan extends TextSpan {
   readonly source: string;
+  /** A gap bounded by two selectors, not an empty line selected for replacement. */
+  readonly insertion?: "character" | "line";
+}
+
+interface RangeBoundaries {
+  readonly excludeStart?: boolean;
+  readonly excludeEnd?: boolean;
 }
 
 /** The span of one selected range: whole lines for a line selection, else its characters. */
@@ -105,6 +112,7 @@ export async function resolveAnchorSpanRange(
   startField: string,
   endField: string,
   hasEnd: boolean,
+  boundaries: RangeBoundaries = {},
 ): Promise<TextAnchorSpan> {
   if (!hasEnd) return singleAnchorSpan(context, starts, startField);
   const start = singleAnchorSpan(context, starts, startField, true);
@@ -142,7 +150,7 @@ export async function resolveAnchorSpanRange(
       ],
     ]);
   }
-  return anchorSpanRange(context, starts, selectedEnds, startField, endField);
+  return anchorSpanRange(context, starts, selectedEnds, startField, endField, boundaries);
 }
 
 /**
@@ -155,6 +163,7 @@ export async function anchorSpanRange(
   ends: ReadonlyMap<string, TextAnchor> | undefined,
   startField: string,
   endField: string,
+  boundaries: RangeBoundaries = {},
 ): Promise<TextAnchorSpan> {
   if (ends === undefined) return singleAnchorSpan(context, starts, startField);
   const exactEndpoints = !(selectsWholeLines(starts) && selectsWholeLines(ends));
@@ -172,7 +181,8 @@ export async function anchorSpanRange(
       `Anchor ${startField} must not come after ${endField}.`,
     );
   }
-  if (end.from < start.to && (start.from !== end.from || start.to !== end.to)) {
+  const trimsBoundary = boundaries.excludeStart === true || boundaries.excludeEnd === true;
+  if (end.from < start.to && (trimsBoundary || start.from !== end.from || start.to !== end.to)) {
     throw new TextMutationInputError(
       "ANCHOR_RANGE_OVERLAP",
       `Anchors ${startField} and ${endField} overlap. Choose an end selector that starts after the start selection.`,
@@ -198,8 +208,47 @@ export async function anchorSpanRange(
       throw new TextMutationInputError(rejection.code, rejection.reason);
     }
   }
-  await context.checkSpan?.({ source: start.source, from: span.from, to: span.to });
-  return { source: start.source, ...span };
+  const selected = trimsBoundary
+    ? trimRangeBoundaries(document, span, start, end, boundaries)
+    : span;
+  await context.checkSpan?.({ source: start.source, from: selected.from, to: selected.to });
+  return { source: start.source, ...selected };
+}
+
+/** Exclude a boundary's separator only when it meets the edge of a physical line. */
+function trimRangeBoundaries(
+  document: TextChangeDocument,
+  span: TextSpan,
+  start: TextSpan,
+  end: TextSpan,
+  { excludeStart, excludeEnd }: RangeBoundaries,
+): TextSpan & Pick<TextAnchorSpan, "insertion"> {
+  let from = excludeStart === true ? start.to : span.from;
+  let to = excludeEnd === true ? end.from : span.to;
+  let endLine = span.lines?.last ?? span.endLine;
+  if (excludeStart === true) {
+    const line = document.lineNumberAt(from);
+    if (
+      from === document.lineContentEnd(line) &&
+      (from !== document.lineContentStart(line) || start.lines?.last === line) &&
+      from < document.length
+    ) {
+      const nextLine = document.lineRange(line, line).to;
+      if (nextLine <= to) from = nextLine;
+    }
+  }
+  if (excludeEnd === true) {
+    const line = document.lineNumberAt(to);
+    endLine = undefined;
+    if (line > 1 && to === document.lineContentStart(line)) {
+      if (excludeStart === true && from === to) return { from, to: from, insertion: "line" };
+      endLine = line - 1;
+      to = document.lineContentEnd(endLine);
+    }
+  }
+  if (from === to && endLine === undefined && excludeStart === true && excludeEnd === true)
+    return { from, to, insertion: "character" };
+  return { ...document.charSpan({ from, to }), ...(endLine === undefined ? {} : { endLine }) };
 }
 
 /** Inserts text after the resolved anchor through the document's one write path. */

@@ -969,6 +969,38 @@
       "parameters": {
         "additionalProperties": false,
         "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
           "end": {
             "anyOf": [
               {

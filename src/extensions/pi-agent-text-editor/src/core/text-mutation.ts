@@ -206,6 +206,16 @@ export function createTextTool<TParameters extends TSchema>(
               const execute = async (): Promise<AgentToolResult<FileMutationBatchResult>> => {
                 let input = asMutationParameters<TParameters>(parameters);
                 let expectedWriteContent: string | undefined;
+                try {
+                  definition.validateInput?.(input);
+                } catch (error) {
+                  return failureToolResult(
+                    mutationSource(definition, input),
+                    error instanceof TextMutationInputError ? error.code : "INVALID_MUTATION_INPUT",
+                    errorMessage(error),
+                    "not-applied",
+                  );
+                }
                 // The IDE replaces a value with an id by its reference before the call; a host
                 // without its result store cannot, and must not ignore the selector.
                 const valueAnchors = (definition.anchors ?? []).filter(
@@ -700,6 +710,7 @@ async function resolveMutationSources(
   context: { readonly cwd: string; readonly signal?: AbortSignal },
   lastResolvedSource?: string,
 ): Promise<ResolvedMutationSources> {
+  definition.validateInput?.(input);
   const expandedByAnchor = new Map<string, readonly TextTarget[]>();
   const expandedBySourceField = new Map<string, readonly TextTarget[]>();
   const expandedFromExplicitSource = new Set<string>();
@@ -1288,7 +1299,11 @@ export function createMutationContext(
       if (explicitAnchors === undefined) {
         const example: Record<string, string> = {};
         for (const selector of definition.anchors ?? []) {
-          if (selector.optional && selector.field !== field) continue;
+          if (
+            selector.field !== field &&
+            (selector.optional || (definition.name === "replace" && selector.field !== "start"))
+          )
+            continue;
           example[selector.sourceField] = sourceFor(selector.sourceField);
           example[selector.field] = "exact existing text";
         }
@@ -1384,6 +1399,7 @@ export async function preflightMutationAnchors(
   await Promise.all(
     (definition.anchors ?? []).map(async (descriptor) => {
       if (
+        descriptor.pairedEnd ||
         descriptor.field === definition.pair?.[1] ||
         descriptor.field === "targetEnd" ||
         !isMutationAnchorValue(descriptor, input[descriptor.field])
@@ -2075,7 +2091,8 @@ export function allMatchesRetry(
   if (store === undefined) return undefined;
   if (operation === "insert") return { store, field: "anchor" };
   if (
-    (operation === "replace" || operation === "delete") &&
+    (operation === "delete" ||
+      (operation === "replace" && input.after === undefined && input.before === undefined)) &&
     (input.end === undefined || input.end === "")
   )
     return { store, field: "start" };
