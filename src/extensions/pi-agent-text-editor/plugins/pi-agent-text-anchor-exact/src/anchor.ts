@@ -41,8 +41,8 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
  * Resolves the one place the literal `value` selects, matching the way Pi's edit matches
  * `oldText`: exact characters first, then without the BOM and with CRLF and CR as LF, then
  * fuzzily. Finally, match a copy from the current Read anchors view. The first way that finds
- * the literal decides. An end selector takes the first match after its paired start; other
- * selectors must match uniquely.
+ * the literal decides. Every selector must match uniquely; the second boundary of a pair counts
+ * only the matches from its paired start on.
  */
 export function resolveExactTextAnchor(
   value: string,
@@ -86,9 +86,10 @@ export function resolveExactTextAnchor(
   if (match.kind === "ambiguous") {
     return rejected(
       "ambiguous",
-      inScope === undefined
+      (inScope === undefined
         ? "exact text anchor matched more than once"
-        : "exact text anchor matched more than once inside the selection",
+        : "exact text anchor matched more than once inside the selection") +
+        (context.endAfter === undefined ? "" : " after the start selector"),
     );
   }
 
@@ -116,11 +117,16 @@ export function findExactTextMatches(
   readonly allMatches?: readonly TextAnchorRecoveryCandidateRange[];
 } {
   const { content, source } = context;
+  const inScope = scopeFilter(context);
+  const { endAfter } = context;
+  // The second boundary of a pair chooses among the matches from the first boundary on.
   const spans = literalCandidates(
     content,
     value,
     new AnchoredLiteralView(source, content),
-    scopeFilter(context),
+    endAfter === undefined
+      ? inScope
+      : (span) => span.from >= endAfter && (inScope === undefined || inScope(span)),
   );
   const disjoint =
     spans.length > 1 &&

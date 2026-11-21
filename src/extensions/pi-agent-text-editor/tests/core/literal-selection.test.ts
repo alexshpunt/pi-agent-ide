@@ -45,7 +45,10 @@ async function run(
       cwd: process.cwd(),
       ...(endAfter === undefined ? {} : { endAfter }),
     });
-    if (resolved.kind !== "resolved") throw new Error(`Selector ${field} did not resolve`);
+    if (resolved.kind !== "resolved")
+      throw Object.assign(new Error(`Selector ${field} did not resolve`), {
+        code: resolved.kind === "rejected" ? resolved.rejection.code : resolved.kind,
+      });
     return new Map([[source, resolved.anchor]]);
   };
   const context: TextMutationContext = {
@@ -238,40 +241,70 @@ test("move of a line anchor still takes the whole line with its break", async ()
   });
 });
 
-const repeatedEnd = "before END\nBEGIN body END then END after";
 const from = "BEGIN";
 const to = "END";
+const earlierEnd = "before END\nBEGIN body END then after";
+const repeatedEnd = "before END\nBEGIN body END then END after";
 
-test("replace pairs a unique start with the nearest following exact end", async () => {
+test("replace pairs a unique start with the only end after it, ignoring earlier ends", async () => {
   expect(
-    await run(replaceMutationTool, { source: repeatedEnd }, { from, through: to }, { text: "NEW" }),
-  ).toEqual({ source: "before END\nNEW then END after" });
+    await run(replaceMutationTool, { source: earlierEnd }, { from, through: to }, { text: "NEW" }),
+  ).toEqual({ source: "before END\nNEW then after" });
 });
 
-test("delete pairs a unique start with the nearest following exact end", async () => {
-  expect(await run(deleteMutationTool, { source: repeatedEnd }, { from, through: to })).toEqual({
-    source: "before END\n then END after",
+test("delete pairs a unique start with the only end after it, ignoring earlier ends", async () => {
+  expect(await run(deleteMutationTool, { source: earlierEnd }, { from, through: to })).toEqual({
+    source: "before END\n then after",
   });
+});
+
+test("replace refuses several ends after the start instead of taking the nearest (LPT-1773)", async () => {
+  await expect(
+    run(replaceMutationTool, { source: repeatedEnd }, { from, through: to }, { text: "NEW" }),
+  ).rejects.toMatchObject({ code: "ambiguous" });
+  await expect(
+    run(replaceMutationTool, { source: repeatedEnd }, { from, before: to }, { text: "NEW" }),
+  ).rejects.toMatchObject({ code: "ambiguous" });
+});
+
+test("delete refuses several ends after the start instead of taking the nearest (LPT-1773)", async () => {
+  await expect(
+    run(deleteMutationTool, { source: repeatedEnd }, { from, through: to }),
+  ).rejects.toMatchObject({ code: "ambiguous" });
 });
 
 for (const tool of [copyMutationTool, moveMutationTool]) {
-  test(`${tool.name} uses the nearest following end in both source and destination pairs`, async () => {
-    const target = "END stays\nleft SLOT old END then END";
+  test(`${tool.name} pairs with the only end after the start in source and destination`, async () => {
+    const target = "END stays\nleft SLOT old END then";
     expect(
       await run(
         tool,
-        { source: repeatedEnd, target },
+        { source: earlierEnd, target },
         { from: from, through: to, targetFrom: "SLOT", targetThrough: to },
       ),
     ).toEqual({
-      source: tool.name === "copy" ? repeatedEnd : "before END\n then END after",
-      target: "END stays\nleft BEGIN body END then END",
+      source: tool.name === "copy" ? earlierEnd : "before END\n then after",
+      target: "END stays\nleft BEGIN body END then",
     });
   });
+
+  const refused: readonly Record<string, string>[] = [
+    { from, through: to, targetAt: "SLOT" },
+    { from, before: to, targetAt: "SLOT" },
+    { at: from, targetFrom: "SLOT", targetThrough: to },
+    { at: from, targetFrom: "SLOT", targetBefore: to },
+  ];
+  for (const selectors of refused) {
+    test(`${tool.name} refuses several ends after the start for ${Object.keys(selectors).join(", ")} (LPT-1773)`, async () => {
+      await expect(
+        run(tool, { source: repeatedEnd, target: "left SLOT old END then END" }, selectors),
+      ).rejects.toMatchObject({ code: "ambiguous" });
+    });
+  }
 }
 
 const selected = "BEGIN\r\nEND-";
-const overlapping = "pre END\r\nBEGIN\r\nEND-END and END stays";
+const overlapping = "pre END\r\nBEGIN\r\nEND- and more";
 
 for (const [mode, end] of [
   ["alone", {}],
@@ -285,18 +318,18 @@ for (const [mode, end] of [
         { from: selected, ...end },
         { text: "NEW" },
       ),
-    ).toEqual({ source: "pre END\r\nNEWEND and END stays" });
+    ).toEqual({ source: "pre END\r\nNEW and more" });
   });
 
   test(`delete selects the full opening match ${mode}`, async () => {
     expect(
       await run(deleteMutationTool, { source: overlapping }, { from: selected, ...end }),
-    ).toEqual({ source: "pre END\r\nEND and END stays" });
+    ).toEqual({ source: "pre END\r\n and more" });
   });
 
   for (const tool of [copyMutationTool, moveMutationTool]) {
     test(`${tool.name} selects the full source and destination opening matches ${mode}`, async () => {
-      const target = "pre SLOT old SLOT! stays";
+      const target = "pre SLOT old! stays";
       expect(
         await run(
           tool,
@@ -308,8 +341,8 @@ for (const [mode, end] of [
           },
         ),
       ).toEqual({
-        source: tool.name === "copy" ? overlapping : "pre END\r\nEND and END stays",
-        target: "pre BEGIN\r\nEND- SLOT! stays",
+        source: tool.name === "copy" ? overlapping : "pre END\r\n and more",
+        target: "pre BEGIN\r\nEND-! stays",
       });
     });
   }

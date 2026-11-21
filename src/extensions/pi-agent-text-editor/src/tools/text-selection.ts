@@ -169,17 +169,26 @@ async function resolveAnchorSpanRange(
   if (ends.size === 1 && TextSelectionAnchor.is(end) && end.ranges.length > 1) {
     const document = context.documentFor(start.source);
     const endpoints = end.endpointRanges ?? end.ranges;
-    let nearest: { index: number; offset: number } | undefined;
+    // Several ranges may follow the start only when the end is a reference to a set of matches;
+    // the tool never picks among them.
+    const following: { index: number; offset: number }[] = [];
     for (const [index, range] of endpoints.entries()) {
       selectionRange(context, start.source, range);
       const offset = selectionSpan(document, range).from;
-      if (offset >= minimumEndStart && (nearest === undefined || offset < nearest.offset))
-        nearest = { index, offset };
+      if (offset >= minimumEndStart) following.push({ index, offset });
     }
+    const [nearest, ...others] = following;
     if (nearest === undefined) {
       throw new TextMutationInputError(
         "ANCHOR_NOT_FOUND_AFTER_START",
         `No match for ${endField} follows ${startField} in "${start.source}". Choose a later match for ${endField}.`,
+      );
+    }
+    if (others.length > 0) {
+      const places = following.map(({ offset }) => `line ${document.lineNumberAt(offset)}`);
+      throw new TextMutationInputError(
+        "ANCHOR_AMBIGUOUS_AFTER_START",
+        `${following.length} matches for ${endField} follow ${startField} in "${start.source}" (${places.join(", ")}). Select one match for ${endField}, such as its line anchor.`,
       );
     }
     selectedEnds = new Map([

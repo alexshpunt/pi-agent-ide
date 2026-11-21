@@ -1986,7 +1986,7 @@ add(
 add(
   "exact-range-replace",
   ["edit.replace-exact-range", "edit.leading-newline-range"],
-  'Use Replace with paired literal endpoints and these exact inputs: {"path":"sentence.txt","from":"START","through":"END","text":"NEW"} and {"path":"credit.txt","from":"\\n\\nBased on","through":"(credit).","text":""}. The first call removes both endpoint fragments along with the text between them; its final line must be left NEW right END, with the earlier END line and both line breaks unchanged. In the second input, decode each \\n as one newline character. Remove only that suffix, retaining the entire preceding paragraph and its punctuation. Do not rewrite either whole file or use line anchors.',
+  'Use Replace with paired literal endpoints and these exact inputs: {"path":"sentence.txt","from":"START","through":"END","text":"NEW"} and {"path":"credit.txt","from":"\\n\\nBased on","through":"(credit).","text":""}. The first call removes both endpoint fragments along with the text between them; its final line must be left NEW right, with the earlier END line and both line breaks unchanged. In the second input, decode each \\n as one newline character. Remove only that suffix, retaining the entire preceding paragraph and its punctuation. Do not rewrite either whole file or use line anchors.',
   [
     {
       tool: "replace",
@@ -2004,11 +2004,11 @@ add(
   ],
   {
     files: {
-      "sentence.txt": "END before\nleft START old words END right END\n",
+      "sentence.txt": "END before\nleft START old words END right\n",
       "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.\n\nBased on [source](credit).",
     },
     expected: {
-      "sentence.txt": "END before\nleft NEW right END\n",
+      "sentence.txt": "END before\nleft NEW right\n",
       "credit.txt": "## Leave alone\n\nKEEP THIS PARAGRAPH.",
     },
   },
@@ -2017,7 +2017,7 @@ add(
 add(
   "lenient-edit-ranges",
   ["edit.single-from", "edit.overlapping-inclusive-range"],
-  'Copy from copy-source.txt to copy-target.txt with from "OPEN END-" alone, targetFrom "SLOT old", and targetThrough "SLOT". Move from move-source.txt to move-target.txt with from "OPEN END-", through "END", and targetFrom "SLOT old" alone. Do not pass at or targetAt. Select only OPEN END- in each source and replace only SLOT old in each target. Leave the later END and SLOT matches untouched.',
+  'Copy from copy-source.txt to copy-target.txt with from "OPEN END-" alone, targetFrom "SLOT old", and targetThrough "SLOT". Move from move-source.txt to move-target.txt with from "OPEN END-", through "END", and targetFrom "SLOT old" alone. Do not pass at or targetAt. Select only OPEN END- in each source and replace only SLOT old in each target. Leave the text around the selected spans untouched.',
   [
     {
       tool: "copy",
@@ -2046,16 +2046,16 @@ add(
   ],
   {
     files: {
-      "copy-source.txt": "END before\r\nleft OPEN END-END stays\r\n",
-      "copy-target.txt": "left SLOT old SLOT stays\n",
-      "move-source.txt": "END before\r\nleft OPEN END-END stays\r\n",
-      "move-target.txt": "left SLOT old SLOT stays\n",
+      "copy-source.txt": "END before\r\nleft OPEN END-more stays\r\n",
+      "copy-target.txt": "SLOT before\nleft SLOT old stays\n",
+      "move-source.txt": "END before\r\nleft OPEN END-more stays\r\n",
+      "move-target.txt": "SLOT before\nleft SLOT old stays\n",
     },
     expected: {
-      "copy-source.txt": "END before\r\nleft OPEN END-END stays\r\n",
-      "copy-target.txt": "left OPEN END- SLOT stays\n",
-      "move-source.txt": "END before\r\nleft END stays\r\n",
-      "move-target.txt": "left OPEN END- SLOT stays\n",
+      "copy-source.txt": "END before\r\nleft OPEN END-more stays\r\n",
+      "copy-target.txt": "SLOT before\nleft OPEN END- stays\n",
+      "move-source.txt": "END before\r\nleft more stays\r\n",
+      "move-target.txt": "SLOT before\nleft OPEN END- stays\n",
     },
   },
 );
@@ -2063,7 +2063,7 @@ add(
 add(
   "replace-exclusive-range",
   ["edit.replace-exclusive-range"],
-  'Use Replace to change only the text between // BEGIN and the first // END that follows it in task.txt: pass "// BEGIN" as after, "// END" as before, and "new" as text. Keep all markers and later content. In empty.txt use the same boundaries to insert two lines, one containing first and one containing second, between adjacent markers. In block.txt replace the opening marker and body but keep the closing marker: use from "// BEGIN", before "// END", and text "new". In inline.txt keep "left " and replace everything after it through the first semicolon: pass after "left ", through ";", and text "new;".',
+  'Use Replace to change only the text between // BEGIN and the // END that follows it in task.txt: pass "// BEGIN" as after, "// END" as before, and "new" as text. Keep all markers and later content. In empty.txt use the same boundaries to insert two lines, one containing first and one containing second, between adjacent markers. In block.txt replace the opening marker and body but keep the closing marker: use from "// BEGIN", before "// END", and text "new". In inline.txt keep "left " and replace everything after it through the semicolon: pass after "left ", through ";", and text "new;".',
   [
     {
       tool: "replace",
@@ -2088,16 +2088,16 @@ add(
   ],
   {
     files: {
-      "task.txt": "// END\n// BEGIN\nold\n\n// END\nkeep\n// END\n",
+      "task.txt": "// END\n// BEGIN\nold\n\n// END\nkeep\n",
       "empty.txt": "// BEGIN\r\n// END",
       "block.txt": "// BEGIN\nold\n// END\nkeep\n",
-      "inline.txt": "left old; right;\n",
+      "inline.txt": "left old; right\n",
     },
     expected: {
-      "task.txt": "// END\n// BEGIN\nnew\n// END\nkeep\n// END\n",
+      "task.txt": "// END\n// BEGIN\nnew\n// END\nkeep\n",
       "empty.txt": "// BEGIN\r\nfirst\r\nsecond\r\n// END",
       "block.txt": "new\n// END\nkeep\n",
-      "inline.txt": "left new; right;\n",
+      "inline.txt": "left new; right\n",
     },
   },
 );

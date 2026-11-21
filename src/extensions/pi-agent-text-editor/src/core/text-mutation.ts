@@ -58,6 +58,7 @@ import { createUnifiedDiff } from "#src/core/mutation-result/diff.ts";
 import { finalStateLineNumbers } from "#src/core/mutation-result/final-state-fragment.ts";
 import { imageWriteResult, planImageWrite } from "#src/core/image-write.ts";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
+import { formatAmbiguousCandidates } from "#src/core/ambiguous-candidates.ts";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import {
@@ -2174,8 +2175,9 @@ async function anchorFailureToolResult(
   const showRecovery = contextual.anchor.length <= MAX_ANCHOR_EXCERPT_LENGTH;
   const canOfferAll =
     retry?.field === contextual.field && resolution.rejection?.code === "ambiguous";
+  const ambiguous = resolution.rejection?.code === "ambiguous";
   const recovery =
-    showRecovery || canOfferAll
+    showRecovery || canOfferAll || ambiguous
       ? await resolveAnchorRecovery(contextual).catch(() => {
           context.signal?.throwIfAborted();
           return undefined;
@@ -2185,8 +2187,20 @@ async function anchorFailureToolResult(
   // A reference such as SEARCH#…:all:match names resources, not a position: reading it as a path
   // would only resolve it again, and the first lines of a file say nothing about it.
   const reference = resolution instanceof TextAnchorResourceResolutionError;
+  // An ambiguous selector lists its matches, each with its own anchor, instead of a file excerpt.
+  const snapshot = resolution.snapshot();
+  const listing =
+    ambiguous && !reference && recovery?.kind === "candidates" && snapshot !== undefined
+      ? formatAmbiguousCandidates({
+          field: contextual.field,
+          source: snapshot.source,
+          content: snapshot.content,
+          candidates: recovery.candidates.map(({ range }) => range),
+          total: recovery.total,
+        })
+      : undefined;
   const windows =
-    !showRecovery || (reference && contextual.source === contextual.anchor)
+    listing !== undefined || !showRecovery || (reference && contextual.source === contextual.anchor)
       ? []
       : recovery?.kind === "candidates"
         ? recoveryWindows(
@@ -2199,6 +2213,7 @@ async function anchorFailureToolResult(
   // An anchor no line produces has no position to show lines around; the first lines would only mislead.
   if (
     showRecovery &&
+    listing === undefined &&
     windows.length === 0 &&
     !reference &&
     resolution.rejection?.code !== "stale"
@@ -2221,7 +2236,7 @@ async function anchorFailureToolResult(
       }),
     ),
   );
-  const recoveryTexts: string[] = [];
+  const recoveryTexts: string[] = listing === undefined ? [] : [listing];
   for (const read of reads) {
     if (read === undefined || read.isError === true) continue;
     recoveryTexts.push(
@@ -2333,11 +2348,13 @@ function formatRejectedAnchorMessage(
       ? "Choose an end selector that matches after the start."
       : code === "outside-scope"
         ? "Choose text inside the result's selection, or pass the file path to edit elsewhere."
-        : failure.resolution.resolverId === "exact-text"
-          ? `${recoveryContext.length > 0 ? "Use a current anchor below or from Read/Search" : "Get a current anchor with Read/Search"}, or retry with text that matches exactly once.`
-          : recoveryContext.length > 0
-            ? "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor."
-            : "Reread the relevant section and choose a current anchor.";
+        : code === "ambiguous" && recoveryContext.length > 0
+          ? "Nothing was changed. Select one match by its anchor below, or retry with text that matches exactly once."
+          : failure.resolution.resolverId === "exact-text"
+            ? `${recoveryContext.length > 0 ? "Use a current anchor below or from Read/Search" : "Get a current anchor with Read/Search"}, or retry with text that matches exactly once.`
+            : recoveryContext.length > 0
+              ? "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor."
+              : "Reread the relevant section and choose a current anchor.";
   const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
   const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${quoteAnchorExcerpt(failure.anchor)} ${state} in "${failure.source}"`;
   // Nothing is shown below a reference without a position; its reason carries the next step.
