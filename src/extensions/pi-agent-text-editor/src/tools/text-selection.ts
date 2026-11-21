@@ -159,9 +159,10 @@ async function resolveAnchorSpanRange(
   boundaries: RangeBoundaries,
 ): Promise<TextAnchorSpan> {
   const start = singleAnchorSpan(context, starts, startField, true);
+  const minimumEndStart = excludesBoundary(boundaries) ? start.to : start.from;
   const ends = await context.resolveAnchors(endField, {
     source: start.source,
-    offset: start.to,
+    offset: minimumEndStart,
   });
   const end = ends.get(start.source);
   let selectedEnds = ends;
@@ -172,7 +173,7 @@ async function resolveAnchorSpanRange(
     for (const [index, range] of endpoints.entries()) {
       selectionRange(context, start.source, range);
       const offset = selectionSpan(document, range).from;
-      if (offset >= start.to && (nearest === undefined || offset < nearest.offset))
+      if (offset >= minimumEndStart && (nearest === undefined || offset < nearest.offset))
         nearest = { index, offset };
     }
     if (nearest === undefined) {
@@ -224,20 +225,21 @@ export async function anchorSpanRange(
       `Anchor ${startField} must not come after ${endField}.`,
     );
   }
-  const trimsBoundary = boundaries.excludeStart === true || boundaries.excludeEnd === true;
-  if (end.from < start.to && (trimsBoundary || start.from !== end.from || start.to !== end.to)) {
+  const trimsBoundary = excludesBoundary(boundaries);
+  if (trimsBoundary && end.from < start.to) {
     throw new TextMutationInputError(
       "ANCHOR_RANGE_OVERLAP",
       `Anchors ${startField} and ${endField} overlap. Choose a match for ${endField} that starts after ${startField}.`,
     );
   }
   const document = context.documentFor(start.source);
+  const right = end.to < start.to ? start : end;
   const span: TextSpan =
     start.lines !== undefined && end.lines !== undefined
-      ? document.lineSpan(start.lines.first, end.lines.last)
+      ? document.lineSpan(start.lines.first, Math.max(start.lines.last, end.lines.last))
       : {
-          ...document.charSpan({ from: start.from, to: end.to }),
-          ...(end.lines === undefined ? {} : { endLine: end.lines.last }),
+          ...document.charSpan({ from: start.from, to: right.to }),
+          ...(right.lines === undefined ? {} : { endLine: right.lines.last }),
         };
   const first = requiredValue(starts.get(start.source));
   const last = requiredValue(ends.get(end.source));
@@ -256,6 +258,10 @@ export async function anchorSpanRange(
     : span;
   await context.checkSpan?.({ source: start.source, from: selected.from, to: selected.to });
   return { source: start.source, ...selected };
+}
+
+function excludesBoundary(boundaries: RangeBoundaries): boolean {
+  return boundaries.excludeStart === true || boundaries.excludeEnd === true;
 }
 
 /** Exclude a boundary's separator only when it meets the edge of a physical line. */

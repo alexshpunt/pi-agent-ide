@@ -19,13 +19,13 @@ export function sourceRangeProperties(at: string) {
   return {
     at: anchorProperty(at),
     from: anchorProperty(
-      "Include the unique opening match. Pass through or before; do not combine with after or at.",
+      "Select the unique opening match. Use alone like at, or pair with through or before. Do not combine with after or at.",
     ),
     after: anchorProperty(
       "Begin after the unique opening match (on the next line if it reaches the end of a line). Pass through or before; do not combine with from or at. Use after and before together to select the text between two markers and keep both.",
     ),
     through: anchorProperty(
-      "Include the first following match. Use through for a block's own closing line. Pair with from or after; omit before and at.",
+      "Include the first match at or after the start of from (or after the opening match with after). Use for a block's own closing line. Pair with from or after; omit before and at.",
     ),
     before: anchorProperty(
       "Stop before the first following match. For a whole block, use before only if it has no closing line and ends at the next block's start, such as the next heading. Pair with from or after; omit through and at.",
@@ -43,13 +43,13 @@ export function targetProperties(directorySemantics: string) {
       "Replace only this selection. Do not combine with other target selectors.",
     ),
     targetFrom: anchorProperty(
-      "Include the unique opening match. Pair with targetThrough or targetBefore.",
+      "Select the unique opening match. Use alone like targetAt, or pair with targetThrough or targetBefore.",
     ),
     targetAfter: anchorProperty(
       "Use alone to insert after this selection. Pair with targetThrough or targetBefore to replace a range without including this opening match.",
     ),
     targetThrough: anchorProperty(
-      "Include the first following match. Use for the block's own closing line. Pair with targetFrom or targetAfter.",
+      "Include the first match at or after the start of targetFrom (or after the opening match with targetAfter). Use for a block's own closing line.",
     ),
     targetBefore: anchorProperty(
       "Use alone to insert before this selection. Pair with targetFrom or targetAfter to stop before the first following match; use for a whole block only if it has no closing line and ends at the next block's start.",

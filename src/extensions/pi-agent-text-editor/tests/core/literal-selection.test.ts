@@ -270,23 +270,77 @@ for (const tool of [copyMutationTool, moveMutationTool]) {
   });
 }
 
-test("a pair skips an end inside a multiline start and accepts an adjacent end", async () => {
+const selected = "BEGIN\r\nEND-";
+const overlapping = "pre END\r\nBEGIN\r\nEND-END and END stays";
+
+for (const [mode, end] of [
+  ["alone", {}],
+  ["with a contained through", { through: "END" }],
+] as const) {
+  test(`replace selects the full opening match ${mode}`, async () => {
+    expect(
+      await run(
+        replaceMutationTool,
+        { source: overlapping },
+        { from: selected, ...end },
+        { text: "NEW" },
+      ),
+    ).toEqual({ source: "pre END\r\nNEWEND and END stays" });
+  });
+
+  test(`delete selects the full opening match ${mode}`, async () => {
+    expect(
+      await run(deleteMutationTool, { source: overlapping }, { from: selected, ...end }),
+    ).toEqual({ source: "pre END\r\nEND and END stays" });
+  });
+
+  for (const tool of [copyMutationTool, moveMutationTool]) {
+    test(`${tool.name} selects the full source and destination opening matches ${mode}`, async () => {
+      const target = "pre SLOT old SLOT! stays";
+      expect(
+        await run(
+          tool,
+          { source: overlapping, target },
+          {
+            from: selected,
+            targetFrom: "SLOT old",
+            ...(mode === "alone" ? {} : { ...end, targetThrough: "SLOT" }),
+          },
+        ),
+      ).toEqual({
+        source: tool.name === "copy" ? overlapping : "pre END\r\nEND and END stays",
+        target: "pre BEGIN\r\nEND- SLOT! stays",
+      });
+    });
+  }
+}
+
+test("a through that starts inside from and extends past it ends at through", async () => {
   expect(
     await run(
-      replaceMutationTool,
-      { source: "pre BEGIN\nEND-END and END stays" },
-      { from: "BEGIN\nEND-", through: "END" },
-      { text: "NEW" },
+      deleteMutationTool,
+      { source: "pre BEGIN\nEND more" },
+      { from: "BEGIN\nEN", through: "END" },
     ),
-  ).toEqual({ source: "pre NEW and END stays" });
+  ).toEqual({ source: "pre  more" });
 });
 
-test("a unique end that overlaps the start is refused", async () => {
+test("a before inside from is still refused", async () => {
   await expect(
     run(
       deleteMutationTool,
       { source: "pre BEGIN\nEND more" },
-      { from: "BEGIN\nEN", through: "END" },
+      { from: "BEGIN\nEND", before: "END" },
+    ),
+  ).rejects.toMatchObject({ code: "ANCHOR_RANGE_OVERLAP" });
+});
+
+test("a through inside an exclusive after is still refused", async () => {
+  await expect(
+    run(
+      deleteMutationTool,
+      { source: "pre BEGIN\nEND more" },
+      { after: "BEGIN\nEND", through: "END" },
     ),
   ).rejects.toMatchObject({ code: "ANCHOR_RANGE_OVERLAP" });
 });

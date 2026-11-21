@@ -44,7 +44,8 @@ for (const route of ["direct", "codemode"] as const) {
         for (const tool of ["delete", "replace"]) {
           const name = `${tool}-${index}.txt`;
           files[name] = `keep${eol}${eol}尾🙂`;
-          expected[name] = `keep${eol}${eol}`;
+          // Deleting the unterminated final line removes its preceding separator.
+          expected[name] = `keep${eol}`;
           edits.push({
             tool,
             args: {
@@ -61,8 +62,9 @@ for (const route of ["direct", "codemode"] as const) {
           const target = `${tool}-target-${index}.txt`;
           files[source] = `keep\r\n段🙂${ending}`;
           files[target] = "left TARGET right\n";
-          expected[source] = tool === "move" ? "keep\r\n" : files[source];
-          expected[target] = `left 段🙂${ending} right\n`;
+          expected[source] = tool === "move" ? `keep${ending}` : files[source];
+          // A whole-line source loses its trailing separator at an inline destination.
+          expected[target] = "left 段🙂 right\n";
           edits.push({
             tool,
             args: {
@@ -72,6 +74,38 @@ for (const route of ["direct", "codemode"] as const) {
               target,
               targetFrom: "TARGET",
               targetThrough: "TARGET",
+            },
+          });
+        }
+      }
+      for (const tool of ["replace", "delete", "copy", "move"]) {
+        for (const nestedThrough of [false, true]) {
+          const source = `${tool}-opening-${nestedThrough}.txt`;
+          const from = "OPEN\r\nEND-";
+          const suffix = "END stays\r\n";
+          files[source] = `pre END\r\nleft ${from}${suffix}`;
+          const transfer = tool === "copy" || tool === "move";
+          expected[source] =
+            tool === "copy"
+              ? files[source]
+              : `pre END\r\nleft ${tool === "replace" ? "NEW" : ""}${suffix}`;
+          const target = `${tool}-destination-${nestedThrough}.txt`;
+          if (transfer) {
+            files[target] = "left SLOT old SLOT stays\n";
+            expected[target] = `left ${from} SLOT stays\n`;
+          }
+          edits.push({
+            tool,
+            args: {
+              path: source,
+              from,
+              ...(nestedThrough && { through: "END" }),
+              ...(tool === "replace" && { text: "NEW" }),
+              ...(transfer && {
+                target,
+                targetFrom: "SLOT old",
+                ...(nestedThrough && { targetThrough: "SLOT" }),
+              }),
             },
           });
         }
@@ -114,7 +148,7 @@ for (const route of ["direct", "codemode"] as const) {
         expect(getToolExecution(result, id).isError).toBe(false);
       }
       for (const [file, content] of Object.entries(expected)) {
-        expect(await readFile(path.join(cwd, file)), file).toEqual(Buffer.from(content));
+        expect.soft(await readFile(path.join(cwd, file)), file).toEqual(Buffer.from(content));
       }
       expect(result.tuiRenderedOutput).toContain("α");
       expect(result.tuiRenderedOutput).toContain("β");

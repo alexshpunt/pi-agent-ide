@@ -63,7 +63,6 @@ describe("replace selector modes", () => {
     [{ at: "old", before: "tail" }, "CONFLICTING_RANGE_BOUNDARIES"],
     [{ from: "old", after: "old", through: "tail" }, "CONFLICTING_RANGE_BOUNDARIES"],
     [{ from: "old", through: "tail", before: "tail" }, "CONFLICTING_RANGE_BOUNDARIES"],
-    [{ from: "old" }, "MISSING_RANGE_BOUNDARY"],
     [{ after: "old" }, "MISSING_RANGE_BOUNDARY"],
     [{ through: "tail" }, "MISSING_RANGE_BOUNDARY"],
     [{ before: "tail" }, "MISSING_RANGE_BOUNDARY"],
