@@ -57,7 +57,13 @@ async function run(
     resolveAnchors: async (field, start) => resolve(field, start?.offset),
     resolveAnchor: async (field) => requiredValue(resolve(field).values().next().value),
   };
-  const result = (await tool.mutate(context, { ...selectors, ...parameters } as never)) as {
+  const args = Object.fromEntries(
+    Object.entries(selectors).map(([field, value]) => [
+      field,
+      typeof value === "number" ? `line ${value}` : value,
+    ]),
+  );
+  const result = (await tool.mutate(context, { ...args, ...parameters } as never)) as {
     edits: ReadonlyMap<
       string,
       { changes: readonly { from: number; to: number; insert: string }[] }
@@ -92,7 +98,7 @@ test("insert uses the exact content boundary of a copied prefix and partial line
     await run(
       insertMutationTool,
       { source: file },
-      { anchor: displayLine(file, 3, "body") },
+      { after: displayLine(file, 3, "body") },
       { text: " of" },
     ),
   ).toEqual({ source: file.replace("body line", "body of line") });
@@ -104,8 +110,8 @@ test("delete maps both copied endpoints back to their original characters", asyn
       deleteMutationTool,
       { source: file },
       {
-        start: displayLine(file, 2, "// BEGIN"),
-        end: displayLine(file, 4, "// END"),
+        from: displayLine(file, 2, "// BEGIN"),
+        through: displayLine(file, 4, "// END"),
       },
     ),
   ).toEqual({ source: "// PREFIX\n block\n// SUFFIX\n" });
@@ -118,9 +124,9 @@ test("copy replaces the span between copied destination selectors with the sourc
       copyMutationTool,
       { source: file, target },
       {
-        start: displayLine(file, 3, "body"),
-        targetStart: displayLine(target, 1, "alpha"),
-        targetEnd: displayLine(target, 2, "bet"),
+        at: displayLine(file, 3, "body"),
+        targetFrom: displayLine(target, 1, "alpha"),
+        targetThrough: displayLine(target, 2, "bet"),
       },
     ),
   ).toEqual({ source: file, target: "bodya\ngamma\n" });
@@ -133,8 +139,8 @@ test("move removes only the copied selector's characters and transfers no prefix
       moveMutationTool,
       { source: file, target },
       {
-        start: displayLine(file, 3, "body"),
-        targetStart: displayLine(target, 1, "left"),
+        at: displayLine(file, 3, "body"),
+        targetAfter: displayLine(target, 1, "left"),
       },
     ),
   ).toEqual({ source: file.replace("body line", " line"), target: "leftbody\nright\n" });
@@ -142,29 +148,24 @@ test("move removes only the copied selector's characters and transfers no prefix
 
 test("insert after a literal that covers a whole line adds the text right after it", async () => {
   expect(
-    await run(insertMutationTool, { source: file }, { anchor: "// END block" }, { text: "// X" }),
+    await run(insertMutationTool, { source: file }, { after: "// END block" }, { text: "// X" }),
   ).toEqual({ source: file.replace("// END block", "// END block// X") });
 });
 
 test("insert before a literal that covers a whole line adds the text right before it", async () => {
   expect(
-    await run(
-      insertMutationTool,
-      { source: file },
-      { anchor: "// END block" },
-      { text: "// X", before: true },
-    ),
+    await run(insertMutationTool, { source: file }, { before: "// END block" }, { text: "// X" }),
   ).toEqual({ source: file.replace("// END block", "// X// END block") });
 });
 
 test("single-line insertion after a line anchor uses the exact boundary (LPT-1747)", async () => {
-  expect(await run(insertMutationTool, { source: file }, { anchor: 4 }, { text: "// X" })).toEqual({
+  expect(await run(insertMutationTool, { source: file }, { after: 4 }, { text: "// X" })).toEqual({
     source: file.replace("// END block", "// END block// X"),
   });
 });
 
 test("deleting a whole-line literal takes its line break (LPT-1747)", async () => {
-  expect(await run(deleteMutationTool, { source: file }, { start: "body line" })).toEqual({
+  expect(await run(deleteMutationTool, { source: file }, { at: "body line" })).toEqual({
     source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n",
   });
 });
@@ -174,13 +175,13 @@ test("deleting a span between whole-line literals removes the lines (LPT-1747)",
     await run(
       deleteMutationTool,
       { source: file },
-      { start: "// BEGIN block", end: "// END block" },
+      { from: "// BEGIN block", through: "// END block" },
     ),
   ).toEqual({ source: "// PREFIX\n// SUFFIX\n" });
 });
 
 test("delete of a line anchor still removes the line with its break", async () => {
-  expect(await run(deleteMutationTool, { source: file }, { start: 3 })).toEqual({
+  expect(await run(deleteMutationTool, { source: file }, { at: 3 })).toEqual({
     source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n",
   });
 });
@@ -196,7 +197,7 @@ test("copy of a whole-line literal over a partial span keeps character boundarie
     await run(
       copyMutationTool,
       { source: file, target: "left SLOT right\n" },
-      { start: "body line", targetStart: "SLOT", targetEnd: "SLOT" },
+      { at: "body line", targetFrom: "SLOT", targetThrough: "SLOT" },
     ),
   ).toEqual({ source: file, target: "left body line right\n" });
 });
@@ -206,7 +207,7 @@ test("copy after a whole-line literal destination adds a line (LPT-1747)", async
     await run(
       copyMutationTool,
       { source: file, target: "first\nlast\n" },
-      { start: "body line", targetStart: "first" },
+      { at: "body line", targetAfter: "first" },
     ),
   ).toEqual({ source: file, target: "first\nbody line\nlast\n" });
 });
@@ -216,7 +217,7 @@ test("move of a whole-line literal removes its line break (LPT-1747)", async () 
     await run(
       moveMutationTool,
       { source: file, target: "left SLOT right\n" },
-      { start: "body line", targetStart: "SLOT", targetEnd: "SLOT" },
+      { at: "body line", targetFrom: "SLOT", targetThrough: "SLOT" },
     ),
   ).toEqual({
     source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n",
@@ -229,7 +230,7 @@ test("move of a line anchor still takes the whole line with its break", async ()
     await run(
       moveMutationTool,
       { source: file, target: "first\nlast\n" },
-      { start: 3, targetStart: 1 },
+      { at: 3, targetAfter: 1 },
     ),
   ).toEqual({
     source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n",
@@ -248,7 +249,7 @@ test("replace pairs a unique start with the nearest following exact end", async 
 });
 
 test("delete pairs a unique start with the nearest following exact end", async () => {
-  expect(await run(deleteMutationTool, { source: repeatedEnd }, { start: from, end: to })).toEqual({
+  expect(await run(deleteMutationTool, { source: repeatedEnd }, { from, through: to })).toEqual({
     source: "before END\n then END after",
   });
 });
@@ -260,7 +261,7 @@ for (const tool of [copyMutationTool, moveMutationTool]) {
       await run(
         tool,
         { source: repeatedEnd, target },
-        { start: from, end: to, targetStart: "SLOT", targetEnd: to },
+        { from: from, through: to, targetFrom: "SLOT", targetThrough: to },
       ),
     ).toEqual({
       source: tool.name === "copy" ? repeatedEnd : "before END\n then END after",
@@ -282,7 +283,11 @@ test("a pair skips an end inside a multiline start and accepts an adjacent end",
 
 test("a unique end that overlaps the start is refused", async () => {
   await expect(
-    run(deleteMutationTool, { source: "pre BEGIN\nEND more" }, { start: "BEGIN\nEN", end: "END" }),
+    run(
+      deleteMutationTool,
+      { source: "pre BEGIN\nEND more" },
+      { from: "BEGIN\nEN", through: "END" },
+    ),
   ).rejects.toMatchObject({ code: "ANCHOR_RANGE_OVERLAP" });
 });
 
@@ -291,7 +296,7 @@ test("a unique end before the start remains reversed even with a later fuzzy mat
     run(
       deleteMutationTool,
       { source: "end marker\nBEGIN body end\u00a0marker" },
-      { start: "BEGIN", end: "end marker" },
+      { from: "BEGIN", through: "end marker" },
     ),
   ).rejects.toMatchObject({ code: "ANCHOR_RANGE_REVERSED" });
 });

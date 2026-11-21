@@ -704,7 +704,7 @@ async function runExplicitSearchDeletion(
             toolCall({
               id: `${testName}-delete`,
               name: "delete",
-              arguments: { start: `SEARCH#${searchId}:1:line` },
+              arguments: { at: `SEARCH#${searchId}:1:line` },
             }),
           ],
           { stopReason: "toolUse" },

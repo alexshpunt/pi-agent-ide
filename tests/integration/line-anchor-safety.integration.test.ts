@@ -186,7 +186,7 @@ test.each(["direct", "codemode"] as const)(
             tool,
             args: {
               path: file,
-              [tool === "insert" ? "anchor" : "at"]: anchor,
+              [tool === "insert" ? "after" : "at"]: anchor,
               text: "BLOCKED",
             },
             error: true,

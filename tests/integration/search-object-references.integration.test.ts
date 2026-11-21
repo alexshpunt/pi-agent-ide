@@ -129,19 +129,17 @@ test("Search selector objects work as edit sources and anchors without granting 
           expected[file] = original.replace("OLD", "NEW");
         } else if (operation === "insert") {
           // Exercise an object anchor as well as the object source path.
-          args.anchor = reference;
+          args.before = reference;
           args.text = "ADDED";
-          args.before = true;
           expected[file] = original.replace("OLD", "ADDEDOLD");
         } else if (operation === "delete") {
-          args.start = reference;
+          args.at = reference;
           expected[file] = original.replace("OLD", "");
         } else {
           const target = `${id}-target.txt`;
           await writeFile(path.join(cwd, target), "left TARGET right\n");
           args.target = target;
-          args.targetStart = "TARGET";
-          args.targetEnd = "TARGET";
+          args.targetAt = "TARGET";
           expected[target] = "left OLD right\n";
           if (operation === "move") expected[file] = original.replace("OLD", "");
         }

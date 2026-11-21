@@ -75,7 +75,6 @@ test.each(["numbered", "all"] as const)(
                   selection === "numbered"
                     ? `$issued-search:details:${index}`
                     : "$issued-searchallline:compact",
-                before: true,
                 text: "ADDED\n",
               },
             }),
@@ -84,7 +83,7 @@ test.each(["numbered", "all"] as const)(
         ),
         assistantMessage([text("Done")]),
       ],
-    }).run("Insert ADDED before every OLD line using the issued Search selections");
+    }).run("Insert ADDED after every OLD line using the issued Search selections");
 
     expect(getToolExecutionDetails(getToolExecution(result, "compact"))).toMatchObject({
       payload: {
@@ -116,7 +115,7 @@ test.each(["numbered", "all"] as const)(
       expect(getToolExecution(result, `insert-${index}`).isError).toBe(false);
     }
     expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
-      "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+      "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
     );
   },
 );

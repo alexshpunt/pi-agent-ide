@@ -31,12 +31,12 @@ test("literal text and :line references edit the same boundaries", async () => {
       {
         id: "insert-literal",
         name: "insert",
-        arguments: { path: "insert-literal.txt", anchor: "// END block", text: "// X" },
+        arguments: { path: "insert-literal.txt", after: "// END block", text: "// X" },
       },
       {
         id: "delete-literal",
         name: "delete",
-        arguments: { path: "delete-literal.txt", start: "body line" },
+        arguments: { path: "delete-literal.txt", at: "body line" },
       },
       {
         id: "search-insert",
@@ -46,7 +46,7 @@ test("literal text and :line references edit the same boundaries", async () => {
       {
         id: "insert-line",
         name: "insert",
-        arguments: { path: "insert-line.txt", anchor: "SEARCH#RUNTIME:1:1:line", text: "// X" },
+        arguments: { path: "insert-line.txt", after: "SEARCH#RUNTIME:1:1:line", text: "// X" },
       },
       {
         id: "search-delete",
@@ -56,7 +56,7 @@ test("literal text and :line references edit the same boundaries", async () => {
       {
         id: "delete-line",
         name: "delete",
-        arguments: { path: "delete-line.txt", start: "SEARCH#RUNTIME:2:1:line" },
+        arguments: { path: "delete-line.txt", at: "SEARCH#RUNTIME:2:1:line" },
       },
     ];
     await new PiIntegrationTest({

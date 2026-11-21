@@ -62,12 +62,12 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("insert", "insert-first", {
                 path: "original-anchors.txt",
-                anchor: formatLineHashAnchor(content, 1),
+                after: formatLineHashAnchor(content, 1),
                 text: "NORMAL-INSERT-1\n",
               }),
               call("insert", "insert-second", {
                 path: "original-anchors.txt",
-                anchor: formatLineHashAnchor(content, 3),
+                after: formatLineHashAnchor(content, 3),
                 text: "NORMAL-INSERT-2\n",
               }),
             ],
@@ -118,7 +118,7 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("insert", "mixed-insert", {
                 path: "transaction.ts",
-                anchor: formatLineHashAnchor(source, 1),
+                after: formatLineHashAnchor(source, 1),
                 text: '    const env = process.env.NODE_ENV ?? "development";\n',
               }),
               call("replace", "mixed-replace", {
@@ -129,12 +129,12 @@ describe("pi-agent-text-editor batch recovery", () => {
               }),
               call("delete", "mixed-delete", {
                 path: "transaction.ts",
-                start: formatLineHashAnchor(source, 5),
+                at: formatLineHashAnchor(source, 5),
               }),
               call("copy", "mixed-copy", {
                 path: "transaction.ts",
-                start: formatLineHashAnchor(source, 7),
-                targetStart: formatLineHashAnchor(source, 9),
+                at: formatLineHashAnchor(source, 7),
+                targetAfter: formatLineHashAnchor(source, 9),
               }),
             ],
             { stopReason: "toolUse" },

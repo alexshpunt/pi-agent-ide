@@ -101,15 +101,13 @@ for (const operation of [copyMutationTool, moveMutationTool]) {
       const f = fixture(
         { source: content, target: "left TARGET right\n" },
         {
-          start: ["source", "段🙂"],
-          targetStart: ["target", "TARGET"],
-          targetEnd: ["target", "TARGET"],
+          at: ["source", "段🙂"],
+          targetAt: ["target", "TARGET"],
         },
       );
       const result = await operation.mutate(f.context, {
-        start: "段🙂",
-        targetStart: "TARGET",
-        targetEnd: "TARGET",
+        at: "段🙂",
+        targetAt: "TARGET",
       });
       const target = result.edits.get("target");
       expect(target).toBeDefined();
@@ -129,15 +127,13 @@ for (const operation of [copyMutationTool, moveMutationTool]) {
     const f = fixture(
       { source: "keep\nTAIL", target: "before\nTARGET\nafter\n" },
       {
-        start: ["source", "TAIL"],
-        targetStart: ["target", "TARGET"],
-        targetEnd: ["target", "TARGET"],
+        at: ["source", "TAIL"],
+        targetAt: ["target", "TARGET"],
       },
     );
     const result = await operation.mutate(f.context, {
-      start: "TAIL",
-      targetStart: "TARGET",
-      targetEnd: "TARGET",
+      at: "TAIL",
+      targetAt: "TARGET",
     });
     expect(
       applyTextChanges("before\nTARGET\nafter\n", requiredValue(result.edits.get("target")).changes)
@@ -146,13 +142,13 @@ for (const operation of [copyMutationTool, moveMutationTool]) {
   });
 }
 for (const before of [false, true]) {
+  const side = before ? "before" : "after";
   test(`exact insertion uses the selected boundary (before=${before})`, async () => {
     const content = "pre α🙂 end\n";
-    const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
+    const f = fixture({ source: content }, { [side]: ["source", "α🙂"] });
     const result = await insertMutationTool.mutate(f.context, {
-      anchor: "α🙂",
+      [side]: "α🙂",
       text: "+",
-      before,
     });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,
@@ -161,11 +157,10 @@ for (const before of [false, true]) {
 
   test(`blank-line insertion keeps the exact boundary (before=${before})`, async () => {
     const content = "pre α🙂 end\n";
-    const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
+    const f = fixture({ source: content }, { [side]: ["source", "α🙂"] });
     const result = await insertMutationTool.mutate(f.context, {
-      anchor: "α🙂",
+      [side]: "α🙂",
       text: "+",
-      before,
       separation: "blank-line",
     });
     expect(
@@ -174,11 +169,10 @@ for (const before of [false, true]) {
   });
   test(`inserting multiline text mid-line keeps the character boundary (before=${before})`, async () => {
     const content = "pre α\r\nβ end\r\n";
-    const f = fixture({ source: content }, { anchor: ["source", "α\r\nβ"] });
+    const f = fixture({ source: content }, { [side]: ["source", "α\r\nβ"] });
     const result = await insertMutationTool.mutate(f.context, {
-      anchor: "α\r\nβ",
+      [side]: "α\r\nβ",
       text: "X\nY",
-      before,
     });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,

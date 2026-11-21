@@ -29,9 +29,9 @@ describe("pi-agent-text-editor copy", () => {
         tool: "copy",
         arguments: {
           path: sourcePath,
-          start: formatLineHashAnchor("source-one\ncopy-me\nsource-end\n", 2),
+          at: formatLineHashAnchor("source-one\ncopy-me\nsource-end\n", 2),
           target: targetPath,
-          targetStart: formatLineHashAnchor("target-start\ntarget-end\n", 1),
+          targetAfter: formatLineHashAnchor("target-start\ntarget-end\n", 1),
         },
       });
 
@@ -51,9 +51,9 @@ describe("pi-agent-text-editor copy", () => {
         tool: "copy",
         arguments: {
           path: relativeFile,
-          start: formatLineHashAnchor("first\ncopy-me\nlast\n", 2),
+          at: formatLineHashAnchor("first\ncopy-me\nlast\n", 2),
           target: relativeFile,
-          targetStart: formatLineHashAnchor("first\ncopy-me\nlast\n", 3),
+          targetAfter: formatLineHashAnchor("first\ncopy-me\nlast\n", 3),
         },
       });
 

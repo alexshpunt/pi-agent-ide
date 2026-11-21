@@ -233,11 +233,11 @@ test("a line anchor on a partial result line can move that line but cannot span 
   }
   const moved = await f.run(moveMutationTool, {
     path: { id: scope },
-    start: first,
-    end: first,
+    from: first,
+    through: first,
     target: "target.txt",
-    targetStart: "SLOT",
-    targetEnd: "SLOT",
+    targetFrom: "SLOT",
+    targetThrough: "SLOT",
   });
   expect(moved.result.details.effect, moved.text).not.toBe("not-applied");
   expect(await f.content("tokens.txt")).toBe("keep\ngap\nsecond MATCH suffix\nlast\n");
@@ -301,8 +301,8 @@ test("the all-matches reference is short and leads the ambiguity error before th
 });
 
 test.each([
-  { operation: deleteMutationTool, field: "start", expected: "outside red\n \n" },
-  { operation: insertMutationTool, field: "anchor", expected: "outside red\n!red !red\n" },
+  { operation: deleteMutationTool, field: "at", expected: "outside red\n \n" },
+  { operation: insertMutationTool, field: "before", expected: "outside red\n!red !red\n" },
 ])(
   "$operation.name retries only the matches inside the original scope",
   async ({ operation, field, expected }) => {
@@ -311,8 +311,7 @@ test.each([
     const input = {
       path: await f.lines("test.txt", 2, 2),
       [field]: "red",
-      text: "!",
-      before: true,
+      ...(field === "before" ? { text: "!" } : {}),
     };
     const failed = await f.run(operation, input);
     expect(failed.result.details.effect).toBe("not-applied");
@@ -429,11 +428,11 @@ test.each([
   const f = await tokenFixture();
   const { result, text } = await f.run(tool, {
     path: { id: f.whole },
-    ...(tool.name === "insert" ? { anchor: f.matches[0], text: "NEW" } : { start: f.matches[0] }),
+    ...(tool.name === "insert" ? { after: f.matches[0], text: "NEW" } : { at: f.matches[0] }),
     ...(["copy", "move"].includes(tool.name) && {
       target: "target.txt",
-      targetStart: "SLOT",
-      targetEnd: "SLOT",
+      targetFrom: "SLOT",
+      targetThrough: "SLOT",
     }),
   });
   expect(result.details.effect, text).not.toBe("not-applied");
@@ -539,10 +538,10 @@ test.each([insertMutationTool, replaceMutationTool, deleteMutationTool])(
         const { result } = await f.run(tool, {
           path: objectValues ? [{ id: first }, { id: second }] : [first, second],
           ...(tool.name === "insert"
-            ? { anchor: selector }
+            ? { after: selector }
             : tool.name === "replace"
               ? { from: selector, through: selector }
-              : { start: selector, end: selector }),
+              : { from: selector, through: selector }),
           ...(tool.name === "delete" ? {} : { text: "CHANGED\n" }),
         });
         expect(result.details.effect).toBe("not-applied");
@@ -575,7 +574,7 @@ test("a single-element result list still scopes its selector", async () => {
   const scope = await f.lines("one.txt", 1, 3);
   const { result } = await f.run(insertMutationTool, {
     path: [scope],
-    anchor: lineAnchor("one.txt", original, 2),
+    after: lineAnchor("one.txt", original, 2),
     text: "NEW\n",
   });
   expect(result.details.effect).not.toBe("not-applied");
@@ -586,7 +585,7 @@ test("a line anchor inside a Read result deletes that line", async () => {
   const f = await fixture({ "line.txt": "First\nLast\n" });
   const read = await f.lines("line.txt", 1, 2);
   const anchor = lineAnchor("line.txt", "First\nLast\n", 2);
-  const { result } = await f.run(deleteMutationTool, { path: read, start: anchor });
+  const { result } = await f.run(deleteMutationTool, { path: read, at: anchor });
   expect(result.details.effect).not.toBe("not-applied");
   expect(await f.content("line.txt")).toBe("First\n");
 });
@@ -611,13 +610,13 @@ test("a result stays a scope after an edit changed lines it selects", async () =
   const read = await f.lines("task.txt", 1, 8);
   await f.run(deleteMutationTool, {
     path: read,
-    start: lineAnchor("task.txt", content, 1),
-    end: lineAnchor("task.txt", content, 4),
+    from: lineAnchor("task.txt", content, 1),
+    through: lineAnchor("task.txt", content, 4),
   });
   // The same Read result, now covering changed lines, still scopes an anchor from that Read.
   const { result, text } = await f.run(deleteMutationTool, {
     path: read,
-    start: lineAnchor("task.txt", content, 6),
+    at: lineAnchor("task.txt", content, 6),
   });
   expect(result.details.effect, text).not.toBe("not-applied");
   expect(await f.content("task.txt")).toBe("template <typename T>\n  return v;\n}\n");
@@ -701,8 +700,8 @@ test("anchors in two ranges of one result do not select the text between them", 
   );
   const { result } = await f.run(deleteMutationTool, {
     path: both,
-    start: lineAnchor("task.txt", content, 2),
-    end: lineAnchor("task.txt", content, 4),
+    from: lineAnchor("task.txt", content, 2),
+    through: lineAnchor("task.txt", content, 4),
   });
   expect(result.details.effect).toBe("not-applied");
   expect(await f.content("task.txt")).toBe(content);
@@ -712,7 +711,7 @@ test("insert places text at an anchor inside the result", async () => {
   const content = "one\ntwo\nthree\n";
   const f = await fixture({ "task.txt": content });
   const read = await f.lines("task.txt", 1, 3);
-  await f.run(insertMutationTool, { path: read, anchor: "two", text: "ADDED\n" });
+  await f.run(insertMutationTool, { path: read, after: "two", text: "ADDED\n" });
   expect(await f.content("task.txt")).toBe("one\ntwo\nADDED\nthree\n");
 });
 
@@ -768,10 +767,10 @@ test("copy uses a result as scope for its source and destination anchors", async
   const target = await f.lines("target.txt", 2, 2);
   await f.run(copyMutationTool, {
     path: source,
-    start: "COPY",
+    at: "COPY",
     target,
-    targetStart: "SLOT",
-    targetEnd: "SLOT",
+    targetFrom: "SLOT",
+    targetThrough: "SLOT",
   });
   expect(await f.content("target.txt")).toBe("SLOT one\nCOPY two\n");
   expect(await f.content("source.txt")).toBe("COPY first\nCOPY second\n");
@@ -785,9 +784,9 @@ test("move takes its source text by an anchor inside the result", async () => {
   const source = await f.lines("source.txt", 2, 2);
   const { result, text } = await f.run(moveMutationTool, {
     path: source,
-    start: "MOVE",
+    at: "MOVE",
     target: "target.txt",
-    targetStart: "SLOT",
+    targetAfter: "SLOT",
   });
   expect(result.details.effect, text).not.toBe("not-applied");
   expect(await f.content("source.txt")).toBe("MOVE first\n second\n");

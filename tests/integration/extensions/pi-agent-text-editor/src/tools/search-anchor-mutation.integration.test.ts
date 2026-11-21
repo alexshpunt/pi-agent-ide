@@ -442,7 +442,7 @@ test("deletes a final no-LF line from a position-anchor union", async () => {
             toolCall({
               id: "delete-union-final",
               name: "delete",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", at: "end" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -475,7 +475,7 @@ test("inserts after a final no-LF end anchor with a path union", async () => {
             toolCall({
               id: "insert-final",
               name: "insert",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", anchor: "end", text: "inserted\n" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", after: "end", text: "inserted\n" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -549,7 +549,7 @@ test("deletes a final no-LF line when exact and linewise endpoints merge", async
               name: "delete",
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:line",
-                start: "needle",
+                at: "needle",
               },
             }),
           ],
@@ -590,7 +590,7 @@ test("inserts after a final no-LF line when exact and linewise endpoints merge",
               id: "insert-final-exact",
               name: "insert",
               arguments: {
-                anchor: "needle",
+                after: "needle",
                 path: "SEARCH#RUNTIME:1:all:line",
                 text: "inserted\n",
               },
@@ -709,7 +709,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target\n",
+                targetAfter: "target\n",
               },
             }),
           ],
@@ -752,7 +752,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target\n",
+                targetAfter: "target\n",
               },
             }),
           ],

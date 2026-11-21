@@ -105,7 +105,7 @@ try {
   const source = await tools.read({path:session+"/source",views:["anchors"]});
   const anchor = /(?:^|\n)([A-Z\d]+)\|console\.log\(message\);/.exec(source.text)?.[1];
   if(!anchor) throw Error(source.text);
-  await tools.insert({path:session+"/source",anchor,text:"breakpoint"});
+  await tools.insert({path:session+"/source",after:anchor,text:"breakpoint"});
   const pending = await tools.read({path:session+"/breakpoints"});
   if(!pending.text.includes("(pending)") || !pending.text.includes("demo.mjs:2")) throw Error(pending.text);
   await tools.insert({path:session,text:"start"});

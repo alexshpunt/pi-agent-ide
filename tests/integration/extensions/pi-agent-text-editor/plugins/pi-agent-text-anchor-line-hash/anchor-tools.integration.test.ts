@@ -25,7 +25,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-insert",
       "insert",
-      { anchor: after, text: "inserted\n" },
+      { after: after, text: "inserted\n" },
       [after],
       ["alpha", "bravo", "inserted", "charlie", "delta", "echo"].join("\n"),
     );
@@ -43,7 +43,7 @@ describe("line-hash anchors through text editor tools", () => {
       await runLineHashScenario(
         `line-hash-extract-${variant.name}`,
         "insert",
-        { anchor: variant.value, text: "inserted\n" },
+        { after: variant.value, text: "inserted\n" },
         [canonical],
         ["alpha", "bravo", "inserted", "charlie", "delta", "echo"].join("\n"),
       );
@@ -56,7 +56,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-replace",
       "replace",
-      { start, end, text: "replaced" },
+      { from: start, through: end, text: "replaced" },
       [start, end],
       ["alpha", "replaced", "delta", "echo"].join("\n"),
     );
@@ -68,7 +68,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-delete",
       "delete",
-      { start, end },
+      { from: start, through: end },
       [start, end],
       ["alpha", "delta", "echo"].join("\n"),
     );
@@ -81,7 +81,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-copy",
       "copy",
-      { start, end, targetStart: target },
+      { from: start, through: end, targetAfter: target },
       [start, end, target],
       ["alpha", "bravo", "charlie", "delta", "echo", "bravo", "charlie"].join("\n"),
     );
@@ -94,7 +94,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-move",
       "move",
-      { start, end, targetStart: target },
+      { from: start, through: end, targetAfter: target },
       [start, end, target],
       ["alpha", "delta", "echo", "bravo", "charlie"].join("\n"),
     );

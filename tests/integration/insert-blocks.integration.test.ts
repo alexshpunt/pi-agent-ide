@@ -39,7 +39,7 @@ for (const [name, original, payload, mode, expected] of [
                 name: "insert",
                 arguments: {
                   path: "standalone.txt",
-                  anchor: formatLineHashAnchor(original, 1),
+                  after: formatLineHashAnchor(original, 1),
                   text: payload,
                   separation: mode,
                 },
@@ -71,7 +71,7 @@ test("real Pi rejects empty insert without changing EOF bytes", async () => {
             toolCall({
               id: "insert",
               name: "insert",
-              arguments: { path: "standalone.txt", anchor: "anchor", text: "" },
+              arguments: { path: "standalone.txt", after: "anchor", text: "" },
             }),
           ],
           { stopReason: "toolUse" },

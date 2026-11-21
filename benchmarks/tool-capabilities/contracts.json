@@ -131,7 +131,55 @@
       "parameters": {
         "additionalProperties": false,
         "properties": {
-          "end": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "from": {
             "anyOf": [
               {
                 "type": "string"
@@ -182,22 +230,6 @@
               }
             ]
           },
-          "start": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  }
-                },
-                "required": ["id"],
-                "type": "object"
-              }
-            ]
-          },
           "target": {
             "anyOf": [
               {
@@ -233,7 +265,7 @@
               }
             ]
           },
-          "targetEnd": {
+          "targetAfter": {
             "anyOf": [
               {
                 "type": "string"
@@ -249,7 +281,71 @@
               }
             ]
           },
-          "targetStart": {
+          "targetAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "targetBefore": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "targetFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "targetThrough": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "through": {
             "anyOf": [
               {
                 "type": "string"
@@ -341,7 +437,55 @@
       "parameters": {
         "additionalProperties": false,
         "properties": {
-          "end": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "from": {
             "anyOf": [
               {
                 "type": "string"
@@ -392,7 +536,7 @@
               }
             ]
           },
-          "start": {
+          "through": {
             "anyOf": [
               {
                 "type": "string"
@@ -587,7 +731,7 @@
       "parameters": {
         "additionalProperties": false,
         "properties": {
-          "anchor": {
+          "after": {
             "anyOf": [
               {
                 "type": "string"
@@ -604,7 +748,20 @@
             ]
           },
           "before": {
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
           },
           "path": {
             "anyOf": [
@@ -741,7 +898,55 @@
       "parameters": {
         "additionalProperties": false,
         "properties": {
-          "end": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "from": {
             "anyOf": [
               {
                 "type": "string"
@@ -792,22 +997,6 @@
               }
             ]
           },
-          "start": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "properties": {
-                  "id": {
-                    "type": "string"
-                  }
-                },
-                "required": ["id"],
-                "type": "object"
-              }
-            ]
-          },
           "target": {
             "anyOf": [
               {
@@ -843,7 +1032,7 @@
               }
             ]
           },
-          "targetEnd": {
+          "targetAfter": {
             "anyOf": [
               {
                 "type": "string"
@@ -859,7 +1048,71 @@
               }
             ]
           },
-          "targetStart": {
+          "targetAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "targetBefore": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "targetFrom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "targetThrough": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
+          "through": {
             "anyOf": [
               {
                 "type": "string"

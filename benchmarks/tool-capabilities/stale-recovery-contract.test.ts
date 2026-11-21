@@ -30,7 +30,7 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
     { tool: "replace", args: { path: "task.txt", at: "D07BBXQ|OLD", text: "NEW" } },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "D07BBXQ", text: "BLOCKED" },
+      args: { path: "task.txt", after: "D07BBXQ", text: "BLOCKED" },
       error: true,
       text: "D07BBXQ",
     },
@@ -41,7 +41,7 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
     },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: "B44PGG9", text: "RECOVERED\n" },
+      args: { path: "task.txt", after: "B44PGG9", text: "RECOVERED\n" },
     },
   ];
   const check = (input: typeof calls) => {
@@ -77,16 +77,10 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
     return validateRoute(task, events, "direct").passed;
   };
   assert.ok(check(calls));
-  for (const path of [
-    old,
-    `RESULT#${old}`,
-    { id: old },
-    JSON.stringify({ id: old }),
-    JSON.stringify({ id: `RESULT#${old}` }),
-  ]) {
+  for (const path of [old, `RESULT#${old}`, { id: old }, { id: `RESULT#${old}` }]) {
     // The stream guard may finish before the payload is emitted or schema validation runs.
     const cut = calls.map((call, index) =>
-      index === 3 ? { ...call, args: { path, anchor: "D07BBXQ" } } : call,
+      index === 3 ? { ...call, args: { path, after: "D07BBXQ" } } : call,
     );
     assert.ok(check(cut), JSON.stringify(path));
     for (const unissued of ["RESULT#aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", '{"id":']) {
@@ -121,7 +115,7 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
   assert.ok(
     !check(
       calls.map((call, index) =>
-        index === 5 ? { ...call, args: { ...call.args, anchor: "D07BBXQ" } } : call,
+        index === 5 ? { ...call, args: { ...call.args, after: "D07BBXQ" } } : call,
       ),
     ),
   );

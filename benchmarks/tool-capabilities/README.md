@@ -33,7 +33,7 @@ The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostic
 
 The `outline-search-edit` case follows a continuation to a second outline page and reuses that page to restrict Search and Replace. A focused scripted real-Pi test checks bounded output and exact edit scope on a large C++ fixture. Direct and Codemode paid routes remain unverified until paid execution.
 
-The `move-destination-recovery` case also requires a refusal for an explicitly empty `start`. Scripted real-Pi tests cover that refusal, bounded diagnostics for oversized selectors, and a Move destination that overlaps a pending Replace. The revised paid routes remain unverified until paid execution.
+The `move-destination-recovery` case also requires a refusal for an explicitly empty `at`. Scripted real-Pi tests cover that refusal, bounded diagnostics for oversized selectors, and a Move destination that overlaps a pending Replace. The revised paid routes remain unverified until paid execution.
 
 The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The `lsp-rename-window` tests use real clangd to cover stale plans, a stalled refresh, and a peer sync that makes clangd refuse the rename. The tests also check that the same capture remains usable if retries run out. The paid case does not exercise contention.
 
@@ -45,7 +45,7 @@ The `replace-anchored-display` case checks that Replace refuses a stale displaye
 
 The `exact-range-replace` case checks that a literal `through` paired with `from` skips an earlier match and stops at the first following match, leaving later matches untouched. The revised direct and Codemode paid routes remain unverified.
 
-Replace uses `at` for a single selector and `from` or `after` with `through` or `before` for a range. The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the nearest closing marker, and support insertion between adjacent CRLF marker lines. It also checks both mixed inclusive/exclusive pairs. Its paid routes remain unverified.
+Replace, Delete, Copy and Move use `at` for a single selector and `from` or `after` with `through` or `before` for a range. The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the nearest closing marker, and support insertion between adjacent CRLF marker lines. It also checks both mixed inclusive/exclusive pairs. Its paid routes remain unverified. The `exclusive-delete-transfer` case checks source and destination exclusive ranges and insertion with `targetBefore` alone while preserving both markers. Its paid routes remain unverified.
 
 ### Case contracts
 

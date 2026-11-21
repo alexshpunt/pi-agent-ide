@@ -1,3 +1,4 @@
+import { hasTransferSelectorKeys } from "pi-agent-text-editor/api/text-selector-fields";
 import { setTimeout as delay } from "node:timers/promises";
 
 import {
@@ -246,9 +247,7 @@ export async function registerTerminalResources(
             if (
               typeof target !== "string" ||
               !target.startsWith("shell:") ||
-              ["start", "end", "targetStart", "targetEnd"].some(
-                (field) => request[field] !== undefined,
-              )
+              hasTransferSelectorKeys(request)
             )
               throw new Error(
                 `Terminal sessions support only renaming: move with path ${source} and target shell:<name>.`,
@@ -347,6 +346,7 @@ export async function registerTerminalResources(
     }
     if (
       event.toolName === "delete" &&
+      !hasTransferSelectorKeys(event.input) &&
       typeof requestedSource === "string" &&
       isShellSource(requestedSource)
     ) {
@@ -553,14 +553,13 @@ function transformWriteInput<State extends { readonly input: unknown }>(
 
 function transformInsertInput<State extends { readonly input: unknown }>(state: State): State {
   if (!isRecord(state.input) || !isShellSourceValue(state.input.path)) return state;
-  if (state.input.before === true)
-    throw new Error("Shell keys can only be inserted after the active input position");
+  if (state.input.after !== undefined || state.input.before !== undefined)
+    throw new Error("Omit after and before when sending keys to a terminal session.");
   return {
     ...state,
     input: {
       ...state.input,
-      anchor: "end",
-      before: false,
+      after: "end",
       text: `${KEYS_PREFIX}${typeof state.input.text === "string" ? state.input.text : ""}`,
     },
   };

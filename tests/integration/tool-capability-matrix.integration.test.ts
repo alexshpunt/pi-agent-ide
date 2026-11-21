@@ -27,9 +27,9 @@ test.each(["direct", "codemode"] as const)(
         await writeFile(path.join(cwd, file), content);
       // A literal selects only its characters, so a whole line includes its line break.
       const steps = [
-        { tool: "insert", args: { path: "insert.txt", anchor: "middle\n", text: "NEW\n" } },
+        { tool: "insert", args: { path: "insert.txt", after: "middle\n", text: "NEW\n" } },
         { tool: "replace", args: { path: "replace.txt", at: "middle\n", text: "NEW\n" } },
-        { tool: "delete", args: { path: "delete.txt", start: "middle\n" } },
+        { tool: "delete", args: { path: "delete.txt", at: "middle\n" } },
       ];
       const requests =
         mode === "direct"

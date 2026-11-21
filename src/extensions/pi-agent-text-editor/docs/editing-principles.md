@@ -19,11 +19,11 @@ Matching and writing follow different rules.
 - Match the literal against file text first: exact, then normalized, then fuzzy. Only then try the current Read `anchors` view. A copied `HASH|text` fragment may start or end partway through a line; the hashes must still match, and only source characters are selected. A copied final no-newline marker is display-only and selects no bytes.
 - Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. Principle 4 gives the rules.
 - In a selector pair, the first selector must match once. A repeated end selects the first match that begins at or after the first selector's exclusive end, within the first matching phase. If no repeated end follows, choose another end. A unique end before the start is reversed. An overlap is refused unless both inclusive selectors name the same span.
-- Outside this paired-end rule, an ambiguous match is refused. Use a candidate anchor to select one match. If the error offers a `SEARCH#…:all:match` reference, pass it as `at` for Replace, `start` for Delete, or `anchor` for Insert, to edit all non-overlapping matches from the original selection.
+- Outside this paired-end rule, an ambiguous match is refused. Use a candidate anchor to select one match. If the error offers a `SEARCH#…:all:match` reference, pass it as `at` for Replace or Delete, or use it in Insert's `after` or `before` on the desired side of each match.
 
 Matching locates the span. The write algorithm decides which line separators belong to a whole-line edit.
 
-For `replace`, use `at` to select one span, or omit all selectors when `path` is an issued selection of the intended text. For a range, pass exactly one opening and one closing selector:
+For Replace, Delete, Copy and Move, use `at` to select one source span, or omit all source selectors when `path` is an issued selection of the intended text. For a range, pass exactly one opening and one closing selector:
 
 - `from` includes the opening match.
 - `after` starts after the opening match, on the next line if it ends at a line edge.
@@ -32,7 +32,11 @@ For `replace`, use `at` to select one span, or omit all selectors when `path` is
 
 If a block has its own closing line, end the range `through` that line to leave any blank lines after it intact. If it has no closing line and ends where the next block starts, end the range `before` the next block's first line, such as the next heading.
 
-To replace everything between two markers and keep both, pass the first marker as `after` and the second as `before`. An empty span between adjacent exclusive boundaries is an insertion point; between adjacent boundary lines, the new text goes on its own lines.
+To select everything between two markers and keep both, pass the first marker as `after` and the second as `before`. An empty span between adjacent exclusive boundaries is an insertion point; between adjacent boundary lines, the new text goes on its own lines.
+
+For Copy and Move, use the same selectors with a target prefix: `targetAt` replaces one span, and `targetFrom` or `targetAfter` with `targetThrough` or `targetBefore` replaces a range. Use `targetAfter` or `targetBefore` alone to insert next to one match. If an issued `target` already selects the span to replace, omit destination selectors.
+
+For Insert, use exactly one of `after` and `before` to choose the insertion side. If `path` already selects the intended text and both selectors are omitted, Insert uses the end of each selected span.
 
 ## 4. Selectors only locate; one algorithm writes
 

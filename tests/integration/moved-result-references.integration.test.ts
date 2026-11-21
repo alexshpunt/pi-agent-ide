@@ -56,10 +56,10 @@ test("issued references follow a peer's block swap in a 26,240-line file", async
     await writeFile(path.join(cwd, "sink.cpp"), "// destination\n");
     const call = (options: Parameters<typeof toolCall>[0]) =>
       assistantMessage([toolCall(options)], { stopReason: "toolUse" });
-    const moveStart = '{"path":"main.cpp","start":"$issued-search:carrier:1"';
+    const moveStart = '{"path":"main.cpp","at":"$issued-search:carrier:1"';
     // A literal selects only its characters; the line break places the moved line after it. The
     // moved line carries its content, so the file then ends without a line break.
-    const moveEnd = ',"target":"sink.cpp","targetStart":"// destination\\n"}';
+    const moveEnd = ',"target":"sink.cpp","targetAfter":"// destination\\n"}';
     const result = await new PiIntegrationTest({
       testName: "peer-block-swap-with-issued-results",
       artifactsDir: testArtifactsDir(import.meta.filename),

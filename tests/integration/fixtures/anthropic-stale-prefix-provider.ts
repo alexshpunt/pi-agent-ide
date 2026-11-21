@@ -74,7 +74,7 @@ export default async function anthropicStalePrefixProvider(pi: ExtensionAPI): Pr
         ? { path: "note.txt", at: "OLD", text: "NEW" }
         : {
             path: "note.txt",
-            anchor: formatLineHashAnchor(stale ? original : updated, 2),
+            after: formatLineHashAnchor(stale ? original : updated, 2),
             ...(turn === 4 && { text: "BLOCKED" }),
             ...(turn === 6 && { text: "RECOVERED" }),
           };

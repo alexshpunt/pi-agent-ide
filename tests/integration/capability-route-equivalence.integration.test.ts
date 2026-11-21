@@ -29,12 +29,12 @@ test.each(["direct", "codemode"])(
       for (const [file, content] of Object.entries(files))
         await writeFile(path.join(cwd, file), content);
       const argumentsList = [
-        { path: "valid.txt", start: "\nLast\nBlock" },
-        { path: "invalid.txt", start: "First\nLast\nBlock" },
+        { path: "valid.txt", at: "\nLast\nBlock" },
+        { path: "invalid.txt", at: "First\nLast\nBlock" },
         // A literal selects only its characters; whole-line deletions include the line break.
-        { path: "lowercase.txt", start: "abcdefg\n" },
-        { path: "collision.txt", start: "PACKAGE\n" },
-        { path: "constant-like.txt", start: "END\n" },
+        { path: "lowercase.txt", at: "abcdefg\n" },
+        { path: "collision.txt", at: "PACKAGE\n" },
+        { path: "constant-like.txt", at: "END\n" },
       ];
       const calls =
         mode === "direct"
@@ -143,7 +143,7 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             toolCall({
               id: `insert-${String(index)}`,
               name: "insert",
-              arguments: { path: "task.txt", anchor, text: "ADDED\n", before: true },
+              arguments: { path: "task.txt", before: anchor, text: "ADDED\n" },
               chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
             }),
           ),
@@ -170,7 +170,7 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
             ...anchors.map((anchor, index) => ({
               tool: "insert",
-              args: { path: "task.txt", anchor, text: "ADDED\n", before: true },
+              args: { path: "task.txt", before: anchor, text: "ADDED\n" },
               after: [0],
               ...(index > 0 && { sameAssistantWith: 1 }),
             })),
@@ -213,7 +213,7 @@ const start = line(source, "move-me");
 const targetStart = line(target, "top");
 const finalLine = line(last, "Last");
 if (!start || !targetStart || !finalLine) throw Error("Missing issued line");
-text(await tools.move({path:{id:source.id},start:start+"\\n",target:{id:target.id},targetStart:targetStart+"\\n"}));
+text(await tools.move({path:{id:source.id},at:start+"\\n",target:{id:target.id},targetAfter:targetStart+"\\n"}));
 text(await tools.replace({path:{id:last.id},at:finalLine.slice(0,7),text:"Final"}));`,
               },
             }),
@@ -247,9 +247,9 @@ text(await tools.replace({path:{id:last.id},at:finalLine.slice(0,7),text:"Final"
               tool: "move",
               args: {
                 path: "source.txt",
-                start: "move-me\n",
+                at: "move-me\n",
                 target: "target.txt",
-                targetStart: "top\n",
+                targetAfter: "top\n",
               },
               reuse: [
                 { from: 0, field: "path" },
@@ -291,7 +291,7 @@ test("a native Search result supplies Move's implicit source selector", async ()
               chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
               arguments: {
                 code: `const source = await tools.search({path:"source.txt",query:"regex:move-me\\\\n",multiline:true});
-text(await tools.move({path:source,target:"target.txt",targetStart:"top\\n"}));`,
+text(await tools.move({path:source,target:"target.txt",targetAfter:"top\\n"}));`,
               },
             }),
           ],
@@ -319,11 +319,11 @@ text(await tools.move({path:source,target:"target.txt",targetStart:"top\\n"}));`
               tool: "move",
               args: {
                 path: "source.txt",
-                start: /move-me|[A-Z]+#/u,
+                at: /move-me|[A-Z]+#/u,
                 target: "target.txt",
-                targetStart: "top\n",
+                targetAfter: "top\n",
               },
-              reuse: { from: 0, field: ["path", "start"] },
+              reuse: { from: 0, field: ["path", "at"] },
             },
           ],
         },

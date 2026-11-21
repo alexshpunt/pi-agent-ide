@@ -31,13 +31,13 @@ for (const route of ["direct", "codemode"] as const) {
         files[file] = `base${eol}`;
         expected[file] = files[file];
         edits.push(
-          { tool: "insert", args: { path: file, anchor: "base", text: "added" } },
-          { tool: "delete", args: { path: file, start: "added" } },
+          { tool: "insert", args: { path: file, after: "base", text: "added" } },
+          { tool: "delete", args: { path: file, at: "added" } },
           // A literal selects only its characters; the line break comes from the inserted text,
           // written as sent, so it uses the file's own line break.
           {
             tool: "insert",
-            args: { path: file, anchor: "base", before: true, text: `correct${eol}` },
+            args: { path: file, before: "base", text: `correct${eol}` },
           },
         );
         expected[file] = `correct${eol}base${eol}`;
@@ -49,7 +49,8 @@ for (const route of ["direct", "codemode"] as const) {
             tool,
             args: {
               path: name,
-              ...(tool === "replace" ? { at: "尾🙂", text: "" } : { start: "尾🙂" }),
+              at: "尾🙂",
+              ...(tool === "replace" ? { text: "" } : {}),
             },
           });
         }
@@ -67,10 +68,10 @@ for (const route of ["direct", "codemode"] as const) {
             args: {
               path: source,
               // Include the line break in the literal to transfer the whole line.
-              start: `段🙂${ending}`,
+              at: `段🙂${ending}`,
               target,
-              targetStart: "TARGET",
-              targetEnd: "TARGET",
+              targetFrom: "TARGET",
+              targetThrough: "TARGET",
             },
           });
         }
@@ -82,7 +83,7 @@ for (const route of ["direct", "codemode"] as const) {
         // A literal matches only the file's own line breaks: CRLF in a CRLF file.
         edits.push({
           tool: "insert",
-          args: { path: file, anchor: "α\r\nβ", text: "+", before },
+          args: { path: file, [before ? "before" : "after"]: "α\r\nβ", text: "+" },
         });
       }
       await Promise.all(
@@ -143,7 +144,7 @@ for (const route of ["direct", "codemode"] as const) {
               }),
               call("search", "search", { path: "stale.txt", query: "OLD" }),
               call("change", "replace", { path: "stale.txt", at: "OLD", text: "NEW" }),
-              call("stale", "delete", { path: "stale.txt", start: "SEARCH#RUNTIME:1:1:match" }),
+              call("stale", "delete", { path: "stale.txt", at: "SEARCH#RUNTIME:1:1:match" }),
             ]
           : [
               call("ambiguous", "codemode", {

@@ -87,7 +87,7 @@ check(Object.keys(found).sort().join() === "complete,id,matches,mode", "compact 
 check(await tools.replace({path:found,text:"BAD"}) === null,"whole value must fail");
 check(await tools.replace({path:found.id,text:"BAD"}) === null,"whole id must fail");
 check(await tools.read({path:found}) !== null,"whole selection is readable");
-check(await tools.copy({path:found,target:"literal.txt",targetStart:"end"}) === null,"bulk transfer must fail");
+check(await tools.copy({path:found,target:"literal.txt",targetAfter:"end"}) === null,"bulk transfer must fail");
 const scoped = await tools.search({path:found,query:"const"});
 check(scoped.matches.length === 1,"read-only search scope");
 check(await tools.replace({path:found.matches[0],text:"CONST"}) === null,"word hint match must fail");

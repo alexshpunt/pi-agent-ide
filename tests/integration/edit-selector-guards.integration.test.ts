@@ -42,7 +42,7 @@ test.each(Object.entries(paths))(
     await withTempWorkspace(async (cwd) => {
       await fixture(cwd);
       const anchor = "$issued-anchor:selection:2" + (form === "jsonValue" ? "|OLD" : "");
-      const prefix = `{"path":${JSON.stringify(source)},"anchor":${JSON.stringify(anchor)},`;
+      const prefix = `{"path":${JSON.stringify(source)},"after":${JSON.stringify(anchor)},`;
       const payload = '"text":"MUST_NOT_BE_INSERTED"}';
       const run = await new PiIntegrationTest({
         testName: `stale-result-path-${form}`,
@@ -80,7 +80,7 @@ test.each(Object.entries(paths))(
           turn("current", "read", { path: "note.txt", views: ["anchors"] }),
           turn("recovery", "insert", {
             path: "note.txt",
-            anchor: "$issued-anchor:current:2",
+            after: "$issued-anchor:current:2",
             text: "RECOVERED\n",
           }),
           assistantMessage([text("Done")]),
@@ -94,7 +94,7 @@ test.each(Object.entries(paths))(
         guardId: "stale-anchor",
         effect: "not-applied",
         stoppedEarly: true,
-        field: "anchor",
+        field: "after",
       });
       expect(
         run.traceEvents.some((trace) => {
@@ -131,17 +131,17 @@ test("rejects unknown keys in every edit selector without applying file effects"
       ["bad-path", "replace", { path: bad, text: "BAD" }],
       ["bad-at", "replace", { path: "note.txt", at: bad, text: "BAD" }],
       ["bad-through", "replace", { path: "note.txt", from: "keep", through: bad, text: "BAD" }],
-      ["bad-anchor", "insert", { path: "note.txt", anchor: bad, text: "BAD" }],
+      ["bad-anchor", "insert", { path: "note.txt", after: bad, text: "BAD" }],
       ["bad-target", "copy", { path: "note.txt", target: bad }],
-      ["bad-target-start", "copy", { path: "note.txt", target: "target.txt", targetStart: bad }],
+      ["bad-target-start", "copy", { path: "note.txt", target: "target.txt", targetAfter: bad }],
       [
         "bad-target-end",
         "move",
         {
           path: "note.txt",
           target: "target.txt",
-          targetStart: "destination",
-          targetEnd: bad,
+          targetFrom: "destination",
+          targetThrough: bad,
         },
       ],
       ["bad-path-array", "delete", { path: [bad] }],

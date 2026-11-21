@@ -42,8 +42,8 @@ for (const selection of ["numbered", "all"] as const) {
     `search-compaction-${selection}`,
     [`search.compaction-${selection}`],
     selection === "numbered"
-      ? "Search task.txt for OLD with limit 1. After that Search returns the compact group of three identical lines, repeat the same Search on task.txt with limit 3 to obtain all three individual references. Then Insert ADDED before each of those three lines using its own actual issued numbered SEARCH :line reference as path (before: true). Use text ADDED followed by a newline. Keep every other byte. Do not reuse the first reference for the other occurrences."
-      : "Search task.txt for OLD with limit 1. The three identical lines are compacted. Use that completed Search's actual issued :all:line reference as path in one Insert call with text ADDED followed by a newline and before: true. Insert once before each OLD line and keep every other byte. Do not use the compact group's first numbered reference.",
+      ? "Search task.txt for OLD with limit 1. After that Search returns the compact group of three identical lines, repeat the same Search on task.txt with limit 3 to obtain all three individual references. Then Insert ADDED after each of those three lines using its own actual issued numbered SEARCH :line reference as path; omit after and before. Use text ADDED followed by a newline. Keep every other byte. Do not reuse the first reference for the other occurrences."
+      : "Search task.txt for OLD with limit 1. The three identical lines are compacted. Use that completed Search's actual issued :all:line reference as path in one Insert call with text ADDED followed by a newline and no selector. Insert once after each OLD line and keep every other byte. Do not use the compact group's first numbered reference.",
     [
       { tool: "search", args: { path: "task.txt", query: "OLD", limit: 1 } },
       ...(selection === "numbered"
@@ -53,7 +53,6 @@ for (const selection of ["numbered", "all"] as const) {
               tool: "insert",
               args: {
                 path: new RegExp(`^SEARCH#[A-F0-9]+:${index}:line$`, "u"),
-                before: true,
                 text: "ADDED\n",
               },
               reuse: reuse(1),
@@ -62,7 +61,7 @@ for (const selection of ["numbered", "all"] as const) {
         : [
             {
               tool: "insert",
-              args: { path: /^SEARCH#[A-F0-9]+:all:line$/u, before: true, text: "ADDED\n" },
+              args: { path: /^SEARCH#[A-F0-9]+:all:line$/u, text: "ADDED\n" },
               reuse: reuse(0),
             },
           ]),
@@ -70,34 +69,42 @@ for (const selection of ["numbered", "all"] as const) {
     {
       modes: ["direct"],
       files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nOLD\n" },
-      expected: { "task.txt": "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n" },
+      expected: { "task.txt": "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n" },
     },
   );
 }
 add(
   "missing-edit-selector-recovery",
   ["edit.missing-selector-recovery"],
-  'Exercise two independent recovery chains; neither chain needs to wait for the other. In the Insert chain, call insert on task.txt with text "added" and no anchor; it must fail without editing. After that refusal returns, Read task.txt. Wait for that Read result before retrying insert with anchor "OLD" and the same text. In the Copy chain, call copy from source.txt to target.txt, passing the literal string "OLD" as start and omitting targetStart; it must fail without editing either file. After that refusal returns, Read target.txt. Wait for that Read result before retrying copy with targetStart "DEST". Keep all existing lines. Do not use whole-file operations or write. In Codemode, keep going after each refused call using the returned null and the failure summary.',
+  'Exercise two independent recovery chains; neither chain needs to wait for the other. In the Insert chain, call insert on task.txt with text "added" and neither after nor before; it must fail without editing. After that refusal returns, Read task.txt. Wait for that Read result before retrying insert with after "OLD" and the same text. In the Copy chain, call copy from source.txt to target.txt, passing the literal string "OLD" as at and omitting targetAfter; it must fail without editing either file. After that refusal returns, Read target.txt. Wait for that Read result before retrying copy with targetAfter "DEST". Keep all existing lines. Do not use whole-file operations or write. In Codemode, keep going after each refused call using the returned null and the failure summary.',
   [
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: undefined, text: /[\s\S]+/u },
+      args: { path: "task.txt", after: undefined, before: undefined, text: /[\s\S]+/u },
       error: true,
       contains: "INVALID_REQUEST",
     },
     { tool: "read", args: { path: "task.txt" }, after: [0] },
-    { tool: "insert", args: { path: "task.txt", anchor: "OLD", text: "added" }, after: [1] },
+    { tool: "insert", args: { path: "task.txt", after: "OLD", text: "added" }, after: [1] },
     {
       tool: "copy",
-      args: { path: "source.txt", target: "target.txt", targetStart: undefined },
-      exactText: ["start"],
+      args: {
+        path: "source.txt",
+        target: "target.txt",
+        targetAt: undefined,
+        targetFrom: undefined,
+        targetAfter: undefined,
+        targetThrough: undefined,
+        targetBefore: undefined,
+      },
+      exactText: ["at"],
       error: true,
       contains: "INVALID_REQUEST",
     },
     { tool: "read", args: { path: "target.txt" }, after: [3] },
     {
       tool: "copy",
-      args: { path: "source.txt", start: "OLD", target: "target.txt", targetStart: "DEST" },
+      args: { path: "source.txt", at: "OLD", target: "target.txt", targetAfter: "DEST" },
       after: [4],
     },
   ],
@@ -111,12 +118,12 @@ add(
 add(
   "codemode-search-value-batch",
   ["compose.codemode-search-value-batch"],
-  "In native Codemode, Search task.txt for beta and retain the returned value. Then in one script run the three independent edits concurrently with Promise.all, without any other tool between them: Insert a new line before alpha in task.txt with text added followed by a newline; Replace beta by passing the first Search match value as path, with BETA; Delete the whole gamma line, including its line break, in task.txt by passing a literal string as start. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
+  "In native Codemode, Search task.txt for beta and retain the returned value. Then in one script run the three independent edits concurrently with Promise.all, without any other tool between them: Insert a new line before alpha in task.txt with text added followed by a newline; Replace beta by passing the first Search match value as path, with BETA; Delete the whole gamma line, including its line break, in task.txt by passing a literal string as at. Keep omega. Reuse the native Search match value or its id without extracting textual SEARCH anchors. All three edits must belong to one committed editor batch.",
   [
     { tool: "search", args: { path: "task.txt", query: "beta" } },
     {
       tool: "insert",
-      args: { path: "task.txt", before: true, text: "added\n" },
+      args: { path: "task.txt", before: /[\s\S]+/u, after: undefined },
       editorBatchSize: 3,
     },
     {
@@ -128,7 +135,7 @@ add(
     {
       tool: "delete",
       args: { path: "task.txt" },
-      exactText: ["start"],
+      exactText: ["at"],
       sameAssistantWith: 2,
       editorBatchSize: 3,
     },
@@ -142,13 +149,13 @@ add(
 add(
   "codemode-search-anchor-batch",
   ["compose.codemode-search-anchor-batch"],
-  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in one script run these three independent edits concurrently with Promise.all, without Read/Search or another tool between them: Insert a new line before alpha in task.txt with text added followed by a newline; Replace the beta line using its issued SEARCH reference as at, omitting path, with BETA followed by a newline; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
+  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in one script run these three independent edits concurrently with Promise.all, without Read/Search or another tool between them: Insert a new line before alpha in task.txt with text added followed by a newline; Replace the beta line using its issued SEARCH reference as at, omitting path, with BETA followed by a newline; Delete gamma using its issued SEARCH reference as at, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
   [
     { tool: "search", args: { path: "task.txt", query: "regex:beta|gamma" } },
     { tool: "read", args: { path: ".pi/issued-search.txt" } },
     {
       tool: "insert",
-      args: { path: "task.txt", before: true, text: "added\n" },
+      args: { path: "task.txt", before: /[\s\S]+/u, after: undefined },
       editorBatchSize: 3,
     },
     {
@@ -160,8 +167,8 @@ add(
     },
     {
       tool: "delete",
-      args: { path: undefined, start: /^SEARCH#[A-F0-9]+:2:line$/u },
-      reuse: reuse(0, "start"),
+      args: { path: undefined, at: /^SEARCH#[A-F0-9]+:2:line$/u },
+      reuse: reuse(0, "at"),
       sameAssistantWith: 3,
       editorBatchSize: 3,
     },
@@ -1230,14 +1237,14 @@ for (const operation of ["delete", "insert"] as const) {
       ...(operation === "insert" ? ["compose.batch-insert-search"] : []),
     ],
     (api) =>
-      `Search task.txt for OLD. Use the three issued numbered SEARCH :line references as path for the three ${operation} calls. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED followed by a newline before each selected line."} ${parallelCalls(api, 3)} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
+      `Search task.txt for OLD. Use the three issued numbered SEARCH :line references as path for the three ${operation} calls. ${operation === "delete" ? "Remove only those selected lines and keep the file." : "Insert ADDED followed by a newline after each selected line."} ${parallelCalls(api, 3)} Do not use Codemode, sequential retries or rereads; keep all other bytes.${operation === "insert" ? " After the batch completes, Search each Insert result or UUID for ADDED (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
     [
       { tool: "search", args: { path: "task.txt", query: "OLD" } },
       ...[1, 2, 3].map((index): RouteStep => ({
         tool: operation,
         args: {
           path: new RegExp(`^SEARCH#[A-F0-9]+:${index}:line$`, "u"),
-          ...(operation === "insert" && { before: true, text: "ADDED\n" }),
+          ...(operation === "insert" && { text: "ADDED\n" }),
         },
         reuse: reuse(0),
         ...(index > 1 && { sameAssistantWith: 1 }),
@@ -1266,7 +1273,7 @@ for (const operation of ["delete", "insert"] as const) {
         "task.txt":
           operation === "delete"
             ? "keep1\nkeep2\nkeep3\n"
-            : "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+            : "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
       },
     },
   );
@@ -1279,7 +1286,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
       ...(operation === "replace" ? ["compose.batch-replace-search"] : []),
     ],
     (api) =>
-      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset 2, 4 and 6 respectively, each with limit 1) before editing. Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED followed by a newline before each selected line."} ${parallelCalls(api, 3)} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
+      `Read complete lines 2, 4 and 6 of task.txt as three separate one-line windows (offset 2, 4 and 6 respectively, each with limit 1) before editing. Forward each corresponding Read result or UUID to its ${operation} call without another anchor. ${operation === "replace" ? "Replace each selected line with NEW followed by a newline." : operation === "delete" ? "Delete only these lines, keeping the file." : "Insert ADDED followed by a newline after each selected line."} ${parallelCalls(api, 3)} Do not use Codemode, sequential messages, rereads or retries. Keep every other byte.${operation === "replace" ? " After the batch completes, Search each Replace result or UUID for NEW (one match) and OLD OR keep (zero matches). Use the exact unquoted Boolean query OLD OR keep; do not quote it as one literal or translate it to regex. Keep those scopes separate." : ""}`,
     [
       ...[2, 4, 6].map((line): RouteStep => ({
         tool: "read",
@@ -1289,7 +1296,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
         tool: operation,
         reuse: reuse(index),
         ...(index > 0 && { sameAssistantWith: 3 }),
-        ...(operation === "insert" && { args: { before: true, text: "ADDED\n" } }),
+        ...(operation === "insert" && { args: { text: "ADDED\n" } }),
       })),
       ...(operation === "replace"
         ? [3, 4, 5].flatMap((index): RouteStep[] => [
@@ -1317,7 +1324,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
             ? "keep1\nNEW\nkeep2\nNEW\nkeep3\nNEW\n"
             : operation === "delete"
               ? "keep1\nkeep2\nkeep3\n"
-              : "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+              : "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
       },
     },
   );
@@ -1325,7 +1332,7 @@ for (const operation of ["replace", "delete", "insert"] as const) {
 add(
   "insert-search-anchor-list",
   ["edit.insert-search-anchor-list"],
-  "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Insert call whose path is an array of two actual issued references: the first :line reference of the OLD search and the first :line reference of the TAIL search. Insert ADDED followed by a newline before each selected line (before: true). Do not retype the file path and do not retry. Keep every other byte.",
+  "Search task.txt for OLD, then separately search task.txt for TAIL. Make ONE Insert call whose path is an array of two actual issued references: the first :line reference of the OLD search and the first :line reference of the TAIL search. Insert ADDED followed by a newline after each selected line without a selector. Do not retype the file path and do not retry. Keep every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     { tool: "search", args: { path: "task.txt", query: "TAIL" } },
@@ -1333,7 +1340,6 @@ add(
       tool: "insert",
       args: {
         path: [/^SEARCH#[A-F0-9]+:1:line$/u, /^SEARCH#[A-F0-9]+:1:line$/u],
-        before: true,
         text: "ADDED\n",
       },
       reuse: [reuse(0), reuse(1)],
@@ -1343,16 +1349,16 @@ add(
     // Line references exist only in readable results; a Codemode Search value has no line ids.
     modes: ["direct"],
     files: { "task.txt": "keep1\nOLD\nkeep2\nOLD\nkeep3\nTAIL\n" },
-    expected: { "task.txt": "keep1\nADDED\nOLD\nkeep2\nOLD\nkeep3\nADDED\nTAIL\n" },
+    expected: { "task.txt": "keep1\nOLD\nADDED\nkeep2\nOLD\nkeep3\nTAIL\nADDED\n" },
   },
 );
 for (const operation of ["insert", "replace", "delete"] as const) {
-  const selector = operation === "insert" ? "anchor" : operation === "replace" ? "at" : "start";
+  const selector = operation === "insert" ? "before" : "at";
   const lineReference = /^SEARCH#[A-F0-9]+:1:line$/u;
   add(
     `${operation}-list-selectors-refused`,
     [`edit.${operation}-list-selectors-refused`],
-    `Search task.txt for OLD, then separately search task.txt for TAIL. Call ${operation} with path as an array of the first issued :line reference from each search, AND ${selector} as the first search's same :line reference.${operation === "delete" ? "" : " Use text NEW."}${operation === "insert" ? " Set before: true on this first call." : ""} This ambiguous combination must fail without changing either target. After that failure, retry once with the same path array but omit ${selector}; ${operation === "insert" ? "insert NEW before both selected lines with text NEW followed by a newline and before: true" : operation === "replace" ? "replace each of both selected lines with NEW followed by a newline" : "delete both selected lines, keeping the file"}. Do not retype the file path, reread or search again. Keep every other byte.`,
+    `Search task.txt for OLD, then separately search task.txt for TAIL. Call ${operation} with path as an array of the first issued :line reference from each search, AND ${selector} as the first search's same :line reference.${operation === "delete" ? "" : " Use text NEW."} This ambiguous combination must fail without changing either target. After that failure, retry once with the same path array but omit ${selector}; ${operation === "insert" ? "insert NEW after both selected lines with text NEW followed by a newline" : operation === "replace" ? "replace each of both selected lines with NEW followed by a newline" : "delete both selected lines, keeping the file"}. Do not retype the file path, reread or search again. Keep every other byte.`,
     [
       { tool: "search", args: { path: "task.txt", query: "OLD" } },
       { tool: "search", args: { path: "task.txt", query: "TAIL" } },
@@ -1369,7 +1375,7 @@ for (const operation of ["insert", "replace", "delete"] as const) {
         tool: operation,
         args: {
           path: [lineReference, lineReference],
-          ...(operation === "insert" ? { before: true, text: "NEW\n" } : {}),
+          ...(operation === "insert" ? { text: "NEW\n" } : {}),
         },
         after: [2],
         reuse: [reuse(0), reuse(1)],
@@ -1382,7 +1388,7 @@ for (const operation of ["insert", "replace", "delete"] as const) {
       expected: {
         "task.txt":
           operation === "insert"
-            ? "keep1\nNEW\nOLD\nkeep2\nNEW\nTAIL\nkeep3\n"
+            ? "keep1\nOLD\nNEW\nkeep2\nTAIL\nNEW\nkeep3\n"
             : operation === "replace"
               ? "keep1\nNEW\nkeep2\nNEW\nkeep3\n"
               : "keep1\nkeep2\nkeep3\n",
@@ -1419,7 +1425,7 @@ add(
   ["edit.replace-search-anchor-list"],
   [
     "Search task.txt for OLD and separately for TAIL. Wait for both results.",
-    'Move the block from the exact line "BLOCK_START\\n" through "BLOCK_END\\n" (inclusive) in task.txt to immediately after the exact line "DESTINATION\\n" in the same file. Pass path, start, end, target and targetStart to Move.',
+    'Move the block from the exact line "BLOCK_START\\n" through "BLOCK_END\\n" (inclusive) in task.txt to immediately after the exact line "DESTINATION\\n" in the same file. Pass path, from, through, target and targetAfter to Move.',
     `After Move, call Replace with path "task.txt", at set to the literal four-line string ${JSON.stringify(callLines)}, and text set to ${JSON.stringify(renamedCallLines)}.`,
     "After that edit, make one Replace call with text NEW and path set to an array of six references: OLD matches 1, 2, 3, 6 and 7, then TAIL match 1, from the original searches. Use their numbered :match references in direct calls and their match values or ids in Codemode. Do not search again, pass selectors to this final Replace, or change the other OLD matches.",
   ].join(" "),
@@ -1429,7 +1435,7 @@ add(
     {
       tool: "move",
       args: { path: "task.txt", target: "task.txt" },
-      exactText: ["start", "end", "targetStart"],
+      exactText: ["from", "through", "targetAfter"],
       after: [0, 1],
     },
     {
@@ -1548,28 +1554,28 @@ for (const operation of ["delete", "insert"] as const) {
       ...(operation === "insert" ? ["edit.whole-line-spans"] : []),
       `compose.read-window-${operation}`,
     ],
-    `Read only the second line of task.txt (offset 2, limit 1). Forward that Read result or its UUID to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert BEFORE followed by a newline before the selected line, with before: true. In inline.txt, also Read only its second line and use that result in a separate Insert call with the same before flag but text PREFIX: and no newline. Keep every original byte."}`,
+    `Read only the second line of task.txt (offset 2, limit 1). Forward that Read result or its UUID to ${operation}. Do not add a separate anchor or retype the file path. ${operation === "delete" ? "Remove only that line; keep the file." : "Insert ADDED followed by a newline after the selected line. In inline.txt, also Read only its second line and use that result in a separate Insert call with text :SUFFIX and no newline. Keep every original byte."}`,
     [
       { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
       {
         tool: operation,
         ...(operation === "insert" && {
-          args: { before: true, text: "BEFORE\n" },
+          args: { before: undefined },
         }),
         reuse: reuse(0),
       },
       ...(operation === "insert"
         ? ([
             { tool: "read", args: { path: "inline.txt", offset: 2, limit: 1 } },
-            { tool: "insert", args: { before: true, text: "PREFIX:" }, reuse: reuse(2) },
+            { tool: "insert", args: { text: ":SUFFIX" }, reuse: reuse(2) },
           ] satisfies RouteStep[])
         : []),
     ],
     {
       files: operation === "insert" ? { ...textFile, "inline.txt": "keep\nOLD\nlast\n" } : textFile,
       expected: {
-        "task.txt": operation === "delete" ? "keep\nlast\n" : "keep\nBEFORE\nOLD\nlast\n",
-        ...(operation === "insert" ? { "inline.txt": "keep\nPREFIX:OLD\nlast\n" } : {}),
+        "task.txt": operation === "delete" ? "keep\nlast\n" : "keep\nOLD\nADDED\nlast\n",
+        ...(operation === "insert" ? { "inline.txt": "keep\nOLD:SUFFIX\nlast\n" } : {}),
       },
     },
   );
@@ -1738,13 +1744,13 @@ add(
 add(
   "search-anchor-insert",
   ["edit.whole-line-spans", "search.text", "compose.search-insert", "edit.insert"],
-  "Search for OLD using task.txt as path. Insert NEW on the following line. In direct mode use the issued :line anchor as insert.path, or use task.txt as path plus that anchor. In Codemode pass the first Search match value unchanged, or its id, as insert.path. Use text NEW with one leading and one trailing newline in both modes. Do not combine a result input with an anchor argument. Do not supply an extra blank line.",
+  "Search for OLD using task.txt as path. Insert NEW on the following line. In direct mode use the issued :line anchor as insert.path, or use task.txt as path plus that anchor as after. In Codemode pass the first Search match value unchanged, or its id, as insert.path. Use text NEW with one leading and one trailing newline in both modes. Do not combine a result input with an anchor argument. Do not supply an extra blank line.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
       tool: "insert",
       modes: ["direct"],
-      reuse: reuse(0, ["anchor", "path"], "anchor"),
+      reuse: reuse(0, ["after", "path"], "anchor"),
     },
     { tool: "insert", modes: ["codemode"], reuse: reuse(0) },
   ],
@@ -2053,7 +2059,7 @@ add(
 add(
   "exact-range-delete",
   ["edit.delete-exact-range", "compose.search-range-endpoints"],
-  "Search sentence.txt separately for DELETE_BEGIN and DELETE_END. Use the exact :match reference from each Search (in Codemode, the id of its match) as Delete start and end, respectively. Delete the inclusive span between those endpoints, retaining left, right, both surrounding spaces and the line ending. Do not use :line references, a whole-file deletion, or one combined Search result as the source.",
+  "Search sentence.txt separately for DELETE_BEGIN and DELETE_END. Use the exact :match reference from each Search (in Codemode, the id of its match) as Delete from and through, respectively. Delete the inclusive span between those endpoints, retaining left, right, both surrounding spaces and the line ending. Do not use :line references, a whole-file deletion, or one combined Search result as the source.",
   [
     { tool: "search", args: { path: "sentence.txt", query: "DELETE_BEGIN" } },
     { tool: "search", args: { path: "sentence.txt", query: "DELETE_END" } },
@@ -2061,10 +2067,10 @@ add(
       tool: "delete",
       args: {
         path: "sentence.txt",
-        start: matchReference(1),
-        end: matchReference(1),
+        from: matchReference(1),
+        through: matchReference(1),
       },
-      reuse: [reuse(0, "start", "anchor"), reuse(1, "end", "anchor")],
+      reuse: [reuse(0, "from", "anchor"), reuse(1, "through", "anchor")],
     },
   ],
   {
@@ -2082,7 +2088,7 @@ add(
     "edit.copy-source-range",
     "compose.search-range-endpoints",
   ],
-  "First Search target.txt separately for TARGET_BEGIN and TARGET_END. Use the two actual :match references as objects {id: reference} in Copy targetStart and targetEnd (in Codemode, pass the corresponding match values). Perform four transfers: (1) Copy the inline span in source.txt over that inclusive destination span in target.txt. Pass the literal strings COPY_BEGIN as start and COPY_END as end; do not use Search references or line anchors for these two source fields. (2) Copy the whole line 段🙂 from whole.txt, including its CRLF line break, over the exact SLOT fragment in inline.txt: pass the literal string 段🙂 followed by CRLF as the single start with no end, and the literal string SLOT as both targetStart and targetEnd. Issue transfers (1) and (2) together, direct in the same assistant message or in Codemode with Promise.all. (3) Copy that same whole.txt line, including its CRLF, so it becomes its own line after the ANCHOR line in inserted.txt: pass the same literal string 段🙂 followed by CRLF as start with no end, and pass the literal string ANCHOR as targetStart with no targetEnd. (4) Copy the same source line over the whole SLOT line in replaced.txt. Pass SLOT followed by LF as both literal target endpoints. Write only 段🙂 at the inline slot; use LF for the new lines in inserted.txt and replaced.txt. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
+  "First Search target.txt separately for TARGET_BEGIN and TARGET_END. Use the two actual :match references as objects {id: reference} in Copy targetFrom and targetThrough (in Codemode, pass the corresponding match values). Perform four transfers: (1) Copy the inline span in source.txt over that inclusive destination span in target.txt. Pass the literal strings COPY_BEGIN as from and COPY_END as through; do not use Search references or line anchors for these two source fields. (2) Copy the whole line 段🙂 from whole.txt, including its CRLF line break, over the exact SLOT fragment in inline.txt: pass the literal string 段🙂 followed by CRLF as at, and the literal string SLOT as targetAt. Issue transfers (1) and (2) together, direct in the same assistant message or in Codemode with Promise.all. (3) Copy that same whole.txt line, including its CRLF, so it becomes its own line after the ANCHOR line in inserted.txt: pass the same literal string 段🙂 followed by CRLF as at, and pass the literal string ANCHOR followed by LF as targetAfter. (4) Copy the same source line over the whole SLOT line in replaced.txt. Pass SLOT followed by LF as targetAt. Write only 段🙂 at the inline slot; use LF for the new lines in inserted.txt and replaced.txt. Leave both source files unchanged and preserve every byte outside the selected destination spans.",
   [
     { tool: "search", args: { path: "target.txt", query: "TARGET_BEGIN" } },
     { tool: "search", args: { path: "target.txt", query: "TARGET_END" } },
@@ -2091,46 +2097,41 @@ add(
       args: {
         path: "source.txt",
         target: "target.txt",
-        targetStart: { id: matchReference(1) },
-        targetEnd: { id: matchReference(1) },
+        targetFrom: { id: matchReference(1) },
+        targetThrough: { id: matchReference(1) },
       },
-      exactText: ["start", "end"],
-      reuse: [reuse(0, "targetStart", "anchor"), reuse(1, "targetEnd", "anchor")],
+      exactText: ["from", "through"],
+      reuse: [reuse(0, "targetFrom", "anchor"), reuse(1, "targetThrough", "anchor")],
     },
     {
       tool: "copy",
       sameAssistantWith: 2,
       args: {
         path: "whole.txt",
-        start: "段🙂\r\n",
-        end: undefined,
+        at: "段🙂\r\n",
         target: "inline.txt",
       },
-      exactText: ["start", "targetStart", "targetEnd"],
+      exactText: ["at", "targetAt"],
     },
     {
       tool: "copy",
       args: {
         path: "whole.txt",
-        start: "段🙂\r\n",
-        end: undefined,
+        at: "段🙂\r\n",
         target: "inserted.txt",
-        targetStart: "ANCHOR",
-        targetEnd: undefined,
+        targetAfter: "ANCHOR\n",
       },
-      exactText: ["start", "targetStart"],
+      exactText: ["at"],
     },
     {
       tool: "copy",
       args: {
         path: "whole.txt",
-        start: "段🙂\r\n",
-        end: undefined,
+        at: "段🙂\r\n",
         target: "replaced.txt",
-        targetStart: "SLOT\n",
-        targetEnd: "SLOT\n",
+        targetAt: "SLOT\n",
       },
-      exactText: ["start", "targetStart", "targetEnd"],
+      exactText: ["at", "targetAt"],
     },
   ],
   {
@@ -2161,7 +2162,7 @@ add(
     "edit.move-source-range",
     "compose.search-range-endpoints",
   ],
-  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move start/end. Search target.txt separately for TARGET_BEGIN and TARGET_END. Prepare two independent Move calls. (1) Move the inline inclusive span from source.txt into target.txt using the destination :match references as objects {id: reference} in targetStart/targetEnd (in Codemode, pass the match values). (2) Move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt, passing the literal string 段🙂 followed by CRLF and 尾界 as start, no end, and the literal string SLOT as both targetStart and targetEnd. Issue both Move calls together, direct in the same assistant message or in Codemode with Promise.all. Preserve the sentence text, surrounding spaces and CRLF endings in source.txt and target.txt. Preserve the moved block\u0027s internal CRLF in the LF destination. Leave only KEEP with no final line break in eof.txt. Do not use a whole-file move.",
+  "Search source.txt separately for MOVE_BEGIN and MOVE_END, then use their actual :match references (in Codemode, the ids of their matches) as Move from/through. Search target.txt separately for TARGET_BEGIN and TARGET_END. Prepare two independent Move calls. (1) Move the inline inclusive span from source.txt into target.txt using the destination :match references as objects {id: reference} in targetFrom/targetThrough (in Codemode, pass the match values). (2) Move the final block 段🙂 followed by 尾界 from eof.txt over the exact SLOT fragment in inline.txt, passing the literal string 段🙂 followed by CRLF and 尾界 as at, and the literal string SLOT as targetAt. Issue both Move calls together, direct in the same assistant message or in Codemode with Promise.all. Preserve the sentence text, surrounding spaces and CRLF endings in source.txt and target.txt. Preserve the moved block\u0027s internal CRLF in the LF destination. Leave only KEEP with no final line break in eof.txt. Do not use a whole-file move.",
   [
     { tool: "search", args: { path: "source.txt", query: "MOVE_BEGIN" } },
     { tool: "search", args: { path: "source.txt", query: "MOVE_END" } },
@@ -2171,17 +2172,17 @@ add(
       tool: "move",
       args: {
         path: "source.txt",
-        start: matchReference(1),
-        end: matchReference(1),
+        from: matchReference(1),
+        through: matchReference(1),
         target: "target.txt",
-        targetStart: { id: matchReference(1) },
-        targetEnd: { id: matchReference(1) },
+        targetFrom: { id: matchReference(1) },
+        targetThrough: { id: matchReference(1) },
       },
       reuse: [
-        reuse(0, "start", "anchor"),
-        reuse(1, "end", "anchor"),
-        reuse(2, "targetStart", "anchor"),
-        reuse(3, "targetEnd", "anchor"),
+        reuse(0, "from", "anchor"),
+        reuse(1, "through", "anchor"),
+        reuse(2, "targetFrom", "anchor"),
+        reuse(3, "targetThrough", "anchor"),
       ],
     },
     {
@@ -2189,7 +2190,6 @@ add(
       sameAssistantWith: 4,
       args: {
         path: "eof.txt",
-        end: undefined,
         target: "inline.txt",
       },
     },
@@ -2206,6 +2206,50 @@ add(
       "target.txt": "target prefix MOVE_BEGIN body MOVE_END target suffix\r\n",
       "eof.txt": "KEEP",
       "inline.txt": "left 段🙂\r\n尾界 right\n",
+    },
+  },
+);
+
+add(
+  "exclusive-delete-transfer",
+  ["edit.delete-exclusive-range", "edit.transfer-exclusive-range", "edit.transfer-insert-before"],
+  "Delete the old line in delete.txt between the BEGIN and END marker lines, leaving both markers. Use after BEGIN and before END. Then copy the line fresh from source.txt using at fresh, replacing the range in target.txt between HEAD and TAIL: pass targetAfter HEAD and targetBefore TAIL to replace the old line while keeping both markers. Finally move the lines between BEGIN and END in move.txt, keeping the markers: pass after BEGIN and before END. Insert the moved line before TAIL in target.txt with targetBefore alone. Leave source.txt unchanged.",
+  [
+    { tool: "delete", args: { path: "delete.txt", after: "BEGIN", before: "END" } },
+    {
+      tool: "copy",
+      args: {
+        path: "source.txt",
+        at: "fresh",
+        target: "target.txt",
+        targetAfter: "HEAD",
+        targetBefore: "TAIL",
+      },
+    },
+    {
+      tool: "move",
+      args: {
+        path: "move.txt",
+        after: "BEGIN",
+        before: "END",
+        target: "target.txt",
+        targetAfter: undefined,
+        targetBefore: "TAIL",
+      },
+      after: [1],
+    },
+  ],
+  {
+    files: {
+      "delete.txt": "BEGIN\nold\nEND\n",
+      "source.txt": "fresh\n",
+      "target.txt": "HEAD\nold\nTAIL\n",
+      "move.txt": "BEGIN\nmoved\nEND\n",
+    },
+    expected: {
+      "delete.txt": "BEGIN\nEND\n",
+      "target.txt": "HEAD\nfresh\nmoved\nTAIL\n",
+      "move.txt": "BEGIN\nEND\n",
     },
   },
 );
@@ -2378,54 +2422,52 @@ add(
 add(
   "insert-before",
   ["edit.insert-before", "edit.insert-spacing", "edit.insert-exact-boundaries"],
-  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, passing the literal string α🙂 as anchor for both calls. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Pass the literal string α followed by CRLF followed by β as anchor for both calls, before true for [ and before false for ]. Pass actual newline characters in multiline anchors; do not paste printed line-anchor prefixes. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as the Insert anchor to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
+  "Use Insert before the exact OLD line in task.txt to add a separate paragraph NOTE with blank-line separation. Then insert [ immediately before and ] immediately after the exact α🙂 fragment in literal.txt, passing the literal string α🙂 as before for [ and as after for ]. Do the same around the multiline α followed by β fragment in block.txt, preserving its CRLF and the surrounding words. Pass the literal string α followed by CRLF followed by β as before for [ and as after for ]. Pass actual newline characters in multiline anchors; do not paste printed line-anchor prefixes. Finally Search search.txt for MATCH and use its actual :match reference (in Codemode, the id of its match) as before to add [ immediately before that fragment. Search again after this change and use the fresh :match reference or match id as after to insert ] immediately after MATCH. Use ordinary line separation for the exact-fragment edits; add no new line breaks in those edits. Preserve all other bytes.",
   [
     {
       tool: "insert",
       args: {
-        before: true,
+        before: "OLD",
         separation: "blank-line",
       },
     },
     {
       tool: "insert",
-      args: { path: "literal.txt", before: true },
-      exactText: ["anchor"],
+      args: { path: "literal.txt" },
+      exactText: ["before"],
     },
     {
       tool: "insert",
-      args: { path: "literal.txt", before: false },
-      exactText: ["anchor"],
+      args: { path: "literal.txt" },
+      exactText: ["after"],
     },
     {
       tool: "insert",
-      args: { path: "block.txt", before: true },
-      exactText: ["anchor"],
+      args: { path: "block.txt" },
+      exactText: ["before"],
     },
     {
       tool: "insert",
-      args: { path: "block.txt", before: false },
-      exactText: ["anchor"],
-    },
-    { tool: "search", args: { path: "search.txt", query: "MATCH" } },
-    {
-      tool: "insert",
-      args: {
-        path: "search.txt",
-        anchor: matchReference(1),
-        before: true,
-      },
-      reuse: reuse(5, "anchor", "anchor"),
+      args: { path: "block.txt" },
+      exactText: ["after"],
     },
     { tool: "search", args: { path: "search.txt", query: "MATCH" } },
     {
       tool: "insert",
       args: {
         path: "search.txt",
-        anchor: matchReference(1),
-        before: false,
+        before: matchReference(1),
       },
-      reuse: reuse(7, "anchor", "anchor"),
+      reuse: reuse(5, "before", "anchor"),
+    },
+    { tool: "search", args: { path: "search.txt", query: "MATCH" } },
+    {
+      tool: "insert",
+      args: {
+        path: "search.txt",
+        after: matchReference(1),
+      },
+      reuse: reuse(7, "after", "anchor"),
     },
   ],
   {
@@ -2473,7 +2515,17 @@ add(
   "Use lsp_search with declaration task.ts#doomed, then pass its unchanged result or UUID (in Codemode, its value or its one match) to delete without start/end. Keep the source file, imports, the label string, and every reference unchanged. Do not reconstruct a path for Delete.",
   [
     { tool: "lsp_search", args: { declaration: "task.ts#doomed" }, contains: "function doomed" },
-    { tool: "delete", args: { start: undefined, end: undefined }, reuse: reuse(0) },
+    {
+      tool: "delete",
+      args: {
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+      },
+      reuse: reuse(0),
+    },
   ],
   {
     files: declarationFiles,
@@ -2511,10 +2563,17 @@ add(
   (api) =>
     `${parallelCalls(api, 4)} Include one Insert and three whole-file Deletes. Use Insert with path note.txt, anchor keep and text ${JSON.stringify("ADDED\n")} (a trailing newline). Delete a.txt, b.txt and c.txt by ordinary paths without start/end. Keep note.txt and its other bytes; do not turn the file deletions into text selections.`,
   [
-    { tool: "insert", args: { path: "note.txt", anchor: "keep", text: "ADDED\n" } },
+    { tool: "insert", args: { path: "note.txt", after: "keep", text: "ADDED\n" } },
     ...["a.txt", "b.txt", "c.txt"].map((source): RouteStep => ({
       tool: "delete",
-      args: { path: source, start: undefined, end: undefined },
+      args: {
+        path: source,
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+      },
       sameAssistantWith: 0,
     })),
   ],
@@ -2540,10 +2599,16 @@ add(
       args: {
         path: "task.txt",
         target: "task.txt",
-        start: undefined,
-        end: undefined,
-        targetStart: undefined,
-        targetEnd: undefined,
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+        targetAt: undefined,
+        targetFrom: undefined,
+        targetAfter: undefined,
+        targetThrough: undefined,
+        targetBefore: undefined,
       },
       error: true,
       contains: "move: not-applied",
@@ -2553,10 +2618,16 @@ add(
       args: {
         path: "task.txt",
         target: "copied.txt",
-        start: undefined,
-        end: undefined,
-        targetStart: undefined,
-        targetEnd: undefined,
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+        targetAt: undefined,
+        targetFrom: undefined,
+        targetAfter: undefined,
+        targetThrough: undefined,
+        targetBefore: undefined,
       },
     },
     {
@@ -2564,14 +2635,30 @@ add(
       args: {
         path: "copied.txt",
         target: "moved.txt",
-        start: undefined,
-        end: undefined,
-        targetStart: undefined,
-        targetEnd: undefined,
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+        targetAt: undefined,
+        targetFrom: undefined,
+        targetAfter: undefined,
+        targetThrough: undefined,
+        targetBefore: undefined,
       },
       contains: "move: applied",
     },
-    { tool: "delete", args: { path: "moved.txt", start: undefined, end: undefined } },
+    {
+      tool: "delete",
+      args: {
+        path: "moved.txt",
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+      },
+    },
   ],
   { expected: { "task.txt": textFile["task.txt"], "copied.txt": null, "moved.txt": null } },
 );
@@ -2684,11 +2771,11 @@ add(
 add(
   "copy-destination-recovery",
   ["edit.copy-destination-recovery"],
-  "Exercise Copy destination recovery in task.txt. First Copy with path task.txt, start alpha, end beta and targetStart equal to the ambiguous text });, and wait for its rejection result before reading the current file with anchors. Copy that same alpha-through-beta block after INSERT_HERE, using its issued destination anchor as targetStart. Keep the source selection unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
+  "Exercise Copy destination recovery in task.txt. First Copy with path task.txt, from alpha, through beta and targetAfter equal to the ambiguous text });, and wait for its rejection result before reading the current file with anchors. Copy that same alpha-through-beta block after INSERT_HERE, using its issued destination anchor as targetAfter. Keep the source selection unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
   [
     {
       tool: "copy",
-      args: { path: "task.txt", targetStart: "});" },
+      args: { path: "task.txt", targetAfter: "});" },
       error: true,
       contains: "ambiguous",
     },
@@ -2697,9 +2784,9 @@ add(
       tool: "copy",
       args: {
         path: "task.txt",
-        targetStart: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        targetAfter: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
       },
-      reuse: reuse(1, "targetStart", "anchor"),
+      reuse: reuse(1, "targetAfter", "anchor"),
     },
   ],
   {
@@ -2712,27 +2799,27 @@ add(
 add(
   "move-destination-recovery",
   ["edit.move-destination-recovery"],
-  "First call Move on task.txt with start set explicitly to the empty string and targetStart set to second marker, and wait for the empty selector refusal. Then call Move on task.txt with the exact text move this followed by its line break as start and the misspelled second makrer as targetStart. After that refusal, read task.txt with anchors. Retry the same Move, changing only targetStart to the issued anchor for the second marker line. Move the line exactly once. Once that Move succeeds, replace the exact text keep this with kept. Preserve every other line. In Codemode, wait for the result of each call before the next.",
+  "First call Move on task.txt with at set explicitly to the empty string and targetAfter set to second marker, and wait for the empty selector refusal. Then call Move on task.txt with the exact text move this followed by its line break as at and the misspelled second makrer as targetAfter. After that refusal, read task.txt with anchors. Retry the same Move, changing only targetAfter to the issued anchor for the second marker line. Move the line exactly once. Once that Move succeeds, replace the exact text keep this with kept. Preserve every other line. In Codemode, wait for the result of each call before the next.",
   [
     {
       tool: "move",
-      args: { path: "task.txt", start: "", targetStart: "second marker" },
+      args: { path: "task.txt", at: "", targetAfter: "second marker" },
       error: true,
       contains: "EMPTY_SELECTOR",
     },
     {
       tool: "move",
-      args: { path: "task.txt", start: "move this\n", targetStart: "second makrer" },
+      args: { path: "task.txt", at: "move this\n", targetAfter: "second makrer" },
       after: [0],
       error: true,
-      exactText: ["start", "targetStart"],
+      exactText: ["at", "targetAfter"],
     },
     { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [1] },
     {
       tool: "move",
-      args: { path: "task.txt", start: "move this\n", targetStart: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      exactText: ["start"],
-      reuse: reuse(2, "targetStart", "anchor"),
+      args: { path: "task.txt", at: "move this\n", targetAfter: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      exactText: ["at"],
+      reuse: reuse(2, "targetAfter", "anchor"),
       after: [2],
     },
     {
@@ -2756,20 +2843,20 @@ add(
     "compose.read-window-copy",
     "compose.read-window-move",
   ],
-  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result to dest.txt with the literal DEST followed by LF as targetStart and omit targetEnd. Read the second line of task.txt again and Move that result to dest.txt with the literal TAIL followed by LF as targetStart and omit targetEnd. Then Read only the second line of copy-source.txt (offset 2, limit 1). Copy that returned window over only COPY_SLOT in copy-replaced.txt using paired targetStart/targetEnd, then copy the same window after the exact fragment COPY_POINT in copy-inserted.txt with targetStart and no targetEnd. Read two lines from move-replace-source.txt (offset 2, limit 2) and move that window over only MOVE_SLOT in move-replaced.txt using paired targetStart/targetEnd. Read two lines from move-insert-source.txt the same way and move that window after the exact fragment MOVE_POINT in move-inserted.txt with no targetEnd. Pass each returned Read result or its UUID unchanged as the source. Preserve the selected Unicode bytes, the CRLF between selected lines in these LF destinations, and the surrounding destination text.",
+  "Read only the second line of task.txt (offset 2, limit 1). Copy that Read result to dest.txt with the literal DEST followed by LF as targetAfter. Read the second line of task.txt again and Move that result to dest.txt with the literal TAIL followed by LF as targetAfter. Then Read only the second line of copy-source.txt (offset 2, limit 1). Copy that returned window over only COPY_SLOT in copy-replaced.txt using targetAt, then copy the same window after the exact fragment COPY_POINT in copy-inserted.txt with targetAfter. Read two lines from move-replace-source.txt (offset 2, limit 2) and move that window over only MOVE_SLOT in move-replaced.txt using targetAt. Read two lines from move-insert-source.txt the same way and move that window after the exact fragment MOVE_POINT in move-inserted.txt with targetAfter. Pass each returned Read result or its UUID unchanged as the source. Preserve the selected Unicode bytes, the CRLF between selected lines in these LF destinations, and the surrounding destination text.",
   [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     {
       tool: "copy",
-      args: { target: "dest.txt", targetStart: "DEST\n", targetEnd: undefined },
-      exactText: ["targetStart"],
+      args: { target: "dest.txt", targetAfter: "DEST\n" },
+      exactText: ["targetAfter"],
       reuse: reuse(0),
     },
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     {
       tool: "move",
-      args: { target: "dest.txt", targetStart: "TAIL\n", targetEnd: undefined },
-      exactText: ["targetStart"],
+      args: { target: "dest.txt", targetAfter: "TAIL\n" },
+      exactText: ["targetAfter"],
       reuse: reuse(2),
     },
     { tool: "read", args: { path: "copy-source.txt", offset: 2, limit: 1 } },
@@ -2777,8 +2864,7 @@ add(
       tool: "copy",
       args: {
         target: "copy-replaced.txt",
-        targetStart: "COPY_SLOT",
-        targetEnd: "COPY_SLOT",
+        targetAt: "COPY_SLOT",
       },
       reuse: reuse(4),
     },
@@ -2786,8 +2872,7 @@ add(
       tool: "copy",
       args: {
         target: "copy-inserted.txt",
-        targetStart: "COPY_POINT",
-        targetEnd: undefined,
+        targetAfter: "COPY_POINT",
       },
       reuse: reuse(4),
     },
@@ -2796,8 +2881,7 @@ add(
       tool: "move",
       args: {
         target: "move-replaced.txt",
-        targetStart: "MOVE_SLOT",
-        targetEnd: "MOVE_SLOT",
+        targetAt: "MOVE_SLOT",
       },
       reuse: reuse(7),
     },
@@ -2806,8 +2890,7 @@ add(
       tool: "move",
       args: {
         target: "move-inserted.txt",
-        targetStart: "MOVE_POINT",
-        targetEnd: undefined,
+        targetAfter: "MOVE_POINT",
       },
       reuse: reuse(9),
     },
@@ -2847,7 +2930,7 @@ for (const scenario of ["restored", "target-failed", "target-failed-after-restor
   add(
     `move-rollback-${scenario}`,
     ["edit.move-rollback"],
-    `Move from path ${source} with start move-me and target ${target} with targetStart top and no targetEnd. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read the source and the destination in two separate later calls. For the Codemode route, call tools.move inside a script, wait for that script's final parent result, then call tools.read for each file in its own later Codemode call. Keep any extra inspection inside Codemode. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
+    `Move from path ${source} with at move-me and target ${target} with targetAfter top. The isolated fixture injects a write failure. Do not retry or repair the Move. Inspect its final failure result (including the final parent result on Codemode), then Read the source and the destination in two separate later calls. For the Codemode route, call tools.move inside a script, wait for that script's final parent result, then call tools.read for each file in its own later Codemode call. Keep any extra inspection inside Codemode. Report ${restored ? "restored" : "unknown"} for the destination's reported effect and explain why. A rejected rollback cannot prove final bytes, even if a later Read finds the original text.`,
     [
       {
         tool: "move",
@@ -2929,13 +3012,24 @@ add(
 add(
   "whole-line-move-to-point",
   ["edit.whole-line-spans"],
-  "Read only line 1 of task.txt (offset 1, limit 1). Search dest.txt with query regex:^(?=target) for the exact point at the start of its first line. Move the retained Read result to that point. Pass the Read result or its id as path and the unchanged Search result or its id as target. Omit start, end, targetStart and targetEnd. The moved line must stay separate and take the destination line ending.",
+  "Read only line 1 of task.txt (offset 1, limit 1). Search dest.txt with query regex:^(?=target) for the exact point at the start of its first line. Move the retained Read result to that point. Pass the Read result or its id as path and the unchanged Search result or its id as target. Omit selectors. The moved line must stay separate and take the destination line ending.",
   [
     { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
     { tool: "search", args: { path: "dest.txt", query: "regex:^(?=target)" } },
     {
       tool: "move",
-      args: { start: undefined, end: undefined, targetStart: undefined, targetEnd: undefined },
+      args: {
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+        targetAt: undefined,
+        targetFrom: undefined,
+        targetAfter: undefined,
+        targetThrough: undefined,
+        targetBefore: undefined,
+      },
       reuse: [reuse(0), reuse(1, "target")],
     },
   ],
@@ -3073,13 +3167,13 @@ for (const [name, eol] of [
 add(
   "hash-shaped-literal",
   ["edit.hash-shaped-literal"],
-  'Read task.txt with anchors. Delete only PACKAGE and its following newline using the exact literal string "PACKAGE\\n" as start (decode the JSON escape to an actual newline). Omit end. Do not use a line anchor or Search reference. Preserve First and Last.',
+  'Read task.txt with anchors. Delete only PACKAGE and its following newline using the exact literal string "PACKAGE\\n" as at (decode the JSON escape to an actual newline). Do not use a line anchor or Search reference. Preserve First and Last.',
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "delete",
-      args: { path: "task.txt", start: "PACKAGE\n", end: undefined },
-      exactText: ["start"],
+      args: { path: "task.txt", at: "PACKAGE\n" },
+      exactText: ["at"],
       after: [0],
     },
   ],
@@ -3093,7 +3187,7 @@ for (const [name, eol, ending] of [
   add(
     `exact-eof-${name}`,
     ["edit.whole-line-spans", "edit.exact-eof", "edit.delete-empty-replace"],
-    `In last.txt, use Replace with the literal string Last as at and Final as text. Do not use an issued reference or line anchor for this replacement. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For the two block edits, pass the literal string ${JSON.stringify(`Last${eol}Block${ending}`)} as start for Delete and at for Replace. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. In blank.txt, replace the literal string Last with a single LF character using at. Preserve the preceding First line in every file. Keep unrelated bytes and each file's existing newline style.`,
+    `In last.txt, use Replace with the literal string Last as at and Final as text. Do not use an issued reference or line anchor for this replacement. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For the two block edits, pass the literal string ${JSON.stringify(`Last${eol}Block${ending}`)} as at for Delete and at for Replace. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. In blank.txt, replace the literal string Last with a single LF character using at. Preserve the preceding First line in every file. Keep unrelated bytes and each file's existing newline style.`,
     [
       {
         tool: "replace",
@@ -3102,8 +3196,8 @@ for (const [name, eol, ending] of [
       },
       {
         tool: "delete",
-        args: { path: "block.txt", end: undefined },
-        exactText: ["start"],
+        args: { path: "block.txt", through: undefined, before: undefined },
+        exactText: ["at"],
       },
       {
         tool: "replace",
@@ -3114,7 +3208,7 @@ for (const [name, eol, ending] of [
       {
         tool: "delete",
         args: { path: "line.txt" },
-        reuse: reuse(3, ["path", "start"], "anchor"),
+        reuse: reuse(3, ["path", "at"], "anchor"),
       },
       {
         tool: "replace",
@@ -3606,14 +3700,14 @@ add(
 add(
   "stale-line-anchor-literal-collision",
   ["edit.stale-line-anchor-literal-collision", "edit.anchor-shaped-literal-search"],
-  "Read task.txt with anchors and wait for its result. Replace the OLD line with NEW followed by a newline using the issued line-2 anchor and wait for success. After that successful change, attempt both Insert BLOCKED using the old line-2 anchor and Replace with that same stale anchor as at and text BLOCKED. Both must fail without writes even though the anchor bytes occur literally elsewhere. The guard may intentionally stop streaming before text arrives; that is the stale refusal, not a missing-payload mistake. Do not retry an already refused call. Independently, Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. The two stale checks and the Search chain need not wait for each other. The Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
+  "Read task.txt with anchors and wait for its result. Replace the OLD line with NEW followed by a newline using the issued line-2 anchor and wait for success. After that successful change, attempt both Insert BLOCKED with the old line-2 anchor as after and Replace with that same stale anchor as at and text BLOCKED. Both must fail without writes even though the anchor bytes occur literally elsewhere. The guard may intentionally stop streaming before text arrives; that is the stale refusal, not a missing-payload mistake. Do not retry an already refused call. Independently, Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. The two stale checks and the Search chain need not wait for each other. The Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", args: { path: "task.txt" }, reuse: reuse(0, "at", "anchor") },
     {
       tool: "insert",
       args: { path: "task.txt" },
-      reuse: reuse(0, "anchor", "anchor"),
+      reuse: reuse(0, "after", "anchor"),
       error: true,
       after: [1],
     },
@@ -3636,14 +3730,14 @@ add(
 add(
   "stale-insert-recovery",
   ["edit.stale-insert-feedback", "edit.bounded-stale-feedback"],
-  "Read task.txt with anchors and wait for its result to capture the original anchors. Replace OLD with NEW. Wait for the Replace result before attempting Insert with the OLD Read's line-2 anchor and text BLOCKED; put path and anchor before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. After that refusal returns, Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",
+  "Read task.txt with anchors and wait for its result to capture the original anchors. Replace OLD with NEW. Wait for the Replace result before attempting Insert with the OLD Read's line-2 anchor as after and text BLOCKED; put path and after before text in its arguments. It must fail with stale-selector feedback, not a missing-payload mistake, and must not insert BLOCKED. After that refusal returns, Read the current file and insert RECOVERED plus a newline after its fresh line-2 anchor. Keep the other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "replace", args: { path: "task.txt" }, after: [0] },
     {
       tool: "insert",
-      args: { path: "task.txt", anchor: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: reuse(0, "anchor", "anchor"),
+      args: { path: "task.txt", after: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(0, "after", "anchor"),
       error: true,
       after: [1],
       finalRefusal: { guardId: "stale-anchor", effect: "not-applied" },
@@ -3654,7 +3748,7 @@ add(
     {
       tool: "insert",
       args: { path: "task.txt" },
-      reuse: reuse(3, "anchor", "anchor"),
+      reuse: reuse(3, "after", "anchor"),
     },
   ],
   { modes: ["direct"], expected: { "task.txt": "keep\nNEW\nRECOVERED\nlast\n" } },
@@ -3668,13 +3762,13 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "insert",
-      args: { path: "task.txt", before: true, text: "top\n" },
+      args: { path: "task.txt", before: /[\s\S]+/u, after: undefined },
       after: [0],
     },
     {
       tool: "delete",
-      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: reuse(0, "start", "anchor"),
+      args: { path: "task.txt", at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(0, "at", "anchor"),
       after: [1],
     },
   ],
@@ -3695,23 +3789,23 @@ add(
       tool: "delete",
       args: {
         path: "task.txt",
-        start: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
-        end: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        from: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        through: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
       },
-      reuse: reuse(0, ["start", "end"], "anchor"),
+      reuse: reuse(0, ["from", "through"], "anchor"),
     },
     {
       tool: "delete",
-      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: reuse(0, "start", "anchor"),
+      args: { path: "task.txt", at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(0, "at", "anchor"),
       error: true,
       after: [1],
     },
     { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [2] },
     {
       tool: "delete",
-      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: reuse(3, "start", "anchor"),
+      args: { path: "task.txt", at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: reuse(3, "at", "anchor"),
     },
   ],
   {
@@ -3727,7 +3821,7 @@ add(
 add(
   "line-anchor-range-interior-change",
   ["edit.line-anchor-range-interior-change"],
-  'Read all of task.txt with views ["anchors"] and capture the 7-character anchors printed before BEGIN and END. Replace the exact line BODY OLD with BODY NEW, leaving BEGIN and END unchanged. Wait for Replace to finish, then call Delete on task.txt with start and end set to the BEGIN and END anchors from the first Read. Delete must refuse because the span changed after the anchors were issued. Leave the entire file intact after Replace.',
+  'Read all of task.txt with views ["anchors"] and capture the 7-character anchors printed before BEGIN and END. Replace the exact line BODY OLD with BODY NEW, leaving BEGIN and END unchanged. Wait for Replace to finish, then call Delete on task.txt with from and through set to the BEGIN and END anchors from the first Read. Delete must refuse because the span changed after the anchors were issued. Leave the entire file intact after Replace.',
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
@@ -3740,10 +3834,10 @@ add(
       tool: "delete",
       args: {
         path: "task.txt",
-        start: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
-        end: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        from: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        through: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
       },
-      reuse: reuse(0, ["start", "end"], "anchor"),
+      reuse: reuse(0, ["from", "through"], "anchor"),
       error: true,
       after: [1],
     },
@@ -3858,33 +3952,33 @@ for (const { suffix, joiner } of [
 add(
   "result-selector-surviving-scope",
   ["compose.result-selector-scope"],
-  "Read task.txt with anchors and keep the original anchors for lines 1, 3, 4 and 6. Read all of task.txt again and keep that second Read result unchanged as the scope for every Delete below. First delete the first template function: pass the second Read result as path with the original line-1 anchor as start and original line-4 anchor as end. After that succeeds, separately try Delete with that same scope and the original line-1 anchor, then with the original line-3 anchor: both must refuse without editing, since those lines belonged to the deleted copy. Finally delete only the surviving declaration T two(T v) {, using the same unchanged second Read result as path and the original line-6 anchor as start. Do not read again, refresh the scope, use literal selectors, or rewrite the file. Keep the surviving template line, return line and closing brace byte for byte.",
+  "Read task.txt with anchors and keep the original anchors for lines 1, 3, 4 and 6. Read all of task.txt again and keep that second Read result unchanged as the scope for every Delete below. First delete the first template function: pass the second Read result as path with the original line-1 anchor as from and original line-4 anchor as through. After that succeeds, separately try Delete with that same scope and the original line-1 anchor, then with the original line-3 anchor: both must refuse without editing, since those lines belonged to the deleted copy. Finally delete only the surviving declaration T two(T v) {, using the same unchanged second Read result as path and the original line-6 anchor as at. Do not read again, refresh the scope, use literal selectors, or rewrite the file. Keep the surviving template line, return line and closing brace byte for byte.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     { tool: "read", args: { path: "task.txt" }, after: [0] },
     {
       tool: "delete",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, end: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: [reuse(1), reuse(0, ["start", "end"], "anchor")],
+      args: { from: /^[0-9A-HJKMNP-TV-Z]{7}$/u, through: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, ["from", "through"], "anchor")],
     },
     {
       tool: "delete",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      args: { at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, "at", "anchor")],
       after: [2],
       error: true,
     },
     {
       tool: "delete",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      args: { at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, "at", "anchor")],
       after: [3],
       error: true,
     },
     {
       tool: "delete",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      args: { at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, "at", "anchor")],
       after: [4],
     },
   ],
@@ -4050,7 +4144,7 @@ add(
     {
       tool: "insert",
       args: { path: /debug:.*\/source/, text: "breakpoint" },
-      reuse: reuse(2, "anchor", "anchor"),
+      reuse: reuse(2, "after", "anchor"),
     },
     { tool: "insert", args: { text: "start" }, reuse: reuse(0, "path", "debug"), after: [3] },
     {
@@ -4088,7 +4182,7 @@ add(
     {
       tool: "insert",
       args: { path: /debug:.*\/source/, text: "breakpoint" },
-      reuse: reuse(1, "anchor", "anchor"),
+      reuse: reuse(1, "after", "anchor"),
     },
     {
       tool: "read",
@@ -4172,7 +4266,7 @@ add(
     {
       tool: "insert",
       args: { path: /debug:.*\/source/, text: "breakpoint" },
-      reuse: reuse(2, "anchor", "anchor"),
+      reuse: reuse(2, "after", "anchor"),
     },
     { tool: "insert", args: { text: "start" }, reuse: reuse(1, "path", "debug"), after: [3] },
     {
@@ -4544,7 +4638,7 @@ const jsonObjectSelector = /^\s*\{[\s\S]*"id"\s*:[\s\S]*"feature"\s*:[\s\S]*\}\s
 add(
   "json-literal-selectors",
   ["edit.literal-json-selectors", "read.literal-json-path"],
-  `Read the single file whose literal filename is ${JSON.stringify(literalJsonPath)} by passing that exact string as path, not an array. Report its marker. Read replace.json, insert.json, source.json and target.json before editing. Use the complete JSON object text as each selector, including its braces and all keys; do not use line anchors, result references or smaller fragments. In replace.json, use ${JSON.stringify(legacyJsonSelector)} as both from and through and replace it with ${JSON.stringify(stableJsonSelector)}. In insert.json, use ${JSON.stringify(legacyJsonSelector)} as anchor and insert exactly one space before it (before: true). Copy the complete ${JSON.stringify(stableJsonSelector)} object from source.json using it as both start and end, replacing the object in target.json using ${JSON.stringify(legacyJsonSelector)} as both targetStart and targetEnd. Keep adjacent commas and every other byte. Do not use Write.`,
+  `Read the single file whose literal filename is ${JSON.stringify(literalJsonPath)} by passing that exact string as path, not an array. Report its marker. Read replace.json, insert.json, source.json and target.json before editing. Use the complete JSON object text as each selector, including its braces and all keys; do not use line anchors, result references or smaller fragments. In replace.json, use ${JSON.stringify(legacyJsonSelector)} as both from and through and replace it with ${JSON.stringify(stableJsonSelector)}. In insert.json, use ${JSON.stringify(legacyJsonSelector)} as before and insert exactly one space. Copy the complete ${JSON.stringify(stableJsonSelector)} object from source.json using it as both from and through, replacing the object in target.json using ${JSON.stringify(legacyJsonSelector)} as both targetFrom and targetThrough. Keep adjacent commas and every other byte. Do not use Write.`,
   [
     { tool: "read", args: { path: literalJsonPath }, contains: "LITERAL-PATH-MARKER" },
     {
@@ -4554,20 +4648,20 @@ add(
     },
     {
       tool: "insert",
-      args: { path: "insert.json", anchor: jsonObjectSelector },
-      exactText: ["anchor"],
+      args: { path: "insert.json", before: jsonObjectSelector },
+      exactText: ["before"],
     },
     {
       tool: "copy",
       args: {
         path: "source.json",
         target: "target.json",
-        start: jsonObjectSelector,
-        end: jsonObjectSelector,
-        targetStart: jsonObjectSelector,
-        targetEnd: jsonObjectSelector,
+        from: jsonObjectSelector,
+        through: jsonObjectSelector,
+        targetFrom: jsonObjectSelector,
+        targetThrough: jsonObjectSelector,
       },
-      exactText: ["start", "end", "targetStart", "targetEnd"],
+      exactText: ["from", "through", "targetFrom", "targetThrough"],
     },
   ],
   {

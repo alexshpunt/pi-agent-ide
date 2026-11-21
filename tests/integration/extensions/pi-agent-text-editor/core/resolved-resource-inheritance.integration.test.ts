@@ -38,18 +38,18 @@ test.each([
   },
   {
     name: "insert",
-    arguments: { anchor: "HEADER\n", text: "ADDED\n" },
+    arguments: { after: "HEADER\n", text: "ADDED\n" },
     expected: "HEADER\nADDED\nBODY\nTAIL\n",
   },
-  { name: "delete", arguments: { start: "HEADER\n" }, expected: "BODY\nTAIL\n" },
+  { name: "delete", arguments: { at: "HEADER\n" }, expected: "BODY\nTAIL\n" },
   {
     name: "copy",
-    arguments: { start: "HEADER\n", targetStart: "TAIL\n" },
+    arguments: { at: "HEADER\n", targetAfter: "TAIL\n" },
     expected: "HEADER\nBODY\nTAIL\nHEADER\n",
   },
   {
     name: "move",
-    arguments: { start: "HEADER\n", targetStart: "TAIL\n" },
+    arguments: { at: "HEADER\n", targetAfter: "TAIL\n" },
     expected: "BODY\nTAIL\nHEADER\n",
   },
   {
@@ -66,7 +66,7 @@ test.each([
     try {
       await writeFile(file, "HEADER\nBODY\nTAIL\n");
       const result = await new PiIntegrationTest({
-        testName: `read-inheritance-${name}-${(args.at ?? args.from ?? args.start ?? "insert").trim()}-${args.through ?? "single"}`,
+        testName: `read-inheritance-${name}-${(args.at ?? args.from ?? "insert").trim()}-${args.through ?? "single"}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
         isolateUserResources: true,
         cwd,
@@ -180,7 +180,7 @@ test("keeps typed source and destination ownership separate from the last read",
       {
         id: "typed-target",
         name: "copy",
-        arguments: { start: "HEADER\n", targetStart: "SEARCH#RUNTIME:2:1:line" },
+        arguments: { at: "HEADER\n", targetAfter: "SEARCH#RUNTIME:2:1:line" },
       },
     ];
     await new PiIntegrationTest({

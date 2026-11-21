@@ -60,6 +60,10 @@
       "types": "./src/api/mutation-guard.ts",
       "default": "./src/api/mutation-guard.ts"
     },
+    "./api/text-selector-fields": {
+      "types": "./src/api/text-selector-fields.ts",
+      "default": "./src/api/text-selector-fields.ts"
+    },
     "./api/mutation-tool": {
       "types": "./src/api/mutation-tool.ts",
       "default": "./src/api/mutation-tool.ts"

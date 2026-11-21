@@ -36,7 +36,7 @@ function fixture(lineCount: number) {
           name: "replace",
           args: { path: file, at: anchor(line), text: `replacement-${line}\n` },
         }
-      : { name: "delete", args: { path: file, start: anchor(line) } };
+      : { name: "delete", args: { path: file, at: anchor(line) } };
   });
   const expected = [...lines];
   expected.splice(75, 0, requiredValue(lines[59]));
@@ -51,8 +51,8 @@ function fixture(lineCount: number) {
     expected: `${expected.join("\n")}\n`,
     edits: [
       ...edits,
-      { name: "insert", args: { path: file, anchor: anchor(65), text: "inserted\n" } },
-      { name: "move", args: { path: file, start: anchor(60), targetStart: anchor(75) } },
+      { name: "insert", args: { path: file, after: anchor(65), text: "inserted\n" } },
+      { name: "move", args: { path: file, at: anchor(60), targetAfter: anchor(75) } },
       { name: "write", args: { path: "written.txt", content: "small" } },
     ],
   };

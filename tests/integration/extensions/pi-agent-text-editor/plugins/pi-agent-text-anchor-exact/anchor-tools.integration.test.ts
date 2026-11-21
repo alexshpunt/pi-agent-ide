@@ -138,7 +138,7 @@ describe("exact text anchors through real text editor tools", () => {
                 path: filename,
                 ...(tool === "replace"
                   ? { at: entry.replaceAll("\n", eol), text: replacement.replaceAll("\n", eol) }
-                  : { start: entry.replaceAll("\n", eol) }),
+                  : { at: entry.replaceAll("\n", eol) }),
               },
             });
             expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -184,20 +184,20 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-insert",
       "insert",
-      { anchor: "bravo", text: "!" },
+      { after: "bravo", text: "!" },
       content.replace("bravo", "bravo!"),
     );
   });
 
   test("deletes only one exact match", async () => {
-    await runExactScenario("exact-delete", "delete", { start: "rav" }, content.replace("rav", ""));
+    await runExactScenario("exact-delete", "delete", { at: "rav" }, content.replace("rav", ""));
   });
 
   test("deletes complete matched lines without leaving a gap", async () => {
     await runExactScenario(
       "exact-delete-lines",
       "delete",
-      { start: "bravo\ncharlie" },
+      { at: "bravo\ncharlie" },
       ["alpha", "delta", "echo"].join("\n"),
     );
   });
@@ -206,7 +206,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-copy",
       "copy",
-      { start: "bravo", targetStart: "delta" },
+      { at: "bravo", targetAfter: "delta" },
       ["alpha", "bravo", "charlie", "delta", "bravo", "echo"].join("\n"),
     );
   });
@@ -215,7 +215,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-move",
       "move",
-      { start: "bravo", targetStart: "delta" },
+      { at: "bravo", targetAfter: "delta" },
       ["alpha", "charlie", "delta", "bravo", "echo"].join("\n"),
     );
   });
@@ -230,16 +230,16 @@ describe("exact text anchors through real text editor tools", () => {
         tool: "copy",
         arguments: {
           path: "multiple-failures.txt",
-          start: "a",
+          at: "a",
           target: "multiple-failures.txt",
-          targetStart: "charle",
+          targetAfter: "charle",
         },
       });
       const execution = getToolExecution(scenario.result, scenario.mutationCallId);
       expect(execution.isError).toBe(true);
       const detailsText = JSON.stringify(getToolExecutionDetails(execution));
-      expect(detailsText).toContain('"field":"start"');
-      expect(detailsText).toContain('"field":"targetStart"');
+      expect(detailsText).toContain('"field":"at"');
+      expect(detailsText).toContain('"field":"targetAfter"');
       await expect(readFile(file, "utf8")).resolves.toBe(content);
     });
   });
@@ -256,9 +256,9 @@ describe("exact text anchors through real text editor tools", () => {
         // Includes the source and target terminators to cover LPT-1747.
         arguments: {
           path: "source.txt",
-          start: "alpha\nbravo\n",
+          at: "alpha\nbravo\n",
           target: "target.txt",
-          targetStart: "one\r\n",
+          targetAfter: "one\r\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);

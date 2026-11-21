@@ -45,7 +45,11 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
                   ? `left ANCHOR right${separator}SECOND`
                   : `SEARCH#RUNTIME:${index + 1}:1:${kind === "search-line" ? "line" : "match"}`;
           conversation.push(
-            call(`insert-${index}`, "insert", { path: file, anchor, before, text: payload }),
+            call(`insert-${index}`, "insert", {
+              path: file,
+              [before ? "before" : "after"]: anchor,
+              text: payload,
+            }),
           );
           // LPT-1747: only multiline input at a line edge inserts separate lines.
           const selected =

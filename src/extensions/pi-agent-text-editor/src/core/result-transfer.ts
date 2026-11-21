@@ -6,11 +6,12 @@ import type {
 } from "#src/api/mutation-tool.ts";
 import { TextChangeDocument, type TextChange, type TextSpan } from "./text-change-engine.ts";
 import {
-  resolveAnchorSpanRange,
-  insertionAfterAnchor,
+  resolveTextSpan,
+  transferToTextSelector,
   selectionRange,
   selectionSpan,
 } from "#src/tools/text-selection.ts";
+import { sourceTextSelector, targetTextSelector } from "#src/api/text-selector-fields.ts";
 import { wholeFileResultSource } from "./result-input.ts";
 import { resolveResultScope } from "./result-scope.ts";
 import { SOURCE_CHANGED } from "./source-change-retry.ts";
@@ -44,9 +45,11 @@ export async function prepareResultTransfer(
   const input = { ...parameters };
   /** One handle per selected range, in declared order, so every attempt can resolve them again. */
   const handles = new Map<"path" | "target", readonly string[]>();
-  const resolve = (field: "path" | "target", start: string, end: string) => {
+  const sourceSelector = sourceTextSelector(input);
+  const targetSelector = targetTextSelector(input);
+  const resolve = (field: "path" | "target", hasSelector: boolean) => {
     if (!isResultInput(input[field])) return undefined;
-    if (input[start] !== undefined || input[end] !== undefined) {
+    if (hasSelector) {
       // The anchors select the text, inside the result's selection: the result is their scope.
       const scope = resolveResultScope(store, input[field], cwd);
       if (!scope.complete)
@@ -69,15 +72,10 @@ export async function prepareResultTransfer(
     );
     return selected;
   };
-  const source = resolve("path", "start", "end");
-  const destination = resolve("target", "targetStart", "targetEnd");
+  const source = resolve("path", sourceSelector !== undefined);
+  const destination = resolve("target", targetSelector !== undefined);
   if (source === undefined && destination === undefined) return { input, empty: false };
-  if (
-    source !== undefined &&
-    destination === undefined &&
-    input.targetStart === undefined &&
-    input.targetEnd === undefined
-  ) {
+  if (source !== undefined && destination === undefined && targetSelector === undefined) {
     // A structured source may use the byte-preserving file operation only when it really selects a whole file.
     // A file operation uses the selected file right away, so its text is checked here.
     await store.verify(source, signal);
@@ -145,7 +143,7 @@ export async function prepareResultTransfer(
       const sources =
         source === undefined
           ? [
-              input.start === undefined
+              sourceSelector === undefined
                 ? {
                     source: context.sourceFor("path"),
                     ...context.sourceDocument.charSpan({
@@ -153,13 +151,7 @@ export async function prepareResultTransfer(
                       to: context.sourceDocument.length,
                     }),
                   }
-                : await resolveAnchorSpanRange(
-                    context,
-                    await context.resolveAnchors("start"),
-                    "start",
-                    "end",
-                    input.end !== undefined,
-                  ),
+                : await resolveTextSpan(context, sourceSelector),
             ]
           : spans(current("path"));
       const destinations = destination === undefined ? undefined : spans(current("target"));
@@ -188,26 +180,8 @@ export async function prepareResultTransfer(
           });
           continue;
         }
-        const starts = await context.resolveAnchors("targetStart");
-        if (input.targetEnd === undefined) {
-          const [target, change] = insertionAfterAnchor(context, starts, "targetStart", copied);
-          planned.push({
-            target: { source: target, from: change.from, to: change.to },
-            change,
-          });
-        } else {
-          const target = await resolveAnchorSpanRange(
-            context,
-            starts,
-            "targetStart",
-            "targetEnd",
-            true,
-          );
-          planned.push({
-            target,
-            change: context.documentFor(target.source).replace(target, copied),
-          });
-        }
+        const [target, change] = await transferToTextSelector(context, copied, targetSelector);
+        planned.push({ target, change });
       }
       if (operation === "move") {
         const spansBySource = new Map<string, TransferSpan[]>();

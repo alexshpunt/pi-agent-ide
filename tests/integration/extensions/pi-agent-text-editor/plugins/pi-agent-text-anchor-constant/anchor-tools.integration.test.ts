@@ -21,7 +21,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-insert",
       "insert",
-      { anchor: "begin", text: "inserted\n" },
+      { after: "begin", text: "inserted\n" },
       ["alpha", "inserted", "bravo", "charlie", "delta", "echo"].join("\n"),
     );
   });
@@ -39,7 +39,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-delete",
       "delete",
-      { start: "end", end: "end" },
+      { from: "end", through: "end" },
       ["alpha", "bravo", "charlie", "delta"].join("\n"),
     );
   });
@@ -48,7 +48,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-copy",
       "copy",
-      { start: "begin", end: "begin", targetStart: "end" },
+      { from: "begin", through: "begin", targetAfter: "end" },
       // The destination has no final line ending; copying preserves that boundary.
       ["alpha", "bravo", "charlie", "delta", "echo", "alpha"].join("\n"),
     );
@@ -58,7 +58,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-move",
       "move",
-      { start: "begin", end: "begin", targetStart: "end" },
+      { from: "begin", through: "begin", targetAfter: "end" },
       ["bravo", "charlie", "delta", "echo", "alpha"].join("\n"),
     );
   });

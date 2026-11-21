@@ -40,7 +40,7 @@ for (const native of [false, true]) {
         await writeFile(path.join(cwd, source), "head\nmove-me\nend\n");
         await writeFile(path.join(cwd, target), "top\nbottom\n");
         // Literals select only their characters; the line breaks make this a whole-line move.
-        const parameters = { path: source, start: "move-me\n", target, targetStart: "top\n" };
+        const parameters = { path: source, at: "move-me\n", target, targetAfter: "top\n" };
         const peer = `${directory}/peer.txt`;
         const hasPeer = native && scenario === "target-failed";
         if (hasPeer) await writeFile(path.join(cwd, peer), "OLD\n");

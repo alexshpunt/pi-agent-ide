@@ -91,7 +91,7 @@ Core snapshots committed guards once per invocation and runs them after all anch
 
 All Resource resolution, reads, target and anchor checks, change application, and guards finish before the first write. Those failures have no applied effect. If a later Resource write fails, core attempts to restore the failed Resource and every Resource already written, and reports any rollback failures.
 
-`copy` and `move` always need a destination selection. `target` supplies its Resource scope and defaults to the source scope; it does not select a position by itself. `targetStart`, or a typed `target` with an implicit range, supplies the destination selection. Without `targetEnd`, the tools insert after its last containing line. With `targetEnd`, they replace the range from the beginning of `targetStart` through the end of `targetEnd`, preserving each endpoint's exact or whole-line extent. Endpoints must resolve uniquely in the same destination Resource and stay in forward order. The old destination `anchor` field does not exist.
+A text `copy` or `move` needs a destination selection. `target` supplies its Resource scope and defaults to the source scope. A result passed as `target` can also select the span to replace. Otherwise pass `targetAt` for one replacement span, `targetFrom` or `targetAfter` with `targetThrough` or `targetBefore` for a replacement range, or `targetAfter` or `targetBefore` alone for an insertion point. A range resolves in forward order in one Resource within the destination scope.
 
 ## Resource resolvers
 
@@ -119,7 +119,7 @@ interface TextAnchorResolverRegistration {
 
 `resources` is optional. It is the public `TextTargetResolver` contract from `pi-agent-text`. It recognizes the same opaque value before any Resource is read and may return ordered Resource sources with half-open character ranges. `not-handled` leaves normal source resolution unchanged; rejection, failure, or malformed output stops the mutation before writes. The editor validates and uses this typed result. It does not parse the resolver's string format.
 
-The same typed value may appear in an anchor field or in a mutation source field such as `path` or `target`. A source-field result supplies implicit ranges only for that source field's first anchor (start or targetStart), not its end boundary. A sibling anchor may determine the Resource but never contributes its selection to another endpoint. When a compatible explicit anchor is also present, the editor resolves it against every selected Resource and unions its natural range with the implicit ranges. Resource-set mismatches, incompatible selection shapes, ambiguous ranges, and overlaps are rejected before persistence.
+The same typed value may appear in a selector field or in a mutation source field such as `path` or `target`. With no explicit selector, a source-field result supplies the selection. With explicit selectors, the result constrains their scope; it does not supply an omitted boundary. A sibling selector may determine the Resource but never contributes its selection to another endpoint. Resource-set mismatches, incompatible selection shapes, ambiguous ranges, and overlaps are rejected before persistence.
 
 `api.addAnchorResolver()` registers one resolver with presentation metadata:
 

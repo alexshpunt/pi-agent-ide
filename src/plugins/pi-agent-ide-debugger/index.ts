@@ -1,3 +1,9 @@
+import {
+  hasTextSelectors,
+  insertSelectors,
+  insertTextSelector,
+  sourceSelectors,
+} from "pi-agent-text-editor/api/text-selector-fields";
 import path from "node:path";
 import { registerIdeCapability } from "#src/api/capabilities.ts";
 import { access } from "node:fs/promises";
@@ -265,15 +271,19 @@ export async function registerDebuggerWithOwner(
         execute: async (context, input) => {
           const parameters = input as {
             readonly path: string;
-            readonly anchor?: string;
+            readonly after?: string;
+            readonly before?: string;
             readonly text: string;
           };
           const session = requiredSession(manager, parameters.path);
+          const field = insertTextSelector(parameters);
           if (manager.sourceFile(parameters.path) !== undefined) {
-            if (parameters.text !== "breakpoint" || parameters.anchor === undefined) {
-              throw new Error('A debug source accepts text "breakpoint" with one anchor');
+            if (parameters.text !== "breakpoint" || parameters[field] === undefined) {
+              throw new Error(
+                'Set text to "breakpoint" and pass a line anchor in after or before.',
+              );
             }
-            const anchor = await context.resolveAnchor("anchor");
+            const anchor = await context.resolveAnchor(field);
             const breakpoint = await manager.addBreakpoint(
               parameters.path,
               anchor.lineNumber,
@@ -292,8 +302,8 @@ export async function registerDebuggerWithOwner(
               },
             };
           }
-          if (parameters.path !== session.source || parameters.anchor !== undefined) {
-            throw new Error("Debug commands target the session resource without an anchor");
+          if (parameters.path !== session.source || hasTextSelectors(parameters, insertSelectors)) {
+            throw new Error("Omit after and before for a debugger session command.");
           }
           let evaluation: DebugEvaluation | undefined;
           try {
@@ -331,7 +341,10 @@ export async function registerDebuggerWithOwner(
       api.tool("delete").addSemanticHandler({
         matches: (input) => matchesDebugDelete(input, manager),
         execute: async (context, input) => {
-          const source = (input as { readonly path: string }).path;
+          const parameters = input as Readonly<Record<string, unknown>>;
+          if (hasTextSelectors(parameters, sourceSelectors))
+            throw new Error("Omit text selectors when deleting a debugger session or breakpoint.");
+          const source = String(parameters.path);
           const session = requiredSession(manager, source);
           const before = manager.snapshot(session);
           deletedSnapshots.set(source, before);
@@ -511,7 +524,7 @@ export async function registerDebuggerWithOwner(
               content: [
                 {
                   type: "text",
-                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${session.source} to inspect the configured session. To set a breakpoint, read ${details.sourceResource} with views ["anchors"], then insert "breakpoint" at an anchor.`,
+                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${session.source} to inspect the configured session. To set a breakpoint, read ${details.sourceResource} with views ["anchors"], then insert "breakpoint" with the line anchor in after.`,
                 },
               ],
               details,
@@ -568,7 +581,7 @@ export async function registerDebuggerWithOwner(
   );
 
   const editingGuideline =
-    'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" at an anchor. On the session, insert start, continue, step over, step into, step out, or evaluate <expression>. Delete removes a breakpoint or terminates the session.';
+    'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" with the line anchor in after. On the session, insert start, continue, step over, step into, step out, or evaluate <expression>. Delete removes a breakpoint or terminates the session.';
   registerIdeCapability(pi, {
     version: 1,
     id: "debugger",
@@ -584,7 +597,8 @@ export async function registerDebuggerWithOwner(
         parameters: {
           path: "debug:<session> controls the debugger; debug:<session>/source with a line anchor sets a breakpoint.",
           text: "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
-          anchor: "Omit for debug:<session>.",
+          after:
+            "Pass the breakpoint line anchor for a debug source. Omit both selectors for debug:<session>.",
         },
         promptGuidelines: [editingGuideline],
       },
@@ -787,8 +801,8 @@ function requiredSession(manager: DebugSessionManager, source: string): DebugSes
 }
 
 function breakpointAnchor(input: unknown): string {
-  const anchor = isRecord(input) && typeof input.anchor === "string" ? input.anchor : undefined;
-  return anchor ?? "selected line";
+  const anchor = isRecord(input) ? (input.after ?? input.before) : undefined;
+  return typeof anchor === "string" ? anchor : "selected line";
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

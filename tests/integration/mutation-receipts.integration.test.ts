@@ -40,7 +40,7 @@ test("batched receipts describe successful operations without counting rejected 
             toolCall({
               id: "insert",
               name: "insert",
-              arguments: { path: "example.txt", anchor: "third", text: "fourth\n" },
+              arguments: { path: "example.txt", after: "third", text: "fourth\n" },
             }),
             toolCall({
               id: "rejected",

@@ -57,9 +57,7 @@ for (const mode of ["direct", "codemode"]) {
     );
   });
   void test(`exact selection checks the capability, not an author's boundary spelling (${mode})`, async () => {
-    const steps: RouteStep[] = [
-      { tool: "delete", args: { path: "task.txt" }, exactText: ["start"] },
-    ];
+    const steps: RouteStep[] = [{ tool: "delete", args: { path: "task.txt" }, exactText: ["at"] }];
     const check = (args: Record<string, unknown>, error = false) =>
       validateRoute({ steps }, events([{ tool: "delete", args, error }], mode), mode).passed;
     for (const start of [
@@ -71,7 +69,7 @@ for (const mode of ["direct", "codemode"]) {
       "END",
       "BEGIN",
     ])
-      assert.ok(check({ path: "task.txt", start }));
+      assert.ok(check({ path: "task.txt", at: start }));
     for (const start of [
       undefined,
       { id: "RESULT#11111111-aaaa-4aaa-8aaa-111111111111" },
@@ -80,12 +78,12 @@ for (const mode of ["direct", "codemode"]) {
       "123ABCD|tail",
       "end",
     ])
-      assert.ok(!check({ path: "task.txt", start }));
+      assert.ok(!check({ path: "task.txt", at: start }));
     const collision = { files: { "task.txt": "PACKAGE\ntail\n" }, steps };
     assert.ok(
       validateRoute(
         collision,
-        events([{ tool: "delete", args: { path: "task.txt", start: "PACKAGE" } }], mode),
+        events([{ tool: "delete", args: { path: "task.txt", at: "PACKAGE" } }], mode),
         mode,
       ).passed,
     );
@@ -95,15 +93,15 @@ for (const mode of ["direct", "codemode"]) {
         events(
           [
             { tool: "read", args: { path: "task.txt" }, text: "PACKAGE|tail" },
-            { tool: "delete", args: { path: "task.txt", start: "PACKAGE" } },
+            { tool: "delete", args: { path: "task.txt", at: "PACKAGE" } },
           ],
           mode,
         ),
         mode,
       ).passed,
     );
-    assert.ok(!check({ path: "wrong.txt", start: "tail" }));
-    assert.ok(!check({ path: "task.txt", start: "tail" }, true));
+    assert.ok(!check({ path: "wrong.txt", at: "tail" }));
+    assert.ok(!check({ path: "task.txt", at: "tail" }, true));
     assert.ok(!validateRoute({ steps }, events([], mode), mode).passed);
     assert.ok(
       !validateRoute(
@@ -116,7 +114,7 @@ for (const mode of ["direct", "codemode"]) {
       !validateRoute(
         { steps },
         events(
-          [{ tool: "delete", args: { path: "task.txt", start: "tail" } }],
+          [{ tool: "delete", args: { path: "task.txt", at: "tail" } }],
           mode === "direct" ? "codemode" : "direct",
         ),
         mode,
@@ -149,10 +147,10 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "replace", fields: ["from", "before"], values: ["START", "END"] },
       { tool: "replace", fields: ["after", "through"], values: ["START", "END"] },
       { tool: "copy", fields: ["start", "end"], values: ["COPY_BEGIN", "COPY_END"] },
-      { tool: "copy", fields: ["targetStart", "targetEnd"], values: ["SLOT", "SLOT"] },
-      { tool: "move", fields: ["targetStart", "targetEnd"], values: ["SLOT", "SLOT"] },
-      { tool: "insert", fields: ["anchor"], values: ["α🙂"] },
-      { tool: "insert", fields: ["anchor"], values: ["α\r\nβ"] },
+      { tool: "copy", fields: ["targetAt"], values: ["SLOT"] },
+      { tool: "move", fields: ["targetAt"], values: ["SLOT"] },
+      { tool: "insert", fields: ["before"], values: ["α🙂"] },
+      { tool: "insert", fields: ["before"], values: ["α\r\nβ"] },
       { tool: "delete", fields: ["start"], values: ["Last\nBlock"] },
       { tool: "replace", fields: ["at"], values: ["Last\r\nBlock"] },
     ];

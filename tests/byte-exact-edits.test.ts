@@ -464,9 +464,8 @@ function randomOperation(
         name: `${kind === 1 ? "delete" : "replace"} literal ${JSON.stringify(main.slice(span.from, span.to))} -> ${JSON.stringify(insert)}`,
         run: call(kind === 1 ? deleteMutationTool : replaceMutationTool, {
           path: "main.txt",
-          ...(kind === 1
-            ? { start: main.slice(span.from, span.to) }
-            : { at: main.slice(span.from, span.to), text: insert }),
+          at: main.slice(span.from, span.to),
+          ...(kind === 1 ? {} : { text: insert }),
         }),
         expected: { "main.txt": splice(main, from, to, replacedText(main, from, to, insert)) },
       };
@@ -509,14 +508,8 @@ function randomOperation(
         name: `${kind === 4 ? "delete" : "replace"} lines ${String(low + 1)}-${String(high + 1)} -> ${JSON.stringify(insert)}`,
         run: call(kind === 4 ? deleteMutationTool : replaceMutationTool, {
           path: "main.txt",
-          ...(kind === 4
-            ? { start: anchors[low], ...(low === high ? {} : { end: anchors[high] }) }
-            : {
-                ...(low === high
-                  ? { at: anchors[low] }
-                  : { from: anchors[low], through: anchors[high] }),
-                text: insert,
-              }),
+          ...(low === high ? { at: anchors[low] } : { from: anchors[low], through: anchors[high] }),
+          ...(kind === 4 ? {} : { text: insert }),
         }),
         expected: {
           "main.txt": writeLines(main, lines, low, high, insert),
@@ -568,9 +561,8 @@ function randomOperation(
         name: `insert ${before ? "before" : "after"} literal`,
         run: call(insertMutationTool, {
           path: "main.txt",
-          anchor: main.slice(span.from, span.to),
-          text: text,
-          before,
+          [before ? "before" : "after"]: main.slice(span.from, span.to),
+          text,
         }),
         expected: { "main.txt": splice(main, at, at, sentText(main, at, text)) },
       };
@@ -591,10 +583,9 @@ function randomOperation(
         name: `${tool.name} literal ${JSON.stringify(literal)}`,
         run: call(tool, {
           path: "main.txt",
-          start: literal,
+          at: literal,
           target: "other.txt",
-          targetStart: other.slice(target.from, target.to),
-          targetEnd: other.slice(target.from, target.to),
+          targetAt: other.slice(target.from, target.to),
         }),
         expected: {
           "main.txt": kind === 8 ? main : splice(main, from.from, from.to, ""),
@@ -702,7 +693,7 @@ function randomOperation(
       const at = lines[line]?.to ?? 0;
       return {
         name: `insert after line ${String(line + 1)}`,
-        run: call(insertMutationTool, { path: "main.txt", anchor: anchors[line], text: insert }),
+        run: call(insertMutationTool, { path: "main.txt", after: anchors[line], text: insert }),
         expected: { "main.txt": splice(main, at, at, sentText(main, at, insert)) },
       };
     }
@@ -864,7 +855,7 @@ describe("byte-exact regressions", () => {
     const h = await harness();
     await put("main.txt", content);
     const anchor = textLineAnchors(file("main.txt"), content)[1];
-    await h.run(deleteMutationTool, { path: "main.txt", start: anchor });
+    await h.run(deleteMutationTool, { path: "main.txt", at: anchor });
     expect((await bytes("main.txt")).toString("utf8")).toBe("a\rb\rc\n");
   });
 
@@ -873,7 +864,7 @@ describe("byte-exact regressions", () => {
     await put("main.txt", "one\r\ntwo\r\nlf\n");
     await h.run(replaceMutationTool, { path: "main.txt", at: "one", text: "1\n1\r\n1" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nlf\n");
-    await h.run(insertMutationTool, { path: "main.txt", anchor: "two", text: "\nmore" });
+    await h.run(insertMutationTool, { path: "main.txt", after: "two", text: "\nmore" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nmore\r\nlf\n");
     await h.run(replaceMutationTool, { path: "main.txt", at: "lf", text: "l\r\nf" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nmore\r\nl\nf\n");
@@ -905,7 +896,7 @@ describe("byte-exact regressions", () => {
   test("a literal never splits a CRLF", async () => {
     const h = await harness();
     await put("main.txt", "a\r\nb");
-    await h.run(insertMutationTool, { path: "main.txt", anchor: "a\r", text: "|" });
+    await h.run(insertMutationTool, { path: "main.txt", after: "a\r", text: "|" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("a\r\n|b");
     await h.run(replaceMutationTool, { path: "main.txt", at: "\n|b", text: "\nb" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("a\r\nb");

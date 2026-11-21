@@ -58,7 +58,7 @@ for (const mode of ["direct", "codemode"]) {
     const args = [
       { path: "task.txt", views: ["anchors"] },
       { path: "task.txt", at: "D07BBXQ", text: "NEW" },
-      { path: "task.txt", anchor: "D07BBXQ" },
+      { path: "task.txt", after: "D07BBXQ" },
       { path: "task.txt", at: "D07BBXQ" },
       { path: "task.txt", query: "D07BBXQ" },
       { path: { id: searchId }, text: "TOKEN" },
@@ -124,10 +124,10 @@ for (const mode of ["direct", "codemode"]) {
     const args = [
       { path: "task.txt", text: "added" },
       { path: "task.txt" },
-      { path: "task.txt", anchor: "OLD", text: "added" },
-      { path: "task.txt", start: "OLD", target: "target.txt" },
+      { path: "task.txt", after: "OLD", text: "added" },
+      { path: "source.txt", at: "OLD", target: "target.txt" },
       { path: "target.txt" },
-      { path: "task.txt", start: "OLD", target: "target.txt", targetStart: "DEST" },
+      { path: "source.txt", at: "OLD", target: "target.txt", targetAfter: "DEST" },
     ];
     assert.ok(check(fixture, args, [[0], [1], [2, 3], [4], [5]], mode));
     assert.ok(check(fixture, args, [[3], [4], [5], [0], [1], [2]], mode));
@@ -143,7 +143,7 @@ for (const mode of ["direct", "codemode"]) {
     const args = [
       { adapter: "debugpy", program: "task.py" },
       { path: source, views: ["anchors"] },
-      { path: source, text: "breakpoint", anchor: "D07BBXQ" },
+      { path: source, text: "breakpoint", after: "D07BBXQ" },
       { path: source, views: ["breakpoints"] },
       { path: resource, text: "start" },
       { path: resource },

@@ -91,12 +91,12 @@ test("structured transfers reject count mismatches, incomplete inputs and partia
   // Selectors with a result select inside it: the result becomes their scope.
   const scoped = await prepareResultTransfer(
     "copy",
-    { path: first, start: "first", target: one },
+    { path: first, at: "first", target: one },
     f.store,
     f.cwd,
   );
   expect(scoped.input.path).toMatch(/^RESULT#/u);
-  expect(scoped.input.start).toBe("first");
+  expect(scoped.input.at).toBe("first");
   await expect(
     prepareResultTransfer("copy", { path: first, target: f.destination }, f.store, f.cwd),
   ).rejects.toThrow(/partial/u);

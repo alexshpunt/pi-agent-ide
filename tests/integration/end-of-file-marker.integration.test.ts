@@ -108,7 +108,7 @@ test.each([
   ["replace", { at: "two" }, `changed\n${MARKER}`],
   ["replace", { at: "two" }, MARKER],
   ["replace", { at: "two" }, `changed\r\n${MARKER}\r\n`],
-  ["insert", { anchor: "two" }, `added\n${MARKER}`],
+  ["insert", { after: "two" }, `added\n${MARKER}`],
 ] as const)(
   "%s refuses text whose last line is the marker and leaves the file as it is",
   async (tool, selector, content) => {

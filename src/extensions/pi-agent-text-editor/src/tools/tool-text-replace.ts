@@ -5,13 +5,17 @@ import { PRESENTED_LINE_ANCHOR_PATTERN, isLineAnchor } from "pi-agent-text";
 import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
 import { refuseEndOfFileMarker } from "#src/tools/display-marker.ts";
 
-import { anchorProperty } from "#src/tools/text-tool-schema-properties.ts";
+import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.ts";
 
-import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import {
-  resolveAnchorSpanRange,
+  sourceSelectors,
+  sourceTextSelector,
+  textSelectorAnchors,
+} from "#src/api/text-selector-fields.ts";
+import {
+  replaceSelectedSpan,
+  resolveTextSpan,
   selectionChanges,
-  singleAnchorSpan,
   textSelections,
 } from "#src/tools/text-selection.ts";
 
@@ -28,20 +32,8 @@ export const replaceSchema = Type.Object(
         description: "Source selection. Omit to reuse the anchor’s file or the last source.",
       }),
     ),
-    at: anchorProperty(
+    ...sourceRangeProperties(
       "Replace only this selection. Do not combine with range boundaries. Omit all selectors when path is an issued selection of the intended text.",
-    ),
-    from: anchorProperty(
-      "Include the unique opening match. Pass through or before; do not combine with after or at.",
-    ),
-    after: anchorProperty(
-      "Begin after the unique opening match (on the next line if it reaches the end of a line). Pass through or before; do not combine with from or at. Use after and before together to replace the text between two markers and keep both.",
-    ),
-    through: anchorProperty(
-      "Include the first following match. Use through for a block's own closing line. Pair with from or after; omit before and at.",
-    ),
-    before: anchorProperty(
-      "Stop before the first following match. For a whole block, use before only if it has no closing line and ends at the next block's start, such as the next heading. Pair with from or after; omit through and at.",
     ),
     text: Type.String({
       description:
@@ -50,17 +42,6 @@ export const replaceSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-interface ReplaceParameters {
-  readonly path?: unknown;
-  /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
-  readonly at?: unknown;
-  readonly from?: unknown;
-  readonly after?: unknown;
-  readonly through?: unknown;
-  readonly before?: unknown;
-  readonly text: string;
-}
-
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
   name: "replace",
   description:
@@ -69,40 +50,12 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
   promptSnippet: "Make precise file edits by replacing text using exact matches or anchors",
   parameters: replaceSchema,
   source: { field: "path", inherited: true },
-  anchors: [
-    {
-      field: "at",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "from",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "after",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "through",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "before",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-      pairedEnd: true,
-    },
-  ],
-  pair: ["from", "through"],
-  validateInput: replaceRange,
-  mutate: async (context, parameters: ReplaceParameters) => {
-    const range = replaceRange(parameters);
+  anchors: textSelectorAnchors("path", sourceSelectors, ["through", "before"]),
+  validateInput: sourceTextSelector,
+  mutate: async (context, parameters) => {
+    const selector = sourceTextSelector(parameters) ?? { kind: "single", first: "at" };
     refuseEndOfFileMarker(parameters.text);
-    const startField = range?.[0] ?? "at";
+    const startField = selector.first;
     const starts = await context.resolveAnchors(startField);
     const copiedAnchor = PRESENTED_LINE_ANCHOR_PATTERN.exec(parameters.text)?.[1];
     if (
@@ -120,7 +73,7 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
       );
     }
     const selections = textSelections(starts, startField);
-    if (range === undefined && selections !== undefined) {
+    if (selector.kind === "single" && selections !== undefined) {
       const changes = selectionChanges(context, selections, parameters.text);
       refuseIdenticalReplacement(
         context,
@@ -138,64 +91,14 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
       };
     }
 
-    const span =
-      range === undefined
-        ? singleAnchorSpan(context, starts, startField)
-        : await resolveAnchorSpanRange(context, starts, range[0], range[1], true, {
-            excludeStart: range[0] === "after",
-            excludeEnd: range[1] === "before",
-          });
-    const document = context.documentFor(span.source);
-    const change =
-      span.insertion !== undefined && parameters.text !== ""
-        ? document.insert(span, parameters.text, {
-            before: true,
-            linewise: span.insertion === "line",
-          })
-        : document.replace(span, parameters.text);
+    const span = await resolveTextSpan(context, selector, starts);
+    const change = replaceSelectedSpan(context.documentFor(span.source), span, parameters.text);
     refuseIdenticalReplacement(context, [{ source: span.source, ...change }]);
     return {
       edits: new Map([[span.source, { changes: [change], action: "edited" }]]),
     };
   },
 };
-
-function replaceRange(
-  input: Omit<ReplaceParameters, "text">,
-): readonly [opening: "from" | "after", closing: "through" | "before"] | undefined {
-  const opening =
-    input.from !== undefined ? "from" : input.after !== undefined ? "after" : undefined;
-  const closing =
-    input.through !== undefined ? "through" : input.before !== undefined ? "before" : undefined;
-  if (opening === undefined && closing === undefined) return undefined;
-
-  if (input.at !== undefined)
-    throw new TextMutationInputError(
-      "CONFLICTING_RANGE_BOUNDARIES",
-      "Pass at for a single selection or a pair of range boundaries, not both.",
-    );
-  if (input.from !== undefined && input.after !== undefined)
-    throw new TextMutationInputError(
-      "CONFLICTING_RANGE_BOUNDARIES",
-      "Pass from or after, not both: from includes the opening match and after excludes it.",
-    );
-  if (input.through !== undefined && input.before !== undefined)
-    throw new TextMutationInputError(
-      "CONFLICTING_RANGE_BOUNDARIES",
-      "Pass through or before, not both: through includes the closing match and before excludes it.",
-    );
-  if (opening === undefined)
-    throw new TextMutationInputError(
-      "MISSING_RANGE_BOUNDARY",
-      `Pass from to include the opening match or after to exclude it when using ${closing}.`,
-    );
-  if (closing === undefined)
-    throw new TextMutationInputError(
-      "MISSING_RANGE_BOUNDARY",
-      `Pass through to include the closing match or before to exclude it when using ${opening}. Use at instead for a single selection.`,
-    );
-  return [opening, closing];
-}
 
 /**
  * Refuses a call whose replacement equals every selected target byte for byte. When only some

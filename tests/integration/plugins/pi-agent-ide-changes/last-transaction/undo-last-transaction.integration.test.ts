@@ -77,7 +77,7 @@ describe("undo last text transaction", () => {
           arguments: {
             code: `const selected = await tools.search(${JSON.stringify({ path: file, query: "regex:^// moved_0 [^\\n]*\\n(?:// moved_[0-9]+ [^\\n]*\\n){2899}", multiline: true })});
 if (selected === null || selected.matches.length !== 1) throw Error("Large block selection failed");
-const receipt = await tools.move({path:selected,target:${JSON.stringify(file)},targetStart:"end"});
+const receipt = await tools.move({path:selected,target:${JSON.stringify(file)},targetAfter:"end"});
 if (receipt === null) throw Error("Large move failed");`,
           },
           delayMs: 0,
@@ -162,7 +162,7 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "direct-edit",
               name: "insert",
-              arguments: { path: fileName, anchor: "end", text: "gamma" },
+              arguments: { path: fileName, after: "end", text: "gamma" },
             }),
           ),
           toolMessage(
@@ -226,12 +226,12 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "multi-batch-first",
               name: "insert",
-              arguments: { path: firstName, anchor: "end", text: "first batch change" },
+              arguments: { path: firstName, after: "end", text: "first batch change" },
             }),
             toolCall({
               id: "multi-batch-second",
               name: "insert",
-              arguments: { path: secondName, anchor: "end", text: "second batch change" },
+              arguments: { path: secondName, after: "end", text: "second batch change" },
             }),
           ),
           toolMessage(
@@ -291,14 +291,14 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "latest-first",
               name: "insert",
-              arguments: { path: latestName, anchor: "end", text: "first" },
+              arguments: { path: latestName, after: "end", text: "first" },
             }),
           ),
           toolMessage(
             toolCall({
               id: "latest-second",
               name: "insert",
-              arguments: { path: latestName, anchor: "end", text: "second" },
+              arguments: { path: latestName, after: "end", text: "second" },
             }),
           ),
           toolMessage(
@@ -319,7 +319,7 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "stale-edit",
               name: "insert",
-              arguments: { path: staleName, anchor: "end", text: "editor change" },
+              arguments: { path: staleName, after: "end", text: "editor change" },
             }),
           ),
           toolMessage(
@@ -385,7 +385,7 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "selective-source-edit",
               name: "insert",
-              arguments: { path: fileName, anchor: "end", text: "gamma" },
+              arguments: { path: fileName, after: "end", text: "gamma" },
             }),
           ),
           toolMessage(

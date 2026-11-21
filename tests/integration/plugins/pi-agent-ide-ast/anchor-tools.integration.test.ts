@@ -40,7 +40,7 @@ describe("AST scope anchors through text editor tools", () => {
     await runAstScenario(
       "ast-anchor-insert",
       "insert",
-      ([first]) => ({ anchor: first.endScopeAnchor.value, text: "inserted();" }),
+      ([first]) => ({ after: first.endScopeAnchor.value, text: "inserted();" }),
       [...firstFunction, "inserted();", "", ...secondFunction].join("\n"),
     );
   });
@@ -63,8 +63,8 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-delete",
       "delete",
       ([, second]) => ({
-        start: second.beginAnchor.value,
-        end: second.endScopeAnchor.value,
+        from: second.beginAnchor.value,
+        through: second.endScopeAnchor.value,
       }),
       // Removing an unterminated final scope also removes its preceding separator.
       [...firstFunction, ""].join("\n"),
@@ -78,7 +78,7 @@ describe("AST scope anchors through text editor tools", () => {
       ([first, second]) => ({
         from: first.beginAnchor.value,
         through: first.endScopeAnchor.value,
-        targetStart: second.endScopeAnchor.value,
+        targetAfter: second.endScopeAnchor.value,
       }),
       [...lines, ...firstFunction].join("\n"),
     );
@@ -91,7 +91,7 @@ describe("AST scope anchors through text editor tools", () => {
       ([first, second]) => ({
         from: first.beginAnchor.value,
         through: first.endScopeAnchor.value,
-        targetStart: second.endScopeAnchor.value,
+        targetAfter: second.endScopeAnchor.value,
       }),
       ["", ...secondFunction, ...firstFunction].join("\n"),
     );
@@ -114,8 +114,7 @@ async function runAstScenario(
     const expectedAnchors = Object.entries(anchorArguments)
       .filter(
         ([key, value]) =>
-          ["targetStart", "start", "end", "from", "through"].includes(key) &&
-          typeof value === "string",
+          ["targetAfter", "at", "from", "through"].includes(key) && typeof value === "string",
       )
       .map(([, value]) => value as string);
     const toolArguments =

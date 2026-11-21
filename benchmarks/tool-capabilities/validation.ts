@@ -126,8 +126,37 @@ export interface ResultReuse {
   explicit?: unknown;
 }
 
+const RANGE_FIELDS = ["at", "from", "after", "through", "before"] as const;
+const TARGET_FIELDS = [
+  "targetAt",
+  "targetFrom",
+  "targetAfter",
+  "targetThrough",
+  "targetBefore",
+] as const;
+
 function editOpening(tool: string, args: Record<string, unknown>): unknown {
-  return tool === "replace" ? (args.at ?? args.from ?? args.after) : (args.anchor ?? args.start);
+  return tool === "insert" ? (args.after ?? args.before) : (args.at ?? args.from ?? args.after);
+}
+
+function targetSelection(args: Record<string, unknown>): unknown {
+  return args.targetAt ?? args.targetFrom ?? args.targetAfter ?? args.targetBefore;
+}
+
+function excludesSourceBoundary(tool: string, args: Record<string, unknown>): boolean {
+  return (tool !== "insert" && args.after !== undefined) || args.before !== undefined;
+}
+
+function implicitSelection(tool: string, field: string, args: Record<string, unknown>): unknown {
+  if (field === "targetAt" && TARGET_FIELDS.every((key) => args[key] === undefined))
+    return args.target;
+  if (tool === "insert")
+    return field === "after" && args.after === undefined && args.before === undefined
+      ? args.path
+      : undefined;
+  return field === "at" && RANGE_FIELDS.every((key) => args[key] === undefined)
+    ? args.path
+    : undefined;
 }
 
 function fieldValue(value: unknown, field: string): unknown {
@@ -710,13 +739,8 @@ export function validateRoute(
       const tool = toolSemantics(aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "");
       const affected =
         tool === "copy"
-          ? [args.target]
-          : [
-              args.path,
-              ...(tool === "replace" ? [editOpening(tool, args)] : [args.anchor, args.start]),
-              args.target,
-              args.file,
-            ];
+          ? [args.target ?? targetSelection(args) ?? args.path ?? editOpening(tool, args)]
+          : [args.path ?? editOpening(tool, args), args.target ?? targetSelection(args), args.file];
       if (
         affected.some((value) =>
           [...values(value), ...reusedPaths(value, prior.index)].some(
@@ -738,7 +762,7 @@ export function validateRoute(
     selection?: LineSelection;
   } {
     const selector = editOpening(tool, actual);
-    const closing = tool === "replace" ? actual.through : actual.end;
+    const closing = tool === "insert" ? undefined : actual.through;
     const source = actual.path ?? selector;
     const paths = [...values(source), ...reusedPaths(source, before)];
     const file = Object.keys(task.files ?? {}).find((file) =>
@@ -748,8 +772,7 @@ export function validateRoute(
     if (sourceChanged(file, before)) return {};
     const content = task.files?.[file];
     if (content === undefined) return {};
-    if (tool === "replace" && (actual.after !== undefined || actual.before !== undefined))
-      return { content };
+    if (tool !== "insert" && excludesSourceBoundary(tool, actual)) return { content };
     if (selector !== undefined) {
       const issuers = selectionIssuers(file, before);
       // Only issued line selections count: a literal selects just its characters.
@@ -850,7 +873,6 @@ export function validateRoute(
     if (tool === "read" && normalized.offset === undefined)
       normalized.offset = typeof actual.path === "string" && actual.path.startsWith("raw:") ? 0 : 1;
     if (tool === "insert") {
-      if (normalized.before === undefined) normalized.before = false;
       if (normalized.separation === undefined) normalized.separation = "line";
     }
     if (tool === "search") {
@@ -963,13 +985,12 @@ export function validateRoute(
     if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
     const file = expected.path;
     const location = editOpening(tool, actual);
-    const closing = tool === "replace" ? actual.through : actual.end;
-    const excludesBoundary =
-      tool === "replace" && (actual.after !== undefined || actual.before !== undefined);
+    const closing = tool === "insert" ? undefined : actual.through;
+    const excludesBoundary = excludesSourceBoundary(tool, actual);
     // Infer sources only from issued references; an explicit different file is never rescued.
     for (const [sourceField, selector] of [
       ["path", location],
-      ["target", actual.targetStart],
+      ["target", targetSelection(actual)],
     ] as const) {
       const source = actual[sourceField] ?? selector;
       const paths = [...new Set(reusedPaths(source, before).map((source) => fixturePath(source)))];
@@ -999,7 +1020,7 @@ export function validateRoute(
     if (
       file instanceof RegExp &&
       selection !== undefined &&
-      (tool !== "replace" || closing === undefined) &&
+      closing === undefined &&
       !excludesBoundary &&
       (location === undefined ||
         actual.path === undefined ||
@@ -1018,11 +1039,10 @@ export function validateRoute(
           if (equivalent) normalized.path = equivalent;
         }
     }
-    const sourceFields =
-      tool === "replace"
-        ? ["at", "from", "after", "through", "before"]
-        : ["anchor", "start", "end"];
-    for (const field of [...sourceFields, "targetStart", "targetEnd"]) {
+    const sourceFields = tool === "insert" ? ["after", "before"] : RANGE_FIELDS;
+    const fields =
+      tool === "copy" || tool === "move" ? [...sourceFields, ...TARGET_FIELDS] : sourceFields;
+    for (const field of fields) {
       const target = field.startsWith("target");
       const source = target ? expected.target : file;
       const actualSource = target ? actual.target : actual.path;
@@ -1034,18 +1054,13 @@ export function validateRoute(
       )
         continue;
       const issuers = selectionIssuers(source, before);
-      const selector =
-        normalized[field] ??
-        (["at", "start", "anchor"].includes(field)
-          ? actual.path
-          : field === "targetStart"
-            ? actual.target
-            : undefined);
+      const implicit = implicitSelection(tool, field, actual);
+      const selector = normalized[field] ?? implicit;
       const exact = expected[field];
       // A source or target result can itself provide a complete selection.
       if (
         exact instanceof RegExp &&
-        ["at", "start", "anchor", "targetStart"].includes(field) &&
+        implicit !== undefined &&
         normalized[field] === undefined &&
         sameSource(source, selector, before) &&
         matches(exact, selector)
@@ -1095,13 +1110,11 @@ export function validateRoute(
     const value = fieldValue(args, field);
     const alternatives = [value];
     if (field === "path" && args) {
-      const selectors = tool === "replace" ? [editOpening(tool, args)] : [args.anchor, args.start];
-      for (const selector of selectors)
-        if (args.path === undefined || sameSource(args.path, selector, before))
-          alternatives.push(selector);
+      const selector = editOpening(tool, args);
+      if (args.path === undefined || sameSource(args.path, selector, before))
+        alternatives.push(selector);
     }
-    if (["at", "start", "anchor"].includes(field) && args && value === undefined)
-      alternatives.push(args.path);
+    if (args && value === undefined) alternatives.push(implicitSelection(tool, field, args));
     if (reference.kind === "text") {
       return typeof value === "string" && value.length > 0 && resultText(prior).includes(value);
     }

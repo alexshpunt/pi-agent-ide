@@ -1,7 +1,12 @@
 import { requiredValue } from "pi-agent-invariant";
 import { TextSelectionAnchor, type TextSelectionRange } from "#src/api/text-selection-anchor.ts";
 
-import { TextMutationInputError, type TextMutationContext } from "#src/api/mutation-tool.ts";
+import {
+  TextMutationInputError,
+  type TextMutationChange,
+  type TextMutationContext,
+} from "#src/api/mutation-tool.ts";
+import { selectorFields, type TextSelector } from "#src/api/text-selector-fields.ts";
 import type { TextAnchor } from "pi-agent-text";
 import type {
   TextChange,
@@ -105,16 +110,54 @@ function selectsWholeLines(anchors: ReadonlyMap<string, TextAnchor>): boolean {
   return anchor.ranges.length === 1 && anchor.ranges[0]?.linewise === true;
 }
 
+/** Resolve one selected span; exclude boundaries only in a paired range. */
+export async function resolveTextSpan(
+  context: TextMutationContext,
+  selector: TextSelector,
+  starts?: ReadonlyMap<string, TextAnchor>,
+): Promise<TextAnchorSpan> {
+  const anchors = starts ?? (await context.resolveAnchors(selector.first));
+  return selector.kind === "range"
+    ? resolveAnchorSpanRange(context, anchors, selector.first, selector.last, selector)
+    : singleAnchorSpan(context, anchors, selector.first);
+}
+
+/** A range between adjacent markers is an insertion gap, not an empty line to overwrite. */
+export function replaceSelectedSpan(
+  document: TextChangeDocument,
+  span: TextAnchorSpan,
+  insert: string | TextTransfer,
+): TextChange {
+  return span.insertion !== undefined && insert !== ""
+    ? document.insert(span, insert, { before: true, linewise: span.insertion === "line" })
+    : document.replace(span, insert);
+}
+
+export async function transferToTextSelector(
+  context: TextMutationContext,
+  copied: TextTransfer,
+  selector: TextSelector = { kind: "single", first: "targetAt" },
+): Promise<readonly [TextAnchorSpan, TextMutationChange]> {
+  const span = await resolveTextSpan(context, selector);
+  const document = context.documentFor(span.source);
+  const insertion = selector.kind === "insert-before" || selector.kind === "insert-after";
+  const change = insertion
+    ? document.insert(span, copied, { before: selector.kind === "insert-before" })
+    : replaceSelectedSpan(document, span, copied);
+  return [
+    insertion ? { source: span.source, from: change.from, to: change.to } : span,
+    { ...change, selectorFields: selectorFields(selector) },
+  ];
+}
+
 /** Resolve a paired end only after the first selector has resolved to one span. */
-export async function resolveAnchorSpanRange(
+async function resolveAnchorSpanRange(
   context: TextMutationContext,
   starts: ReadonlyMap<string, TextAnchor>,
   startField: string,
   endField: string,
-  hasEnd: boolean,
-  boundaries: RangeBoundaries = {},
+  boundaries: RangeBoundaries,
 ): Promise<TextAnchorSpan> {
-  if (!hasEnd) return singleAnchorSpan(context, starts, startField);
   const start = singleAnchorSpan(context, starts, startField, true);
   const ends = await context.resolveAnchors(endField, {
     source: start.source,
@@ -135,7 +178,7 @@ export async function resolveAnchorSpanRange(
     if (nearest === undefined) {
       throw new TextMutationInputError(
         "ANCHOR_NOT_FOUND_AFTER_START",
-        `No match for ${endField} follows ${startField} in "${start.source}". Choose an end selector that matches after the start.`,
+        `No match for ${endField} follows ${startField} in "${start.source}". Choose a later match for ${endField}.`,
       );
     }
     selectedEnds = new Map([
@@ -185,7 +228,7 @@ export async function anchorSpanRange(
   if (end.from < start.to && (trimsBoundary || start.from !== end.from || start.to !== end.to)) {
     throw new TextMutationInputError(
       "ANCHOR_RANGE_OVERLAP",
-      `Anchors ${startField} and ${endField} overlap. Choose an end selector that starts after the start selection.`,
+      `Anchors ${startField} and ${endField} overlap. Choose a match for ${endField} that starts after ${startField}.`,
     );
   }
   const document = context.documentFor(start.source);
@@ -268,7 +311,7 @@ export function insertionBeforeAnchor(
   context: TextMutationContext,
   anchors: ReadonlyMap<string, TextAnchor>,
   field: string,
-  insert: string,
+  insert: string | TextTransfer,
   options: TextInsertOptionsWithoutBefore = {},
 ): readonly [string, TextChange] {
   const span = singleAnchorSpan(context, anchors, field);

@@ -105,7 +105,7 @@ test.each(["direct", "codemode"] as const)(
         args: {
           path: entry.file,
           ...(entry.text === undefined
-            ? { start: entry.start }
+            ? { at: entry.start }
             : { at: entry.start, text: entry.text }),
         },
       }));
@@ -147,12 +147,12 @@ test.each(["all", "allSettled"] as const)(
         return line.slice(0, 7);
       };
       const results = await Promise.${method}([
-        tools.insert({path:insertSource,anchor:anchor(insertSource,"first"),text:"FIRST\\n"}),
-        tools.insert({path:insertSource,anchor:anchor(insertSource,"middle"),text:"MIDDLE\\n"}),
-        tools.insert({path:"./insert.txt",anchor:anchor(insertSource,"last"),text:"LAST\\n"}),
-        tools.delete({path:deleteSource,start:anchor(deleteSource,"first")}),
-        tools.delete({path:deleteSource,start:anchor(deleteSource,"middle")}),
-        tools.delete({path:"./delete.txt",start:anchor(deleteSource,"last")})
+        tools.insert({path:insertSource,after:anchor(insertSource,"first"),text:"FIRST\\n"}),
+        tools.insert({path:insertSource,after:anchor(insertSource,"middle"),text:"MIDDLE\\n"}),
+        tools.insert({path:"./insert.txt",after:anchor(insertSource,"last"),text:"LAST\\n"}),
+        tools.delete({path:deleteSource,at:anchor(deleteSource,"first")}),
+        tools.delete({path:deleteSource,at:anchor(deleteSource,"middle")}),
+        tools.delete({path:"./delete.txt",at:anchor(deleteSource,"last")})
       ]); ${collect}`;
       const result = await run(cwd, `parallel-byte-effects-${method}`, [
         message("script", "codemode", { code }),

@@ -176,9 +176,9 @@ test.each(
         const args = {
           path: { id: `$issued-uuid:scope-${name}` },
           ...(tool === "insert"
-            ? { anchor: selector }
+            ? { after: selector }
             : tool === "delete"
-              ? { start: selector }
+              ? { at: selector }
               : { at: selector }),
           ...(name === "delete" ? {} : { text: written }),
         };
@@ -285,10 +285,10 @@ test.each(["direct", "codemode"] as const)(
           name: "move",
           args: {
             path: { id: "$issued-uuid:scope" },
-            start: "$issued-anchor:anchors:2",
+            at: "$issued-anchor:anchors:2",
             target: "target.txt",
-            targetStart: "SLOT",
-            targetEnd: "SLOT",
+            targetFrom: "SLOT",
+            targetThrough: "SLOT",
           },
         },
       ];
@@ -351,10 +351,10 @@ test.each(["direct", "codemode"] as const)(
             arguments: {
               path: [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }],
               ...(name === "insert"
-                ? { anchor: "$issued-search:first:1" }
+                ? { after: "$issued-search:first:1" }
                 : name === "replace"
                   ? { from: "$issued-search:first:1", through: "$issued-search:first:1" }
-                  : { start: "$issued-search:first:1", end: "$issued-search:first:1" }),
+                  : { from: "$issued-search:first:1", through: "$issued-search:first:1" }),
               ...(name === "delete" ? {} : { text: "BAD\n" }),
             },
           });
@@ -376,9 +376,9 @@ test.each(["direct", "codemode"] as const)(
 const path = [{ id: "$issued-search:first:1" }, { id: "$issued-search:last:1" }];
 const anchor = "$issued-search:first:1";
 const refused = [];
-refused.push(await tools.insert({ path, anchor, text: "BAD\\n" }));
+refused.push(await tools.insert({ path, after: anchor, text: "BAD\\n" }));
 refused.push(await tools.replace({ path, from: anchor, through: anchor, text: "BAD\\n" }));
-refused.push(await tools.delete({ path, start: anchor, end: anchor }));
+refused.push(await tools.delete({ path, from: anchor, through: anchor }));
 const retry = await tools.insert({ path, text: "NEW\\n" });
 text(JSON.stringify({ refused, retry: retry !== null }));
 `,
@@ -748,18 +748,18 @@ test("Codemode passes results as path and values with an id as selectors", async
           code: String.raw`
 const lines = await tools.read({ path: "line.txt", views: ["anchors"] });
 const last = lines.text.split("\n")[1].split("|")[0];
-const deleted = await tools.delete({ path: lines, start: last });
+const deleted = await tools.delete({ path: lines, at: last });
 const list = await tools.read({ path: "list.txt" });
-const inserted = await tools.insert({ path: list, anchor: "two", text: "ADDED\n" });
+const inserted = await tools.insert({ path: list, after: "two", text: "ADDED\n" });
 const begin = await tools.search({ path: "target.txt", query: "TARGET_BEGIN" });
 const end = await tools.search({ path: "target.txt", query: "TARGET_END" });
 const copied = await tools.copy({
   path: "source.txt",
-  start: "COPY_BEGIN",
-  end: "COPY_END",
+  from: "COPY_BEGIN",
+  through: "COPY_END",
   target: "target.txt",
-  targetStart: begin.matches[0],
-  targetEnd: { id: end.matches[0].id },
+  targetFrom: begin.matches[0],
+  targetThrough: { id: end.matches[0].id },
 });
 text(JSON.stringify({ deleted, inserted: inserted !== null, copied: copied !== null }));`,
         },

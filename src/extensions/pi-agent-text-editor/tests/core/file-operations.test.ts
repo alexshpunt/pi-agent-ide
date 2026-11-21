@@ -21,8 +21,8 @@ test("whole-file mode requires paths and no text selectors", () => {
   expect(isWholeFileInvocation("copy", { path: "a", target: "b" })).toBe(true);
   expect(isWholeFileInvocation("move", { path: "a", target: "b" })).toBe(true);
   expect(isWholeFileInvocation("delete", { path: "a" })).toBe(true);
-  expect(isWholeFileInvocation("copy", { path: "a", target: "b", start: "alpha" })).toBe(false);
-  expect(isWholeFileInvocation("delete", { path: "a", start: "alpha" })).toBe(false);
+  expect(isWholeFileInvocation("copy", { path: "a", target: "b", at: "alpha" })).toBe(false);
+  expect(isWholeFileInvocation("delete", { path: "a", at: "alpha" })).toBe(false);
   expect(isWholeFileInvocation("delete", { path: "SEARCH#ABCD:all:line" })).toBe(false);
   expect(isWholeFileInvocation("delete", {})).toBe(false);
 });

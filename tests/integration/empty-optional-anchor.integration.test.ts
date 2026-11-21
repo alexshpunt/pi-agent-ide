@@ -14,8 +14,8 @@ import {
   withTempWorkspace,
 } from "#integration/support/pi-runtime/fixtures.ts";
 
-// Cover optional empty anchors on Delete and Copy alongside Replace at on each route.
-test("optional empty anchors and single Replace selections work on all routes", async () => {
+// Cover single selections and lone destination insertion on each route.
+test("single selectors and destination insertion work on all routes", async () => {
   await withTempWorkspace(async (cwd) => {
     await enableNativeCodemode(cwd);
     const files = ["single", "batched", "delete", "copy", "script"];
@@ -42,17 +42,16 @@ test("optional empty anchors and single Replace selections work on all routes", 
               id: "delete",
               name: "delete",
               // A literal selects only its characters; include the break to delete the line.
-              arguments: { path: "delete.txt", start: "beta\n", end: "" },
+              arguments: { path: "delete.txt", at: "beta\n" },
             }),
             toolCall({
               id: "copy",
               name: "copy",
               arguments: {
                 path: "copy.txt",
-                start: "alpha\n",
+                at: "alpha\n",
                 target: "copy.txt",
-                targetStart: "gamma\n",
-                targetEnd: "",
+                targetAfter: "gamma\n",
               },
             }),
           ],

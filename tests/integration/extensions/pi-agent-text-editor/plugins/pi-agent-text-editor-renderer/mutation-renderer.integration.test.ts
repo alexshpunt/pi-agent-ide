@@ -493,7 +493,7 @@ describe("text mutation renderer", () => {
       tool: "insert",
       arguments: {
         path: "subject.ts",
-        anchor: uniqueLineAnchor("    return value;"),
+        after: uniqueLineAnchor("    return value;"),
         text: "    audit(value);\n",
       },
       stats: "+1 ~0 -0",
@@ -503,7 +503,7 @@ describe("text mutation renderer", () => {
       tool: "delete",
       arguments: {
         path: "subject.ts",
-        start: uniqueLineAnchor("    const value = load();"),
+        at: uniqueLineAnchor("    const value = load();"),
       },
       stats: "+0 ~0 -1",
       row: /2\s+-\s+const value = load\(\);/u,
@@ -606,9 +606,9 @@ async function runCrossFileMutation(
             name: tool,
             arguments: {
               path: "source.txt",
-              start: uniqueLineAnchor(selectedText),
+              at: uniqueLineAnchor(selectedText),
               target: "target.txt",
-              targetStart: uniqueLineAnchor("target-start"),
+              targetAfter: uniqueLineAnchor("target-start"),
             },
           }),
         ],

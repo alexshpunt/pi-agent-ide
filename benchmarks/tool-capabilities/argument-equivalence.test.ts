@@ -375,10 +375,10 @@ for (const mode of ["direct", "codemode"]) {
     void test(`${mode}: fresh Search fragments remain provable after a prior edit for ${tool}`, () => {
       const fragment = "α\r\nβ";
       const match = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
-      const selector = tool === "insert" ? "anchor" : tool === "replace" ? "at" : "start";
+      const selector = tool === "insert" ? "after" : "at";
       const extra =
         tool === "insert"
-          ? { text: "]", before: false }
+          ? { text: "]" }
           : tool === "replace"
             ? { text: "NEW" }
             : ["copy", "move"].includes(tool)
@@ -386,7 +386,7 @@ for (const mode of ["direct", "codemode"]) {
               : {};
       const opening: Call = {
         tool: "insert",
-        args: { path: "task.txt", anchor: "α", text: "[", before: true },
+        args: { path: "task.txt", before: "α", text: "[" },
       };
       const found: Call = {
         tool: "search",
@@ -467,7 +467,7 @@ for (const mode of ["direct", "codemode"]) {
       );
       const changed: Call = {
         tool: "insert",
-        args: { path: "task.txt", anchor: "head", text: "!", before: true },
+        args: { path: "task.txt", before: "head", text: "!" },
       };
       assert.equal(check([opening, found, changed, closing]), false);
       assert.ok(check([opening, found, { ...changed, error: true }, closing]));
@@ -551,15 +551,16 @@ for (const mode of ["direct", "codemode"]) {
   for (const ending of ["lf", "crlf", "unterminated"]) {
     void test(`${mode}: exact-eof-${ending} requires literal block selection and omitted end without prescribing boundary spelling`, () => {
       const eol = ending === "crlf" ? "\r\n" : "\n";
-      const calls: [Call, Call, Call, Call, Call] = [
+      const calls: [Call, Call, Call, Call, Call, Call] = [
         { tool: "replace", args: { path: "last.txt", at: "Last", text: "Final" } },
-        { tool: "delete", args: { path: "block.txt", start: `${eol}Last${eol}Block` } },
+        { tool: "delete", args: { path: "block.txt", at: `${eol}Last${eol}Block` } },
         {
           tool: "replace",
           args: { path: "empty.txt", at: `${eol}Last${eol}Block`, text: "" },
         },
         { tool: "read", args: { path: "line.txt", views: ["anchors"] }, text: "ABCDEFG|Last" },
-        { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
+        { tool: "delete", args: { path: "line.txt", at: "ABCDEFG" } },
+        { tool: "replace", args: { path: "blank.txt", at: "Last", text: "\n" } },
       ];
       const id = `exact-eof-${ending}`;
       assert.ok(passes(id, calls, mode));
@@ -601,23 +602,22 @@ for (const mode of ["direct", "codemode"]) {
         tool: "insert",
         args: {
           path: "task.txt",
-          anchor: "OLD",
+          before: "OLD",
           text: "NOTE",
-          before: true,
           separation: "blank-line",
         },
       },
-      { tool: "insert", args: { path: "literal.txt", anchor: "α🙂", text: "[", before: true } },
-      { tool: "insert", args: { path: "literal.txt", anchor: "α🙂", text: "]" } },
-      { tool: "insert", args: { path: "block.txt", anchor: "α", text: "[", before: true } },
-      { tool: "insert", args: { path: "block.txt", anchor: "β", text: "]" } },
+      { tool: "insert", args: { path: "literal.txt", before: "α🙂", text: "[" } },
+      { tool: "insert", args: { path: "literal.txt", after: "α🙂", text: "]" } },
+      { tool: "insert", args: { path: "block.txt", before: "α", text: "[" } },
+      { tool: "insert", args: { path: "block.txt", after: "β", text: "]" } },
       { tool: "search", args: { path: "search.txt", query: "MATCH" }, text: "SEARCH#ABCD:1:match" },
       {
         tool: "insert",
-        args: { path: "search.txt", anchor: "SEARCH#ABCD:1:match", text: "[", before: true },
+        args: { path: "search.txt", before: "SEARCH#ABCD:1:match", text: "[" },
       },
       { tool: "search", args: { path: "search.txt", query: "MATCH" }, text: "SEARCH#DCBA:1:match" },
-      { tool: "insert", args: { path: "search.txt", anchor: "SEARCH#DCBA:1:match", text: "]" } },
+      { tool: "insert", args: { path: "search.txt", after: "SEARCH#DCBA:1:match", text: "]" } },
     ];
     assert.ok(passes("insert-before", calls, mode));
     for (const [index, anchor] of [
@@ -628,20 +628,22 @@ for (const mode of ["direct", "codemode"]) {
         passes(
           "insert-before",
           calls.map((call, position) =>
-            position === index ? { ...call, args: { ...call.args, anchor } } : call,
+            position === index
+              ? { ...call, args: { ...call.args, [index === 3 ? "before" : "after"]: anchor } }
+              : call,
           ),
           mode,
         ),
       );
     for (const [index, fields] of [
-      [3, { anchor: "regex:α" }],
-      [4, { anchor: "SEARCH#ABCD:1:match" }],
-      [3, { before: false }],
-      [4, { before: true }],
+      [3, { before: "regex:α" }],
+      [4, { after: "SEARCH#ABCD:1:match" }],
+      [3, { before: undefined, after: "α" }],
+      [4, { after: undefined, before: "β" }],
       [3, { path: "literal.txt" }],
-      [6, { anchor: "SEARCH#FFFF:1:match" }],
-      [8, { anchor: "SEARCH#ABCD:1:match" }],
-      [6, { anchor: "MATCH" }],
+      [6, { before: "SEARCH#FFFF:1:match" }],
+      [8, { after: "SEARCH#ABCD:1:match" }],
+      [6, { before: "MATCH" }],
     ] as const) {
       assert.equal(
         passes(

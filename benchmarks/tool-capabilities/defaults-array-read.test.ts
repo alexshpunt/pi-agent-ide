@@ -158,11 +158,11 @@ for (const mode of ["direct", "codemode"]) {
     const readStep: RouteStep = { tool: "read", args: { path: "b.txt" }, contains: "Beta" };
     const editStep: RouteStep = {
       tool: "delete",
-      args: { path: "b.txt", start: /^ABCDEFG$/u },
-      reuse: { from: 0, field: "start", kind: "anchor" },
+      args: { path: "b.txt", at: /^ABCDEFG$/u },
+      reuse: { from: 0, field: "at", kind: "anchor" },
     };
     const task = { steps: [readStep, editStep] };
-    const edit: Call = { tool: "delete", args: { path: "b.txt", start: "ABCDEFG" } };
+    const edit: Call = { tool: "delete", args: { path: "b.txt", at: "ABCDEFG" } };
     assert.ok(validateRoute(task, events([read, edit], mode), mode).passed);
     assert.equal(
       validateRoute(
@@ -243,12 +243,13 @@ for (const mode of ["direct", "codemode"]) {
       };
       const edits: Call[] = [
         { tool: "replace", args: { path: "last.txt", at: "Last", text: "Final" } },
-        { tool: "delete", args: { path: "block.txt", start: `${eol}Last${eol}Block` } },
+        { tool: "delete", args: { path: "block.txt", at: `${eol}Last${eol}Block` } },
         {
           tool: "replace",
           args: { path: "empty.txt", at: `${eol}Last${eol}Block`, text: "" },
         },
-        { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
+        { tool: "delete", args: { path: "line.txt", at: "ABCDEFG" } },
+        { tool: "replace", args: { path: "blank.txt", at: "Last", text: "\n" } },
       ];
       const representations: Call[] = [
         read,
@@ -272,8 +273,9 @@ for (const mode of ["direct", "codemode"]) {
                   ...edits.slice(0, 3),
                   {
                     tool: "delete",
-                    args: { path: "line.txt", start },
+                    args: { path: "line.txt", at: start },
                   },
+                  ...edits.slice(4),
                 ],
                 mode,
               ),

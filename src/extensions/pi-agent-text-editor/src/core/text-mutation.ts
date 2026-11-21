@@ -99,6 +99,7 @@ import {
   type SourceAliases,
 } from "./source-aliases.ts";
 import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
+import { sourceSelectors } from "#src/api/text-selector-fields.ts";
 import { isResultInput, prepareResultTransfer } from "./result-transfer.ts";
 import { expandReferenceList } from "./reference-list.ts";
 import {
@@ -279,7 +280,7 @@ export function createTextTool<TParameters extends TSchema>(
                     );
                     if (scoped && Array.isArray(sourceInput) && sourceInput.length > 1)
                       throw new Error(
-                        "A result list cannot be combined with explicit selectors. Omit anchor/start/end to edit every listed target, or pass one result as path to select inside it. No targets were edited.",
+                        "A result list cannot be combined with explicit selectors. Omit text selectors to edit every listed target, or pass one result as path to select inside it. No targets were edited.",
                       );
                     const selected = scoped
                       ? resolveResultScope(resultTargets, expanded, context.cwd)
@@ -685,6 +686,18 @@ interface ResolvedMutationSources {
   readonly scopes: ReadonlyMap<string, readonly TextTarget[]>;
 }
 
+/** A textual Search source supplies the implicit selection to the active opening selector. */
+export function implicitSourceAnchor(
+  definition: TextMutationToolRegistration,
+  sourceField: string,
+  input: Readonly<Record<string, unknown>>,
+) {
+  const anchors = definition.anchors?.filter((anchor) => anchor.sourceField === sourceField);
+  return (
+    anchors?.find((anchor) => isMutationAnchorValue(anchor, input[anchor.field])) ?? anchors?.[0]
+  );
+}
+
 /** Whether a source field holds a result whose selection limits the field's anchors. */
 function isScopedSourceField(
   definition: TextMutationToolRegistration,
@@ -817,9 +830,7 @@ async function resolveMutationSources(
   const implicitTargets = new Map<string, readonly TextTarget[]>();
   for (const descriptor of definition.anchors ?? []) {
     const targets = sourceSelections.get(descriptor.sourceField);
-    const firstAnchor = definition.anchors?.find(
-      (anchor) => anchor.sourceField === descriptor.sourceField,
-    );
+    const firstAnchor = implicitSourceAnchor(definition, descriptor.sourceField, input);
 
     const hasExplicitAnchor = isMutationAnchorValue(descriptor, input[descriptor.field]);
     const hasImplicitSourceSelection = expandedFromExplicitSource.has(descriptor.sourceField);
@@ -1297,18 +1308,26 @@ export function createMutationContext(
       }
 
       if (explicitAnchors === undefined) {
-        const example: Record<string, string> = {};
+        const example: Record<string, string> = {
+          [definition.source.field]: sourceFor(definition.source.field),
+        };
+        if (descriptor.sourceField !== definition.source.field)
+          example[descriptor.sourceField] = sourceFor(descriptor.sourceField);
         for (const selector of definition.anchors ?? []) {
-          if (selector.field !== field && (selector.optional || definition.name === "replace"))
-            continue;
-          example[selector.sourceField] = sourceFor(selector.sourceField);
-          example[selector.field] = "exact existing text";
+          if (selector.field === field || typeof input[selector.field] === "string")
+            example[selector.field] = "exact existing text";
         }
         if (definition.name === "insert" || definition.name === "replace")
           example.text = "new text";
+        const alternatives =
+          field === "targetAt"
+            ? " Pass targetAfter or targetBefore alone to insert instead."
+            : definition.name === "insert"
+              ? " Use before to insert on the other side."
+              : "";
         throw new Error(
           `Missing "${field}" for ${definition.name} with a file path in "${descriptor.sourceField}". ` +
-            `Read the file and supply "${field}" as exact existing text or an issued selection reference. ` +
+            `Read the file and supply "${field}" as exact existing text or an issued selection reference.${alternatives} ` +
             `Example shape: ${definition.name}(${JSON.stringify(example)}). ` +
             `Replace the example text with text from your file, or pass a Read/Search selection as "${descriptor.sourceField}" instead of a file path.`,
         );
@@ -1396,9 +1415,11 @@ export async function preflightMutationAnchors(
   await Promise.all(
     (definition.anchors ?? []).map(async (descriptor) => {
       if (
-        descriptor.pairedEnd ||
+        (descriptor.pairedEnd &&
+          (descriptor.field !== "targetBefore" ||
+            input.targetFrom !== undefined ||
+            input.targetAfter !== undefined)) ||
         descriptor.field === definition.pair?.[1] ||
-        descriptor.field === "targetEnd" ||
         !isMutationAnchorValue(descriptor, input[descriptor.field])
       ) {
         return;
@@ -2076,7 +2097,7 @@ async function resolveAnchorRecovery(error: TextMutationAnchorResolutionError) {
 
 interface AllMatchesRetry {
   readonly store: ResultTargetStore;
-  readonly field: "at" | "start" | "anchor";
+  readonly field: "at" | "after" | "before";
 }
 
 /** Only selectors that edit each range independently can use an entire match set. */
@@ -2086,14 +2107,15 @@ export function allMatchesRetry(
   store?: ResultTargetStore,
 ): AllMatchesRetry | undefined {
   if (store === undefined) return undefined;
-  if (operation === "insert") return { store, field: "anchor" };
+  if (operation === "insert") {
+    if (input.after !== undefined && input.before !== undefined) return undefined;
+    return { store, field: input.before === undefined ? "after" : "before" };
+  }
   if (
-    operation === "replace" &&
-    ["from", "after", "through", "before"].every((field) => input[field] === undefined)
+    (operation === "replace" || operation === "delete") &&
+    sourceSelectors.slice(1).every((field) => input[field] === undefined)
   )
     return { store, field: "at" };
-  if (operation === "delete" && (input.end === undefined || input.end === ""))
-    return { store, field: "start" };
   return undefined;
 }
 
@@ -2273,7 +2295,7 @@ async function anchorFailureToolResult(
 interface AllMatchesOffer {
   readonly count: number;
   readonly reference: string;
-  readonly field: "at" | "start" | "anchor";
+  readonly field: AllMatchesRetry["field"];
 }
 
 function formatRejectedAnchorMessage(

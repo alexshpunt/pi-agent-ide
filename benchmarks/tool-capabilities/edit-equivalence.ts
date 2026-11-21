@@ -55,7 +55,7 @@ export function equivalentLineArguments(
   // replacement without the line's separator joins the next line and is not equivalent.
   const equivalent =
     tool === "insert" &&
-    (actual.before === true ? selected.from : selected.to) < selected.content.length;
+    (actual.before !== undefined ? selected.from : selected.to) < selected.content.length;
   if (equivalent) normalized.text = required;
   return normalized;
 }

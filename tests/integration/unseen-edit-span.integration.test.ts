@@ -252,7 +252,7 @@ test("line endpoints from different searches cannot delete the unseen middle", a
     String.raw`
 const a=(await tools.search({path:file,query:begin})).matches[0].id;
 const b=(await tools.search({path:file,query:end})).matches[0].id;
-await rejects(()=>tools.delete({path:file,start:a.replace(/:match$/,":line"),end:b.replace(/:match$/,":line")}));`,
+await rejects(()=>tools.delete({path:file,from:a.replace(/:match$/,":line"),through:b.replace(/:match$/,":line")}));`,
   );
 });
 
@@ -261,7 +261,7 @@ test.each(["copy", "move"] as const)("%s refuses an unseen destination range", a
     `unseen-${tool}-destination`,
     `await tools.read({path:file,offset:1,limit:2});
 await tools.read({path:file,offset:20001,limit:4});
-await rejects(()=>tools.${tool}({path:file,start:"int peer_1;",target:file,targetStart:"int peer_1999;",targetEnd:end}));`,
+await rejects(()=>tools.${tool}({path:file,at:"int peer_1;",target:file,targetFrom:"int peer_1999;",targetThrough:end}));`,
   );
 });
 

@@ -64,7 +64,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
         arguments: { path: "routes.ts", at: "$issued-searchmatch:search:1", text: "find" },
       },
       { id: "find-cart", name: "search", arguments: { path: "routes.ts", query: "cart\u200B" } },
-      { id: "line-delete", name: "delete", arguments: { start: "$issued-search:find-cart:1" } },
+      { id: "line-delete", name: "delete", arguments: { at: "$issued-search:find-cart:1" } },
       // The last line has no final line break; renaming it adds none.
       {
         id: "last",

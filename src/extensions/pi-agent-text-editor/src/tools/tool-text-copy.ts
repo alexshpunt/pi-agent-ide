@@ -6,33 +6,32 @@ import {
   targetProperties,
 } from "#src/tools/text-tool-schema-properties.ts";
 
-import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
-import { resolveAnchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
+import {
+  sourceSelectors,
+  sourceTextSelector,
+  targetSelectors,
+  targetTextSelector,
+  textSelectorAnchors,
+  validateTransferSelectors,
+} from "#src/api/text-selector-fields.ts";
+import { resolveTextSpan, transferToTextSelector } from "#src/tools/text-selection.ts";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 
 export const copySchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Source selection, or a path without start to copy the whole file, directory or symlink. Omit to use the start anchor’s file.",
+      "Source selection, or a path with no text selectors to copy the whole file, directory or symlink. Omit to use the selector’s file.",
     ),
-    ...sourceRangeProperties(),
+    ...sourceRangeProperties(
+      "Select only this text to copy. Do not combine with range boundaries. Omit all selectors when path selects the intended text.",
+    ),
     ...targetProperties(
       "Copying a directory merges into the target and keeps files that exist only there.",
     ),
   },
   { additionalProperties: false },
 );
-interface CopyParameters {
-  readonly path?: unknown;
-  /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
-  readonly start?: unknown;
-  readonly end?: unknown;
-  readonly target?: unknown;
-  readonly targetStart?: unknown;
-  readonly targetEnd?: unknown;
-}
-
 export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> = {
   name: "copy",
   wholeFileOperation: "copy",
@@ -42,73 +41,20 @@ export const copyMutationTool: TextMutationToolRegistration<typeof copySchema> =
   parameters: copySchema,
   source: { field: "path", inherited: true, targets: [{ field: "target", fallbackTo: "path" }] },
   anchors: [
-    {
-      field: "start",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "end",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-      optional: true,
-    },
-    {
-      field: "targetStart",
-      sourceField: "target",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "targetEnd",
-      sourceField: "target",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-      optional: true,
-    },
+    ...textSelectorAnchors("path", sourceSelectors, ["through", "before"]),
+    ...textSelectorAnchors("target", targetSelectors, ["targetThrough", "targetBefore"]),
   ],
-  pair: ["start", "end"],
-  mutate: async (context, parameters: CopyParameters) => {
-    const starts = await context.resolveAnchors("start");
-    const sourceSpan = await resolveAnchorSpanRange(
-      context,
-      starts,
-      "start",
-      "end",
-      parameters.end !== undefined,
-    );
+  validateInput: validateTransferSelectors,
+  mutate: async (context, parameters) => {
+    const selector = sourceTextSelector(parameters) ?? { kind: "single", first: "at" };
+    const sourceSpan = await resolveTextSpan(context, selector);
     const copied = context.documentFor(sourceSpan.source).transfer(sourceSpan);
 
-    const targetStarts = await context.resolveAnchors("targetStart");
-    if (parameters.targetEnd === undefined) {
-      const [target, change] = insertionAfterAnchor(context, targetStarts, "targetStart", copied);
-      return {
-        edits: new Map([
-          [target, { changes: [{ ...change, selectorFields: ["targetStart"] }], action: "edited" }],
-        ]),
-      };
-    }
-
-    const targetSpan = await resolveAnchorSpanRange(
+    const [target, change] = await transferToTextSelector(
       context,
-      targetStarts,
-      "targetStart",
-      "targetEnd",
-      true,
+      copied,
+      targetTextSelector(parameters),
     );
-    return {
-      edits: new Map([
-        [
-          targetSpan.source,
-          {
-            changes: [
-              {
-                ...context.documentFor(targetSpan.source).replace(targetSpan, copied),
-                selectorFields: ["targetStart", "targetEnd"],
-              },
-            ],
-            action: "edited",
-          },
-        ],
-      ]),
-    };
+    return { edits: new Map([[target.source, { changes: [change], action: "edited" }]]) };
   },
 };

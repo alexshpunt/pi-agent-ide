@@ -174,7 +174,7 @@ const found=await tools.search({path:file,query:"regex:^int block_b[^\\n]*\\n",m
 const ref=found.matches[0]?.id;
 check(found.matches.length===1&&ref,"No line reference: "+JSON.stringify(found).slice(0,400));
 await window({prepend:"// peer\n"});
-await tools.move({path:ref,target:file,targetStart:"// slot\n",targetEnd:"// slot\n"});`,
+await tools.move({path:ref,target:file,targetFrom:"// slot\n",targetThrough:"// slot\n"});`,
     );
     expect(final).toBe("// peer\nint block_b() { return 1; }\nint keep_a;\nint keep_c;\n");
   });
@@ -238,7 +238,7 @@ check(slot.matches.length===1&&ref,"No slot reference: "+JSON.stringify(slot).sl
 // Two answers: the batch planner's and the edit's first attempt; the rerun reads the file.
 await tools.write({path:".tmp/block-targets/earlier.txt",content:JSON.stringify({text:${JSON.stringify(original)},times:2})});
 await tools.bash({command:"sed -i '1i // peer' main.cpp"});
-text(await tools.move({path:"BLOCK#block_x",target:"main.cpp",targetStart:ref,targetEnd:ref}));`;
+text(await tools.move({path:"BLOCK#block_x",target:"main.cpp",targetFrom:ref,targetThrough:ref}));`;
     const run = await new PiIntegrationTest({
       testName: "edit-window-mixed-revisions",
       artifactsDir: testArtifactsDir(import.meta.filename),

@@ -263,7 +263,7 @@ test("a nested provider Insert keeps its receipt text beside a file edit", async
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'await tools.insert({path:"receipt:probe",text:"press"}); await tools.insert({path:"note.txt",anchor:"alpha",text:"beta\\n"});',
+                code: 'await tools.insert({path:"receipt:probe",text:"press"}); await tools.insert({path:"note.txt",after:"alpha",text:"beta\\n"});',
               },
             }),
           ],

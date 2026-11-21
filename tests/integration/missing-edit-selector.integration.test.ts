@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -20,33 +21,34 @@ const original = "alpha\nbeta\nomega\n";
 // Literal selectors select only their characters, so whole-line edits include the line break.
 const line = "beta\n";
 const target = "omega\n";
+const incomplete = new Set(["delete", "copy-start", "move-start"]);
 const cases = [
-  { id: "insert", name: "insert", missing: { text: "NEW\n" }, selector: { anchor: line } },
+  { id: "insert", name: "insert", missing: { text: "NEW\n" }, selector: { after: line } },
   { id: "replace", name: "replace", missing: { text: "BETA" }, selector: { at: "beta" } },
-  { id: "delete", name: "delete", missing: { end: line }, selector: { start: line } },
+  { id: "delete", name: "delete", missing: { through: line }, selector: { from: line } },
   {
     id: "copy-start",
     name: "copy",
-    missing: { end: line, targetStart: target },
-    selector: { start: line },
+    missing: { through: line, targetAfter: target },
+    selector: { from: line },
   },
   {
     id: "move-start",
     name: "move",
-    missing: { end: line, targetStart: target },
-    selector: { start: line },
+    missing: { through: line, targetAfter: target },
+    selector: { from: line },
   },
   {
     id: "copy-target",
     name: "copy",
-    missing: { start: line },
-    selector: { targetStart: target },
+    missing: { at: line },
+    selector: { targetAfter: target },
   },
   {
     id: "move-target",
     name: "move",
-    missing: { start: line },
-    selector: { targetStart: target },
+    missing: { at: line },
+    selector: { targetAfter: target },
   },
 ];
 
@@ -108,14 +110,21 @@ for (const route of ["single", "batch", "codemode"] as const) {
       const rejected = await run(false);
       if (route === "codemode") {
         expect(getToolExecution(rejected, "script").isError).toBe(false);
-        expect(getToolResultText(rejected, "script").match(/INVALID_REQUEST/gu)).toHaveLength(
-          cases.length,
-        );
-      } else
+        expect(
+          getToolResultText(rejected, "script").match(/\bMISSING_RANGE_BOUNDARY\b/gu),
+        ).toHaveLength(incomplete.size);
+      } else {
         for (const { id } of cases) {
-          expect(getToolExecution(rejected, id).isError).toBe(true);
-          expect(getToolResultText(rejected, id)).toContain("INVALID_REQUEST");
+          expect(getToolExecution(rejected, id).isError, getToolResultText(rejected, id)).toBe(
+            true,
+          );
+          if (incomplete.has(id))
+            expect(getToolExecutionDetails(getToolExecution(rejected, id)), id).toMatchObject({
+              effect: "not-applied",
+              results: [{ data: { errors: [{ code: "MISSING_RANGE_BOUNDARY" }] } }],
+            });
         }
+      }
       for (const [file, content] of Object.entries(files))
         expect(await readFile(path.join(cwd, file), "utf8")).toBe(content);
 
