@@ -67,12 +67,18 @@ export function selectorFields(selector: TextSelector): readonly string[] {
   return selector.kind === "range" ? [selector.first, selector.last] : [selector.first];
 }
 
-function checkSelectorValues(input: Input, fields: readonly string[]): void {
+/** Check raw selector types before Pi can coerce a scalar into literal text. */
+export function checkRawEditingSelectorTypes(tool: string, input: unknown): void {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return;
+  checkSelectorValues(input as Input, editingSelectorFields(tool), true);
+}
+
+function checkSelectorValues(input: Input, fields: readonly string[], allowEmpty = false): void {
   for (const field of fields) {
     const value = input[field];
     if (
       value === undefined ||
-      (typeof value === "string" && value.length > 0) ||
+      (typeof value === "string" && (allowEmpty || value.length > 0)) ||
       resultValueId(value) !== undefined
     )
       continue;

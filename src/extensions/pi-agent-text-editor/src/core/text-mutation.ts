@@ -99,7 +99,7 @@ import {
   type SourceAliases,
 } from "./source-aliases.ts";
 import { TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
-import { sourceSelectors } from "#src/api/text-selector-fields.ts";
+import { checkRawEditingSelectorTypes, sourceSelectors } from "#src/api/text-selector-fields.ts";
 import { isResultInput, prepareResultTransfer } from "./result-transfer.ts";
 import { expandReferenceList } from "./reference-list.ts";
 import {
@@ -175,6 +175,7 @@ export function createTextTool<TParameters extends TSchema>(
       outputSchema: mutationResultSchema(definition.name),
       prepareArguments: (arguments_) => {
         assertToolCallArgumentsNotBlocked(events, arguments_);
+        checkRawEditingSelectorTypes(definition.name, arguments_);
         // oxlint-disable-next-line typescript/no-unsafe-return -- TypeBox resolves only concrete tool schemas.
         return prepareGuardedArguments(
           definition.parameters,
