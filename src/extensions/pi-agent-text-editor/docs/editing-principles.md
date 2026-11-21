@@ -19,7 +19,7 @@ Matching and writing follow different rules.
 - Match the literal against file text first: exact, then normalized, then fuzzy. Only then try the current Read `anchors` view. A copied `HASH|text` fragment may start or end partway through a line; the hashes must still match, and only source characters are selected. A copied final no-newline marker is display-only and selects no bytes.
 - Writing is strict. Everything outside the edited span stays byte for byte, including a BOM, line endings and the final line break. Principle 4 gives the rules.
 - In a selector pair, the opening selector must match once. The closing selector must match once among the matches that start at or after the opening match's start (`through`) or end (`before`); matches before that point are irrelevant. With `from` and `through`, a closing match contained in the opening match counts, so the range never ends before the opening match does. Several closing matches are refused and nothing changes: a bare `}` or `});` is rarely the one the model meant, so the tools never take the nearest. Reversed endpoints are refused.
-- Whenever a selector, in any field, is ambiguous or does not match, it is refused and nothing changes. The error shows the candidates with their anchors, and the tools never pick among them. For an ambiguous selector it lists up to five matches (a closing selector's nearest to the opening match first, otherwise in file order) with each match's line number, line anchor and the lines around it, then says how many more there are and shows one ready call that passes the first match's anchor in the same field. If the error offers a `SEARCH#…:all:match` reference, pass it as `at` for Replace or Delete, or use it in Insert's `after` or `before` on the desired side of each match.
+- An ambiguous or missing selector leaves the file unchanged. When the tool knows plausible candidates, it shows up to five in the `ANCHOR|line content` format used by Read, with nearby lines and a count of additional matches. Competing closing matches are listed nearest to the opening match first. The example shows how to retry with a candidate's line anchor in the same selector field. A line anchor selects a whole line; use a range for a multiline selection. If the error offers a `SEARCH#…:all:match` reference, pass it as `at` for Replace or Delete, or as `after` or `before` for Insert to act on every match.
 
 Matching locates the span. The write algorithm decides which line separators belong to a whole-line edit.
 
@@ -63,7 +63,7 @@ Add no rule for one kind of selector. A case that a selector needs is a case of 
 
 ## 5. Every error tells the next step
 
-An edit error says what did not match, what is similar, and which anchors to use. The recovery takes one turn: the next call can use a stable anchor from the error without reading the file again. An error that only reports failure is incomplete.
+A selector refusal names the field that failed and gives the next step. The agent can reuse a candidate anchor without reading the file again. If there is no usable candidate, the error points to Read or Search for a current anchor.
 
 ## 6. General rules, measured
 
