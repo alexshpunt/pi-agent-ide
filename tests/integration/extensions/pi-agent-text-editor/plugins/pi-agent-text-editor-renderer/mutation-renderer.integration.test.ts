@@ -161,7 +161,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "inherited-path.ts",
-                  start: uniqueLineAnchor("const value4 = 4;"),
+                  at: uniqueLineAnchor("const value4 = 4;"),
                   // A line anchor selects the line with its line break; the text keeps it.
                   text: "const value4 = loadPrimaryValue();\n",
                 },
@@ -171,7 +171,7 @@ describe("text mutation renderer", () => {
                 id: "replace-inherited-second",
                 name: "replace",
                 arguments: {
-                  start: uniqueLineAnchor("const value18 = 18;"),
+                  at: uniqueLineAnchor("const value18 = 18;"),
                   text: "const value18 = loadStreamedInheritedValue();\n",
                 },
                 chunks: { kind: "fixed", size: 3 },
@@ -218,7 +218,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "post-edit-viewport.ts",
-                  start: uniqueLineAnchor("const value7 = 7;"),
+                  at: uniqueLineAnchor("const value7 = 7;"),
                   // A line anchor selects the line with its line break; the text keeps it.
                   text: "const value7 = loadPrimaryValue();\n",
                 },
@@ -228,7 +228,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "post-edit-viewport.ts",
-                  start: uniqueLineAnchor("const value25 = 25;"),
+                  at: uniqueLineAnchor("const value25 = 25;"),
                   text: "const value25 = loadSecondaryValue();\n",
                 },
               }),
@@ -280,8 +280,8 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "streaming.ts", before);
       const arguments_ = {
         path: "streaming.ts",
-        start: uniqueLineAnchor("    const retries = resolveRetries();"),
-        end: uniqueLineAnchor("    const service = new Service(transport);"),
+        from: uniqueLineAnchor("    const retries = resolveRetries();"),
+        through: uniqueLineAnchor("    const service = new Service(transport);"),
         // The line range ends with its line break; the replacement keeps it.
         text: ["    const retryLimit = 3;", "    const timeoutMs = 5_000;", ""].join("\n"),
       };
@@ -361,7 +361,7 @@ describe("text mutation renderer", () => {
       const file = await createFixture(directory, "post-edit-viewport.ts", before);
       const result = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
-        start: uniqueLineAnchor("const value20 = 20;"),
+        at: uniqueLineAnchor("const value20 = 20;"),
         text: "const value20 = computeValue();\n",
       });
       const rendered = result.tuiRenderedOutput;
@@ -392,7 +392,7 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "post-edit-viewport.ts", before);
       const firstRun = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
-        start: uniqueLineAnchor("const value20 = 20;"),
+        at: uniqueLineAnchor("const value20 = 20;"),
         text: "const value20 = computeValue();\n",
       });
       const sessionData = await readSessionArtifact(firstRun.artifacts.run);
@@ -679,8 +679,7 @@ describe("exact anchor header rendering", () => {
                 name: "replace",
                 arguments: {
                   path: "service.txt",
-                  start:
-                    "function buildService() {\n  const endpoint = resolveEndpoint();\n  return endpoint;\n}",
+                  at: "function buildService() {\n  const endpoint = resolveEndpoint();\n  return endpoint;\n}",
                   text: "function buildService() {\n  return resolveEndpoint();\n}",
                 },
               }),

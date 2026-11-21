@@ -126,6 +126,10 @@ export interface ResultReuse {
   explicit?: unknown;
 }
 
+function editOpening(tool: string, args: Record<string, unknown>): unknown {
+  return tool === "replace" ? (args.at ?? args.from ?? args.after) : (args.anchor ?? args.start);
+}
+
 function fieldValue(value: unknown, field: string): unknown {
   return field
     .split(".")
@@ -703,10 +707,16 @@ export function validateRoute(
       )
         continue;
       const args = prior.event.args ?? {};
+      const tool = toolSemantics(aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "");
       const affected =
-        (aliases[prior.event.toolName ?? ""] ?? prior.event.toolName) === "copy"
+        tool === "copy"
           ? [args.target]
-          : [args.path, args.anchor, args.start, args.target, args.file];
+          : [
+              args.path,
+              ...(tool === "replace" ? [editOpening(tool, args)] : [args.anchor, args.start]),
+              args.target,
+              args.file,
+            ];
       if (
         affected.some((value) =>
           [...values(value), ...reusedPaths(value, prior.index)].some(
@@ -727,7 +737,9 @@ export function validateRoute(
     content?: string;
     selection?: LineSelection;
   } {
-    const source = actual.path ?? actual.anchor ?? actual.start;
+    const selector = editOpening(tool, actual);
+    const closing = tool === "replace" ? actual.through : actual.end;
+    const source = actual.path ?? selector;
     const paths = [...values(source), ...reusedPaths(source, before)];
     const file = Object.keys(task.files ?? {}).find((file) =>
       paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
@@ -736,7 +748,8 @@ export function validateRoute(
     if (sourceChanged(file, before)) return {};
     const content = task.files?.[file];
     if (content === undefined) return {};
-    const selector = actual.anchor ?? actual.start;
+    if (tool === "replace" && (actual.after !== undefined || actual.before !== undefined))
+      return { content };
     if (selector !== undefined) {
       const issuers = selectionIssuers(file, before);
       // Only issued line selections count: a literal selects just its characters.
@@ -752,7 +765,7 @@ export function validateRoute(
           : undefined;
       };
       const first = whole(selector);
-      const last = actual.end === undefined ? first : whole(actual.end);
+      const last = closing === undefined ? first : whole(closing);
       if (first && last && first.from <= last.from)
         return { content, selection: { content, from: first.from, to: last.to } };
     }
@@ -777,7 +790,7 @@ export function validateRoute(
         /^SEARCH#[A-F0-9]+:(?:all|\d+):line$/u.test(reference) &&
         prior.event.toolName === "search" &&
         content.endsWith("\n") &&
-        actual.end === undefined
+        closing === undefined
       )
         return { content, selection: { content, from: 0, to: content.length } };
       // Plain Read windows select whole lines; transformed views and Search matches do not.
@@ -949,7 +962,10 @@ export function validateRoute(
     }
     if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
     const file = expected.path;
-    const location = actual.anchor ?? actual.start;
+    const location = editOpening(tool, actual);
+    const closing = tool === "replace" ? actual.through : actual.end;
+    const excludesBoundary =
+      tool === "replace" && (actual.after !== undefined || actual.before !== undefined);
     // Infer sources only from issued references; an explicit different file is never rescued.
     for (const [sourceField, selector] of [
       ["path", location],
@@ -966,13 +982,13 @@ export function validateRoute(
     }
     // A Search result used as a scope adds no selected text. Only its own issued match
     // (and an omitted or equivalent endpoint) can stand in for that match as path.
-    if (file instanceof RegExp && location !== undefined) {
+    if (file instanceof RegExp && location !== undefined && !excludesBoundary) {
       for (const issuer of selectionIssuers(undefined, before)) {
         if (issuer.tool !== "search" || !wholeSearchSelection(actual.path, issuer.end)) continue;
         const selected = searchMatchReference(location, issuer.end);
         if (
           selected !== undefined &&
-          (actual.end === undefined || searchMatchReference(actual.end, issuer.end) === selected) &&
+          (closing === undefined || searchMatchReference(closing, issuer.end) === selected) &&
           matches(file, selected)
         )
           normalized.path = selected;
@@ -983,6 +999,8 @@ export function validateRoute(
     if (
       file instanceof RegExp &&
       selection !== undefined &&
+      (tool !== "replace" || closing === undefined) &&
+      !excludesBoundary &&
       (location === undefined ||
         actual.path === undefined ||
         sameSource(actual.path, location, before))
@@ -1000,7 +1018,11 @@ export function validateRoute(
           if (equivalent) normalized.path = equivalent;
         }
     }
-    for (const field of ["anchor", "start", "end", "targetStart", "targetEnd"]) {
+    const sourceFields =
+      tool === "replace"
+        ? ["at", "from", "after", "through", "before"]
+        : ["anchor", "start", "end"];
+    for (const field of [...sourceFields, "targetStart", "targetEnd"]) {
       const target = field.startsWith("target");
       const source = target ? expected.target : file;
       const actualSource = target ? actual.target : actual.path;
@@ -1014,16 +1036,16 @@ export function validateRoute(
       const issuers = selectionIssuers(source, before);
       const selector =
         normalized[field] ??
-        (["start", "anchor"].includes(field)
+        (["at", "start", "anchor"].includes(field)
           ? actual.path
           : field === "targetStart"
             ? actual.target
             : undefined);
       const exact = expected[field];
-      // A source or target result already selects its issued range without a separate start.
+      // A source or target result can itself provide a complete selection.
       if (
         exact instanceof RegExp &&
-        ["start", "anchor", "targetStart"].includes(field) &&
+        ["at", "start", "anchor", "targetStart"].includes(field) &&
         normalized[field] === undefined &&
         sameSource(source, selector, before) &&
         matches(exact, selector)
@@ -1061,6 +1083,7 @@ export function validateRoute(
     );
   }
   function argumentReuses(
+    tool: string,
     field: string,
     args: Record<string, unknown> | undefined,
     reference: ResultReuse,
@@ -1072,11 +1095,12 @@ export function validateRoute(
     const value = fieldValue(args, field);
     const alternatives = [value];
     if (field === "path" && args) {
-      for (const selector of [args.anchor, args.start])
+      const selectors = tool === "replace" ? [editOpening(tool, args)] : [args.anchor, args.start];
+      for (const selector of selectors)
         if (args.path === undefined || sameSource(args.path, selector, before))
           alternatives.push(selector);
     }
-    if (["start", "anchor"].includes(field) && args && value === undefined)
+    if (["at", "start", "anchor"].includes(field) && args && value === undefined)
       alternatives.push(args.path);
     if (reference.kind === "text") {
       return typeof value === "string" && value.length > 0 && resultText(prior).includes(value);
@@ -1385,6 +1409,7 @@ export function validateRoute(
             !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
               (field) =>
                 argumentReuses(
+                  toolSemantics(step.tool),
                   field,
                   event.args,
                   reference,

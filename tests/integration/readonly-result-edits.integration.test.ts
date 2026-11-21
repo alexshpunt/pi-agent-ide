@@ -33,7 +33,7 @@ test("read-only report references refuse edits consistently before streamed text
     const edits = forms.flatMap(([name, reference]) =>
       [false, true].map((scoped) => {
         const id = `${name}-${scoped ? "scoped" : "whole"}`;
-        const prefix = `{"path":${JSON.stringify(reference)}${scoped ? ',"start":"broken"' : ""}`;
+        const prefix = `{"path":${JSON.stringify(reference)}${scoped ? ',"at":"broken"' : ""}`;
         const payload = ',"text":"changed"}';
         return { id, prefix, payload };
       }),
@@ -80,7 +80,7 @@ const found = await tools.search({path: report, query: "FIXTURE42"});
 if (!reread || found?.matches.length !== 1) throw Error("Report lost readable text");
 for (const value of [report, reread, found, found.matches[0]]) {
   for (const scoped of [false, true]) {
-    if (await tools.replace({path: value, ...(scoped ? {start: "broken"} : {}), text: "changed"}) !== null)
+    if (await tools.replace({path: value, ...(scoped ? {at: "broken"} : {}), text: "changed"}) !== null)
       throw Error("Read-only result granted edit authority");
   }
 }

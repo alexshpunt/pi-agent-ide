@@ -86,9 +86,10 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
       : await sessions.observeAfterEdit(
           [
             event.input.path,
-            event.input.start,
+            event.input.at,
+            event.input.from,
             event.input.after,
-            event.input.end,
+            event.input.through,
             event.input.before,
           ],
           ctx.signal,
@@ -234,7 +235,7 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
               return state;
             const input = state.input as Record<string, unknown>;
             const observations = await sessions.observeAfterEdit(
-              [input.path, input.start, input.after, input.end, input.before],
+              [input.path, input.at, input.from, input.after, input.through, input.before],
               state.signal,
             );
             return observations.length === 0

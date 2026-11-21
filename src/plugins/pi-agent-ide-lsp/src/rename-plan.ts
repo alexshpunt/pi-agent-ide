@@ -234,14 +234,15 @@ export function prepareSymbolRename(
         capture === undefined ||
         typeof input.text !== "string" ||
         input.text.trim() === "" ||
-        input.start !== undefined ||
+        input.at !== undefined ||
+        input.from !== undefined ||
         input.after !== undefined ||
-        input.end !== undefined ||
+        input.through !== undefined ||
         input.before !== undefined
       )
         throw new Error(
           "Rename needs one declaration name capture and a non-empty new name. " +
-            "Omit range selectors. Use replace with " +
+            "Omit text selectors. Use replace with " +
             JSON.stringify({ path: selected.reference, text: "newName" }),
         );
       state.signal?.throwIfAborted();

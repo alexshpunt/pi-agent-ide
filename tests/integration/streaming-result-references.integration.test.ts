@@ -17,7 +17,7 @@ const cases = [
   {
     name: "fresh-path-and-anchor",
     source: "note.txt",
-    anchor: "start",
+    anchor: "at",
     stale: false,
     error: false,
     payload: "OLD\nADDED",
@@ -26,7 +26,7 @@ const cases = [
   {
     name: "stale-result-and-anchor",
     source: "$issued-uuid:selection",
-    anchor: "start",
+    anchor: "at",
     stale: true,
     error: true,
     payload: "NEW",
@@ -34,9 +34,9 @@ const cases = [
   },
   {
     // The match lies inside the Search result, which scopes it.
-    name: "replace-with-start",
+    name: "replace-at",
     source: "$issued-uuid:selection",
-    anchor: "start",
+    anchor: "at",
     stale: false,
     error: false,
     payload: "NEW",
@@ -96,7 +96,7 @@ test.each(cases)(
                     toolCall({
                       id: "change",
                       name: "replace",
-                      arguments: { path: "note.txt", start: "OLD", text: "CHANGED" },
+                      arguments: { path: "note.txt", at: "OLD", text: "CHANGED" },
                     }),
                   ],
                   { stopReason: "toolUse" },

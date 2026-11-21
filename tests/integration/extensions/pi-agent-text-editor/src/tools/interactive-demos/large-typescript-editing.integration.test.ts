@@ -402,8 +402,8 @@ function replaceUntil(
   return {
     arguments: {
       path: file,
-      start: formatLineHashAnchor(source, startIndex + 1),
-      end: formatLineHashAnchor(source, endIndex + 1),
+      from: formatLineHashAnchor(source, startIndex + 1),
+      through: formatLineHashAnchor(source, endIndex + 1),
       text: replacement,
     },
     after: afterLines.join("\n"),

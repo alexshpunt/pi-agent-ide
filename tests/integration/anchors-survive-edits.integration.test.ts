@@ -39,12 +39,12 @@ const five=anchorOf("five");
 const three=anchorOf("three");
 await tools.bash({command:"sed -i '1i zero' "+file});
 await tools.replace({path:four.matches[0].id,text:"FOUR"});
-await tools.replace({path:file,start:five,text:"LAST\\n"});
+await tools.replace({path:file,at:five,text:"LAST\\n"});
 check((await tools.read({path:file})).text.startsWith("zero\\none\\ntwo\\nthree\\nFOUR\\nLAST"),"Edits above did not keep the targets");
 await tools.bash({command:"sed -i 's/two/2/' "+file});
 await rejects(()=>tools.replace({path:two.matches[0].id,text:"X"}));
 await tools.bash({command:"sed -i 's/three/3/' "+file});
-await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}));`;
+await rejects(()=>tools.replace({path:file,at:three,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-survive-edits",
       artifactsDir: testArtifactsDir(import.meta.filename),

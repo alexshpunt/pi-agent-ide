@@ -207,12 +207,12 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "same-batch-first",
               name: "replace",
-              arguments: { path: firstName, start: "begin", text: "A1" },
+              arguments: { path: firstName, at: "begin", text: "A1" },
             }),
             toolCall({
               id: "same-batch-second",
               name: "replace",
-              arguments: { start: "end", text: "A2" },
+              arguments: { at: "end", text: "A2" },
             }),
           ),
           toolMessage(

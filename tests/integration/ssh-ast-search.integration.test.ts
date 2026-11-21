@@ -94,7 +94,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
           toolCall({
             id: "replace-search",
             name: "replace",
-            arguments: { start: "SEARCH#0000:all:match", text: "console.info(label)" },
+            arguments: { at: "SEARCH#0000:all:match", text: "console.info(label)" },
           }),
         ]),
         assistantMessage([toolCall({ id: "read", name: "read", arguments: { path: note } })]),

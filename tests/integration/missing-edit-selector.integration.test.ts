@@ -22,7 +22,7 @@ const line = "beta\n";
 const target = "omega\n";
 const cases = [
   { id: "insert", name: "insert", missing: { text: "NEW\n" }, selector: { anchor: line } },
-  { id: "replace", name: "replace", missing: { text: "BETA" }, selector: { start: "beta" } },
+  { id: "replace", name: "replace", missing: { text: "BETA" }, selector: { at: "beta" } },
   { id: "delete", name: "delete", missing: { end: line }, selector: { start: line } },
   {
     id: "copy-start",

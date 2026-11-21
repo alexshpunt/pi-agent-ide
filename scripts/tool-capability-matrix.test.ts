@@ -232,7 +232,7 @@ describe("capability route evidence", () => {
     {
       id: "exact-eof-crlf",
       index: 2,
-      field: "start",
+      field: "at",
       selector: "Last\nBlock",
       args: { path: "empty.txt", text: "" },
     },

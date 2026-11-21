@@ -104,8 +104,9 @@ test.each(["direct", "codemode"] as const)(
         tool: entry.text === undefined ? "delete" : "replace",
         args: {
           path: entry.file,
-          start: entry.start,
-          ...(entry.text === undefined ? {} : { text: entry.text }),
+          ...(entry.text === undefined
+            ? { start: entry.start }
+            : { at: entry.start, text: entry.text }),
         },
       }));
       const conversation =
@@ -194,7 +195,7 @@ test.each(["direct", "codemode"] as const)(
     await withTempWorkspace(async (cwd) => {
       const initial = "alpha\r\nbeta\r\n";
       await writeFile(path.join(cwd, "undo.txt"), initial);
-      const edit = { path: "undo.txt", start: "beta", text: "changed" };
+      const edit = { path: "undo.txt", at: "beta", text: "changed" };
       const undo = { file: "undo.txt", change: "last" };
       const result = await run(
         cwd,

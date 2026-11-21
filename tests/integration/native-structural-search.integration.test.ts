@@ -98,8 +98,8 @@ test("searches the current text of a Read window whose lines other sessions chan
     );
     const run = await runAstComposition(cwd, "ast-changed-window", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:3});
-await tools.replace({path:"calls.ts",start:"other();",text:"changed();"});
-await tools.replace({path:"calls.ts",start:"legacyRequest(a);",text:"legacyRequest(top);\\nlegacyRequest(a);"});
+await tools.replace({path:"calls.ts",at:"other();",text:"changed();"});
+await tools.replace({path:"calls.ts",at:"legacyRequest(a);",text:"legacyRequest(top);\\nlegacyRequest(a);"});
 const found=await tools.ast_search({path:window,pattern:"legacyRequest($ARG)"});
 check(found.matches.map(match=>match.line+":"+match.text).join()==="3:legacyRequest(b),5:legacyRequest(c)","Wrong matches for the current region");
 const stale=await tools.search({path:window,query:"changed"});

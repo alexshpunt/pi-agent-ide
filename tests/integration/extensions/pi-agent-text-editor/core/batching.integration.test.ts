@@ -68,7 +68,7 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "replace-shared", {
                 path: "shared.txt",
-                start: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 2),
+                at: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 2),
                 // A line anchor selects the line with its line break; the text keeps it.
                 text: "replaced\n",
               }),
@@ -115,7 +115,7 @@ describe("pi-agent-text-editor batching", () => {
               call("write", "all-write", { path: "written.txt", content: "created" }),
               call("replace", "all-replace", {
                 path: "edited.txt",
-                start: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 2),
+                at: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 2),
                 text: "replaced\n",
               }),
               call("delete", "all-delete", {
@@ -245,7 +245,7 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "mixed-first-replace", {
                 path: "first-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
                 text: "changed-first\n",
               }),
               call("delete", "mixed-second-delete", {
@@ -254,7 +254,7 @@ describe("pi-agent-text-editor batching", () => {
               }),
               call("replace", "mixed-third-replace", {
                 path: "third-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
                 text: "changed-third\n",
               }),
               call("insert", "mixed-first-insert", {
@@ -331,12 +331,12 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "partial-first", {
                 path: "partial-failure.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 2),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 2),
                 text: "changed\n",
               }),
               call("replace", "partial-failed", {
                 path: "partial-failure.txt",
-                start: "ZZZZZZZ",
+                at: "ZZZZZZZ",
                 text: "never",
               }),
               call("insert", "partial-last", {

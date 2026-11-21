@@ -247,7 +247,7 @@ void test("native value batch accepts the complete gamma line and retains its ba
   assert.ok(
     !batch([
       ...calls.slice(0, 2),
-      { ...calls[2], args: { path: "task.txt", start: "beta", text: "BETA" } },
+      { ...calls[2], args: { path: "task.txt", at: "beta", text: "BETA" } },
       calls[3],
     ]),
   );
@@ -257,8 +257,8 @@ void test("native value batch accepts the complete gamma line and retains its ba
 void test("explicit-path scope retry is independent of the failed result-bound edit", () => {
   const calls: [Call, Call, Call] = [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 }, text: `<uuid>${uuid}</uuid>` },
-    { tool: "replace", args: { path: result, start: "last", text: "BAD" }, error: true },
-    { tool: "replace", args: { path: "task.txt", start: "last", text: "fixed" } },
+    { tool: "replace", args: { path: result, at: "last", text: "BAD" }, error: true },
+    { tool: "replace", args: { path: "task.txt", at: "last", text: "fixed" } },
   ];
   const task = capabilityCases.find((entry) => entry.id === "result-selector-exact-retry");
   assert.ok(task);
@@ -277,7 +277,7 @@ void test("explicit-path scope retry is independent of the failed result-bound e
     !check(task.steps, [
       calls[0],
       calls[1],
-      { ...calls[2], args: { path: "other.txt", start: "last", text: "fixed" } },
+      { ...calls[2], args: { path: "other.txt", at: "last", text: "fixed" } },
     ]),
   );
   assert.ok(
@@ -285,7 +285,7 @@ void test("explicit-path scope retry is independent of the failed result-bound e
       calls[0],
       calls[1],
       // The real tool refuses this selection: last is outside the line-2 window.
-      { ...calls[2], args: { path: result, start: "last", text: "fixed" }, error: true },
+      { ...calls[2], args: { path: result, at: "last", text: "fixed" }, error: true },
     ]),
   );
 });
@@ -295,7 +295,7 @@ for (const mode of ["direct", "codemode"]) {
     const task = capabilityCases.find((entry) => entry.id === "undo-last");
     assert.ok(task);
     const calls: [Call, Call, Call] = [
-      { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+      { tool: "replace", args: { path: "task.txt", at: "OLD", text: "NEW" } },
       { tool: "undo", args: { change: "last" } },
       { tool: "read", args: { path: "task.txt" }, text: task.files?.["task.txt"] },
     ];
@@ -334,7 +334,7 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
     },
     {
       tool: "replace",
-      args: { path: result, start: "hello", text: "BAD" },
+      args: { path: result, at: "hello", text: "BAD" },
       error: true,
       text: steps("shell-roundtrip").find((step) => step.tool === "replace")?.contains,
     },
@@ -561,7 +561,7 @@ for (const mode of ["direct", "codemode"]) {
       const calls: Call[] = [
         {
           tool: "replace",
-          args: { path: "task.txt", start: "OLD", text: "NEW" },
+          args: { path: "task.txt", at: "OLD", text: "NEW" },
           text: `<uuid>${uuid}</uuid>`,
         },
         { tool: "read", args: { path: source, views: ["changes"] }, text: "CHANGE#ABCD" },
@@ -635,7 +635,7 @@ for (const mode of ["direct", "codemode"]) {
         { tool: "search", args: { path: "task.txt", query: "OLD" }, text: "SEARCH#ABCD:1:match" },
         {
           tool: "replace",
-          args: { path: "task.txt", start: "SEARCH#ABCD:1:match", text: "NEW" },
+          args: { path: "task.txt", at: "SEARCH#ABCD:1:match", text: "NEW" },
         },
         { tool: "undo", args: { change: "last" } },
         { tool: "read", args: { path: "task.txt" }, text: "OLD" },
@@ -661,15 +661,15 @@ for (const mode of ["direct", "codemode"]) {
       const route = steps(`replace-line-boundary-${ending}`);
       const call: Call = {
         tool: "replace",
-        args: { path: "heading.txt", start: "## OLD", text: "## NEW" },
+        args: { path: "heading.txt", at: "## OLD", text: "## NEW" },
       };
       assert.ok(check(route, [call], mode));
-      assert.ok(!check(route, [{ ...call, args: { ...call.args, end: "## OLD" } }], mode));
+      assert.ok(!check(route, [{ ...call, args: { ...call.args, through: "## OLD" } }], mode));
       const search = selectionWitness("heading.txt", 1, "## OLD");
       assert.ok(
         !check(
           route,
-          [search, { ...call, args: { ...call.args, start: "SEARCH#ABCD:1:line" } }],
+          [search, { ...call, args: { ...call.args, at: "SEARCH#ABCD:1:line" } }],
           mode,
         ),
       );
@@ -683,14 +683,14 @@ for (const mode of ["direct", "codemode"]) {
       assert.ok(replace && readStep && deleteStep);
       const first: Call = {
         tool: "replace",
-        args: { path: "last.txt", start: "Last", text: "Final" },
+        args: { path: "last.txt", at: "Last", text: "Final" },
       };
       const replaceRoute = { ...task, steps: [replace] };
       assert.ok(validateRoute(replaceRoute, events([first], mode), mode).passed);
       assert.ok(
         !validateRoute(
           replaceRoute,
-          events([{ ...first, args: { ...first.args, end: "Last" } }], mode),
+          events([{ ...first, args: { ...first.args, through: "Last" } }], mode),
           mode,
         ).passed,
       );
@@ -698,10 +698,7 @@ for (const mode of ["direct", "codemode"]) {
       assert.ok(
         !validateRoute(
           replaceRoute,
-          events(
-            [search, { ...first, args: { ...first.args, start: "SEARCH#ABCD:1:line" } }],
-            mode,
-          ),
+          events([search, { ...first, args: { ...first.args, at: "SEARCH#ABCD:1:line" } }], mode),
           mode,
         ).passed,
       );
@@ -890,7 +887,7 @@ for (const id of [
         value: { id: result },
       };
       for (const extras of refusal.tool === "replace"
-        ? [{ text: "BAD" }, { start: "another selection", text: "different payload" }, {}]
+        ? [{ text: "BAD" }, { at: "another selection", text: "different payload" }, {}]
         : [{ query: "BAD" }, { query: "different query" }]) {
         const rejected: Call = {
           tool: refusal.tool,
@@ -1109,7 +1106,7 @@ for (const mode of ["direct", "codemode"]) {
     }
     // A literal selects only its characters, so a terminal newline changes the edit's effect.
     for (const tool of ["insert", "delete", "replace", "copy", "move"]) {
-      const selector = tool === "insert" ? "anchor" : "start";
+      const selector = tool === "insert" ? "anchor" : tool === "replace" ? "at" : "start";
       const extra = tool === "insert" || tool === "replace" ? { text: "NEW\n" } : {};
       const required = { [selector]: /^middle$/u, ...extra };
       assert.ok(edit(tool, required, { [selector]: "middle", ...extra }), tool);
@@ -1119,12 +1116,8 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(
       !edit("insert", { anchor: "middle", text: "NEW" }, { anchor: "middle", text: "NEW\n" }),
     );
-    assert.ok(
-      !edit("replace", { start: "middle", text: "NEW" }, { start: "middle", text: "NEW\n" }),
-    );
-    assert.ok(
-      !edit("replace", { start: "middle\n", text: "NEW\n" }, { start: "middle", text: "NEW" }),
-    );
+    assert.ok(!edit("replace", { at: "middle", text: "NEW" }, { at: "middle", text: "NEW\n" }));
+    assert.ok(!edit("replace", { at: "middle\n", text: "NEW\n" }, { at: "middle", text: "NEW" }));
     assert.ok(!edit("delete", { start: "fir", end: "middle" }, { start: "fir", end: "middle\n" }));
     assert.ok(
       !edit(
@@ -1150,16 +1143,16 @@ void test("Search :line replacement keeps the line only with its sent separator,
         { tool: "search" },
         {
           tool: "replace",
-          args: { start: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" + ending },
-          reuse: { from: 0, field: "start" },
+          args: { at: /^SEARCH#[A-F0-9]+:1:line$/u, text: "BETA" + ending },
+          reuse: { from: 0, field: "at" },
         },
       ],
     };
-    const replace: Call = { tool: "replace", args: { start: line, text: "BETA" + ending } };
+    const replace: Call = { tool: "replace", args: { at: line, text: "BETA" + ending } };
     assert.ok(validateRoute(task, events([search, replace], "codemode"), "codemode").passed);
     for (const changed of [
-      { ...replace, args: { ...replace.args, start: "SEARCH#ABCD:1:match" } },
-      { ...replace, args: { ...replace.args, start: "SEARCH#FFFF:1:line" } },
+      { ...replace, args: { ...replace.args, at: "SEARCH#ABCD:1:match" } },
+      { ...replace, args: { ...replace.args, at: "SEARCH#FFFF:1:line" } },
       { ...replace, args: { ...replace.args, text: "BETA" + ending + ending } },
       // Replace writes exactly its text: without the separator the line joins the next one.
       { ...replace, args: { ...replace.args, text: "BETA" } },
@@ -1177,7 +1170,7 @@ void test("Search :line replacement keeps the line only with its sent separator,
         {
           ...task.steps[1],
           tool: "replace",
-          args: { start: "SEARCH#ABCD:1:match", text: "BETA" },
+          args: { at: "SEARCH#ABCD:1:match", text: "BETA" },
         },
       ],
     };
@@ -1185,7 +1178,7 @@ void test("Search :line replacement keeps the line only with its sent separator,
       !validateRoute(
         matchTask,
         events(
-          [search, { ...replace, args: { start: "SEARCH#ABCD:1:match", text: "BETA" + ending } }],
+          [search, { ...replace, args: { at: "SEARCH#ABCD:1:match", text: "BETA" + ending } }],
           "codemode",
         ),
         "codemode",
@@ -1306,7 +1299,7 @@ const deferredCalls = [
   { tool: "ast_search", args: { path: "task.ts", pattern: "probe($ARG)" }, text: "probe(1)" },
   { tool: "lsp_search", args: { query: "probe" }, text: "task.ts#probe" },
   { tool: "diff", args: { before: "task.ts", after: "task.ts" }, value: "" },
-  { tool: "replace", args: { path: "task.txt", start: "OLD", text: "NEW" } },
+  { tool: "replace", args: { path: "task.txt", at: "OLD", text: "NEW" } },
   { tool: "undo", args: { file: "task.txt", change: "last" } },
   { tool: "read", args: { path: "task.txt" }, text: "keep\nOLD\nlast\n" },
 ] as const satisfies readonly Call[];
@@ -1689,9 +1682,9 @@ for (const ending of ["lf", "crlf"]) {
   void test(`exact-eof-${ending} accepts a block selector including its terminal separator`, () => {
     const eol = ending === "lf" ? "\n" : "\r\n";
     const calls = [
-      { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
+      { tool: "replace", args: { path: "last.txt", at: "Last", text: "Final" } },
       { tool: "delete", args: { path: "block.txt", start: `Last${eol}Block${eol}` } },
-      { tool: "replace", args: { path: "empty.txt", start: `Last${eol}Block${eol}`, text: "" } },
+      { tool: "replace", args: { path: "empty.txt", at: `Last${eol}Block${eol}`, text: "" } },
       { tool: "read", args: { path: "line.txt", views: ["anchors"] }, text: "ABCDEFG|Last" },
       { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
     ] as const satisfies readonly Call[];
@@ -1735,7 +1728,7 @@ void test("token edit accepts an issued selection in start but rejects fabricate
       args: { path: "split.txt", query: "alpha OR beta" },
       text: "SEARCH#ABCD:1:match\nSEARCH#ABCD:2:match",
     },
-    { tool: "replace", args: { start: "SEARCH#ABCD:1:match", text: "GREEN" } },
+    { tool: "replace", args: { at: "SEARCH#ABCD:1:match", text: "GREEN" } },
     {
       tool: "search",
       args: { path: "literal.txt", query: "alpha beta" },
@@ -1784,20 +1777,24 @@ void test("whole Search scopes preserve individual-match route equivalence", () 
   for (const mode of ["direct", "codemode"]) {
     for (const path of [{ id: uuid }, result]) {
       for (const end of [undefined, "SEARCH#ABCD:1:match"]) {
-        const args = { path, start: "SEARCH#ABCD:1:match", ...(end && { end }), text: "RED" };
+        const args = {
+          path,
+          ...(end ? { from: "SEARCH#ABCD:1:match", through: end } : { at: "SEARCH#ABCD:1:match" }),
+          text: "RED",
+        };
         assert.ok(check(route, [search, { tool: "replace", args }], mode));
       }
     }
     for (const args of [
-      { path: { id: "44444444-aaaa-4aaa-8aaa-444444444444" }, start: "SEARCH#ABCD:1:match" },
-      { path: { id: uuid }, start: "SEARCH#FFFF:1:match" },
-      { path: { id: uuid }, start: "SEARCH#ABCD:1:match", end: "SEARCH#ABCD:2:match" },
-      { path: { id: uuid }, start: "SEARCH#ABCD:1:match", end: "SEARCH#FFFF:1:match" },
+      { path: { id: "44444444-aaaa-4aaa-8aaa-444444444444" }, at: "SEARCH#ABCD:1:match" },
+      { path: { id: uuid }, at: "SEARCH#FFFF:1:match" },
+      { path: { id: uuid }, from: "SEARCH#ABCD:1:match", through: "SEARCH#ABCD:2:match" },
+      { path: { id: uuid }, from: "SEARCH#ABCD:1:match", through: "SEARCH#FFFF:1:match" },
     ])
       assert.ok(!check(route, [search, { tool: "replace", args: { ...args, text: "RED" } }], mode));
   }
 });
-void test("multiline replacement must reuse the first search, in path or start", () => {
+void test("multiline replacement must reuse the first search, in path or at", () => {
   const route = steps("search-multiline-between");
   const calls = [
     {
@@ -1806,12 +1803,12 @@ void test("multiline replacement must reuse the first search, in path or start",
       text: "SEARCH#ABCD:1:line",
     },
     { tool: "search", args: { path: "task.txt", query: "keep" }, text: "SEARCH#DCBA:1:line" },
-    { tool: "replace", args: { path: "task.txt", start: "SEARCH#ABCD:1:line", text: "NEW\n" } },
+    { tool: "replace", args: { path: "task.txt", at: "SEARCH#ABCD:1:line", text: "NEW\n" } },
   ] as const satisfies readonly Call[];
   assert.ok(check(route, calls));
   for (const start of ["SEARCH#DCBA:1:line", "SEARCH#FFFF:1:line", "old one\nold two"]) {
     assert.ok(
-      !check(route, [...calls.slice(0, 2), { ...calls[2], args: { ...calls[2].args, start } }]),
+      !check(route, [...calls.slice(0, 2), { ...calls[2], args: { ...calls[2].args, at: start } }]),
     );
   }
 });
@@ -1827,7 +1824,7 @@ void test("issued-result-edit requires a successful bounded selector replacement
     },
     {
       tool: "replace",
-      args: { path: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222", start: "NEW", text: "FINAL" },
+      args: { path: "RESULT#22222222-aaaa-4aaa-8aaa-222222222222", at: "NEW", text: "FINAL" },
     },
     { tool: "read", args: { path: "task.txt" }, text: "keep\nFINAL\nlast\n" },
   ] as const satisfies readonly Call[];

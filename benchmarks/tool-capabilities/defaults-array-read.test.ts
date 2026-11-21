@@ -242,11 +242,11 @@ for (const mode of ["direct", "codemode"]) {
         text: paths.map((path, index) => `--- ${path} ---\n${texts[index]}\n`).join("\n"),
       };
       const edits: Call[] = [
-        { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
+        { tool: "replace", args: { path: "last.txt", at: "Last", text: "Final" } },
         { tool: "delete", args: { path: "block.txt", start: `${eol}Last${eol}Block` } },
         {
           tool: "replace",
-          args: { path: "empty.txt", start: `${eol}Last${eol}Block`, text: "" },
+          args: { path: "empty.txt", at: `${eol}Last${eol}Block`, text: "" },
         },
         { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
       ];

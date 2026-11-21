@@ -50,8 +50,8 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-replace",
       "replace",
       ([first]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
         text: "function replaced() {\n    return 0;\n}",
       }),
       ["function replaced() {", "    return 0;", "}", "", ...secondFunction].join("\n"),
@@ -76,8 +76,8 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-copy",
       "copy",
       ([first, second]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
         targetStart: second.endScopeAnchor.value,
       }),
       [...lines, ...firstFunction].join("\n"),
@@ -89,8 +89,8 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-move",
       "move",
       ([first, second]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
         targetStart: second.endScopeAnchor.value,
       }),
       ["", ...secondFunction, ...firstFunction].join("\n"),
@@ -114,7 +114,8 @@ async function runAstScenario(
     const expectedAnchors = Object.entries(anchorArguments)
       .filter(
         ([key, value]) =>
-          ["targetStart", "start", "end"].includes(key) && typeof value === "string",
+          ["targetStart", "start", "end", "from", "through"].includes(key) &&
+          typeof value === "string",
       )
       .map(([, value]) => value as string);
     const toolArguments =

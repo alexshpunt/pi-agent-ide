@@ -79,7 +79,7 @@ test("references found from a Search match stay usable as an all-match anchor af
         {
           id: "elsewhere",
           name: "replace",
-          arguments: { path: "main.cpp", start: "// header", text: "// header\n// added" },
+          arguments: { path: "main.cpp", at: "// header", text: "// header\n// added" },
         },
         {
           id: "rename",

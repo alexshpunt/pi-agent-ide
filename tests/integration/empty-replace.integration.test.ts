@@ -68,8 +68,9 @@ test("empty replacements remove lines and keep unselected separators in real Pi"
               name: "replace",
               arguments: {
                 path: `${i}.txt`,
-                start: item.start,
-                ...(item.end === undefined ? {} : { end: item.end }),
+                ...(item.end === undefined
+                  ? { at: item.start }
+                  : { from: item.start, through: item.end }),
                 text: item.text ?? "",
               },
             }),

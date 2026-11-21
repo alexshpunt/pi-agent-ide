@@ -36,7 +36,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-replace",
       "replace",
-      { start: "rav", text: "XYZ" },
+      { at: "rav", text: "XYZ" },
       content.replace("rav", "XYZ"),
     );
   });
@@ -76,7 +76,7 @@ describe("exact text anchors through real text editor tools", () => {
         tool: "replace",
         arguments: {
           path: relativeFile,
-          start: 'const privateFiles = new Set(["CONTEXT.md", "lefthook.yml"]);',
+          at: 'const privateFiles = new Set(["CONTEXT.md", "lefthook.yml"]);',
           text: replacement,
         },
       });
@@ -136,8 +136,9 @@ describe("exact text anchors through real text editor tools", () => {
               // Literals match exactly: the selector and the text use the file's line breaks.
               arguments: {
                 path: filename,
-                start: entry.replaceAll("\n", eol),
-                ...(tool === "replace" ? { text: replacement.replaceAll("\n", eol) } : {}),
+                ...(tool === "replace"
+                  ? { at: entry.replaceAll("\n", eol), text: replacement.replaceAll("\n", eol) }
+                  : { start: entry.replaceAll("\n", eol) }),
               },
             });
             expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -174,7 +175,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-line-range",
       "replace",
-      { start: "rav", end: formatLineHashAnchor(content, 3), text: "X" },
+      { from: "rav", through: formatLineHashAnchor(content, 3), text: "X" },
       ["alpha", "bX", "delta", "echo"].join("\n"),
     );
   });

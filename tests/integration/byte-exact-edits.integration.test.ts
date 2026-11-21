@@ -45,7 +45,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
       {
         id: "literal",
         name: "replace",
-        arguments: { path: "routes.ts", start: "retries: 3", text: "retries: 5" },
+        arguments: { path: "routes.ts", at: "retries: 3", text: "retries: 5" },
       },
       // A CRLF line replaced through its line anchor keeps its CRLF, even for LF-ended text.
       {
@@ -53,7 +53,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
         name: "replace",
         arguments: {
           path: "routes.ts",
-          start: "$issued-anchor:read:3",
+          at: "$issued-anchor:read:3",
           text: '\t{ id: "home", retries: 1 },\n',
         },
       },
@@ -61,7 +61,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
       {
         id: "match",
         name: "replace",
-        arguments: { path: "routes.ts", start: "$issued-searchmatch:search:1", text: "find" },
+        arguments: { path: "routes.ts", at: "$issued-searchmatch:search:1", text: "find" },
       },
       { id: "find-cart", name: "search", arguments: { path: "routes.ts", query: "cart\u200B" } },
       { id: "line-delete", name: "delete", arguments: { start: "$issued-search:find-cart:1" } },
@@ -69,13 +69,13 @@ test("edits through the real tools change exactly the selected bytes", async () 
       {
         id: "last",
         name: "replace",
-        arguments: { path: "routes.ts", start: "default routes;", text: "default routeTable;" },
+        arguments: { path: "routes.ts", at: "default routes;", text: "default routeTable;" },
       },
       // A selector with LF matches CRLF text; sent line breaks take the CRLF of that line.
       {
         id: "normalized",
         name: "replace",
-        arguments: { path: "routes.ts", start: "];\nexport", text: "];\n\nexport" },
+        arguments: { path: "routes.ts", at: "];\nexport", text: "];\n\nexport" },
       },
       // A plain space matches the no-break space; trailing spaces outside the match stay.
       {
@@ -83,7 +83,7 @@ test("edits through the real tools change exactly the selected bytes", async () 
         name: "replace",
         arguments: {
           path: "routes.ts",
-          start: 'id: "promo", retries',
+          at: 'id: "promo", retries',
           text: 'id: "sale", retries',
         },
       },
@@ -91,13 +91,13 @@ test("edits through the real tools change exactly the selected bytes", async () 
       {
         id: "refused",
         name: "replace",
-        arguments: { path: "routes.ts", start: 'id: "nowhere"', text: "BAD" },
+        arguments: { path: "routes.ts", at: 'id: "nowhere"', text: "BAD" },
       },
       // The first line keeps its BOM when the text after it changes.
       {
         id: "first",
         name: "replace",
-        arguments: { path: "routes.ts", start: "// routes", text: "// table" },
+        arguments: { path: "routes.ts", at: "// routes", text: "// table" },
       },
     ];
     const result = await new PiIntegrationTest({

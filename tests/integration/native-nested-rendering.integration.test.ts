@@ -31,7 +31,7 @@ test("direct IDE mutations keep the same custom renderer in an isolated runtime"
             toolCall({
               id: "direct",
               name: "replace",
-              arguments: { path: "note.txt", start: "alpha", text: "ALPHA" },
+              arguments: { path: "note.txt", at: "alpha", text: "ALPHA" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -72,7 +72,7 @@ test("nested IDE results keep their custom panels below Codemode without script 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'await tools.read({path:"note.txt"}); await tools.search({path:"note.txt",query:"beta"}); await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"});',
+                code: 'await tools.read({path:"note.txt"}); await tools.search({path:"note.txt",query:"beta"}); await tools.replace({path:"note.txt",at:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",at:"beta",text:"BETA"});',
               },
             }),
           ],
@@ -301,7 +301,7 @@ test("ordinary parent failure keeps one final diff per file and every native cal
               id: "parent",
               name: "codemode",
               arguments: {
-                code: 'await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); await tools.replace({path:"other.txt",start:"gamma",text:"GAMMA"}); throw new Error("parent stopped");',
+                code: 'await tools.replace({path:"note.txt",at:"alpha",text:"ALPHA"}); await tools.replace({path:"note.txt",at:"beta",text:"BETA"}); await tools.replace({path:"other.txt",at:"gamma",text:"GAMMA"}); throw new Error("parent stopped");',
               },
             }),
           ],
@@ -527,7 +527,7 @@ test("a deadline renders accepted edits as not applied rather than successful", 
               id: "parent",
               name: "codemode",
               arguments: {
-                code: '// @options: {"timeout_ms":2000}\nawait tools.read({path:"note.txt"}); await tools.replace({path:"note.txt",start:"alpha",text:"UNWRITTEN"}); while (true) {}',
+                code: '// @options: {"timeout_ms":2000}\nawait tools.read({path:"note.txt"}); await tools.replace({path:"note.txt",at:"alpha",text:"UNWRITTEN"}); while (true) {}',
               },
             }),
           ],

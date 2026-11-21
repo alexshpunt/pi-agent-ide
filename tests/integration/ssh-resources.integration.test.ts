@@ -157,7 +157,7 @@ test("real Pi reads and edits SSH resources without a separate tool workflow", a
             toolCall({
               id: "edit-note",
               name: "replace",
-              arguments: { path: note, start: "before", text: "after" },
+              arguments: { path: note, at: "before", text: "after" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -167,7 +167,7 @@ test("real Pi reads and edits SSH resources without a separate tool workflow", a
             toolCall({
               id: "edit-conflict",
               name: "replace",
-              arguments: { path: conflict, start: "before", text: "must-not-overwrite" },
+              arguments: { path: conflict, at: "before", text: "must-not-overwrite" },
             }),
           ],
           { stopReason: "toolUse" },

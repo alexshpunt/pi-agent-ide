@@ -21,7 +21,7 @@ interface WireRequest {
 
 const code = `
 const before = await tools.read({ path: "task.txt" });
-const changed = await tools.replace({ path: "task.txt", start: "OLD", text: "NEW" });
+const changed = await tools.replace({ path: "task.txt", at: "OLD", text: "NEW" });
 const after = await tools.read({ path: changed });
 await tools.write({ path: "note.txt", content: "saved\\n" });
 const probe = await tools.bash({ command: "printf tool-name-probe" });

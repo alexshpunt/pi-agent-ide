@@ -920,15 +920,15 @@ function renderAnchorRange(
       : undefined;
   };
   if (registration.name === "replace" && sourceField === registration.source.field) {
+    const at = renderField("at");
+    if (at !== undefined) return range(at, undefined, theme);
     const after = renderField("after");
     const before = renderField("before");
-    if (after !== undefined || before !== undefined) {
-      return range(
-        after === undefined ? renderField("start") : `after ${after}`,
-        before === undefined ? renderField("end") : `before ${before}`,
-        theme,
-      );
-    }
+    return range(
+      after === undefined ? renderField("from") : `after ${after}`,
+      before === undefined ? renderField("through") : `before ${before}`,
+      theme,
+    );
   }
   return range(renderField(fields.at(0)), renderField(fields.at(1)), theme);
 }

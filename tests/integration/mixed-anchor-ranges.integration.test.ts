@@ -53,7 +53,7 @@ const cases: {
   },
   {
     name: "replace",
-    args: { path: anchor, end: "GAP\n", text: "NEW\n" },
+    args: { from: anchor, through: "GAP\n", text: "NEW\n" },
     expected: original.replace("prefix END suffix\nGAP\n", "NEW\n"),
   },
   {
@@ -70,7 +70,7 @@ const cases: {
   },
   {
     name: "replace",
-    args: { start: "ZZZZZZZ", end: anchor, text: "BAD" },
+    args: { from: "ZZZZZZZ", through: anchor, text: "BAD" },
     expected: original,
     error: true,
   },
@@ -78,7 +78,7 @@ const cases: {
   {
     name: "replace",
     // The span covers whole lines; the text replaces them and the last LF stays.
-    args: { start: "LINE#RUNTIME:1", end: anchor, text: "NEW\n" },
+    args: { from: "LINE#RUNTIME:1", through: anchor, text: "NEW\n" },
     expected: original.replace(selected, "NEW\n"),
   },
   {
@@ -113,7 +113,7 @@ const cases: {
   },
   {
     name: "replace",
-    args: { start: "SEARCH#RUNTIME:1:1:match", text: "NEW" },
+    args: { at: "SEARCH#RUNTIME:1:1:match", text: "NEW" },
     expected: original.replace("END", "NEW"),
   },
   {

@@ -105,9 +105,9 @@ test("Read shows the marker only after the last line of a file without a final l
 });
 
 test.each([
-  ["replace", { start: "two" }, `changed\n${MARKER}`],
-  ["replace", { start: "two" }, MARKER],
-  ["replace", { start: "two" }, `changed\r\n${MARKER}\r\n`],
+  ["replace", { at: "two" }, `changed\n${MARKER}`],
+  ["replace", { at: "two" }, MARKER],
+  ["replace", { at: "two" }, `changed\r\n${MARKER}\r\n`],
   ["insert", { anchor: "two" }, `added\n${MARKER}`],
 ] as const)(
   "%s refuses text whose last line is the marker and leaves the file as it is",
@@ -135,12 +135,12 @@ test("text that only mentions the marker in the middle is written as given", asy
       {
         id: "middle",
         tool: "replace",
-        args: { path: "target.txt", start: "two", text: `${MARKER}\ntwo` },
+        args: { path: "target.txt", at: "two", text: `${MARKER}\ntwo` },
       },
       {
         id: "inline",
         tool: "replace",
-        args: { path: "target.txt", start: "three", text: `see ${MARKER}` },
+        args: { path: "target.txt", at: "three", text: `see ${MARKER}` },
       },
     ]);
     expect(getToolExecution(result, "middle").isError).not.toBe(true);

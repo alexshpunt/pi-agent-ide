@@ -81,8 +81,8 @@ function displayLine(content: string, line: number, copiedText: string) {
 
 test("replace accepts a copied CRLF and BOM display using LF and fuzzy text", async () => {
   const source = "\uFEFFalpha\u00A0one\r\nbravo chunk\r\ncharlie";
-  const start = [displayLine(source, 1, "alpha one"), displayLine(source, 2, "bravo")].join("\n");
-  expect(await run(replaceMutationTool, { source }, { start }, { text: "revised\nbeta" })).toEqual({
+  const at = [displayLine(source, 1, "alpha one"), displayLine(source, 2, "bravo")].join("\n");
+  expect(await run(replaceMutationTool, { source }, { at }, { text: "revised\nbeta" })).toEqual({
     source: "\uFEFFrevised\r\nbeta chunk\r\ncharlie",
   });
 });
@@ -187,7 +187,7 @@ test("delete of a line anchor still removes the line with its break", async () =
 
 test("empty replacement deletes the whole line selected by a literal (LPT-1747)", async () => {
   expect(
-    await run(replaceMutationTool, { source: file }, { start: "body line" }, { text: "" }),
+    await run(replaceMutationTool, { source: file }, { at: "body line" }, { text: "" }),
   ).toEqual({ source: "// PREFIX\n// BEGIN block\n// END block\n// SUFFIX\n" });
 });
 
@@ -243,12 +243,7 @@ const to = "END";
 
 test("replace pairs a unique start with the nearest following exact end", async () => {
   expect(
-    await run(
-      replaceMutationTool,
-      { source: repeatedEnd },
-      { start: from, end: to },
-      { text: "NEW" },
-    ),
+    await run(replaceMutationTool, { source: repeatedEnd }, { from, through: to }, { text: "NEW" }),
   ).toEqual({ source: "before END\nNEW then END after" });
 });
 
@@ -279,7 +274,7 @@ test("a pair skips an end inside a multiline start and accepts an adjacent end",
     await run(
       replaceMutationTool,
       { source: "pre BEGIN\nEND-END and END stays" },
-      { start: "BEGIN\nEND-", end: "END" },
+      { from: "BEGIN\nEND-", through: "END" },
       { text: "NEW" },
     ),
   ).toEqual({ source: "pre NEW and END stays" });

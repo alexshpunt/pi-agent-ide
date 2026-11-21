@@ -43,9 +43,9 @@ Shared-server tests cover another retry trigger: when one session syncs newer di
 
 The `replace-anchored-display` case checks that Replace refuses a stale displayed prefix, accepts a current prefix with only part of the line, and uses literal file bytes when the same selector also matches the anchored view. It checks the resulting file bytes on both routes. Direct and Codemode paid routes remain unverified.
 
-The `exact-range-replace` case checks that a paired literal end skips an earlier match and stops at the first following match, leaving later matches untouched. The revised direct and Codemode paid routes remain unverified.
+The `exact-range-replace` case checks that a literal `through` paired with `from` skips an earlier match and stops at the first following match, leaving later matches untouched. The revised direct and Codemode paid routes remain unverified.
 
-The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the nearest closing marker, and support insertion between adjacent CRLF marker lines. Its paid routes remain unverified.
+Replace uses `at` for a single selector and `from` or `after` with `through` or `before` for a range. The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the nearest closing marker, and support insertion between adjacent CRLF marker lines. It also checks both mixed inclusive/exclusive pairs. Its paid routes remain unverified.
 
 ### Case contracts
 

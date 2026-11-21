@@ -53,7 +53,7 @@ const sourceFields: Record<string, readonly string[]> = {
 
 /** Selector fields that also take a value with an id, such as a Search match in Codemode. */
 const anchorFields: Record<string, readonly string[]> = {
-  replace: ["start", "after", "end", "before"],
+  replace: ["at", "from", "after", "through", "before"],
   delete: ["start", "end"],
   insert: ["anchor"],
   copy: ["start", "end", "targetStart", "targetEnd"],

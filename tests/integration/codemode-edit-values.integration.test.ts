@@ -17,7 +17,7 @@ import { withTextResultChecks } from "#integration/support/text-result-checks.ts
 // Each edit resolves to the id of the text it produced, or null when it selects none.
 const script = `
 const id = (value, what) => { check(typeof value==="string" && /^RESULT#[a-f0-9-]{36}$/.test(value), what+" did not resolve to an id: "+JSON.stringify(value)); return value; };
-const replaced = id(await tools.replace({path:"a.txt",start:"alpha",text:"ALPHA"}), "Replace");
+const replaced = id(await tools.replace({path:"a.txt",at:"alpha",text:"ALPHA"}), "Replace");
 id(await tools.insert({path:"a.txt",anchor:"gamma",text:" delta"}), "Insert");
 // The id of an edit still pending in the batch: the next call commits the batch first.
 const found = await tools.search({path:replaced,query:"ALPHA"});

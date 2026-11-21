@@ -94,8 +94,8 @@ function replaceArguments(fileName: string, content: string) {
   const endIndex = startIndex + SWAPPED_ROWS - 1;
   return {
     path: fileName,
-    start: formatLineHashAnchor(content, startIndex + 1),
-    end: formatLineHashAnchor(content, endIndex + 1),
+    from: formatLineHashAnchor(content, startIndex + 1),
+    through: formatLineHashAnchor(content, endIndex + 1),
     text: replacement,
   };
 }

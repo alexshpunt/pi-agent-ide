@@ -47,7 +47,7 @@ test("editing an unformatted Rust file preserves unrelated formatting", async ()
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(before, 2),
+        at: formatLineHashAnchor(before, 2),
         text: "    let value=2;\n",
       },
     });
@@ -89,7 +89,7 @@ test("formatting a Rust edit leaves child modules unchanged", async () => {
       tool: "replace",
       arguments: {
         path: "src/main.rs",
-        start: formatLineHashAnchor(before, 4),
+        at: formatLineHashAnchor(before, 4),
         text: '    println!( "changed" );\n',
       },
     });
@@ -118,7 +118,7 @@ test("editing a Rust 2024 let chain formats the saved file", async () => {
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(before, 5),
+        at: formatLineHashAnchor(before, 5),
         text: '        println!( "value={x}" );\n',
       },
     });
@@ -146,7 +146,7 @@ test("an installed built-in does not format without project evidence", async () 
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
+        at: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
         // A line anchor selects the line with its line break; the text keeps it.
         text: "var Value=2\n",
       },
@@ -179,7 +179,7 @@ test("an installed built-in formats when the project has matching evidence", asy
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
+        at: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
         text: "var Value=2\n",
       },
     });
@@ -253,7 +253,7 @@ test("an edit returns the formatter result instead of the requested intermediate
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(before, 1),
+        at: formatLineHashAnchor(before, 1),
         text: `${requestedLine}\n`,
       },
     });
@@ -296,7 +296,7 @@ test.skipIf(process.platform !== "win32" || !process.env.PI_TEST_WSL_FORMATTER_P
         tool: "replace",
         arguments: {
           path: file,
-          start: formatLineHashAnchor(before, 1),
+          at: formatLineHashAnchor(before, 1),
           text: "export const value = 2;\n",
         },
       });

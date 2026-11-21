@@ -267,7 +267,7 @@ test("the shared Replace path does not claim a failed rollback was unapplied", a
             toolCall({
               id: "failed",
               name: "replace",
-              arguments: { path: source, start: "before", text: "changed" },
+              arguments: { path: source, at: "before", text: "changed" },
             }),
           ],
           { stopReason: "toolUse" },

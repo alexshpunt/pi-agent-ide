@@ -51,7 +51,7 @@ const names = await tools.search({path:outline,query:"first"});
 check(names.matches.length === 1 && names.matches[0].line === 1);
 const declarations = await tools.ast_search({path:outline,pattern:"export function $NAME() { $$$BODY }",relation:"enclosing"});
 check(declarations.matches.length === 2);
-text(await tools.replace({path:names.matches[0],start:"first",text:"renamed"}));
+text(await tools.replace({path:names.matches[0],at:"first",text:"renamed"}));
 const scopes = await tools.read({path:"task.ts",views:["ast"]});
 check(scopes.text.includes("const hidden = 7;") && scopes.text.includes("scope-begin-"));
 text("outline-composed");
@@ -118,7 +118,7 @@ if (!page.id?.startsWith("RESULT#") || !page.text.includes("tail()") ||
     !page.text.includes("entry_25999()") || page.text.includes("entry_25998()")) throw Error(page.text);
 const all = await tools.search({path:page, query:"regex:first|tail|entry_25998"});
 if (all.matches.length !== 1 || all.matches[0].line !== 26006) throw Error(JSON.stringify(all.matches));
-const changed = await tools.replace({path:all.matches[0],start:"tail",text:"renamed"});
+const changed = await tools.replace({path:all.matches[0],at:"tail",text:"renamed"});
 if (changed.isError) throw Error(JSON.stringify(changed));
 `,
             },

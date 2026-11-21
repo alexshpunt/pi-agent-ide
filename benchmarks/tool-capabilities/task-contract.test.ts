@@ -145,14 +145,16 @@ for (const mode of ["direct", "codemode"]) {
   void test(`literal selectors reject references in each required field (${mode})`, () => {
     const reference = "RESULT#11111111-aaaa-4aaa-8aaa-111111111111";
     const selections = [
-      { tool: "replace", fields: ["start", "end"], values: ["START", "END"] },
+      { tool: "replace", fields: ["from", "through"], values: ["START", "END"] },
+      { tool: "replace", fields: ["from", "before"], values: ["START", "END"] },
+      { tool: "replace", fields: ["after", "through"], values: ["START", "END"] },
       { tool: "copy", fields: ["start", "end"], values: ["COPY_BEGIN", "COPY_END"] },
       { tool: "copy", fields: ["targetStart", "targetEnd"], values: ["SLOT", "SLOT"] },
       { tool: "move", fields: ["targetStart", "targetEnd"], values: ["SLOT", "SLOT"] },
       { tool: "insert", fields: ["anchor"], values: ["α🙂"] },
       { tool: "insert", fields: ["anchor"], values: ["α\r\nβ"] },
       { tool: "delete", fields: ["start"], values: ["Last\nBlock"] },
-      { tool: "replace", fields: ["start"], values: ["Last\r\nBlock"] },
+      { tool: "replace", fields: ["at"], values: ["Last\r\nBlock"] },
     ];
     for (const { tool, fields, values } of selections) {
       const args = {
@@ -181,7 +183,7 @@ for (const mode of ["direct", "codemode"]) {
   void test(`reuse, refusal and genuine dependencies remain mandatory (${mode})`, () => {
     const steps: RouteStep[] = [
       { tool: "read", args: { path: "task.txt" } },
-      { tool: "replace", reuse: { from: 0, field: ["path", "start"] } },
+      { tool: "replace", reuse: { from: 0, field: ["path", "at"] } },
       { tool: "delete", args: { path: "sentinel.txt" }, error: true, after: [1] },
     ];
     const calls: [Call, Call, Call] = [
@@ -201,7 +203,7 @@ for (const mode of ["direct", "codemode"]) {
     assert.ok(
       !check([
         calls[0],
-        { ...calls[1], args: { path: "task.txt", start: "OLD", text: "NEW" } },
+        { ...calls[1], args: { path: "task.txt", at: "OLD", text: "NEW" } },
         calls[2],
       ]),
     );

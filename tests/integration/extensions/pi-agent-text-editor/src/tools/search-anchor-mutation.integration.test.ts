@@ -103,7 +103,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
               name: "replace",
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
-                start: "LINE#RUNTIME:1",
+                at: "LINE#RUNTIME:1",
                 text: "changed",
               },
             }),
@@ -119,7 +119,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-begin",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:2:all:match", start: "begin", text: "top" },
+              arguments: { path: "SEARCH#RUNTIME:2:all:match", at: "begin", text: "top" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -133,7 +133,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-end",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:3:all:match", start: "end", text: "bottom" },
+              arguments: { path: "SEARCH#RUNTIME:3:all:match", at: "end", text: "bottom" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -508,7 +508,7 @@ test("deduplicates a final no-LF linewise target with end", async () => {
             toolCall({
               id: "replace-final",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end", text: "changed" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", at: "end", text: "changed" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -663,8 +663,8 @@ test("accepts search anchors in both replace span endpoints", async () => {
               id: "replace-span",
               name: "replace",
               arguments: {
-                start: "SEARCH#RUNTIME:1:1:match",
-                end: "SEARCH#RUNTIME:1:2:match",
+                from: "SEARCH#RUNTIME:1:1:match",
+                through: "SEARCH#RUNTIME:1:2:match",
                 text: "merged",
               },
             }),
@@ -824,7 +824,7 @@ test("mutates the complete selection retained by compacted search results", asyn
               id: "replace-incomplete",
               name: "replace",
               arguments: {
-                start: "SEARCH#RUNTIME:1:all:match",
+                at: "SEARCH#RUNTIME:1:all:match",
                 text: "changed",
               },
             }),

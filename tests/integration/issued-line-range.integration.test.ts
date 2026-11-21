@@ -74,7 +74,7 @@ test.each(["delete", "replace", "move"] as const)(
       const runResult = await run(cwd, tool, [
         call("copy", "replace", {
           path: file,
-          start: copySlot.trimEnd(),
+          at: copySlot.trimEnd(),
           text: block.trimEnd(),
         }),
         call("ambiguous", "delete", { path: file, start: block.trimEnd() }),
@@ -83,8 +83,9 @@ test.each(["delete", "replace", "move"] as const)(
         ),
         call("edit", tool, {
           path: file,
-          ...issued,
-          ...(tool === "replace" ? { text: "REPLACED" } : {}),
+          ...(tool === "replace"
+            ? { from: issued.start, through: issued.end, text: "REPLACED" }
+            : issued),
           ...(tool === "move" ? { target: file, targetStart: "int keep_last;" } : {}),
         }),
       ]);

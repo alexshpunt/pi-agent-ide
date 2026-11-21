@@ -113,7 +113,7 @@ test("Read anchors view text selects source characters in a real edit", async ()
             toolCall({
               id: "replace-copy",
               name: "replace",
-              arguments: { path: "fixture.txt", start: selector, text: "edited" },
+              arguments: { path: "fixture.txt", at: selector, text: "edited" },
             }),
           ],
           { stopReason: "toolUse" },

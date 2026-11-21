@@ -324,7 +324,7 @@ const check=result=>{if(typeof result!=="string")throw Error("Expected readable 
 const first=(found)=>{if(found===null||found.matches.length!==1)throw Error("Expected one AST match: "+JSON.stringify(found));return found.matches[0].id;};
 const firstSearch=first(await tools.ast_search({pattern:"console.log($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:firstSearch,text:'logger.info("same")'}));
-check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
+check(await tools.replace({path:"nodes.ts",at:"emoji",text:"symbol"}));
 const secondSearch=first(await tools.ast_search({pattern:"logger.info($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:secondSearch,text:"done()"}));
 `,

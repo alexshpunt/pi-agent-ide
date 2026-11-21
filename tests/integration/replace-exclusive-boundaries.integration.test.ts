@@ -16,13 +16,31 @@ import { createFixture, withTempWorkspace } from "#integration/support/pi-runtim
 
 const fixture = "START repeated\nEND\nEND\n// BEGIN\nold\n\n// FINISH\n// FINISH\n";
 const source = "fixture.txt";
+const invalidForms = {
+  "legacy-start": { start: "START" },
+  "legacy-end": { from: "START", end: "END" },
+  "legacy-start-with-at": { start: "START", at: "START" },
+  "legacy-end-with-range": { from: "START", end: "END", through: "END" },
+  "at-with-range": { at: "START", from: "START", through: "END" },
+  "both-starts": { from: "START", after: "// BEGIN", before: "// FINISH" },
+  "both-ends": { after: "// BEGIN", through: "END", before: "// FINISH" },
+  "from-alone": { from: "START" },
+  "after-alone": { after: "// BEGIN" },
+  "through-alone": { through: "END" },
+  "before-alone": { before: "// FINISH" },
+};
+const read = (id: string, views?: string[]) =>
+  assistantMessage(
+    [toolCall({ id, name: "read", arguments: { path: source, ...(views && { views }) } })],
+    { stopReason: "toolUse" },
+  );
 const edit = (id: string, fields: Record<string, unknown>) =>
   assistantMessage(
     [toolCall({ id, name: "replace", arguments: { path: source, text: "NEW", ...fields } })],
     { stopReason: "toolUse" },
   );
 
-test("replace validates exclusive boundary combinations and uses the nearest closing match", async () => {
+test("replace validates selector forms and uses the nearest closing match", async () => {
   await withTempWorkspace(async (cwd) => {
     const file = await createFixture(cwd, source, fixture);
     const run = await new PiIntegrationTest({
@@ -34,26 +52,18 @@ test("replace validates exclusive boundary combinations and uses the nearest clo
       extensions: [path.resolve("src/pi-agent-ide.ts")],
       tools: ["read", "replace"],
       conversation: [
-        assistantMessage(
-          [toolCall({ id: "read", name: "read", arguments: { path: source, views: ["anchors"] } })],
-          { stopReason: "toolUse" },
-        ),
-        edit("both-starts", { start: "START", after: "// BEGIN", before: "// FINISH" }),
-        edit("both-ends", { after: "// BEGIN", end: "END", before: "// FINISH" }),
-        edit("after-alone", { after: "// BEGIN" }),
-        edit("before-alone", { before: "// FINISH" }),
+        read("read", ["anchors"]),
+        ...Object.entries(invalidForms).map(([id, fields]) => edit(id, fields)),
         edit("ambiguous-first", { after: "END", before: "// FINISH" }),
-        edit("ambiguous-inclusive-first", { start: "END", before: "// FINISH" }),
+        edit("ambiguous-inclusive-first", { from: "END", before: "// FINISH" }),
         edit("missing-second", { after: "// BEGIN", before: "END" }),
+        read("after-refusals"),
         edit("nearest", { after: formatLineHashAnchor(fixture, 4), before: "// FINISH" }),
         assistantMessage([text("Done")]),
       ],
     }).run("Replace the text between the markers.");
     for (const id of [
-      "both-starts",
-      "both-ends",
-      "after-alone",
-      "before-alone",
+      ...Object.keys(invalidForms),
       "ambiguous-first",
       "ambiguous-inclusive-first",
       "missing-second",
@@ -63,6 +73,10 @@ test("replace validates exclusive boundary combinations and uses the nearest clo
     expect(getToolResultText(run, "ambiguous-inclusive-first")).not.toMatch(
       /SEARCH#[A-Z0-9]+:all:match/u,
     );
+    const unchanged = getToolResultText(run, "after-refusals");
+    for (const line of fixture.trimEnd().split("\n").filter(Boolean))
+      expect(unchanged).toContain(line);
+    expect(unchanged).not.toContain("NEW");
     expect(getToolExecution(run, "nearest").isError).toBe(false);
     await expect(readFile(file, "utf8")).resolves.toBe(
       "START repeated\nEND\nEND\n// BEGIN\nNEW\n// FINISH\n// FINISH\n",
@@ -70,7 +84,7 @@ test("replace validates exclusive boundary combinations and uses the nearest clo
   });
 }, 90_000);
 
-test("replace accepts Search match values as exclusive boundaries in Codemode", async () => {
+test("Codemode refuses invalid selectors and accepts Search matches as exclusive boundaries", async () => {
   await withTempWorkspace(async (cwd) => {
     const file = await createFixture(cwd, source, "left BEGIN old END right\n");
     const run = await new PiIntegrationTest({
@@ -80,8 +94,34 @@ test("replace accepts Search match values as exclusive boundaries in Codemode", 
       rawMode: false,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["codemode", "search", "replace"],
+      tools: ["codemode", "read", "search", "replace"],
       conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "invalid-script",
+              name: "codemode",
+              arguments: {
+                code: `
+          const forms = ${JSON.stringify(invalidForms)};
+          const refused = [];
+          for (const [id, fields] of Object.entries(forms)) {
+            try {
+              if (await tools.replace({ path: ${JSON.stringify(source)}, text: "BAD", ...fields }) === null)
+                refused.push(id);
+            } catch {
+              // A schema-invalid call can throw before reaching Replace.
+              refused.push(id);
+            }
+          }
+          text(JSON.stringify(refused));
+        `,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        read("after-refusals"),
         assistantMessage(
           [
             toolCall({
@@ -101,6 +141,11 @@ test("replace accepts Search match values as exclusive boundaries in Codemode", 
         assistantMessage([text("Done")]),
       ],
     }).run("Replace the characters between BEGIN and END using the Search matches.");
+    expect(getToolExecution(run, "invalid-script").isError).toBe(false);
+    expect(getToolResultText(run, "invalid-script")).toContain(
+      JSON.stringify(Object.keys(invalidForms)),
+    );
+    expect(getToolResultText(run, "after-refusals")).toContain("left BEGIN old END right");
     expect(getToolExecution(run, "script").isError).toBe(false);
     expect(codemodeFailures(getToolResultText(run, "script"))).toBe("");
     await expect(readFile(file, "utf8")).resolves.toBe("left BEGIN new END right\n");

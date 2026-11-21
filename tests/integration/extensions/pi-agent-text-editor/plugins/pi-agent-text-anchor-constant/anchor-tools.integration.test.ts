@@ -30,7 +30,7 @@ describe("constant anchors through text editor tools", () => {
     await runConstantScenario(
       "constant-replace",
       "replace",
-      { start: "begin", end: "begin", text: "replaced" },
+      { from: "begin", through: "begin", text: "replaced" },
       ["replaced", "bravo", "charlie", "delta", "echo"].join("\n"),
     );
   });

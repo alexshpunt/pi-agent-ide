@@ -93,7 +93,7 @@ test("a truncated direct Read does not expose the unreturned middle of a file", 
       conversation: [
         call("read", "head", {}),
         call("read", "tail", { offset: 20002, limit: 3 }),
-        call("replace", "edit", { start: begin, end, text: "short replacement" }),
+        call("replace", "edit", { from: begin, through: end, text: "short replacement" }),
         assistantMessage([text("Done.")]),
       ],
     }).run("Edit the selected C++ text");
@@ -132,7 +132,7 @@ test.each([true, false])("multi-path Read coverage (truncated: %s)", async (trun
       tools: ["read", "replace"],
       conversation: [
         call("read", "files", { path: [...prefixes, source] }),
-        call("replace", "edit", { path: source, start: begin, end, text: "int updated;" }),
+        call("replace", "edit", { path: source, from: begin, through: end, text: "int updated;" }),
         assistantMessage([text("Done.")]),
       ],
     }).run("Replace the selected C++ text");
@@ -174,7 +174,7 @@ test.each([
       tools: ["search", "replace"],
       conversation: [
         call("search", "hits", { query: "regex:^int hit_.*$", limit: lines.length }),
-        call("replace", "edit", { start: lines[0], end: lines.at(-1), text: "int updated;" }),
+        call("replace", "edit", { from: lines[0], through: lines.at(-1), text: "int updated;" }),
         assistantMessage([text("Done.")]),
       ],
     }).run("Replace the selected C++ text");
@@ -203,7 +203,10 @@ test("the visible edit receipt covers the next wide selection without a Read", a
     );
     await writeFile(path.join(cwd, source), original);
     const inserted = Array.from({ length: 301 }, (_, i) => `int receipt_${i};`);
-    const replace = (id: string, args: { start: string; end?: string; text: string }) =>
+    const replace = (
+      id: string,
+      args: { at: string; text: string } | { from: string; through: string; text: string },
+    ) =>
       assistantMessage([toolCall({ id, name: "replace", arguments: { path: source, ...args } })], {
         stopReason: "toolUse",
       });
@@ -214,10 +217,10 @@ test("the visible edit receipt covers the next wide selection without a Read", a
       extensions: [path.resolve("src/pi-agent-ide.ts")],
       tools: ["replace"],
       conversation: [
-        replace("expand", { start: begin, text: inserted.join("\n") }),
+        replace("expand", { at: begin, text: inserted.join("\n") }),
         replace("collapse", {
-          start: "int receipt_0;",
-          end: "int receipt_300;",
+          from: "int receipt_0;",
+          through: "int receipt_300;",
           text: "int collapsed;",
         }),
         assistantMessage([text("Done.")]),
@@ -239,7 +242,7 @@ test("unique literal endpoints cannot replace twenty thousand unseen lines", asy
     String.raw`
 await tools.read({path:file,offset:1,limit:2});
 await tools.read({path:file,offset:20002,limit:3});
-await rejects(()=>tools.replace({path:file,start:begin,end:"};\n\n"+end,text:"short replacement"}));`,
+await rejects(()=>tools.replace({path:file,from:begin,through:"};\n\n"+end,text:"short replacement"}));`,
   );
 });
 
@@ -268,7 +271,7 @@ test("a multiline search result shown to a script authorizes the observed span",
     String.raw`
 const hit=(await tools.search({path:file,query:"regex:static float[^\\n]*\\n(?:[^\\n]*\\n){299}int peer_299;",multiline:true})).matches[0];
 check(hit?.text.includes("int peer_299;"),"Search did not return the full match");
-const result=await tools.replace({path:file,start:begin,end:"int peer_299;",text:"updated"});
+const result=await tools.replace({path:file,from:begin,through:"int peer_299;",text:"updated"});
 check(result!==null,"Observed span was refused");`,
     "updated\n" + original.split("\n").slice(301).join("\n"),
   );
@@ -280,7 +283,7 @@ test("paged reads authorize a wide edit without observing the rest of the file",
     String.raw`
 await tools.read({path:file,offset:1,limit:150});
 await tools.read({path:file,offset:151,limit:151});
-const result=await tools.replace({path:file,start:begin,end:"int peer_299;",text:"updated"});
+const result=await tools.replace({path:file,from:begin,through:"int peer_299;",text:"updated"});
 check(result!==null,"Observed span was refused");`,
     "updated\n" + original.split("\n").slice(301).join("\n"),
   );
@@ -292,7 +295,7 @@ test("whole lines from individual search hits cover the selected span", async ()
     String.raw`
 const shown=await tools.search({path:file,query:"regex:^(?:static float.*|#pragma endregion|int peer_(?:[0-9]|[12][0-9]?[0-9]?|[3-9][0-9]);)$"});
 check(shown.matches[300]?.lineText==="int peer_299;","Search did not return the containing lines");
-const result=await tools.replace({path:file,start:begin,end:"int peer_299;",text:"updated"});
+const result=await tools.replace({path:file,from:begin,through:"int peer_299;",text:"updated"});
 check(result!==null,"Observed span was refused");`,
     "updated\n" + original.split("\n").slice(301).join("\n"),
   );

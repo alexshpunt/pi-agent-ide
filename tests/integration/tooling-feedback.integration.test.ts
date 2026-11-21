@@ -491,7 +491,7 @@ test("direct references reject a changed snapshot without deleting its file", as
     await writeFile(path.join(cwd, "note.txt"), "first\nOLD\nlast\n");
     const result = await run(cwd, "direct-issued-stale", [
       call("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
-      call("change", "replace", { path: "note.txt", start: "OLD", text: "NEW" }),
+      call("change", "replace", { path: "note.txt", at: "OLD", text: "NEW" }),
       call("stale", "delete", { path: "$issued-uuid:selection" }),
     ]);
     expect(getToolExecution(result, "change").isError).toBe(false);
@@ -539,7 +539,7 @@ test.each([false, true])(
       const payload = 'text":"BLOCKED"}';
       const result = await run(cwd, `streamed-insert-before-payload-${queuedPayload}`, [
         call("original", "read", { path: "note.txt", views: ["anchors"] }),
-        call("shift", "replace", { path: "note.txt", start: "gamma", text: "gamma2\nadded" }),
+        call("shift", "replace", { path: "note.txt", at: "gamma", text: "gamma2\nadded" }),
         assistantMessage(
           [
             toolCall({

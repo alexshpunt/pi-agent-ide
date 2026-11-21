@@ -246,7 +246,7 @@ describe("shell-roundtrip", () => {
     {
       id: "replace",
       tool: "replace",
-      args: { path: { id: `RESULT#${reread}` }, start: "hello", text: "BAD" },
+      args: { path: { id: `RESULT#${reread}` }, at: "hello", text: "BAD" },
       text: task.steps.find((step) => step.tool === "replace")?.contains,
       error: true,
     },

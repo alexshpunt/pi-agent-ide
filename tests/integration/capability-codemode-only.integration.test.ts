@@ -52,12 +52,12 @@ for (const mode of ["direct", "codemode"]) {
                 }),
                 call("discover", "tool_search", { query: "diff", limit: 1 }),
                 call("change", "codemode", {
-                  code: 'text(await searchTools("diff")); text(await describeTool("replace")); text(await tools.replace({path:"task.txt",start:"BEFORE",text:"AFTER"}));',
+                  code: 'text(await searchTools("diff")); text(await describeTool("replace")); text(await tools.replace({path:"task.txt",at:"BEFORE",text:"AFTER"}));',
                 }),
               ]
             : [
                 call("inspect", "read", { path: "task.txt" }),
-                call("change", "replace", { path: "task.txt", start: "BEFORE", text: "AFTER" }),
+                call("change", "replace", { path: "task.txt", at: "BEFORE", text: "AFTER" }),
                 call("discover", "tool_search", { query: "diff", limit: 1 }),
                 call("compare", "diff", { before: "task.txt", after: "task.txt" }),
               ]),

@@ -23,11 +23,11 @@ void test("stale Insert recovery permits repaired intermediate edits and preserv
     },
     {
       tool: "replace",
-      args: { path: JSON.stringify({ id: old }), start: "D07BBXQ|OLD", text: "D07BBXQ|NEW" },
+      args: { path: JSON.stringify({ id: old }), at: "D07BBXQ|OLD", text: "D07BBXQ|NEW" },
       error: true,
       finalDetails: { effect: "not-applied" },
     },
-    { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|OLD", text: "NEW" } },
+    { tool: "replace", args: { path: "task.txt", at: "D07BBXQ|OLD", text: "NEW" } },
     {
       tool: "insert",
       args: { path: "task.txt", anchor: "D07BBXQ", text: "BLOCKED" },

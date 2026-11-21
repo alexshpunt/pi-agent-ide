@@ -18,7 +18,7 @@ for (const mode of ["direct", "codemode"]) {
       },
       {
         tool: "replace",
-        args: { path: "replace.json", start: literal, end: literal, text: stable },
+        args: { path: "replace.json", from: literal, through: literal, text: stable },
       },
       { tool: "insert", args: { path: "insert.json", anchor: literal, text: " ", before: true } },
       {
@@ -74,7 +74,7 @@ for (const mode of ["direct", "codemode"]) {
       ),
     );
     for (const [index, fields] of [
-      [2, ["start", "end"]],
+      [2, ["from", "through"]],
       [3, ["anchor"]],
       [4, ["start", "end", "targetStart", "targetEnd"]],
     ] as const) {

@@ -129,7 +129,7 @@ function check(value, message) { if (!value) throw Error(message + ": " + JSON.s
 const empty = await tools.search({path:"note.txt",query:"regex:absent"});
 check(empty.complete === true && empty.matches.length === 0 && /^RESULT#[a-f\\d-]{36}$/u.test(empty.id),"Complete empty Search");
 check(await tools.replace({path:empty,text:"BAD"}) !== null,"Complete empty result must be a successful no-op");
-check(await tools.replace({path:"note.txt",start:empty.id,text:"BAD"}) === null,"Empty endpoint must reject only its own call");
+check(await tools.replace({path:"note.txt",at:empty.id,text:"BAD"}) === null,"Empty endpoint must reject only its own call");
 const found = await tools.search({path:"note.txt",query:"beta"});
 check(found.complete === true && found.matches.length === 2,"Search matches");
 check(found.matches.every((match) => match.path === "note.txt" && match.text === "beta" && match.id.startsWith("RESULT#")),"Match fields");

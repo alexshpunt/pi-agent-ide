@@ -25,7 +25,7 @@ add(
   'Use one native Codemode script to Read task.txt. Wait for that Read result so it captures OLD before any edit. Replace the literal OLD fragment with NEW, and pass the unchanged returned mutation value as the path argument to Read. Print both Read values. Then Write note.txt with exactly "saved\\n", run Bash with command "printf tool-name-probe", and print its output. Keep every other byte. Report the probe output and the final task.txt content.',
   [
     { tool: "read", args: { path: "task.txt" }, contains: "OLD", parentContains: "OLD" },
-    { tool: "replace", args: { path: "task.txt" }, exactText: ["start"], after: [0] },
+    { tool: "replace", args: { path: "task.txt" }, exactText: ["at"], after: [0] },
     { tool: "read", reuse: reuse(1), contains: "NEW", parentContains: "NEW" },
     { tool: "write", args: { path: "note.txt" } },
     { tool: "bash", contains: "tool-name-probe", parentContains: "tool-name-probe" },
@@ -142,7 +142,7 @@ add(
 add(
   "codemode-search-anchor-batch",
   ["compose.codemode-search-anchor-batch"],
-  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in one script run these three independent edits concurrently with Promise.all, without Read/Search or another tool between them: Insert a new line before alpha in task.txt with text added followed by a newline; Replace the beta line using its issued SEARCH reference as start, omitting path, with BETA followed by a newline; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
+  "In native Codemode, Search task.txt for regex:beta|gamma. The fixture retains that Search's unchanged readable output in .pi/issued-search.txt because script values expose RESULT ids, not SEARCH anchors. Use tools.read inside Codemode to Read .pi/issued-search.txt and extract the actual issued numbered SEARCH :line references for beta and gamma, ending in :line, not :match. Then in one script run these three independent edits concurrently with Promise.all, without Read/Search or another tool between them: Insert a new line before alpha in task.txt with text added followed by a newline; Replace the beta line using its issued SEARCH reference as at, omitting path, with BETA followed by a newline; Delete gamma using its issued SEARCH reference as start, omitting path. Keep omega. Do not use RESULT ids or fabricate Search session ids. All three edits must belong to one committed editor batch.",
   [
     { tool: "search", args: { path: "task.txt", query: "regex:beta|gamma" } },
     { tool: "read", args: { path: ".pi/issued-search.txt" } },
@@ -153,8 +153,8 @@ add(
     },
     {
       tool: "replace",
-      args: { path: undefined, start: /^SEARCH#[A-F0-9]+:1:line$/u },
-      reuse: reuse(0, "start"),
+      args: { path: undefined, at: /^SEARCH#[A-F0-9]+:1:line$/u },
+      reuse: reuse(0, "at"),
       sameAssistantWith: 2,
       editorBatchSize: 3,
     },
@@ -794,7 +794,7 @@ add(
     "codemode.failed-call-null",
     "codemode.failed-call-summary",
   ],
-  "Use native Codemode to Search task.txt for regex:^ABSENT$ and confirm complete coverage with no matches. Replace that empty Search value with BAD; it must succeed without changes. ast_search scope.ts for probe($ARG) with limit 1, then Search that bounded result for regex:^ABSENT$. Confirm that the resulting empty Search is incomplete. Replace that incomplete value with BAD; the call must fail and resolve to null while the script continues. Also Replace in task.txt with the complete empty Search id as start and text BAD; this invalid endpoint must fail and resolve to null. Search task.txt for invalid regex:(, then for OLD with limit 1000. Check matches and complete instead of parsing display prose. Pass the final complete Search value unchanged to Replace with NEW, replacing all its matches and preserving keep/last. Report the facts and keep the failed calls visible in the summary without printing all matches.",
+  "Use native Codemode to Search task.txt for regex:^ABSENT$ and confirm complete coverage with no matches. Replace that empty Search value with BAD; it must succeed without changes. ast_search scope.ts for probe($ARG) with limit 1, then Search that bounded result for regex:^ABSENT$. Confirm that the resulting empty Search is incomplete. Replace that incomplete value with BAD; the call must fail and resolve to null while the script continues. Also Replace in task.txt with the complete empty Search id as at and text BAD; this invalid endpoint must fail and resolve to null. Search task.txt for invalid regex:(, then for OLD with limit 1000. Check matches and complete instead of parsing display prose. Pass the final complete Search value unchanged to Replace with NEW, replacing all its matches and preserving keep/last. Report the facts and keep the failed calls visible in the summary without printing all matches.",
   [
     {
       tool: "search",
@@ -820,7 +820,7 @@ add(
     {
       tool: "replace",
       args: { path: "task.txt" },
-      reuse: reuse(0, "start"),
+      reuse: reuse(0, "at"),
       error: true,
     },
     {
@@ -847,7 +847,7 @@ add(
 add(
   "token-search-edit-guard",
   ["compose.token-search-edit-guard"],
-  "Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN: pass that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Finally search literal.txt for the same unquoted query alpha beta, which matches there as one phrase, and replace that whole result with LITERAL. Preserve every other byte.",
+  "Search split.txt for the unquoted query alpha beta. Attempt to Replace the whole broadened selection with BAD (in Codemode use the fallback object); it must fail without changing the file. In Codemode, the failed Replace resolves to null and the script can continue. Then search split.txt for the Boolean query alpha OR beta and replace only its first match with GREEN: pass that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as at (the first match value in Codemode). Finally search literal.txt for the same unquoted query alpha beta, which matches there as one phrase, and replace that whole result with LITERAL. Preserve every other byte.",
   [
     { tool: "search", args: { path: "split.txt", query: /^alpha beta$/u } },
     {
@@ -859,12 +859,12 @@ add(
     { tool: "search", args: { path: "split.txt", query: "alpha OR beta" } },
     {
       tool: "replace",
-      reuse: reuse(2, ["path", "start"]),
+      reuse: reuse(2, ["path", "at"]),
     },
     { tool: "search", args: { path: "literal.txt", query: /^alpha beta$/u } },
     {
       tool: "replace",
-      reuse: reuse(4, ["path", "start", "anchor"], "whole-result"),
+      reuse: reuse(4, ["path", "at"], "whole-result"),
     },
   ],
   {
@@ -1059,12 +1059,12 @@ add(
 add(
   "rust-style-preservation",
   ["edit.rust-style-preservation"],
-  'Use Replace with these exact inputs: {"path":"unformatted.rs","start":"value=1","text":"value=2"} and {"path":"formatted.rs","start":"let value = 1;","text":"let value=2;"}. The second replacement payload deliberately has no spaces around =. Submit that payload unchanged so the formatter exercises preservation of the existing formatted style and produces let value = 2;. Keep every other byte, including child.rs, unchanged.',
+  'Use Replace with these exact inputs: {"path":"unformatted.rs","at":"value=1","text":"value=2"} and {"path":"formatted.rs","at":"let value = 1;","text":"let value=2;"}. The second replacement payload deliberately has no spaces around =. Submit that payload unchanged so the formatter exercises preservation of the existing formatted style and produces let value = 2;. Keep every other byte, including child.rs, unchanged.',
   [
-    { tool: "replace", args: { path: "unformatted.rs", start: "value=1", text: "value=2" } },
+    { tool: "replace", args: { path: "unformatted.rs", at: "value=1", text: "value=2" } },
     {
       tool: "replace",
-      args: { path: "formatted.rs", start: "let value = 1;", text: "let value=2;" },
+      args: { path: "formatted.rs", at: "let value = 1;", text: "let value=2;" },
     },
   ],
   {
@@ -1113,9 +1113,9 @@ const streamedReplacement = Array.from(
 add(
   "streamed-replace",
   ["edit.large-replace-payload"],
-  `Use direct replace on task.txt with start OLD and text equal to this complete JSON string: ${JSON.stringify(streamedReplacement)}. Supply the literal text in the tool arguments, not a script, reference, abbreviation or repetition expression. Wait for the Replace result before reading the first two lines of the saved file and reporting STREAM-PAYLOAD-0001. Keep the surrounding keep and last lines unchanged.`,
+  `Use direct replace on task.txt with at OLD and text equal to this complete JSON string: ${JSON.stringify(streamedReplacement)}. Supply the literal text in the tool arguments, not a script, reference, abbreviation or repetition expression. Wait for the Replace result before reading the first two lines of the saved file and reporting STREAM-PAYLOAD-0001. Keep the surrounding keep and last lines unchanged.`,
   [
-    { tool: "replace", args: { path: "task.txt", start: "OLD", text: streamedReplacement } },
+    { tool: "replace", args: { path: "task.txt", at: "OLD", text: streamedReplacement } },
     {
       tool: "read",
       args: { path: "task.txt", offset: 1, limit: 2 },
@@ -1137,14 +1137,24 @@ add(
     "edit.result-anchor-combination",
     "compose.native-provider-auth",
   ],
-  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no start/end. Wait for the first Replace result before searching the file again for NEW. Replace with that fresh Search result or UUID as path, start NEW, and text FINAL. This selector must resolve inside the issued selection, not treat its UUID as a filename. Wait for the second Replace result before reading the current file and reporting FINAL. Keep every other byte unchanged.",
+  "Search task.txt for OLD. Replace the selected OLD with NEW by passing the unchanged Search result or its outer UUID as path, with text NEW and no selectors. Wait for the first Replace result before searching the file again for NEW. Replace with that fresh Search result or UUID as path, at NEW, and text FINAL. This selector must resolve inside the issued selection, not treat its UUID as a filename. Wait for the second Replace result before reading the current file and reporting FINAL. Keep every other byte unchanged.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
-    { tool: "replace", args: { start: undefined, end: undefined }, reuse: reuse(0) },
+    {
+      tool: "replace",
+      args: {
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+      },
+      reuse: reuse(0),
+    },
     { tool: "search", args: { path: "task.txt", query: "NEW" }, after: [1] },
     {
       tool: "replace",
-      args: { start: "NEW" },
+      args: { at: "NEW" },
       reuse: reuse(2),
     },
     { tool: "read", args: { path: "task.txt" }, contains: "FINAL", after: [3] },
@@ -1337,7 +1347,7 @@ add(
   },
 );
 for (const operation of ["insert", "replace", "delete"] as const) {
-  const selector = operation === "insert" ? "anchor" : "start";
+  const selector = operation === "insert" ? "anchor" : operation === "replace" ? "at" : "start";
   const lineReference = /^SEARCH#[A-F0-9]+:1:line$/u;
   add(
     `${operation}-list-selectors-refused`,
@@ -1410,7 +1420,7 @@ add(
   [
     "Search task.txt for OLD and separately for TAIL. Wait for both results.",
     'Move the block from the exact line "BLOCK_START\\n" through "BLOCK_END\\n" (inclusive) in task.txt to immediately after the exact line "DESTINATION\\n" in the same file. Pass path, start, end, target and targetStart to Move.',
-    `After Move, call Replace with path "task.txt", start set to the literal four-line string ${JSON.stringify(callLines)}, and text set to ${JSON.stringify(renamedCallLines)}. Omit end.`,
+    `After Move, call Replace with path "task.txt", at set to the literal four-line string ${JSON.stringify(callLines)}, and text set to ${JSON.stringify(renamedCallLines)}.`,
     "After that edit, make one Replace call with text NEW and path set to an array of six references: OLD matches 1, 2, 3, 6 and 7, then TAIL match 1, from the original searches. Use their numbered :match references in direct calls and their match values or ids in Codemode. Do not search again, pass selectors to this final Replace, or change the other OLD matches.",
   ].join(" "),
   [
@@ -1425,7 +1435,7 @@ add(
     {
       tool: "replace",
       args: { path: "task.txt" },
-      exactText: ["start"],
+      exactText: ["at"],
       after: [2],
     },
     {
@@ -1472,13 +1482,13 @@ add(
 add(
   "replace-surviving-scoped-match",
   ["edit.surviving-scoped-match"],
-  "Search task.txt for OLD once and retain the whole returned result. Replace its first match with ONE, passing that whole Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first match as start (the issued :match reference in direct calls, the first match value in Codemode). Omit end or repeat the same match. Wait for the first Replace result so its match is stale before making one Replace call with path as an array of the first and second matches and text TWO; the stale first match must make it fail without writing. Wait for that refusal before replacing only the second match with TWO, using the SAME WHOLE Search result as path and its second match as start. Changing the second match before the refusal would invalidate that reference too. Do not pass the second match as path, retype the file path, search again or use other edits. Preserve every other byte.",
+  "Search task.txt for OLD once and retain the whole returned result. Replace its first match with ONE, passing that whole Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first match as at (the issued :match reference in direct calls, the first match value in Codemode). Wait for the first Replace result so its match is stale before making one Replace call with path as an array of the first and second matches and text TWO; the stale first match must make it fail without writing. Wait for that refusal before replacing only the second match with TWO, using the SAME WHOLE Search result as path and its second match as at. Changing the second match before the refusal would invalidate that reference too. Do not pass the second match as path, retype the file path, search again or use other edits. Preserve every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
       tool: "replace",
-      args: { start: matchReference(1), text: "ONE" },
-      reuse: [reuse(0, "path", "whole-result"), reuse(0, "start")],
+      args: { at: matchReference(1), text: "ONE" },
+      reuse: [reuse(0, "path", "whole-result"), reuse(0, "at")],
     },
     {
       tool: "replace",
@@ -1489,9 +1499,9 @@ add(
     },
     {
       tool: "replace",
-      args: { start: matchReference(2), text: "TWO" },
+      args: { at: matchReference(2), text: "TWO" },
       after: [2],
-      reuse: [reuse(0, "path", "whole-result"), reuse(0, "start")],
+      reuse: [reuse(0, "path", "whole-result"), reuse(0, "at")],
     },
   ],
   {
@@ -1502,7 +1512,7 @@ add(
 add(
   "replace-search-anchor-list-unusable",
   ["edit.search-anchor-list-unusable"],
-  "Search task.txt for OLD. Replace its first match alone with ONE: use that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as start (the first match value in Codemode). Omit end or repeat that same match. Wait for this first Replace result so its match is stale before making ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Wait for that refusal before calling Replace once with only the second match and TWO; changing it earlier would also invalidate the second reference in the refused call. Do not search again and do not retype the file path. Keep every other byte.",
+  "Search task.txt for OLD. Replace its first match alone with ONE: use that Search result as path ({id: its returned UUID} in direct calls, the returned value in Codemode) and its first :match reference as at (the first match value in Codemode). Wait for this first Replace result so its match is stale before making ONE Replace call whose path is an array of the first and the second match of that same search, replacing both with TWO. The first match was just changed, so the call must fail, name that reference and change nothing. Wait for that refusal before calling Replace once with only the second match and TWO; changing it earlier would also invalidate the second reference in the refused call. Do not search again and do not retype the file path. Keep every other byte.",
   [
     { tool: "search", args: { path: "task.txt", query: "OLD" } },
     {
@@ -1765,13 +1775,13 @@ add(
       tool: "replace",
       args: { text: "NEW" },
       modes: ["direct"],
-      reuse: reuse(0, ["path", "start"]),
+      reuse: reuse(0, ["path", "at"]),
     },
     {
       tool: "replace",
       args: { text: "NEW" },
       modes: ["codemode"],
-      reuse: reuse(1, ["path", "start"]),
+      reuse: reuse(1, ["path", "at"]),
     },
   ],
   {
@@ -1952,16 +1962,16 @@ add(
 add(
   "read-anchor-replace",
   ["read.anchors", "edit.replace-range"],
-  "Read task.txt with anchors. Using both returned line anchors as start and end, replace the inclusive first two lines with one line READY followed by a newline. Use the file path or omit path for this anchored edit, not a result scope. Keep last unchanged.",
+  "Read task.txt with anchors. Using both returned line anchors as from and through, replace the inclusive first two lines with one line READY followed by a newline. Use the file path or omit path for this anchored edit, not a result scope. Keep last unchanged.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "replace",
       args: {
-        start: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
-        end: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        from: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        through: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
       },
-      reuse: [reuse(0, "start", "anchor"), reuse(0, "end", "anchor")],
+      reuse: [reuse(0, "from", "anchor"), reuse(0, "through", "anchor")],
     },
   ],
   { expected: { "task.txt": "READY\nlast\n" } },
@@ -1970,12 +1980,12 @@ add(
 add(
   "exact-range-replace",
   ["edit.replace-exact-range", "edit.leading-newline-range"],
-  'Use Replace with paired literal endpoints and these exact inputs: {"path":"sentence.txt","start":"START","end":"END","text":"NEW"} and {"path":"credit.txt","start":"\\n\\nBased on","end":"(credit).","text":""}. The first call removes both endpoint fragments along with the text between them; its final line must be left NEW right END, with the earlier END line and both line breaks unchanged. In the second input, decode each \\n as one newline character. Remove only that suffix, retaining the entire preceding paragraph and its punctuation. Do not rewrite either whole file or use line anchors.',
+  'Use Replace with paired literal endpoints and these exact inputs: {"path":"sentence.txt","from":"START","through":"END","text":"NEW"} and {"path":"credit.txt","from":"\\n\\nBased on","through":"(credit).","text":""}. The first call removes both endpoint fragments along with the text between them; its final line must be left NEW right END, with the earlier END line and both line breaks unchanged. In the second input, decode each \\n as one newline character. Remove only that suffix, retaining the entire preceding paragraph and its punctuation. Do not rewrite either whole file or use line anchors.',
   [
     {
       tool: "replace",
       args: { path: "sentence.txt" },
-      exactText: ["start", "end"],
+      exactText: ["from", "through"],
     },
     {
       tool: "replace",
@@ -1983,7 +1993,7 @@ add(
         path: "credit.txt",
         text: "",
       },
-      exactText: ["start", "end"],
+      exactText: ["from", "through"],
     },
   ],
   {
@@ -2001,7 +2011,7 @@ add(
 add(
   "replace-exclusive-range",
   ["edit.replace-exclusive-range"],
-  'Use Replace to change only the text between // BEGIN and the first // END that follows it in task.txt: pass "// BEGIN" as after, "// END" as before, and "new" as text. Keep all markers and later content. In empty.txt use the same boundaries to insert two lines, one containing first and one containing second, between adjacent markers.',
+  'Use Replace to change only the text between // BEGIN and the first // END that follows it in task.txt: pass "// BEGIN" as after, "// END" as before, and "new" as text. Keep all markers and later content. In empty.txt use the same boundaries to insert two lines, one containing first and one containing second, between adjacent markers. In block.txt replace the opening marker and body but keep the closing marker: use from "// BEGIN", before "// END", and text "new". In inline.txt keep "left " and replace everything after it through the first semicolon: pass after "left ", through ";", and text "new;".',
   [
     {
       tool: "replace",
@@ -2013,15 +2023,29 @@ add(
       args: { path: "empty.txt", after: "// BEGIN", before: "// END", text: "first\nsecond" },
       exactText: ["after", "before"],
     },
+    {
+      tool: "replace",
+      args: { path: "block.txt", from: "// BEGIN", before: "// END", text: "new" },
+      exactText: ["from", "before"],
+    },
+    {
+      tool: "replace",
+      args: { path: "inline.txt", after: "left ", through: ";", text: "new;" },
+      exactText: ["after", "through"],
+    },
   ],
   {
     files: {
       "task.txt": "// END\n// BEGIN\nold\n\n// END\nkeep\n// END\n",
       "empty.txt": "// BEGIN\r\n// END",
+      "block.txt": "// BEGIN\nold\n// END\nkeep\n",
+      "inline.txt": "left old; right;\n",
     },
     expected: {
       "task.txt": "// END\n// BEGIN\nnew\n// END\nkeep\n// END\n",
       "empty.txt": "// BEGIN\r\nfirst\r\nsecond\r\n// END",
+      "block.txt": "new\n// END\nkeep\n",
+      "inline.txt": "left new; right;\n",
     },
   },
 );
@@ -2189,23 +2213,23 @@ add(
 add(
   "mixed-range-replace",
   ["edit.mixed-range-endpoints"],
-  "Read line-start.txt with anchors; each line is shown after its 7-character anchor and a |. Replace from the anchor shown before line 1 through the exact END fragment on line 2 with NEW, passing the literal string END as end and preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference with NEW followed by a newline, passing the literal string START as start. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
+  "Read line-start.txt with anchors; each line is shown after its 7-character anchor and a |. Replace from the anchor shown before line 1 (pass it as from) through the exact END fragment on line 2 with NEW, passing the literal string END as through and preserving the suffix after END. Then Search line-end.txt for END. Replace from the exact START fragment on line 1 through that Search's :line reference (pass it as through) with NEW followed by a newline, passing the literal string START as from. Preserve the prefix before START and the last line. Each endpoint keeps its own extent: do not widen an exact endpoint because the other endpoint selects a whole line.",
   [
     { tool: "read", args: { path: "line-start.txt", views: ["anchors"] } },
     {
       tool: "replace",
-      args: { path: "line-start.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}$/u, end: "END" },
-      reuse: reuse(0, "start", "anchor"),
+      args: { path: "line-start.txt", from: /^[0-9A-HJKMNP-TV-Z]{7}$/u, through: "END" },
+      reuse: reuse(0, "from", "anchor"),
     },
     { tool: "search", args: { path: "line-end.txt", query: "END" } },
     {
       tool: "replace",
       args: {
         path: "line-end.txt",
-        start: "START",
-        end: /^SEARCH#[A-F0-9]+:1:line$/u,
+        from: "START",
+        through: /^SEARCH#[A-F0-9]+:1:line$/u,
       },
-      reuse: reuse(2, "end", "anchor"),
+      reuse: reuse(2, "through", "anchor"),
     },
   ],
   {
@@ -2342,9 +2366,9 @@ add(
 add(
   "replace-read-search",
   ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
-  "Use Replace, then use its result for Read and Search. Use replace on task.txt, passing the literal string OLD as start and NEW as text. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",
+  "Use Replace, then use its result for Read and Search. Use replace on task.txt, passing the literal string OLD as at and NEW as text. Pass the mutation result to read (this read is required), then search within that same mutation result for NEW. Keep everything else.",
   [
-    { tool: "replace", args: { path: "task.txt" }, exactText: ["start"] },
+    { tool: "replace", args: { path: "task.txt" }, exactText: ["at"] },
     { tool: "read", reuse: reuse(0), contains: "NEW" },
     { tool: "search", args: { query: "NEW" }, reuse: reuse(0), contains: "NEW" },
   ],
@@ -2713,7 +2737,7 @@ add(
     },
     {
       tool: "replace",
-      args: { path: "task.txt", start: "keep this", text: "kept" },
+      args: { path: "task.txt", at: "keep this", text: "kept" },
       after: [3],
     },
   ],
@@ -2996,22 +3020,40 @@ for (const [name, eol] of [
   add(
     `replace-line-boundary-${name}`,
     ["edit.whole-line-spans", "edit.replace-line-endings"],
-    `In heading.txt, replace the literal ${JSON.stringify("## OLD" + eol)} with ## NEW and no newline, preserving the blank line before Body. In blank-one.txt replace the literal ${JSON.stringify("OLD" + eol)} with one LF character. In blank-two.txt replace the literal OLD without its ending with two LF characters. The last two edits must leave one and two empty lines respectively, in each file's existing line-ending style. Decode the JSON escapes as actual line breaks. Omit end and use only literal start strings.`,
+    `In heading.txt, replace the literal ${JSON.stringify("## OLD" + eol)} with ## NEW and no newline, preserving the blank line before Body. In blank-one.txt replace the literal ${JSON.stringify("OLD" + eol)} with one LF character. In blank-two.txt replace the literal OLD without its ending with two LF characters. The last two edits must leave one and two empty lines respectively, in each file's existing line-ending style. Decode the JSON escapes as actual line breaks. Use literal at strings.`,
     [
       {
         tool: "replace",
-        args: { path: "heading.txt", start: `## OLD${eol}`, text: "## NEW", end: undefined },
-        exactText: ["start"],
+        args: {
+          path: "heading.txt",
+          at: `## OLD${eol}`,
+          text: "## NEW",
+          through: undefined,
+          before: undefined,
+        },
+        exactText: ["at"],
       },
       {
         tool: "replace",
-        args: { path: "blank-one.txt", start: `OLD${eol}`, text: "\n", end: undefined },
-        exactText: ["start"],
+        args: {
+          path: "blank-one.txt",
+          at: `OLD${eol}`,
+          text: "\n",
+          through: undefined,
+          before: undefined,
+        },
+        exactText: ["at"],
       },
       {
         tool: "replace",
-        args: { path: "blank-two.txt", start: "OLD", text: "\n\n", end: undefined },
-        exactText: ["start"],
+        args: {
+          path: "blank-two.txt",
+          at: "OLD",
+          text: "\n\n",
+          through: undefined,
+          before: undefined,
+        },
+        exactText: ["at"],
       },
     ],
     {
@@ -3051,12 +3093,12 @@ for (const [name, eol, ending] of [
   add(
     `exact-eof-${name}`,
     ["edit.whole-line-spans", "edit.exact-eof", "edit.delete-empty-replace"],
-    `In last.txt, use Replace with the literal string Last as start and Final as text, omitting end entirely. Do not use an issued reference or line anchor for this replacement. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For both block edits, pass the literal string ${JSON.stringify(`Last${eol}Block${ending}`)} as start and omit the end parameter entirely. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. In blank.txt, replace the literal string Last with a single LF character. Omit end. Preserve the preceding First line in every file. Keep unrelated bytes and each file's existing newline style.`,
+    `In last.txt, use Replace with the literal string Last as at and Final as text. Do not use an issued reference or line anchor for this replacement. Delete the exact final block Last followed by Block in block.txt. Remove the identical final block in empty.txt using Replace with empty text. For the two block edits, pass the literal string ${JSON.stringify(`Last${eol}Block${ending}`)} as start for Delete and at for Replace. Decode the JSON escapes as actual line-separator characters; do not pass Search references or line anchors for these block edits. Read line.txt with anchors, then Delete only its final Last line using the actual returned line anchor. In blank.txt, replace the literal string Last with a single LF character using at. Preserve the preceding First line in every file. Keep unrelated bytes and each file's existing newline style.`,
     [
       {
         tool: "replace",
-        args: { path: "last.txt", text: "Final", end: undefined },
-        exactText: ["start"],
+        args: { path: "last.txt", text: "Final", through: undefined, before: undefined },
+        exactText: ["at"],
       },
       {
         tool: "delete",
@@ -3065,8 +3107,8 @@ for (const [name, eol, ending] of [
       },
       {
         tool: "replace",
-        args: { path: "empty.txt", text: "", end: undefined },
-        exactText: ["start"],
+        args: { path: "empty.txt", text: "", through: undefined, before: undefined },
+        exactText: ["at"],
       },
       { tool: "read", args: { path: "line.txt", views: ["anchors"] } },
       {
@@ -3076,8 +3118,8 @@ for (const [name, eol, ending] of [
       },
       {
         tool: "replace",
-        args: { path: "blank.txt", start: "Last", text: "\n", end: undefined },
-        exactText: ["start"],
+        args: { path: "blank.txt", at: "Last", text: "\n", through: undefined, before: undefined },
+        exactText: ["at"],
       },
     ],
     {
@@ -3102,13 +3144,18 @@ for (const [name, eol, ending] of [
 add(
   "replace-lookalike-bytes",
   ["edit.replace-lookalike-bytes"],
-  "Read routes.ts with anchors. Use Replace with the actual returned line anchor of its last line as start and the text export default routeTable; written with plain ASCII spaces. Keep every other byte of the file, including characters that look like spaces, quotes or dashes. Do not use literal text as start.",
+  "Read routes.ts with anchors. Use Replace with the actual returned line anchor of its last line as at and the text export default routeTable; written with plain ASCII spaces. Keep every other byte of the file, including characters that look like spaces, quotes or dashes. Do not use literal text as at.",
   [
     { tool: "read", args: { path: "routes.ts", views: ["anchors"] } },
     {
       tool: "replace",
-      args: { path: "routes.ts", text: "export default routeTable;", end: undefined },
-      reuse: reuse(0, ["path", "start"], "anchor"),
+      args: {
+        path: "routes.ts",
+        text: "export default routeTable;",
+        through: undefined,
+        before: undefined,
+      },
+      reuse: reuse(0, ["path", "at"], "anchor"),
     },
   ],
   {
@@ -3160,7 +3207,7 @@ for (const method of ["all", "allSettled"] as const) {
 add(
   "undo-last",
   ["edit.undo-last", "compose.mutation-undo"],
-  'In task.txt, use replace with start equal to "OLD" and text equal to "NEW". After Replace returns, use undo with change equal to "last" (file is optional). After Undo returns, Read the file and report its original marker. Leave the original CRLF bytes intact.',
+  'In task.txt, use replace with at equal to "OLD" and text equal to "NEW". After Replace returns, use undo with change equal to "last" (file is optional). After Undo returns, Read the file and report its original marker. Leave the original CRLF bytes intact.',
   [
     { tool: "replace", args: { path: "task.txt", text: "NEW" } },
     { tool: "undo", args: { change: "last" }, after: [0] },
@@ -3430,16 +3477,16 @@ add(
 add(
   "read-ast-boundary",
   ["read.ast-view", "edit.scope-anchors"],
-  "Read task.ts with the ast view. Use the returned begin/end scope anchors for the first function to replace that complete function, including its line break, with function renamed() { return 8; } followed by a line break. Keep the second function unchanged. Use ordinary file path plus scope anchors, not a result scope combined with start/end.",
+  "Read task.ts with the ast view. Use the returned begin/end scope anchors for the first function as from and through to replace that complete function, including its line break, with function renamed() { return 8; } followed by a line break. Keep the second function unchanged. Use ordinary file path plus scope anchors, not a result scope combined with from/through.",
   [
     { tool: "read", args: { path: "task.ts", views: ["ast"] }, contains: "scope-begin-" },
     {
       tool: "replace",
       args: {
-        start: /scope-begin-/,
-        end: /scope-end-/,
+        from: /scope-begin-/,
+        through: /scope-end-/,
       },
-      reuse: [reuse(0, "start", "anchor"), reuse(0, "end", "anchor")],
+      reuse: [reuse(0, "from", "anchor"), reuse(0, "through", "anchor")],
     },
   ],
   {
@@ -3479,25 +3526,25 @@ add(
 add(
   "replace-anchored-display",
   ["edit.replace-anchored-display"],
-  'Read task.txt with views ["anchors"] and save the whole displayed second row, including its 7-character prefix and pipe but excluding the line break. Then Replace in task.txt with literal start "OLD" and text "OLD tail". After that edit finishes, try Replace in task.txt with the saved displayed row as start and text "BAD". This must refuse because its hash is stale, even though OLD still begins the line. After the refusal, Read task.txt with views ["anchors"] again. From the new second row, copy the current 7-character prefix, the pipe and OLD into Replace start; omit " tail". Pass text "NEW" and omit end. Keep the suffix and every line break. Independently Read collision.txt with views ["anchors"] and Replace in collision.txt with start "|OLD" and text "NEW". That start is both a partial display of the first row and literal source text on the second line. Only the second line should change. In Codemode, use the displayed rows in the Read value\'s text field and continue after the refused call.',
+  'Read task.txt with views ["anchors"] and save the whole displayed second row, including its 7-character prefix and pipe but excluding the line break. Then Replace in task.txt with literal at "OLD" and text "OLD tail". After that edit finishes, try Replace in task.txt with the saved displayed row as at and text "BAD". This must refuse because its hash is stale, even though OLD still begins the line. After the refusal, Read task.txt with views ["anchors"] again. From the new second row, copy the current 7-character prefix, the pipe and OLD into Replace at; omit " tail". Pass text "NEW". Keep the suffix and every line break. Independently Read collision.txt with views ["anchors"] and Replace in collision.txt with at "|OLD" and text "NEW". That selector is both a partial display of the first row and literal source text on the second line. Only the second line should change. In Codemode, use the displayed rows in the Read value\'s text field and continue after the refused call.',
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "replace", args: { path: "task.txt", start: "OLD" }, after: [0] },
+    { tool: "replace", args: { path: "task.txt", at: "OLD" }, after: [0] },
     {
       tool: "replace",
-      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}\|OLD$/u },
-      reuse: reuse(0, "start", "text"),
+      args: { path: "task.txt", at: /^[0-9A-HJKMNP-TV-Z]{7}\|OLD$/u },
+      reuse: reuse(0, "at", "text"),
       error: true,
       after: [1],
     },
     { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [2] },
     {
       tool: "replace",
-      args: { path: "task.txt", start: /^[0-9A-HJKMNP-TV-Z]{7}\|OLD$/u },
-      reuse: reuse(3, "start", "text"),
+      args: { path: "task.txt", at: /^[0-9A-HJKMNP-TV-Z]{7}\|OLD$/u },
+      reuse: reuse(3, "at", "text"),
     },
     { tool: "read", args: { path: "collision.txt", views: ["anchors"] } },
-    { tool: "replace", args: { path: "collision.txt", start: /^\|OLD$/u }, after: [5] },
+    { tool: "replace", args: { path: "collision.txt", at: /^\|OLD$/u }, after: [5] },
   ],
   {
     files: { ...textFile, "collision.txt": "OLD tail\nliteral |OLD tail\n" },
@@ -3511,20 +3558,20 @@ add(
 add(
   "ambiguous-exact-all-match",
   ["edit.ambiguous-exact-all-match"],
-  'Read only line 2 of task.txt (offset 2, limit 1). Pass that bounded Read result as Replace path, with literal start "OLD", text "NEW" and no end. Wait for the ambiguous-selector refusal. In Codemode, finish the script to see its failure summary and retain the Read value for the next script. Retry Replace with the same path and text, using the SEARCH# reference ending in :all:match from that refusal as start. Omit end again. Change both OLD fragments on line 2 and keep line 1 unchanged. Do not rerun Search or Read to obtain a different selection.',
+  'Read only line 2 of task.txt (offset 2, limit 1). Pass that bounded Read result as Replace path, with literal at "OLD", text "NEW". Wait for the ambiguous-selector refusal. In Codemode, finish the script to see its failure summary and retain the Read value for the next script. Retry Replace with the same path and text, using the SEARCH# reference ending in :all:match from that refusal as at. Change both OLD fragments on line 2 and keep line 1 unchanged. Do not rerun Search or Read to obtain a different selection.',
   [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     {
       tool: "replace",
-      args: { start: "OLD", end: undefined },
-      exactText: ["start"],
+      args: { at: "OLD", through: undefined, before: undefined },
+      exactText: ["at"],
       reuse: reuse(0),
       error: true,
     },
     {
       tool: "replace",
-      args: { start: /^SEARCH#[A-Fa-f\d]+:all:match$/u, end: undefined },
-      reuse: [reuse(0), reuse(1, "start", "text")],
+      args: { at: /^SEARCH#[A-Fa-f\d]+:all:match$/u, through: undefined, before: undefined },
+      reuse: [reuse(0), reuse(1, "at", "text")],
     },
   ],
   {
@@ -3536,20 +3583,20 @@ add(
 add(
   "copied-line-prefix-recovery",
   ["edit.copied-line-prefix-refusal"],
-  "Read task.txt with anchors and wait for its result. Attempt Replace of line 2 using its issued line anchor as start and text consisting of that same 7-character anchor followed by |NEW. This deliberately copied display prefix must be refused without writes. Wait for the refusal, then retry Replace with the same start anchor and text NEW followed by a newline, without the prefix. Keep keep and last unchanged. In Codemode, continue after the refused call and keep its failure visible.",
+  "Read task.txt with anchors and wait for its result. Attempt Replace of line 2 using its issued line anchor as at and text consisting of that same 7-character anchor followed by |NEW. This deliberately copied display prefix must be refused without writes. Wait for the refusal, then retry Replace with the same at anchor and text NEW followed by a newline, without the prefix. Keep keep and last unchanged. In Codemode, continue after the refused call and keep its failure visible.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "replace",
       args: { path: "task.txt", text: /^[0-9A-HJKMNP-TV-Z]{7}\|NEW$/u },
-      reuse: reuse(0, "start", "anchor"),
+      reuse: reuse(0, "at", "anchor"),
       error: true,
       after: [0],
     },
     {
       tool: "replace",
       args: { path: "task.txt" },
-      reuse: reuse(0, "start", "anchor"),
+      reuse: reuse(0, "at", "anchor"),
       after: [1],
     },
   ],
@@ -3559,10 +3606,10 @@ add(
 add(
   "stale-line-anchor-literal-collision",
   ["edit.stale-line-anchor-literal-collision", "edit.anchor-shaped-literal-search"],
-  "Read task.txt with anchors and wait for its result. Replace the OLD line with NEW followed by a newline using the issued line-2 anchor and wait for success. After that successful change, attempt both Insert BLOCKED using the old line-2 anchor and Replace with that same stale anchor as start and text BLOCKED. Both must fail without writes even though the anchor bytes occur literally elsewhere. The guard may intentionally stop streaming before text arrives; that is the stale refusal, not a missing-payload mistake. Do not retry an already refused call. Independently, Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. The two stale checks and the Search chain need not wait for each other. The Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
+  "Read task.txt with anchors and wait for its result. Replace the OLD line with NEW followed by a newline using the issued line-2 anchor and wait for success. After that successful change, attempt both Insert BLOCKED using the old line-2 anchor and Replace with that same stale anchor as at and text BLOCKED. Both must fail without writes even though the anchor bytes occur literally elsewhere. The guard may intentionally stop streaming before text arrives; that is the stale refusal, not a missing-payload mistake. Do not retry an already refused call. Independently, Search task.txt for the literal D07BBXQ and pass that Search result unchanged as Replace's path with text TOKEN. The two stale checks and the Search chain need not wait for each other. The Search selection intentionally edits the literal bytes, not a line anchor. Keep every other byte. In Codemode, continue after refused calls and keep their failures visible.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
-    { tool: "replace", args: { path: "task.txt" }, reuse: reuse(0, "start", "anchor") },
+    { tool: "replace", args: { path: "task.txt" }, reuse: reuse(0, "at", "anchor") },
     {
       tool: "insert",
       args: { path: "task.txt" },
@@ -3573,7 +3620,7 @@ add(
     {
       tool: "replace",
       args: { path: "task.txt" },
-      reuse: reuse(0, "start", "anchor"),
+      reuse: reuse(0, "at", "anchor"),
       error: true,
       after: [1],
     },
@@ -3685,8 +3732,8 @@ add(
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     {
       tool: "replace",
-      args: { path: "task.txt", start: "BODY OLD" },
-      exactText: ["start"],
+      args: { path: "task.txt", at: "BODY OLD" },
+      exactText: ["at"],
       after: [0],
     },
     {
@@ -3710,22 +3757,22 @@ const wideRangeFixture = `BEGIN\n${Array.from({ length: 500 }, (_, index) => `bo
 add(
   "unseen-edit-span",
   ["edit.unseen-edit-span"],
-  "Read only line 1 and line 502 of task.txt in separate calls. Then call Replace on task.txt with literal start BEGIN, literal end END, and text NEW. It must refuse because only the endpoints were read. After the refusal, Read all of task.txt and retry the same Replace. The file should contain NEW and keep, each on its own line.",
+  "Read only line 1 and line 502 of task.txt in separate calls. Then call Replace on task.txt with literal from BEGIN, literal through END, and text NEW. It must refuse because only the endpoints were read. After the refusal, Read all of task.txt and retry the same Replace. The file should contain NEW and keep, each on its own line.",
   [
     { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
     { tool: "read", args: { path: "task.txt", offset: 502, limit: 1 } },
     {
       tool: "replace",
-      args: { path: "task.txt", start: "BEGIN", end: "END" },
-      exactText: ["start", "end"],
+      args: { path: "task.txt", from: "BEGIN", through: "END" },
+      exactText: ["from", "through"],
       error: true,
       after: [0, 1],
     },
     { tool: "read", args: { path: "task.txt" }, after: [2] },
     {
       tool: "replace",
-      args: { path: "task.txt", start: "BEGIN", end: "END" },
-      exactText: ["start", "end"],
+      args: { path: "task.txt", from: "BEGIN", through: "END" },
+      exactText: ["from", "through"],
       after: [3],
     },
   ],
@@ -3735,24 +3782,24 @@ add(
   // Agent-facing scope refusals are unchanged; native anchor-rejection cards have scripted Pi coverage.
   "result-selector-scope",
   ["compose.result-selector-scope"],
-  "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as start and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Wait for that refusal before passing the same line-2 result as path with the anchor the first Read shows before line 2 as start and text NEW followed by a newline. Changing line 2 before the refusal would make the bounded result stale and hide the scope check. Preserve all other bytes.",
+  "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as at and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Wait for that refusal before passing the same line-2 result as path with the anchor the first Read shows before line 2 as at and text NEW followed by a newline. Changing line 2 before the refusal would make the bounded result stale and hide the scope check. Preserve all other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     // The window may also come from the first Read's result of the same file.
     { tool: "read", args: { offset: 2, limit: 1 } },
     {
       tool: "replace",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
-      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      args: { at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      reuse: [reuse(1), reuse(0, "at", "anchor")],
       error: true,
       contains: "outside the result's selection: task.txt line 2",
       excludes: "ENOENT",
     },
     {
       tool: "replace",
-      args: { start: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      args: { at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       after: [2],
-      reuse: [reuse(1), reuse(0, "start", "anchor")],
+      reuse: [reuse(1), reuse(0, "at", "anchor")],
     },
   ],
   { expected: { "task.txt": "keep\nNEW\nlast\n" } },
@@ -3772,20 +3819,20 @@ for (const { suffix, joiner } of [
   add(
     `result-selector-multi-range-${suffix}`,
     ["compose.result-selector-scope"],
-    `Search task.txt for the exact literal ${JSON.stringify(old)} with limit 20 and retain its complete ten-match result. Use that whole Search result unchanged as path in every Replace below. On the direct route pass an object containing the Search result's envelope UUID as id, not a numbered SEARCH reference. In Codemode pass the unchanged returned Search value as path. First try to Replace a span from the first exact match to the tenth exact match with text BAD. Use the actual issued :1:match and :10:match references directly, or the first and tenth match values in Codemode. The span crosses unselected text, so it must refuse without writing. Next try Replace with the same path, literal start unselected-gap and text BAD; it must also refuse. After both refusals, replace all ten exact matches in one Replace with text ${JSON.stringify(replacement)} and no end. For that final start use the original Search's :all:match reference directly, or the whole unchanged Search value in Codemode. Preserve the gap, line prefixes, punctuation and every other byte. Do not rewrite whole lines, refresh the Search or use a file path for the edits.`,
+    `Search task.txt for the exact literal ${JSON.stringify(old)} with limit 20 and retain its complete ten-match result. Use that whole Search result unchanged as path in every Replace below. On the direct route pass an object containing the Search result's envelope UUID as id, not a numbered SEARCH reference. In Codemode pass the unchanged returned Search value as path. First try to Replace a span from the first exact match to the tenth exact match with text BAD. Pass the actual issued :1:match and :10:match references as from and through directly, or the first and tenth match values in Codemode. The span crosses unselected text, so it must refuse without writing. Next try Replace with the same path, literal at unselected-gap and text BAD; it must also refuse. After both refusals, replace all ten exact matches in one Replace with text ${JSON.stringify(replacement)}. For that final at use the original Search's :all:match reference directly, or the whole unchanged Search value in Codemode. Preserve the gap, line prefixes, punctuation and every other byte. Do not rewrite whole lines, refresh the Search or use a file path for the edits.`,
     [
       { tool: "search", args: { path: "task.txt", query: old, limit: 20 } },
       {
         tool: "replace",
-        args: { path: wholeResult, start: matchReference(1), end: matchReference(10) },
-        reuse: reuse(0, ["path", "start", "end"]),
+        args: { path: wholeResult, from: matchReference(1), through: matchReference(10) },
+        reuse: reuse(0, ["path", "from", "through"]),
         error: true,
       },
       {
         tool: "replace",
-        args: { path: wholeResult, start: "unselected-gap" },
+        args: { path: wholeResult, at: "unselected-gap" },
         reuse: reuse(0),
-        exactText: ["start"],
+        exactText: ["at"],
         after: [1],
         error: true,
       },
@@ -3793,10 +3840,11 @@ for (const { suffix, joiner } of [
         tool: "replace",
         args: {
           path: wholeResult,
-          start: /^(?:SEARCH#[A-F\d]+:all:match|RESULT#[a-f\d-]{36})$/u,
-          end: undefined,
+          at: /^(?:SEARCH#[A-F\d]+:all:match|RESULT#[a-f\d-]{36})$/u,
+          through: undefined,
+          before: undefined,
         },
-        reuse: reuse(0, ["path", "start"]),
+        reuse: reuse(0, ["path", "at"]),
         after: [2],
       },
     ],
@@ -3852,16 +3900,16 @@ add(
 add(
   "result-selector-exact-retry",
   ["compose.result-selector-scope"],
-  "Read only line 2 of task.txt. Pass that Read result unchanged as Replace's path with start last and text BAD. The text exists outside the selection, so the call must fail without editing. Then pass the explicit task.txt path to Replace with start last and text fixed. This exact-text edit must succeed without an intervening anchor edit. Preserve all other bytes.",
+  "Read only line 2 of task.txt. Pass that Read result unchanged as Replace's path with at last and text BAD. The text exists outside the selection, so the call must fail without editing. Then pass the explicit task.txt path to Replace with at last and text fixed. This exact-text edit must succeed without an intervening anchor edit. Preserve all other bytes.",
   [
     { tool: "read", args: { path: "task.txt", offset: 2, limit: 1 } },
     {
       tool: "replace",
-      args: { start: "last" },
+      args: { at: "last" },
       reuse: reuse(0),
       error: true,
     },
-    { tool: "replace", args: { path: "task.txt", start: "last" } },
+    { tool: "replace", args: { path: "task.txt", at: "last" } },
   ],
   { expected: { "task.txt": "keep\nOLD\nfixed\n" } },
 );
@@ -3896,7 +3944,7 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  'Start Bash with command IFS= read -r line; printf \'%s\\n\' "$line" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter and wait for the Write result before inserting the Enter key. Wait for the Insert result before reading the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. The direct route may read all three sources together in one Read path array; preserve each actual result reference. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/start, before the text payload arrives; that early refusal is valid. After the refusal, search the shell\'s retained output with query "hello", and wait for the Search result before deleting the shell session. Report the line printed by the shell. Do not edit files.',
+  'Start Bash with command IFS= read -r line; printf \'%s\\n\' "$line" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter and wait for the Write result before inserting the Enter key. Wait for the Insert result before reading the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. The direct route may read all three sources together in one Read path array; preserve each actual result reference. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/at, before the text payload arrives; that early refusal is valid. After the refusal, search the shell\'s retained output with query "hello", and wait for the Search result before deleting the shell session. Report the line printed by the shell. Do not edit files.',
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -4146,7 +4194,7 @@ add(
 add(
   "diagnostics-report",
   ["diagnostics.file", "compose.diagnostics-read-search", "diagnostics.readonly-report"],
-  "Call diagnostics for problem.ts. Reuse that exact report as path in Read, then reuse the original report as path in Search with query 2322. Attempt Replace with the original report as path, start broken and text changed; it must refuse, not edit the source. Report diagnostic code 2322 in plain digits. Do not change any files. In Codemode check the diagnostics value has text and id, and reuse that value unchanged.",
+  "Call diagnostics for problem.ts. Reuse that exact report as path in Read, then reuse the original report as path in Search with query 2322. Attempt Replace with the original report as path, at broken and text changed; it must refuse, not edit the source. Report diagnostic code 2322 in plain digits. Do not change any files. In Codemode check the diagnostics value has text and id, and reuse that value unchanged.",
   [
     {
       tool: "diagnostics",
@@ -4247,7 +4295,7 @@ add(
     "compose.symbol-read-rename",
     "compose.capture-uuid-source",
   ],
-  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Wait for that refusal result, then try replacing the same name capture with start: "count" and text: "total"; this mixed semantic-name/literal-selector request must also fail without changes. Wait for its refusal before replacing the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
+  'Use lsp_search with declaration task.ts#count. Try replacing its name capture with empty text; this must fail without changes. For this first replacement, pass path as {id: "<bare UUID>"}. In direct calls, take the issued name capture RESULT# reference and remove the RESULT# prefix. In Codemode, bind the lsp_search return value to result, take const captureId = result.matches[0].captures.name[0].id, then pass path: {id: captureId.replace(/^RESULT#/, "")}. The id field must contain only the capture UUID, with no RESULT# prefix. Wait for that refusal result, then try replacing the same name capture with at: "count" and text: "total"; this mixed semantic-name/literal-selector request must also fail without changes. Wait for its refusal before replacing the same issued name capture with total to rename through LSP, using its original prefixed reference or capture value. The declaration, same-file usage, and import and usage in usage.ts must change. Keep the string and unrelated local count unchanged. Do not do an ordinary text replacement.',
   [
     { tool: "lsp_search", args: { declaration: /^task\.ts#.*count$/ }, contains: "count" },
     {
@@ -4264,7 +4312,7 @@ add(
     },
     {
       tool: "replace",
-      args: { start: "count", text: "total" },
+      args: { at: "count", text: "total" },
       reuse: reuse(0, "path", "capture:name"),
       after: [1],
       error: true,
@@ -4273,7 +4321,14 @@ add(
     },
     {
       tool: "replace",
-      args: { text: "total", start: undefined, end: undefined },
+      args: {
+        text: "total",
+        at: undefined,
+        from: undefined,
+        after: undefined,
+        through: undefined,
+        before: undefined,
+      },
       reuse: reuse(0, "path", "capture:name"),
       after: [2],
     },
@@ -4489,13 +4544,13 @@ const jsonObjectSelector = /^\s*\{[\s\S]*"id"\s*:[\s\S]*"feature"\s*:[\s\S]*\}\s
 add(
   "json-literal-selectors",
   ["edit.literal-json-selectors", "read.literal-json-path"],
-  `Read the single file whose literal filename is ${JSON.stringify(literalJsonPath)} by passing that exact string as path, not an array. Report its marker. Read replace.json, insert.json, source.json and target.json before editing. Use the complete JSON object text as each selector, including its braces and all keys; do not use line anchors, result references or smaller fragments. In replace.json, use ${JSON.stringify(legacyJsonSelector)} as both start and end and replace it with ${JSON.stringify(stableJsonSelector)}. In insert.json, use ${JSON.stringify(legacyJsonSelector)} as anchor and insert exactly one space before it (before: true). Copy the complete ${JSON.stringify(stableJsonSelector)} object from source.json using it as both start and end, replacing the object in target.json using ${JSON.stringify(legacyJsonSelector)} as both targetStart and targetEnd. Keep adjacent commas and every other byte. Do not use Write.`,
+  `Read the single file whose literal filename is ${JSON.stringify(literalJsonPath)} by passing that exact string as path, not an array. Report its marker. Read replace.json, insert.json, source.json and target.json before editing. Use the complete JSON object text as each selector, including its braces and all keys; do not use line anchors, result references or smaller fragments. In replace.json, use ${JSON.stringify(legacyJsonSelector)} as both from and through and replace it with ${JSON.stringify(stableJsonSelector)}. In insert.json, use ${JSON.stringify(legacyJsonSelector)} as anchor and insert exactly one space before it (before: true). Copy the complete ${JSON.stringify(stableJsonSelector)} object from source.json using it as both start and end, replacing the object in target.json using ${JSON.stringify(legacyJsonSelector)} as both targetStart and targetEnd. Keep adjacent commas and every other byte. Do not use Write.`,
   [
     { tool: "read", args: { path: literalJsonPath }, contains: "LITERAL-PATH-MARKER" },
     {
       tool: "replace",
-      args: { path: "replace.json", start: jsonObjectSelector, end: jsonObjectSelector },
-      exactText: ["start", "end"],
+      args: { path: "replace.json", from: jsonObjectSelector, through: jsonObjectSelector },
+      exactText: ["from", "through"],
     },
     {
       tool: "insert",

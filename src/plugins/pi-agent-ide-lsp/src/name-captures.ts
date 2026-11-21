@@ -32,7 +32,11 @@ export class NameCaptures {
       return capture === undefined ? undefined : { capture, reference: value };
     };
     const fields = input as Record<string, unknown>;
-    return find(fields.path) ?? find(fields.start) ?? find(fields.end);
+    for (const field of ["path", "at", "from", "after", "through", "before"]) {
+      const selected = find(fields[field]);
+      if (selected !== undefined) return selected;
+    }
+    return undefined;
   }
   matches(input: unknown): boolean {
     return this.find(input) !== undefined;

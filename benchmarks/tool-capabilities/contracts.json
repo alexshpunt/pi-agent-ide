@@ -985,6 +985,22 @@
               }
             ]
           },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "type": "object"
+              }
+            ]
+          },
           "before": {
             "anyOf": [
               {
@@ -1001,7 +1017,7 @@
               }
             ]
           },
-          "end": {
+          "from": {
             "anyOf": [
               {
                 "type": "string"
@@ -1052,7 +1068,10 @@
               }
             ]
           },
-          "start": {
+          "text": {
+            "type": "string"
+          },
+          "through": {
             "anyOf": [
               {
                 "type": "string"
@@ -1067,9 +1086,6 @@
                 "type": "object"
               }
             ]
-          },
-          "text": {
-            "type": "string"
           }
         },
         "required": ["text"],

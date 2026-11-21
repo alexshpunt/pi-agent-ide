@@ -62,7 +62,7 @@ test("a direct replace with the text it selects is refused without a write", asy
       toolCall({
         id: "same",
         name: "replace",
-        arguments: { path: "names.cpp", start: "FuncA(y)", text: "FuncA(y)" },
+        arguments: { path: "names.cpp", at: "FuncA(y)", text: "FuncA(y)" },
       }),
     ]);
     const output = getToolResultText(result, "same");

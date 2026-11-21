@@ -23,7 +23,7 @@ describe("pi-agent-text-editor replace", () => {
         tool: "replace",
         arguments: {
           path: relativeFile,
-          start: formatLineHashAnchor("before\nreplace-me\nafter\n", 2),
+          at: formatLineHashAnchor("before\nreplace-me\nafter\n", 2),
           // A line anchor selects the line with its line break; the text keeps it.
           text: "replaced\n",
         },
@@ -45,7 +45,7 @@ describe("pi-agent-text-editor replace", () => {
         tool: "replace",
         arguments: {
           path: relativeFile,
-          start: formatLineHashAnchor(`${lines.join("\n")}\n`, 600),
+          at: formatLineHashAnchor(`${lines.join("\n")}\n`, 600),
           text: "changed 600\n",
         },
       });

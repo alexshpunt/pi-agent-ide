@@ -81,8 +81,8 @@ function calls(root: string, prefix: string, encoded: boolean): Call[] {
     call("replace-beta", "search", { path: at("edit.txt"), query: "beta" }),
     call("replace", "replace", {
       path: at("edit.txt"),
-      start: ref("replace-beta"),
-      end: ref("replace-beta"),
+      from: ref("replace-beta"),
+      through: ref("replace-beta"),
       text: "BETA",
     }),
     call("gamma", "search", { path: at("edit.txt"), query: "gamma" }),

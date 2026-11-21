@@ -52,7 +52,7 @@ for (const mode of ["focused", "view", "combined", "javascript"]) {
         tools: ["diagnostics", "read", "replace"],
         conversation: [
           call("first", mode === "focused" ? "diagnostics" : "read", request),
-          call("edit", "replace", { path: name, start: '"bad"', text: "0" }),
+          call("edit", "replace", { path: name, at: '"bad"', text: "0" }),
           call("clean", "diagnostics", { path: name }),
           assistantMessage([text("Done")]),
         ],

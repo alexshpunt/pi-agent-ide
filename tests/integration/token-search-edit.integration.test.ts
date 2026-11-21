@@ -13,7 +13,7 @@ import {
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test.each([false, true])(
-  "direct whole Search scope edits one issued match (end: %s)",
+  "direct whole Search scope edits one issued match (range: %s)",
   async (paired) => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "tokens.txt"), "red blue\n");
@@ -46,8 +46,12 @@ test.each([false, true])(
                 name: "replace",
                 arguments: {
                   path: { id: "$issued-uuid:search" },
-                  start: "$issued-searchmatch:search:1",
-                  ...(paired && { end: "$issued-searchmatch:search:1" }),
+                  ...(paired
+                    ? {
+                        from: "$issued-searchmatch:search:1",
+                        through: "$issued-searchmatch:search:1",
+                      }
+                    : { at: "$issued-searchmatch:search:1" }),
                   text: "RED",
                 },
               }),
@@ -87,10 +91,10 @@ check(await tools.copy({path:found,target:"literal.txt",targetStart:"end"}) === 
 const scoped = await tools.search({path:found,query:"const"});
 check(scoped.matches.length === 1,"read-only search scope");
 check(await tools.replace({path:found.matches[0],text:"CONST"}) === null,"word hint match must fail");
-check(await tools.replace({path:"words.txt",start:found.matches[0],text:"BAD"}) === null,"word hint anchor must fail");
+check(await tools.replace({path:"words.txt",at:found.matches[0],text:"BAD"}) === null,"word hint anchor must fail");
 const bool = await tools.search({path:"boolean.txt",query:"red AND blue"});
 check(await tools.replace({path:bool,text:"BAD"}) === null,"boolean bulk");
-check(await tools.replace({path:bool,start:bool.matches[0],end:bool.matches[0],text:"RED"}) !== null,"boolean scoped match");
+check(await tools.replace({path:bool,from:bool.matches[0],through:bool.matches[0],text:"RED"}) !== null,"boolean scoped match");
 const literal = await tools.search({path:"literal.txt",query:'call("a b", 1);'});
 check(literal.matches.length === 1 && literal.matches[0].text === 'call("a b", 1);',"quotes stay literal");
 check(await tools.replace({path:literal,text:"replaced"}) !== null,"literal result");

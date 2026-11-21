@@ -47,7 +47,7 @@ test("an identical Write commits pending edits without dropping their final post
               arguments: {
                 code:
                   textResultChecks +
-                  `await tools.replace({path:"same.note",start:"alpha",text:"first"});
+                  `await tools.replace({path:"same.note",at:"alpha",text:"first"});
 const unchanged=await tools.write({path:"same.note",content:"first\\n"});
 check((await tools.read({path:unchanged})).text==="first\\n","Write did not see the committed pending edit");
 text(unchanged);`,

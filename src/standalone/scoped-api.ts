@@ -170,7 +170,7 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
       if (value[field] !== undefined) await checkSource(value[field], context, mutation);
     const selectors =
       name === "replace"
-        ? ["start", "after", "end", "before"]
+        ? ["at", "from", "after", "through", "before"]
         : ["start", "end", "anchor", "targetStart", "targetEnd"];
     for (const field of selectors) {
       const anchor = value[field];

@@ -123,7 +123,7 @@ describe("pi-agent-text-editor batch recovery", () => {
               }),
               call("replace", "mixed-replace", {
                 path: "transaction.ts",
-                start: formatLineHashAnchor(source, 3),
+                at: formatLineHashAnchor(source, 3),
                 // A line anchor selects the line with its line break; the text keeps it.
                 text: "    const retries = 4;\n",
               }),
@@ -186,22 +186,22 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("replace", "atomic-first", {
                 path: "atomic-first.txt",
-                start: formatLineHashAnchor(firstContent, 2),
+                at: formatLineHashAnchor(firstContent, 2),
                 text: "first-change\n",
               }),
               call("replace", "atomic-second", {
                 path: "atomic-second.txt",
-                start: formatLineHashAnchor(secondContent, 2),
+                at: formatLineHashAnchor(secondContent, 2),
                 text: "second-change\n",
               }),
               call("replace", "atomic-stale", {
                 path: "atomic-first.txt",
-                start: outdatedAnchor,
+                at: outdatedAnchor,
                 text: "must-not-apply",
               }),
               call("replace", "atomic-after-stale", {
                 path: "atomic-second.txt",
-                start: formatLineHashAnchor(secondContent, 3),
+                at: formatLineHashAnchor(secondContent, 3),
                 text: "omega-change",
               }),
             ],
@@ -247,7 +247,7 @@ describe("pi-agent-text-editor batch recovery", () => {
       const staleChunks: ChunkSpec = {
         kind: "explicit",
         chunks: [
-          `{"start":${JSON.stringify(outdatedStreamedAnchor)},`,
+          `{"at":${JSON.stringify(outdatedStreamedAnchor)},`,
           `"text":${JSON.stringify(staleText)}}`,
         ],
       };
@@ -259,13 +259,13 @@ describe("pi-agent-text-editor batch recovery", () => {
       const tailChunks = tailCalls.map(({ id, line }, index) => ({
         id,
         contentIndex: index + 4,
-        argumentsJson: `{"start":${JSON.stringify(formatLineHashAnchor(source, line))},"text":${JSON.stringify(
+        argumentsJson: `{"at":${JSON.stringify(formatLineHashAnchor(source, line))},"text":${JSON.stringify(
           `${id}\n${staleText}\n`,
         )}}`,
         chunks: {
           kind: "explicit" as const,
           chunks: [
-            `{"start":${JSON.stringify(formatLineHashAnchor(source, line))},`,
+            `{"at":${JSON.stringify(formatLineHashAnchor(source, line))},`,
             `"text":${JSON.stringify(`${id}\n${staleText}\n`)}}`,
           ],
         },
@@ -283,11 +283,11 @@ describe("pi-agent-text-editor batch recovery", () => {
             [
               call("replace", "safe-first", {
                 path: "streamed-batch.txt",
-                start: formatLineHashAnchor(source, 2),
+                at: formatLineHashAnchor(source, 2),
                 text: "first-change\n",
               }),
               call("replace", "safe-second", {
-                start: formatLineHashAnchor(source, 3),
+                at: formatLineHashAnchor(source, 3),
                 text: "second-change\n",
               }),
               ...tailChunks.map(({ id, contentIndex, argumentsJson, chunks }) =>

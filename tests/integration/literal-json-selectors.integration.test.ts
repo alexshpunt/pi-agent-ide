@@ -43,8 +43,8 @@ test("JSON object selector strings keep their text through direct tools and Code
             if (operation === "replace") {
               call("replace", {
                 path: file,
-                start: selector,
-                end: selector,
+                from: selector,
+                through: selector,
                 text: selector.replace("legacyCheckout", "stableCheckout"),
               });
               expected.set(file, body.replace("legacyCheckout", "stableCheckout"));

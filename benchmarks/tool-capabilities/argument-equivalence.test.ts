@@ -236,8 +236,8 @@ for (const mode of ["direct", "codemode"]) {
       readStep,
       {
         tool: "replace",
-        args: { path: "task.txt", start: "OLD\n", text: "NEW\n" },
-        reuse: { from: 0, field: ["path", "start"] },
+        args: { path: "task.txt", at: "OLD\n", text: "NEW\n" },
+        reuse: { from: 0, field: ["path", "at"] },
       },
     ];
     assert.ok(
@@ -375,7 +375,7 @@ for (const mode of ["direct", "codemode"]) {
     void test(`${mode}: fresh Search fragments remain provable after a prior edit for ${tool}`, () => {
       const fragment = "α\r\nβ";
       const match = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
-      const selector = tool === "insert" ? "anchor" : "start";
+      const selector = tool === "insert" ? "anchor" : tool === "replace" ? "at" : "start";
       const extra =
         tool === "insert"
           ? { text: "]", before: false }
@@ -552,11 +552,11 @@ for (const mode of ["direct", "codemode"]) {
     void test(`${mode}: exact-eof-${ending} requires literal block selection and omitted end without prescribing boundary spelling`, () => {
       const eol = ending === "crlf" ? "\r\n" : "\n";
       const calls: [Call, Call, Call, Call, Call] = [
-        { tool: "replace", args: { path: "last.txt", start: "Last", text: "Final" } },
+        { tool: "replace", args: { path: "last.txt", at: "Last", text: "Final" } },
         { tool: "delete", args: { path: "block.txt", start: `${eol}Last${eol}Block` } },
         {
           tool: "replace",
-          args: { path: "empty.txt", start: `${eol}Last${eol}Block`, text: "" },
+          args: { path: "empty.txt", at: `${eol}Last${eol}Block`, text: "" },
         },
         { tool: "read", args: { path: "line.txt", views: ["anchors"] }, text: "ABCDEFG|Last" },
         { tool: "delete", args: { path: "line.txt", start: "ABCDEFG" } },
@@ -571,7 +571,7 @@ for (const mode of ["direct", "codemode"]) {
         assert.equal(
           passes(
             id,
-            [calls[0], { ...calls[1], args: { ...calls[1].args, start } }, ...calls.slice(2)],
+            [calls[0], { ...calls[1], args: { ...calls[1].args, at: start } }, ...calls.slice(2)],
             mode,
           ),
           true,
@@ -579,9 +579,9 @@ for (const mode of ["direct", "codemode"]) {
       }
       for (const field of [
         { path: "wrong.txt" },
-        { end: "Block" },
-        { start: "regex:Last" },
-        { start: "SEARCH#ABCD:1:match" },
+        { through: "Block" },
+        { at: "regex:Last" },
+        { at: "SEARCH#ABCD:1:match" },
       ]) {
         assert.equal(
           passes(

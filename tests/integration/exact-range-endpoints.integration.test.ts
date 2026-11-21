@@ -66,8 +66,8 @@ test("range tools preserve exact endpoints and the paragraph before leading newl
       conversation: [
         call("sentence", "replace", {
           path: "sentence.txt",
-          start: "START",
-          end: "END",
+          from: "START",
+          through: "END",
           text: "NEW",
         }),
         call("delete-start", "search", { path: "delete.txt", query: "DELETE_BEGIN" }),
@@ -101,22 +101,22 @@ test("range tools preserve exact endpoints and the paragraph before leading newl
         }),
         call("line-start", "replace", {
           path: "line-start.txt",
-          start: "LINE#RUNTIME:1",
-          end: "END",
+          from: "LINE#RUNTIME:1",
+          through: "END",
           text: "NEW",
         }),
         call("line-end-search", "search", { path: "line-end.txt", query: "END" }),
         call("line-end", "replace", {
           path: "line-end.txt",
-          start: "START",
-          end: "SEARCH#RUNTIME:7:1:line",
+          from: "START",
+          through: "SEARCH#RUNTIME:7:1:line",
           // The line end stops before its line ending, which stays.
           text: "NEW",
         }),
         call("credit", "replace", {
           path: "credit.md",
-          start: "\n\nBased on",
-          end: "[source](credit).",
+          from: "\n\nBased on",
+          through: "[source](credit).",
           text: "",
         }),
         assistantMessage([text("Done")]),

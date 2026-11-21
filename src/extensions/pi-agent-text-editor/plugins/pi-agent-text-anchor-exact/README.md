@@ -3,18 +3,18 @@
 This plugin is the final text anchor fallback. A non-empty value that is not a structured anchor selects one unique text span in the current file.
 
 ```text
-replace(path="src/store.ts", start="old call()", text="new call()")
+replace(path="src/store.ts", at="old call()", text="new call()")
 ```
 
 Exact text may cover part of a line, one complete line, or several complete lines. The selected span is exactly the matched characters: a match that covers complete lines does not take their line breaks, so Insert adds text right at its boundary and Delete leaves the line break in place. Include the newline in the text to select it. How a literal meets invisible bytes, such as a BOM, CRLF line endings and special spaces, follows the [editing principles](/src/extensions/pi-agent-text-editor/docs/editing-principles.md): matching is tolerant, writing is strict. Copy and Move preserve the selected source text, including its line breaks. Replace and Insert write line breaks in their text with the line ending of the line where the matched span starts, as Pi's edit does; unselected bytes, including a BOM, remain unchanged.
 
-A start and end may use different anchor formats:
+Two endpoints may use different anchor formats:
 
 ```text
-replace(path="src/store.ts", start="function load() {", end="K7M2QX4", text="replacement")
+replace(path="src/store.ts", from="function load() {", through="K7M2QX4", text="replacement")
 ```
 
-In a pair, exact-text endpoints keep the literal match boundaries, including any newlines supplied in the text. They do not expand to containing lines or include an unsupplied trailing line ending. The range starts at the left edge of `start` and ends at the right edge of `end`; a line-anchor endpoint keeps its complete line. The same rule applies to paired copy and move destination selectors.
+In a pair, exact-text endpoints keep the literal match boundaries, including any newlines supplied in the text. They do not expand to containing lines or include an unsupplied trailing line ending. The range starts at the left edge of the opening match and ends at the right edge of the closing match; a line-anchor endpoint keeps its complete line. The same rule applies to paired copy and move destination selectors.
 
 Missing or ambiguous text never changes a file. The error can show candidates with fresh anchors for selecting one match. For missing text, these can be conservative fuzzy candidates. An ambiguous literal can also return a `SEARCH#…:all:match` selector for [editing every non-overlapping match](/src/extensions/pi-agent-text-editor/docs/editing-principles.md#3-tolerant-matching-strict-writing).
 

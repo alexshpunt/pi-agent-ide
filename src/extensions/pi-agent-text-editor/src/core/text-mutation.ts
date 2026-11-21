@@ -1299,10 +1299,7 @@ export function createMutationContext(
       if (explicitAnchors === undefined) {
         const example: Record<string, string> = {};
         for (const selector of definition.anchors ?? []) {
-          if (
-            selector.field !== field &&
-            (selector.optional || (definition.name === "replace" && selector.field !== "start"))
-          )
+          if (selector.field !== field && (selector.optional || definition.name === "replace"))
             continue;
           example[selector.sourceField] = sourceFor(selector.sourceField);
           example[selector.field] = "exact existing text";
@@ -2079,7 +2076,7 @@ async function resolveAnchorRecovery(error: TextMutationAnchorResolutionError) {
 
 interface AllMatchesRetry {
   readonly store: ResultTargetStore;
-  readonly field: "start" | "anchor";
+  readonly field: "at" | "start" | "anchor";
 }
 
 /** Only selectors that edit each range independently can use an entire match set. */
@@ -2091,10 +2088,11 @@ export function allMatchesRetry(
   if (store === undefined) return undefined;
   if (operation === "insert") return { store, field: "anchor" };
   if (
-    (operation === "delete" ||
-      (operation === "replace" && input.after === undefined && input.before === undefined)) &&
-    (input.end === undefined || input.end === "")
+    operation === "replace" &&
+    ["from", "after", "through", "before"].every((field) => input[field] === undefined)
   )
+    return { store, field: "at" };
+  if (operation === "delete" && (input.end === undefined || input.end === ""))
     return { store, field: "start" };
   return undefined;
 }
@@ -2275,7 +2273,7 @@ async function anchorFailureToolResult(
 interface AllMatchesOffer {
   readonly count: number;
   readonly reference: string;
-  readonly field: "start" | "anchor";
+  readonly field: "at" | "start" | "anchor";
 }
 
 function formatRejectedAnchorMessage(

@@ -79,7 +79,7 @@ describe("source parameters accept a Codemode value with an id", () => {
 
 /** Tool, schema and selector fields that take anchor text or a value with an id. */
 const selectors: readonly (readonly [string, TSchema, readonly string[]])[] = [
-  ["replace", replaceSchema, ["start", "end"]],
+  ["replace", replaceSchema, ["at", "from", "after", "through", "before"]],
   ["delete", deleteSchema, ["start", "end"]],
   ["insert", insertSchema, ["anchor"]],
   ["copy", copySchema, ["start", "end", "targetStart", "targetEnd"]],
@@ -104,4 +104,16 @@ describe("selector parameters accept a Codemode value with an id", () => {
       );
     }
   });
+});
+
+test("Replace exposes only its single selection and range selectors", () => {
+  expect(Object.keys(replaceSchema.properties).sort()).toEqual([
+    "after",
+    "at",
+    "before",
+    "from",
+    "path",
+    "text",
+    "through",
+  ]);
 });
