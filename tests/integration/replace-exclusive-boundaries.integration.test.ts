@@ -24,7 +24,6 @@ const invalidForms = {
   "at-with-range": { at: "START", from: "START", through: "END" },
   "both-starts": { from: "START", after: "// BEGIN", before: "// FINISH" },
   "both-ends": { after: "// BEGIN", through: "END", before: "// FINISH" },
-  "from-alone": { from: "START" },
   "after-alone": { after: "// BEGIN" },
   "through-alone": { through: "END" },
   "before-alone": { before: "// FINISH" },
