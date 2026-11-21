@@ -23,7 +23,7 @@ The `replace-search-anchor-list` case issues references before moving a block an
 
 The `line-anchor-range-interior-change` case checks that Delete refuses a pair of line anchors after a same-length interior edit. The scripted Pi regression separately covers a peer moving a neighbour of two identical blocks, plus a successful edit after an unrelated shift. The direct and Codemode paid routes remain unverified.
 
-The `unseen-edit-span` case checks that literal endpoints on separate Read pages do not authorize an unseen interior, then retries after reading the span. The direct and Codemode paid routes remain unverified.
+The `unseen-edit-span` case checks that literal endpoints on separate Read pages do not authorize an unseen interior, then uses the offered anchored Read before retrying the edit. `read-fragment-recovery` uses the offered Read for an ambiguous fragment. `codemode-overlap-recovery` reads the committed file after a move overlaps an accepted replacement. The paid routes remain unverified.
 
 The `stale-whole-file-write` case checks refusal after a peer changes a file, then a fresh Read and successful Write that preserves the peer’s change. Scripted Pi cases also cover a partial Read, a changed whole-file result, and creation. The direct and Codemode paid routes remain unverified.
 

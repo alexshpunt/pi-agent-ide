@@ -60,7 +60,7 @@ interface ReadFragmentContext {
 type ReadFragmentResolution =
   | { readonly kind: "resolved"; readonly originLine: number }
   | { readonly kind: "not-handled" }
-  | { readonly kind: "failed"; readonly message: string };
+  | { readonly kind: "failed"; readonly message: string; readonly retryPath?: string };
 
 interface FragmentResolverRegistration {
   readonly id: string;
@@ -89,6 +89,8 @@ interface ReadViewRegistration {
   readonly priority?: number;
 }
 ```
+
+A failed fragment resolver may set `retryPath` to the source or a known `source#anchor`. Read renders it as a ready call with the anchors view, without executing it.
 
 A view may list other views in `includes` when its complete presentation already contains theirs. If a request names both views, read skips the included view instead of returning duplicate annotations. Only declare an inclusion when that plugin actually supplies the complete included presentation.
 

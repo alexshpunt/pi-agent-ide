@@ -63,7 +63,7 @@ Add no rule for one kind of selector. A case that a selector needs is a case of 
 
 ## 5. Every error tells the next step
 
-A selector refusal names the field that failed and gives the next step. The agent can reuse a candidate anchor without reading the file again. If there is no usable candidate, the error points to Read or Search for a current anchor.
+A refusal identifies the failed selector or span and gives the next step. Identify relevant source lines with the `ANCHOR|line content` format, and use numeric positions only as arguments in a ready Read call. Reuse a current candidate anchor directly when it selects the intended text. For a batch conflict, the displayed anchors identify the overlap before accepted edits land. Run the offered Read after the batch for selectors against the current file. If no usable candidate exists, use Read or Search to find one.
 
 ## 6. General rules, measured
 
