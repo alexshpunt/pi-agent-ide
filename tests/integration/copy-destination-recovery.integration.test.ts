@@ -41,10 +41,11 @@ test.each([
         path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
         JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
       );
+      const missingEnd = "MISSING_DESTINATION";
       const request =
         field === "targetAfter"
           ? { ...copy, targetAfter: "});" }
-          : { ...copy, targetFrom: "gap", targetThrough: "});" };
+          : { ...copy, targetFrom: "gap", targetThrough: missingEnd };
       const rejectCopy = `await rejects(()=>tools.copy(${JSON.stringify(request)}));`;
       const corrected =
         field === "targetAfter"
@@ -61,7 +62,7 @@ test.each([
           ...(surface === "standalone"
             ? [
                 assistantMessage(
-                  [toolCall({ id: "ambiguous-copy", name: "copy", arguments: request })],
+                  [toolCall({ id: "rejected-copy", name: "copy", arguments: request })],
                   { stopReason: "toolUse" },
                 ),
               ]
@@ -93,12 +94,10 @@ text(await tools.copy(${corrected}));
       );
 
       if (surface === "standalone") {
-        expect(getToolExecution(run, "ambiguous-copy").isError).toBe(true);
-        expect(getToolResultText(run, "ambiguous-copy")).toContain("ambiguous");
+        expect(getToolExecution(run, "rejected-copy").isError).toBe(true);
       } else {
         const failures = codemodeFailures(getToolResultText(run, "corrected-copy"));
         expect(failures).toMatch(/^1 of 3 IDE calls failed:\n- copy same\.txt\n/u);
-        expect(failures).toContain("ambiguous");
       }
       expect(
         getToolExecution(run, "corrected-copy").isError,

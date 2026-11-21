@@ -529,34 +529,50 @@ describe("text mutation renderer", () => {
 
   test("shows per-file stats for a copy with a target", async () => {
     await withTempWorkspace(async (directory) => {
-      await createFixture(directory, "source.txt", "source-one\ncopy-me\nsource-end\n");
-      await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
+      const source = await createFixture(
+        directory,
+        "source.txt",
+        "source-one\ncopy-me\nsource-end\n",
+      );
+      const target = await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
       const result = await runCrossFileMutation(directory, "copy", "copy-me");
       const rendered = result.tuiRenderedOutput;
       const panel = mutationPanels(rendered, "copy source.txt · ");
 
+      expect(getToolExecution(result, "copy-target").isError).toBe(false);
+      expect(await readFile(source, "utf8")).toBe("source-one\ncopy-me\nsource-end\n");
+      expect(await readFile(target, "utf8")).toBe("target-start\ncopy-me\ntarget-end\n");
       expect(rendered).toMatch(
-        /copy source\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7}) -> target\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/u,
+        /copy source\.txt[^\n]*(?:\b2\b|[0-9A-HJKMNP-TV-Z]{7})[^\n]*target\.txt[^\n]*(?:\b1\b|[0-9A-HJKMNP-TV-Z]{7})/u,
       );
       expect(rendered).toContain("+1 ~0 -0");
       expect(panel).toHaveLength(1);
+      expect(panel[0]).toContain("copy-me");
       expect(panel[0]).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
     });
   });
 
   test("shows per-file stats for a move with a target", async () => {
     await withTempWorkspace(async (directory) => {
-      await createFixture(directory, "source.txt", "source-one\nmove-me\nsource-end\n");
-      await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
+      const source = await createFixture(
+        directory,
+        "source.txt",
+        "source-one\nmove-me\nsource-end\n",
+      );
+      const target = await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
       const result = await runCrossFileMutation(directory, "move", "move-me");
       const rendered = result.tuiRenderedOutput;
       const panels = mutationPanels(rendered, "move source.txt · ");
 
+      expect(getToolExecution(result, "move-target").isError).toBe(false);
+      expect(await readFile(source, "utf8")).toBe("source-one\nsource-end\n");
+      expect(await readFile(target, "utf8")).toBe("target-start\nmove-me\ntarget-end\n");
       expect(rendered).toMatch(
-        /move source\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7}) -> target\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/u,
+        /move source\.txt[^\n]*(?:\b2\b|[0-9A-HJKMNP-TV-Z]{7})[^\n]*target\.txt[^\n]*(?:\b1\b|[0-9A-HJKMNP-TV-Z]{7})/u,
       );
       expect(rendered).toContain("+1 ~0 -1");
       expect(panels).toHaveLength(2);
+      for (const panel of panels) expect(panel).toContain("move-me");
       expect(panels.join("\n")).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
     });
   });
