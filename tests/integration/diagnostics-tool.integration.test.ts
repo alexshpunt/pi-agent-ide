@@ -53,7 +53,7 @@ const derived = await tools.search({path: reread, query: "FIXTURE42"});
 if (derived?.matches.length !== 1) throw new Error("Reread lost searchable selection");
 const found = await tools.search({path: report, query: "FIXTURE42"});
 if (found?.matches.length !== 1) throw new Error("Report search lost the finding");
-const edit = await tools.replace({path: report, start: "value", text: "changed"});
+const edit = await tools.replace({path: report, at: "value", text: "changed"});
 if (edit !== null) throw new Error("Report became an edit scope");
 const derivedEdit = await tools.replace({path: found, text: "changed"});
 if (derivedEdit !== null) throw new Error("Search granted report edit authority");

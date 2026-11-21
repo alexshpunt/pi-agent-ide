@@ -73,12 +73,12 @@ test.each(["direct", "codemode"] as const)(
                 ...[
                   {
                     id: "deleted",
-                    start: "$issued-anchor:anchors:1",
-                    end: "$issued-anchor:anchors:4",
+                    from: "$issued-anchor:anchors:1",
+                    through: "$issued-anchor:anchors:4",
                   },
-                  { id: "stale", start: "$issued-anchor:anchors:1" },
-                  { id: "ambiguous", start: "$issued-anchor:anchors:3" },
-                  { id: "survivor", start: "$issued-anchor:anchors:6" },
+                  { id: "stale", at: "$issued-anchor:anchors:1" },
+                  { id: "ambiguous", at: "$issued-anchor:anchors:3" },
+                  { id: "survivor", at: "$issued-anchor:anchors:6" },
                 ].map(({ id, ...selectors }) =>
                   assistantMessage(
                     [
@@ -97,19 +97,19 @@ test.each(["direct", "codemode"] as const)(
                 { id: "scope", code: 'store("scope", await tools.read({ path: "task.txt" }));' },
                 {
                   id: "deleted",
-                  code: 'await tools.delete({ path: load("scope"), start: "$issued-anchor:anchors:1", end: "$issued-anchor:anchors:4" });',
+                  code: 'await tools.delete({ path: load("scope"), from: "$issued-anchor:anchors:1", through: "$issued-anchor:anchors:4" });',
                 },
                 {
                   id: "stale",
-                  code: 'await tools.delete({ path: load("scope"), start: "$issued-anchor:anchors:1" });',
+                  code: 'await tools.delete({ path: load("scope"), at: "$issued-anchor:anchors:1" });',
                 },
                 {
                   id: "ambiguous",
-                  code: 'await tools.delete({ path: load("scope"), start: "$issued-anchor:anchors:3" });',
+                  code: 'await tools.delete({ path: load("scope"), at: "$issued-anchor:anchors:3" });',
                 },
                 {
                   id: "survivor",
-                  code: 'await tools.delete({ path: load("scope"), start: "$issued-anchor:anchors:6" });',
+                  code: 'await tools.delete({ path: load("scope"), at: "$issued-anchor:anchors:6" });',
                 },
               ].map(({ id, code }) =>
                 assistantMessage(

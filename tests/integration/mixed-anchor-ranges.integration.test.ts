@@ -36,7 +36,7 @@ const cases: {
 }[] = [
   {
     name: "move",
-    args: { start: "SCOPE#RUNTIME:1", end: anchor, targetStart: destination },
+    args: { from: "SCOPE#RUNTIME:1", through: anchor, targetAfter: destination },
     input: "function example() {\n  work();\n  more();\n  finish();\n}\n// END\n// DEST\n",
     offset: 1,
     ast: true,
@@ -44,7 +44,7 @@ const cases: {
   },
   {
     name: "move",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination },
+    args: { from: "LINE#RUNTIME:1", through: anchor, targetAfter: destination },
     input: large,
     offset: 20,
     destinationQuery: "SUFFIX",
@@ -53,78 +53,93 @@ const cases: {
   },
   {
     name: "replace",
-    args: { path: anchor, end: "GAP\n", text: "NEW\n" },
+    args: { from: anchor, through: "GAP\n", text: "NEW\n" },
     expected: original.replace("prefix END suffix\nGAP\n", "NEW\n"),
   },
   {
     name: "copy",
     // Copied whole lines carry their content; the target's final line break stays outside the span.
-    args: { start: "LINE#RUNTIME:1", end: anchor, target: destination, targetEnd: "TAIL" },
+    args: {
+      from: "LINE#RUNTIME:1",
+      through: anchor,
+      targetFrom: destination,
+      targetThrough: "TAIL",
+    },
     expected: original.replace("prefix DEST suffix\nTAIL\n", selected),
   },
   {
     name: "move",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: "TAIL", targetEnd: destination },
+    args: {
+      from: "LINE#RUNTIME:1",
+      through: anchor,
+      targetFrom: "TAIL",
+      targetThrough: destination,
+    },
     expected: original,
     error: true,
   },
   {
     name: "replace",
-    args: { start: "ZZZZZZZ", end: anchor, text: "BAD" },
+    args: { from: "ZZZZZZZ", through: anchor, text: "BAD" },
     expected: original,
     error: true,
   },
-  { name: "delete", args: { start: "prefix", end: anchor }, expected: original, error: true },
+  { name: "delete", args: { from: "prefix", through: anchor }, expected: original, error: true },
   {
     name: "replace",
     // The span covers whole lines; the text replaces them and the last LF stays.
-    args: { start: "LINE#RUNTIME:1", end: anchor, text: "NEW\n" },
+    args: { from: "LINE#RUNTIME:1", through: anchor, text: "NEW\n" },
     expected: original.replace(selected, "NEW\n"),
   },
   {
     name: "delete",
-    args: { start: "LINE#RUNTIME:1", end: anchor },
+    args: { from: "LINE#RUNTIME:1", through: anchor },
     expected: original.replace(selected, ""),
   },
   {
     name: "copy",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination },
+    args: { from: "LINE#RUNTIME:1", through: anchor, targetAfter: destination },
     expected: original.replace("TAIL", selected + "TAIL"),
   },
   {
     name: "move",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination },
+    args: { from: "LINE#RUNTIME:1", through: anchor, targetAfter: destination },
     expected: original.replace(selected, "").replace("TAIL", selected + "TAIL"),
   },
   {
     name: "insert",
-    args: { anchor, text: "NEW\n" },
+    args: { after: anchor, text: "NEW\n" },
     expected: original.replace("GAP", "NEW\nGAP"),
   },
   {
     name: "insert",
-    args: { anchor, text: "NEW\n", before: true },
+    args: { before: anchor, text: "NEW\n" },
     expected: original.replace("prefix END", "NEW\nprefix END"),
   },
   {
     name: "copy",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination, targetEnd: "TAIL" },
+    args: {
+      from: "LINE#RUNTIME:1",
+      through: anchor,
+      targetFrom: destination,
+      targetThrough: "TAIL",
+    },
     expected: original.replace("prefix DEST suffix\nTAIL\n", selected),
   },
   {
     name: "replace",
-    args: { start: "SEARCH#RUNTIME:1:1:match", text: "NEW" },
+    args: { at: "SEARCH#RUNTIME:1:1:match", text: "NEW" },
     expected: original.replace("END", "NEW"),
   },
   {
     name: "delete",
-    args: { start: anchor, end: "LINE#RUNTIME:1" },
+    args: { from: anchor, through: "LINE#RUNTIME:1" },
     expected: original,
     error: true,
   },
   {
     name: "move",
-    args: { start: "LINE#RUNTIME:1", end: anchor, targetStart: destination },
+    args: { from: "LINE#RUNTIME:1", through: anchor, targetAfter: destination },
     input: large,
     offset: 20,
     destinationQuery: "SUFFIX",

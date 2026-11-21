@@ -32,7 +32,7 @@ test("Read failures name the issued mutation result, not its private target", as
     const targetContent = "top\nbottom\n";
     await writeFile(path.join(cwd, source), sourceContent);
     await writeFile(path.join(cwd, target), targetContent);
-    const parameters = { path: source, start: "move-me", target, targetStart: "top" };
+    const parameters = { path: source, at: "move-me", target, targetAfter: "top" };
     const run = await new PiIntegrationTest({
       testName: "read-failed-mutation-id",
       artifactsDir: testArtifactsDir(import.meta.filename),

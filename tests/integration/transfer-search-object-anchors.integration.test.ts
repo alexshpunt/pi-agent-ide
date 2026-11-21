@@ -36,12 +36,15 @@ for (const operation of ["copy", "move"] as const) {
           name: operation,
           arguments: {
             path: "source.txt",
-            start: "COPY_BEGIN",
-            end: "COPY_END",
+            from: "COPY_BEGIN",
+            through: "COPY_END",
             target: "target.txt",
-            targetStart: { id: "$issued-searchmatch:begin:1" },
+            [scenario === "insert" ? "targetAfter" : "targetFrom"]: {
+              id: "$issued-searchmatch:begin:1",
+            },
             ...(scenario !== "insert" && {
-              targetEnd: scenario === "mixed" ? "TARGET_END" : { id: "$issued-searchmatch:end:1" },
+              targetThrough:
+                scenario === "mixed" ? "TARGET_END" : { id: "$issued-searchmatch:end:1" },
             }),
           },
           delayMs: 0,
@@ -52,9 +55,9 @@ for (const operation of ["copy", "move"] as const) {
           arguments: {
             path: "peer-source.txt",
             // Literals select only their characters; include line breaks to copy a whole line.
-            start: "peer\n",
+            at: "peer\n",
             target: "peer.txt",
-            targetStart: "ANCHOR\n",
+            targetAfter: "ANCHOR\n",
           },
           delayMs: 0,
         });
@@ -114,7 +117,6 @@ for (const operation of ["copy", "move"] as const) {
           expect(await readFile(path.join(cwd, "peer.txt"), "utf8")).toBe("ANCHOR\npeer\n");
         }
         if (failed) {
-          expect(getToolResultText(result, "transfer")).toContain("targetStart");
           expect(getToolResultText(result, "transfer")).toContain("target.txt");
           const receipt = getToolResultMessage<{
             effect: string;

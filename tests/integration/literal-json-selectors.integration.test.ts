@@ -43,13 +43,13 @@ test("JSON object selector strings keep their text through direct tools and Code
             if (operation === "replace") {
               call("replace", {
                 path: file,
-                start: selector,
-                end: selector,
+                from: selector,
+                through: selector,
                 text: selector.replace("legacyCheckout", "stableCheckout"),
               });
               expected.set(file, body.replace("legacyCheckout", "stableCheckout"));
             } else if (operation === "insert") {
-              call("insert", { path: file, anchor: selector, before: true, text: " " });
+              call("insert", { path: file, before: selector, text: " " });
               expected.set(file, `[\n ${selector},\n{"id":"keep"}\n]\n`);
             } else {
               for (const peer of [`${label}-a.json`, `${label}-b.json`]) {
@@ -62,11 +62,11 @@ test("JSON object selector strings keep their text through direct tools and Code
               call("read", { path: source });
               call("copy", {
                 path: source,
-                start: sourceSelector,
-                end: sourceSelector,
+                from: sourceSelector,
+                through: sourceSelector,
                 target: file,
-                targetStart: selector,
-                targetEnd: selector,
+                targetFrom: selector,
+                targetThrough: selector,
               });
               expected.set(file, body.replace("legacyCheckout", "stableCheckout"));
             }

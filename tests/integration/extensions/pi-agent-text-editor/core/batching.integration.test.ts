@@ -68,12 +68,12 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "replace-shared", {
                 path: "shared.txt",
-                start: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 2),
+                at: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 2),
                 // A line anchor selects the line with its line break; the text keeps it.
                 text: "replaced\n",
               }),
               call("delete", "delete-shared", {
-                start: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 3),
+                at: formatLineHashAnchor("alpha\nreplace-me\ndelete-me\nomega", 3),
               }),
             ],
             { stopReason: "toolUse" },
@@ -115,27 +115,27 @@ describe("pi-agent-text-editor batching", () => {
               call("write", "all-write", { path: "written.txt", content: "created" }),
               call("replace", "all-replace", {
                 path: "edited.txt",
-                start: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 2),
+                at: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 2),
                 text: "replaced\n",
               }),
               call("delete", "all-delete", {
                 path: "moved.txt",
-                start: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 2),
+                at: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 2),
               }),
               call("insert", "all-insert", {
                 path: "edited.txt",
-                anchor: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 4),
+                after: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 4),
                 text: "inserted\n",
               }),
               call("move", "all-move", {
                 path: "moved.txt",
-                start: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 3),
-                targetStart: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 5),
+                at: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 3),
+                targetAfter: formatLineHashAnchor("alpha\ndelete-me\nmove-me\nkeep\nomega", 5),
               }),
               call("copy", "all-copy", {
                 path: "edited.txt",
-                start: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 3),
-                targetStart: formatLineHashAnchor(
+                at: formatLineHashAnchor("alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega", 3),
+                targetAfter: formatLineHashAnchor(
                   "alpha\nreplace-me\ncopy-me\ninsert-anchor\nomega",
                   5,
                 ),
@@ -185,18 +185,18 @@ describe("pi-agent-text-editor batching", () => {
         return [
           call("replace", `grouped-${id}-replace`, {
             path: file,
-            start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
+            at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
             text: `changed-${id}\n`,
           }),
           call("insert", `grouped-${id}-insert`, {
             path: file,
-            anchor: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
+            after: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
             text: `added-${id}\n`,
           }),
           call("copy", `grouped-${id}-copy`, {
             path: file,
-            start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
-            targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
+            at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+            targetAfter: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
           }),
         ];
       });
@@ -245,46 +245,46 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "mixed-first-replace", {
                 path: "first-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
                 text: "changed-first\n",
               }),
               call("delete", "mixed-second-delete", {
                 path: "second-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
               }),
               call("replace", "mixed-third-replace", {
                 path: "third-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 2),
                 text: "changed-third\n",
               }),
               call("insert", "mixed-first-insert", {
                 path: "first-mixed.txt",
-                anchor: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
+                after: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
                 text: "added-first\n",
               }),
               call("insert", "mixed-second-insert", {
                 path: "second-mixed.txt",
-                anchor: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
+                after: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 3),
                 text: "added-second\n",
               }),
               call("delete", "mixed-third-delete", {
                 path: "third-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
               }),
               call("copy", "mixed-first-copy", {
                 path: "first-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
-                targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+                targetAfter: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
               }),
               call("copy", "mixed-second-copy", {
                 path: "second-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
-                targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+                targetAfter: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
               }),
               call("copy", "mixed-third-copy", {
                 path: "third-mixed.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
-                targetStart: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 1),
+                targetAfter: formatLineHashAnchor("alpha\nchange\nanchor\ntail", 4),
               }),
             ],
             { stopReason: "toolUse" },
@@ -331,17 +331,17 @@ describe("pi-agent-text-editor batching", () => {
             [
               call("replace", "partial-first", {
                 path: "partial-failure.txt",
-                start: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 2),
+                at: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 2),
                 text: "changed\n",
               }),
               call("replace", "partial-failed", {
                 path: "partial-failure.txt",
-                start: "ZZZZZZZ",
+                at: "ZZZZZZZ",
                 text: "never",
               }),
               call("insert", "partial-last", {
                 path: "partial-failure.txt",
-                anchor: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 3),
+                after: formatLineHashAnchor("alpha\nchange\nanchor\nomega", 3),
                 text: "added\n",
               }),
             ],

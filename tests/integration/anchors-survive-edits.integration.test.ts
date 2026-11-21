@@ -39,12 +39,12 @@ const five=anchorOf("five");
 const three=anchorOf("three");
 await tools.bash({command:"sed -i '1i zero' "+file});
 await tools.replace({path:four.matches[0].id,text:"FOUR"});
-await tools.replace({path:file,start:five,text:"LAST\\n"});
+await tools.replace({path:file,at:five,text:"LAST\\n"});
 check((await tools.read({path:file})).text.startsWith("zero\\none\\ntwo\\nthree\\nFOUR\\nLAST"),"Edits above did not keep the targets");
 await tools.bash({command:"sed -i 's/two/2/' "+file});
 await rejects(()=>tools.replace({path:two.matches[0].id,text:"X"}));
 await tools.bash({command:"sed -i 's/three/3/' "+file});
-await rejects(()=>tools.replace({path:file,start:three,text:"X\\n"}));`;
+await rejects(()=>tools.replace({path:file,at:three,text:"X\\n"}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-survive-edits",
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -231,14 +231,14 @@ const secondTemplate=rows.filter((row)=>row.text==="template <typename T>")[1].a
 const secondClose=closes[1].anchor;
 // Another session inserts a repeated line and a new line above the whole file.
 await tools.bash({command:"sed -i '1i }' "+file+" && sed -i '1i zero' "+file});
-await tools.delete({path:file,start:secondTemplate,end:secondClose});
+await tools.delete({path:file,from:secondTemplate,through:secondClose});
 const after=(await tools.read({path:file})).text;
 check(!after.includes("T b(T v)") && after.includes("T a(T v)") && after.includes("T c(T v)"),"The wrong block was deleted: "+after);
 check(after.startsWith("zero\\n}\\n// a"),"Lines above changed: "+after);
 // A changed landmark makes the anchors of its repeated lines stale.
 await tools.bash({command:"sed -i 's|// c|// C|' "+file});
 const thirdTemplate=rows.filter((row)=>row.text==="template <typename T>")[2].anchor;
-await rejects(()=>tools.delete({path:file,start:thirdTemplate}));`;
+await rejects(()=>tools.delete({path:file,at:thirdTemplate}));`;
     const run = await new PiIntegrationTest({
       testName: "anchors-repeated-lines-shift",
       artifactsDir: testArtifactsDir(import.meta.filename),

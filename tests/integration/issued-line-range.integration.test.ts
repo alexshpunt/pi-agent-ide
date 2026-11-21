@@ -74,18 +74,19 @@ test.each(["delete", "replace", "move"] as const)(
       const runResult = await run(cwd, tool, [
         call("copy", "replace", {
           path: file,
-          start: copySlot.trimEnd(),
+          at: copySlot.trimEnd(),
           text: block.trimEnd(),
         }),
-        call("ambiguous", "delete", { path: file, start: block.trimEnd() }),
+        call("ambiguous", "delete", { path: file, at: block.trimEnd() }),
         peerWrite(
           `text.replace(${JSON.stringify(prototype)}, '').replace(${JSON.stringify(slot)}, ${JSON.stringify(prototype)})`,
         ),
         call("edit", tool, {
           path: file,
-          ...issued,
+          from: issued.start,
+          through: issued.end,
           ...(tool === "replace" ? { text: "REPLACED" } : {}),
-          ...(tool === "move" ? { target: file, targetStart: "int keep_last;" } : {}),
+          ...(tool === "move" ? { target: file, targetAfter: "int keep_last;" } : {}),
         }),
       ]);
       const recovery = getToolResultText(runResult, "ambiguous");

@@ -37,6 +37,8 @@ import {
   type TextMutationToolRegistration,
 } from "pi-agent-text-editor/api/mutation-tool";
 
+import { editingSelectorPairs } from "pi-agent-text-editor/api/text-selector-fields";
+
 const CACHE_KEY_PART_SEPARATOR = "\u{0}";
 const CACHE_KEY_LIST_SEPARATOR = "\u{1}";
 
@@ -153,28 +155,33 @@ function createHandler(
         return;
       }
 
-      const pairBlock = await inspectAnchorPair(
-        api,
-        getReadApi(),
-        context,
-        schema,
-        arguments_,
-        source,
-        checks,
-        blocks,
-      );
-
-      if (pairBlock !== undefined) {
-        return pairBlock;
+      let pairs: ReturnType<typeof editingSelectorPairs>;
+      try {
+        pairs = editingSelectorPairs(schema.name, arguments_);
+      } catch {
+        // Wait for valid boundaries; execution reports invalid combinations.
+        return;
       }
-
-      const paired =
-        schema.pair?.every((field) => {
-          const descriptor = schema.anchors?.find((anchor) => anchor.field === field);
-          return descriptor !== undefined && isMutationAnchorValue(descriptor, arguments_[field]);
-        }) === true
-          ? new Set(schema.pair)
-          : new Set<string>();
+      if (schema.pair !== undefined)
+        pairs.push({ sourceField: schema.source.field, fields: schema.pair });
+      const paired = new Set<string>();
+      for (const { sourceField, fields } of pairs) {
+        const candidateSource = arguments_[sourceField];
+        const pairBlock = await inspectAnchorPair(
+          api,
+          getReadApi(),
+          context,
+          schema,
+          arguments_,
+          typeof candidateSource === "string" ? candidateSource : source,
+          fields,
+          checks,
+          blocks,
+        );
+        if (pairBlock !== undefined) return pairBlock;
+        if (fields.every((field) => typeof arguments_[field] === "string"))
+          for (const field of fields) paired.add(field);
+      }
 
       for (const descriptor of schema.anchors ?? []) {
         if (paired.has(descriptor.field)) {
@@ -280,14 +287,10 @@ async function inspectAnchorPair(
   schema: TextMutationToolRegistration,
   arguments_: Record<string, unknown>,
   source: string,
+  [startField, endField]: readonly [string, string],
   checks: Map<number, Map<string, TextAnchorInspectionOutcome>>,
   blocks: Map<number, Map<string, InterceptResult>>,
 ): Promise<InterceptResult | undefined> {
-  if (schema.pair === undefined) {
-    return undefined;
-  }
-
-  const [startField, endField] = schema.pair;
   const start = arguments_[startField];
   const end = arguments_[endField];
 

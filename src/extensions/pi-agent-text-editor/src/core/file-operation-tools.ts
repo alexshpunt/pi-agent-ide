@@ -1,3 +1,4 @@
+import { hasTransferSelectorKeys } from "#src/api/text-selector-fields.ts";
 import path from "node:path";
 import { confirmOperation } from "pi-agent-tool-ui/operation-approval";
 import type { TextEditorCore } from "#src/core/text-editor-core.ts";
@@ -23,10 +24,11 @@ export function isWholeFileInvocation(
     input.path.length === 0 ||
     input.path.startsWith("SEARCH#") ||
     input.path.startsWith("RESULT#") ||
-    (typeof input.target === "string" && input.target.startsWith("RESULT#"))
+    (typeof input.target === "string" &&
+      (input.target.startsWith("RESULT#") || input.target.startsWith("SEARCH#")))
   )
     return false;
-  if (["start", "end", "targetStart", "targetEnd"].some((field) => field in input)) return false;
+  if (hasTransferSelectorKeys(input)) return false;
   return operation === "delete" || (typeof input.target === "string" && input.target.length > 0);
 }
 

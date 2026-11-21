@@ -51,8 +51,8 @@ for (const expanded of [false, true]) {
                 name: "replace",
                 arguments: {
                   path: "monitor.txt",
-                  start: anchor,
-                  end: anchor,
+                  from: anchor,
+                  through: anchor,
                   text: "updated_value = 1",
                 },
               }),

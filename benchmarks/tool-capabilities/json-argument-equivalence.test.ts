@@ -102,17 +102,17 @@ void test("context-free argument comparison does not guess JSON source recovery 
   for (const [name, args] of [
     ["write", { path: JSON.stringify({ id }), content: literal }],
     ["search", { path: '["a.txt"]', query: literal }],
-    ["replace", { path: "data.json", start: literal, end: literal, text: "{}" }],
-    ["insert", { path: "data.json", anchor: literal, text: " " }],
+    ["replace", { path: "data.json", from: literal, through: literal, text: "{}" }],
+    ["insert", { path: "data.json", after: literal, text: " " }],
     [
       "copy",
       {
         path: "source.json",
-        start: literal,
-        end: literal,
+        from: literal,
+        through: literal,
         target: "target.json",
-        targetStart: literal,
-        targetEnd: literal,
+        targetFrom: literal,
+        targetThrough: literal,
       },
     ],
     ["diff", { before: literal, after: literal }],

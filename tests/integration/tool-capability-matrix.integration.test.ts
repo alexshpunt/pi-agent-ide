@@ -27,9 +27,9 @@ test.each(["direct", "codemode"] as const)(
         await writeFile(path.join(cwd, file), content);
       // A literal selects only its characters, so a whole line includes its line break.
       const steps = [
-        { tool: "insert", args: { path: "insert.txt", anchor: "middle\n", text: "NEW\n" } },
-        { tool: "replace", args: { path: "replace.txt", start: "middle\n", text: "NEW\n" } },
-        { tool: "delete", args: { path: "delete.txt", start: "middle\n" } },
+        { tool: "insert", args: { path: "insert.txt", after: "middle\n", text: "NEW\n" } },
+        { tool: "replace", args: { path: "replace.txt", at: "middle\n", text: "NEW\n" } },
+        { tool: "delete", args: { path: "delete.txt", at: "middle\n" } },
       ];
       const requests =
         mode === "direct"
@@ -179,7 +179,7 @@ if (limited.matches.length !== 1 || limited.complete !== false) throw Error("Inc
 const zero = await tools.search({path:limited,query:"regex:^ABSENT$"});
 if (zero.matches.length !== 0 || zero.complete !== false) throw Error("Incomplete empty value missing");
 if (await tools.replace({path:zero,text:"BAD"}) !== null) throw Error("Incomplete result accepted");
-if (await tools.replace({path:"task.txt",start:empty.id,text:"BAD"}) !== null) throw Error("Empty endpoint accepted");
+if (await tools.replace({path:"task.txt",at:empty.id,text:"BAD"}) !== null) throw Error("Empty endpoint accepted");
 const failed = (await tools.search({path:"task.txt",query:"regex:("})) === null;
 if (!failed) throw Error("Invalid Search did not fail");
 const found = await tools.search({path:"task.txt",query:"OLD",limit:1000});
@@ -310,7 +310,7 @@ test("the AST boundary case produces usable scope anchors from its fixture", asy
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.text.match(/scope-begin-[0-9A-Z]+/)[0]; const end = source.text.match(/scope-end-[0-9A-Z]+/)[0]; text(await tools.replace({path:"task.ts", start, end, text:"function renamed() { return 8; }\\n"}));',
+                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.text.match(/scope-begin-[0-9A-Z]+/)[0]; const end = source.text.match(/scope-end-[0-9A-Z]+/)[0]; text(await tools.replace({path:"task.ts", from: start, through: end, text:"function renamed() { return 8; }\\n"}));',
               },
             }),
           ],

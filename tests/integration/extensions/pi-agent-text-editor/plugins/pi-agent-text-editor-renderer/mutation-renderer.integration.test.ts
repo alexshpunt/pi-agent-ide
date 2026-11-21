@@ -161,7 +161,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "inherited-path.ts",
-                  start: uniqueLineAnchor("const value4 = 4;"),
+                  at: uniqueLineAnchor("const value4 = 4;"),
                   // A line anchor selects the line with its line break; the text keeps it.
                   text: "const value4 = loadPrimaryValue();\n",
                 },
@@ -171,7 +171,7 @@ describe("text mutation renderer", () => {
                 id: "replace-inherited-second",
                 name: "replace",
                 arguments: {
-                  start: uniqueLineAnchor("const value18 = 18;"),
+                  at: uniqueLineAnchor("const value18 = 18;"),
                   text: "const value18 = loadStreamedInheritedValue();\n",
                 },
                 chunks: { kind: "fixed", size: 3 },
@@ -218,7 +218,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "post-edit-viewport.ts",
-                  start: uniqueLineAnchor("const value7 = 7;"),
+                  at: uniqueLineAnchor("const value7 = 7;"),
                   // A line anchor selects the line with its line break; the text keeps it.
                   text: "const value7 = loadPrimaryValue();\n",
                 },
@@ -228,7 +228,7 @@ describe("text mutation renderer", () => {
                 name: "replace",
                 arguments: {
                   path: "post-edit-viewport.ts",
-                  start: uniqueLineAnchor("const value25 = 25;"),
+                  at: uniqueLineAnchor("const value25 = 25;"),
                   text: "const value25 = loadSecondaryValue();\n",
                 },
               }),
@@ -280,8 +280,8 @@ describe("text mutation renderer", () => {
       await createFixture(directory, "streaming.ts", before);
       const arguments_ = {
         path: "streaming.ts",
-        start: uniqueLineAnchor("    const retries = resolveRetries();"),
-        end: uniqueLineAnchor("    const service = new Service(transport);"),
+        from: uniqueLineAnchor("    const retries = resolveRetries();"),
+        through: uniqueLineAnchor("    const service = new Service(transport);"),
         // The line range ends with its line break; the replacement keeps it.
         text: ["    const retryLimit = 3;", "    const timeoutMs = 5_000;", ""].join("\n"),
       };
@@ -361,7 +361,7 @@ describe("text mutation renderer", () => {
       const file = await createFixture(directory, "post-edit-viewport.ts", before);
       const result = await runSingleMutation(directory, "replace", {
         path: "post-edit-viewport.ts",
-        start: uniqueLineAnchor("const value20 = 20;"),
+        at: uniqueLineAnchor("const value20 = 20;"),
         text: "const value20 = computeValue();\n",
       });
       const rendered = result.tuiRenderedOutput;
@@ -390,11 +390,14 @@ describe("text mutation renderer", () => {
         (_, index) => `const value${index + 1} = ${index + 1};`,
       ).join("\n");
       await createFixture(directory, "post-edit-viewport.ts", before);
-      const firstRun = await runSingleMutation(directory, "replace", {
-        path: "post-edit-viewport.ts",
-        start: uniqueLineAnchor("const value20 = 20;"),
-        text: "const value20 = computeValue();\n",
-      });
+      // A shared runner would persist the path of its temporary workspace, which it removes.
+      const firstRun = await runInSeparatePi(() =>
+        runSingleMutation(directory, "replace", {
+          path: "post-edit-viewport.ts",
+          at: uniqueLineAnchor("const value20 = 20;"),
+          text: "const value20 = computeValue();\n",
+        }),
+      );
       const sessionData = await readSessionArtifact(firstRun.artifacts.run);
       const sessionFile = path.join(directory, "persisted-mutation-session.jsonl");
       await writeFile(sessionFile, sessionData, "utf8");
@@ -490,7 +493,7 @@ describe("text mutation renderer", () => {
       tool: "insert",
       arguments: {
         path: "subject.ts",
-        anchor: uniqueLineAnchor("    return value;"),
+        after: uniqueLineAnchor("    return value;"),
         text: "    audit(value);\n",
       },
       stats: "+1 ~0 -0",
@@ -500,7 +503,7 @@ describe("text mutation renderer", () => {
       tool: "delete",
       arguments: {
         path: "subject.ts",
-        start: uniqueLineAnchor("    const value = load();"),
+        at: uniqueLineAnchor("    const value = load();"),
       },
       stats: "+0 ~0 -1",
       row: /2\s+-\s+const value = load\(\);/u,
@@ -526,34 +529,50 @@ describe("text mutation renderer", () => {
 
   test("shows per-file stats for a copy with a target", async () => {
     await withTempWorkspace(async (directory) => {
-      await createFixture(directory, "source.txt", "source-one\ncopy-me\nsource-end\n");
-      await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
+      const source = await createFixture(
+        directory,
+        "source.txt",
+        "source-one\ncopy-me\nsource-end\n",
+      );
+      const target = await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
       const result = await runCrossFileMutation(directory, "copy", "copy-me");
       const rendered = result.tuiRenderedOutput;
       const panel = mutationPanels(rendered, "copy source.txt · ");
 
+      expect(getToolExecution(result, "copy-target").isError).toBe(false);
+      expect(await readFile(source, "utf8")).toBe("source-one\ncopy-me\nsource-end\n");
+      expect(await readFile(target, "utf8")).toBe("target-start\ncopy-me\ntarget-end\n");
       expect(rendered).toMatch(
-        /copy source\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7}) -> target\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/u,
+        /copy source\.txt[^\n]*(?:\b2\b|[0-9A-HJKMNP-TV-Z]{7})[^\n]*target\.txt[^\n]*(?:\b1\b|[0-9A-HJKMNP-TV-Z]{7})/u,
       );
       expect(rendered).toContain("+1 ~0 -0");
       expect(panel).toHaveLength(1);
+      expect(panel[0]).toContain("copy-me");
       expect(panel[0]).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
     });
   });
 
   test("shows per-file stats for a move with a target", async () => {
     await withTempWorkspace(async (directory) => {
-      await createFixture(directory, "source.txt", "source-one\nmove-me\nsource-end\n");
-      await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
+      const source = await createFixture(
+        directory,
+        "source.txt",
+        "source-one\nmove-me\nsource-end\n",
+      );
+      const target = await createFixture(directory, "target.txt", "target-start\ntarget-end\n");
       const result = await runCrossFileMutation(directory, "move", "move-me");
       const rendered = result.tuiRenderedOutput;
       const panels = mutationPanels(rendered, "move source.txt · ");
 
+      expect(getToolExecution(result, "move-target").isError).toBe(false);
+      expect(await readFile(source, "utf8")).toBe("source-one\nsource-end\n");
+      expect(await readFile(target, "utf8")).toBe("target-start\nmove-me\ntarget-end\n");
       expect(rendered).toMatch(
-        /move source\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7}) -> target\.txt · (?:line \d+|[0-9A-HJKMNP-TV-Z]{7})/u,
+        /move source\.txt[^\n]*(?:\b2\b|[0-9A-HJKMNP-TV-Z]{7})[^\n]*target\.txt[^\n]*(?:\b1\b|[0-9A-HJKMNP-TV-Z]{7})/u,
       );
       expect(rendered).toContain("+1 ~0 -1");
       expect(panels).toHaveLength(2);
+      for (const panel of panels) expect(panel).toContain("move-me");
       expect(panels.join("\n")).not.toMatch(/source\.txt|target\.txt|\+\d+ ~\d+ -\d+/u);
     });
   });
@@ -603,9 +622,9 @@ async function runCrossFileMutation(
             name: tool,
             arguments: {
               path: "source.txt",
-              start: uniqueLineAnchor(selectedText),
+              at: uniqueLineAnchor(selectedText),
               target: "target.txt",
-              targetStart: uniqueLineAnchor("target-start"),
+              targetAfter: uniqueLineAnchor("target-start"),
             },
           }),
         ],
@@ -679,8 +698,7 @@ describe("exact anchor header rendering", () => {
                 name: "replace",
                 arguments: {
                   path: "service.txt",
-                  start:
-                    "function buildService() {\n  const endpoint = resolveEndpoint();\n  return endpoint;\n}",
+                  at: "function buildService() {\n  const endpoint = resolveEndpoint();\n  return endpoint;\n}",
                   text: "function buildService() {\n  return resolveEndpoint();\n}",
                 },
               }),

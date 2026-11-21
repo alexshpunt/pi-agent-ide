@@ -177,7 +177,7 @@ test.each(["full", "compact", "disabled"] as const)(
               arguments: {
                 code: `
 const sources = ${JSON.stringify([local, localPeer, remote, remotePeer])};
-const outcomes = await Promise.allSettled(sources.map(path => tools.replace({path,start:"TODO",text:"READY"})));
+const outcomes = await Promise.allSettled(sources.map(path => tools.replace({path,at:"TODO",text:"READY"})));
 for (const outcome of outcomes) {
   if (outcome.status !== "fulfilled" || typeof outcome.value !== "string") throw Error(JSON.stringify(outcome));
   text(outcome.value);

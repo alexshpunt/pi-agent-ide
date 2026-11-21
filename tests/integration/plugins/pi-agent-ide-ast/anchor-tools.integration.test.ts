@@ -40,7 +40,7 @@ describe("AST scope anchors through text editor tools", () => {
     await runAstScenario(
       "ast-anchor-insert",
       "insert",
-      ([first]) => ({ anchor: first.endScopeAnchor.value, text: "inserted();" }),
+      ([first]) => ({ after: first.endScopeAnchor.value, text: "inserted();" }),
       [...firstFunction, "inserted();", "", ...secondFunction].join("\n"),
     );
   });
@@ -50,8 +50,8 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-replace",
       "replace",
       ([first]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
         text: "function replaced() {\n    return 0;\n}",
       }),
       ["function replaced() {", "    return 0;", "}", "", ...secondFunction].join("\n"),
@@ -63,8 +63,8 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-delete",
       "delete",
       ([, second]) => ({
-        start: second.beginAnchor.value,
-        end: second.endScopeAnchor.value,
+        from: second.beginAnchor.value,
+        through: second.endScopeAnchor.value,
       }),
       // Removing an unterminated final scope also removes its preceding separator.
       [...firstFunction, ""].join("\n"),
@@ -76,9 +76,9 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-copy",
       "copy",
       ([first, second]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
-        targetStart: second.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
+        targetAfter: second.endScopeAnchor.value,
       }),
       [...lines, ...firstFunction].join("\n"),
     );
@@ -89,9 +89,9 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-move",
       "move",
       ([first, second]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
-        targetStart: second.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
+        targetAfter: second.endScopeAnchor.value,
       }),
       ["", ...secondFunction, ...firstFunction].join("\n"),
     );
@@ -114,7 +114,7 @@ async function runAstScenario(
     const expectedAnchors = Object.entries(anchorArguments)
       .filter(
         ([key, value]) =>
-          ["targetStart", "start", "end"].includes(key) && typeof value === "string",
+          ["targetAfter", "at", "from", "through"].includes(key) && typeof value === "string",
       )
       .map(([, value]) => value as string);
     const toolArguments =

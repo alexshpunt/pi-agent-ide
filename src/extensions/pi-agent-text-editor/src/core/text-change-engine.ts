@@ -52,6 +52,8 @@ export interface TextTransfer {
 export interface TextInsertOptions {
   /** Insert at the start of the span instead of its end. */
   readonly before?: boolean;
+  /** Insert separate lines even when the payload contains no line breaks. */
+  readonly linewise?: boolean;
   /**
    * At a line edge, "blank-line" separates a paragraph even without line breaks in the payload.
    * Mid-line insertions ignore separation.
@@ -255,7 +257,8 @@ export class TextChangeDocument {
     const wholeTransfer = typeof text !== "string" && text.wholeLines;
     const separate =
       (atStart || atEnd) &&
-      (wholeTransfer ||
+      (options.linewise === true ||
+        wholeTransfer ||
         separation === "blank-line" ||
         (typeof text === "string" && /[\r\n]/u.test(text)));
     // At the start of an empty line, stay before it unless the span ends on that line itself.

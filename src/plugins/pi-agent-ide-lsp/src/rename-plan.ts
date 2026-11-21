@@ -1,3 +1,4 @@
+import { hasTextSelectors, sourceSelectors } from "pi-agent-text-editor/api/text-selector-fields";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRangeTracker, ResourceError, type ResultTargetStore } from "pi-agent-resource";
@@ -234,12 +235,11 @@ export function prepareSymbolRename(
         capture === undefined ||
         typeof input.text !== "string" ||
         input.text.trim() === "" ||
-        input.start !== undefined ||
-        input.end !== undefined
+        hasTextSelectors(input, sourceSelectors)
       )
         throw new Error(
           "Rename needs one declaration name capture and a non-empty new name. " +
-            "Omit start/end. Use replace with " +
+            "Omit text selectors. Use replace with " +
             JSON.stringify({ path: selected.reference, text: "newName" }),
         );
       state.signal?.throwIfAborted();

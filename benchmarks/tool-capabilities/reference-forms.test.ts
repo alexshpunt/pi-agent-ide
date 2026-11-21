@@ -62,10 +62,10 @@ for (const mode of ["direct", "codemode"]) {
       { tool: "read", args: { path: "task.txt", views: ["anchors"] }, text: "D07BBXQ|OLD" },
       {
         tool: "replace",
-        args: { path: "task.txt", start: "D07BBXQ|", text: "D07BBXQ|NEW" },
+        args: { path: "task.txt", at: "D07BBXQ|", text: "D07BBXQ|NEW" },
         error: true,
       },
-      { tool: "replace", args: { path: "task.txt", start: "D07BBXQ|", text: "NEW" } },
+      { tool: "replace", args: { path: "task.txt", at: "D07BBXQ|", text: "NEW" } },
     ];
     assert.ok(validateRoute(task, events(calls, mode), mode).passed);
     for (const start of ["123ABCD|", "D07BBXQ|WRONG"])
@@ -73,7 +73,9 @@ for (const mode of ["direct", "codemode"]) {
         validateRoute(
           task,
           events(
-            calls.map((call, i) => (i === 2 ? { ...call, args: { ...call.args, start } } : call)),
+            calls.map((call, i) =>
+              i === 2 ? { ...call, args: { ...call.args, at: start } } : call,
+            ),
             mode,
           ),
           mode,

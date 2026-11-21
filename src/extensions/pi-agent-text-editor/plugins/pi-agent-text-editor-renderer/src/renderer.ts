@@ -919,6 +919,26 @@ function renderAnchorRange(
       ? singleLine(expanded ? state.full : state.compact)
       : undefined;
   };
+  if (registration.name === "insert") {
+    const before = renderField("before");
+    return range(
+      before === undefined ? renderField("after") : `before ${before}`,
+      undefined,
+      theme,
+    );
+  }
+  if (["replace", "delete", "copy", "move"].includes(registration.name)) {
+    const target = sourceField !== registration.source.field;
+    const at = renderField(target ? "targetAt" : "at");
+    if (at !== undefined) return range(at, undefined, theme);
+    const after = renderField(target ? "targetAfter" : "after");
+    const from =
+      after === undefined ? renderField(target ? "targetFrom" : "from") : `after ${after}`;
+    const before = renderField(target ? "targetBefore" : "before");
+    const through =
+      before === undefined ? renderField(target ? "targetThrough" : "through") : `before ${before}`;
+    return from === undefined ? range(through, undefined, theme) : range(from, through, theme);
+  }
   return range(renderField(fields.at(0)), renderField(fields.at(1)), theme);
 }
 function resourceLink(

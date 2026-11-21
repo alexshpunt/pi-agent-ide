@@ -43,7 +43,7 @@ test("Native tools move an exact LSP declaration without matching unrelated text
                 id: "semantic-edit",
                 name: "codemode",
                 arguments: {
-                  code: 'const declaration=await tools.lsp_search({declaration:"source.ts#Example"}); if(declaration?.matches?.length!==1 || !declaration.matches[0].text.includes("class Example")) throw Error("Expected the whole declaration: "+JSON.stringify(declaration)); const moved=await tools.move({path:declaration,target:"destination.ts",targetStart:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
+                  code: 'const declaration=await tools.lsp_search({declaration:"source.ts#Example"}); if(declaration?.matches?.length!==1 || !declaration.matches[0].text.includes("class Example")) throw Error("Expected the whole declaration: "+JSON.stringify(declaration)); const moved=await tools.move({path:declaration,target:"destination.ts",targetAfter:"end"}); if(typeof moved!=="string") throw Error("Expected readable move"); text(moved);',
                 },
               }),
             ],
@@ -97,7 +97,7 @@ test("Copying a declaration leaves imports and references unchanged", async () =
                 arguments: {
                   path: "fixture:declaration:source.ts#greet",
                   target: "destination.ts",
-                  targetStart: "end",
+                  targetAfter: "end",
                 },
               }),
             ],
@@ -154,7 +154,7 @@ test("standalone declaration edits and moves preserve earlier effects", async ()
                 arguments: {
                   path: "fixture:declaration:source.ts#second",
                   target: "destination.ts",
-                  targetStart: "end",
+                  targetAfter: "end",
                 },
               }),
             ],
@@ -324,7 +324,7 @@ const check=result=>{if(typeof result!=="string")throw Error("Expected readable 
 const first=(found)=>{if(found===null||found.matches.length!==1)throw Error("Expected one AST match: "+JSON.stringify(found));return found.matches[0].id;};
 const firstSearch=first(await tools.ast_search({pattern:"console.log($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:firstSearch,text:'logger.info("same")'}));
-check(await tools.replace({path:"nodes.ts",start:"emoji",text:"symbol"}));
+check(await tools.replace({path:"nodes.ts",at:"emoji",text:"symbol"}));
 const secondSearch=first(await tools.ast_search({pattern:"logger.info($ARG)",path:"nodes.ts"}));
 check(await tools.replace({path:secondSearch,text:"done()"}));
 `,

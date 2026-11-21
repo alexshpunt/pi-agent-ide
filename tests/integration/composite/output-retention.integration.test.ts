@@ -67,7 +67,7 @@ test("reads complete saved text through line and byte windows after direct and n
           // 200 bytes are 268 base64 characters.
           if (bytes.bytes?.length !== 268) throw new Error("Nested Read does not support byte reads");
           // The failed replace resolves to null; its bounded error and saved path end the result.
-          const refused = await tools.replace({path:"missing/"+"😀".repeat(30000),start:"x",text:"y"});
+          const refused = await tools.replace({path:"missing/"+"😀".repeat(30000),at:"x",text:"y"});
           if (refused !== null) throw new Error("Replace of a missing file succeeded");
           text("Saved text, tail and bytes recovered.");
         `,

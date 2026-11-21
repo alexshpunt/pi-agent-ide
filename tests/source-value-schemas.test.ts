@@ -79,11 +79,41 @@ describe("source parameters accept a Codemode value with an id", () => {
 
 /** Tool, schema and selector fields that take anchor text or a value with an id. */
 const selectors: readonly (readonly [string, TSchema, readonly string[]])[] = [
-  ["replace", replaceSchema, ["start", "end"]],
-  ["delete", deleteSchema, ["start", "end"]],
-  ["insert", insertSchema, ["anchor"]],
-  ["copy", copySchema, ["start", "end", "targetStart", "targetEnd"]],
-  ["move", moveSchema, ["start", "end", "targetStart", "targetEnd"]],
+  ["replace", replaceSchema, ["at", "from", "after", "through", "before"]],
+  ["delete", deleteSchema, ["at", "from", "after", "through", "before"]],
+  ["insert", insertSchema, ["after", "before"]],
+  [
+    "copy",
+    copySchema,
+    [
+      "at",
+      "from",
+      "after",
+      "through",
+      "before",
+      "targetAt",
+      "targetFrom",
+      "targetAfter",
+      "targetThrough",
+      "targetBefore",
+    ],
+  ],
+  [
+    "move",
+    moveSchema,
+    [
+      "at",
+      "from",
+      "after",
+      "through",
+      "before",
+      "targetAt",
+      "targetFrom",
+      "targetAfter",
+      "targetThrough",
+      "targetBefore",
+    ],
+  ],
 ];
 
 describe("selector parameters accept a Codemode value with an id", () => {
@@ -104,4 +134,16 @@ describe("selector parameters accept a Codemode value with an id", () => {
       );
     }
   });
+});
+
+test("Replace exposes only its single selection and range selectors", () => {
+  expect(Object.keys(replaceSchema.properties).sort()).toEqual([
+    "after",
+    "at",
+    "before",
+    "from",
+    "path",
+    "text",
+    "through",
+  ]);
 });

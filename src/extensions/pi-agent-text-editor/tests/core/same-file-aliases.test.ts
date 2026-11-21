@@ -127,7 +127,7 @@ describe.each([
     const result = await run.execute({
       path: run.search(named(sourceNaming)),
       target: named(targetNaming),
-      targetStart: "gamma",
+      targetAfter: "gamma",
     });
 
     expect(result.details.effect).not.toBe("not-applied");
@@ -143,9 +143,9 @@ describe.each([
     const run = await editor(tool);
     const result = await run.execute({
       path: named(sourceNaming),
-      start: "alpha ",
+      at: "alpha ",
       target: named(targetNaming),
-      targetStart: "gamma",
+      targetAfter: "gamma",
     });
 
     expect(result.details.effect).not.toBe("not-applied");
@@ -158,7 +158,7 @@ test("a move between two different files still edits two files", async () => {
   const result = await run.execute({
     path: run.search(absolute("main.txt")),
     target: "other.txt",
-    targetStart: "gamma",
+    targetAfter: "gamma",
   });
 
   expect(result.details.effect).not.toBe("not-applied");

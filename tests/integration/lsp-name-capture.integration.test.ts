@@ -89,7 +89,7 @@ test("a changed name capture cannot silently become a text edit", async () => {
   await scenario(
     `const declaration = await tools.lsp_search({declaration:"source.ts#count"});
 const name = declaration.matches[0].captures.name[0];
-await tools.replace({path:"source.ts", start:"export const count = 1;", text:"export const other = 1;"});
+await tools.replace({path:"source.ts", at:"export const count = 1;", text:"export const other = 1;"});
 if (await tools.replace({path:name, text:"total"}) !== null) throw Error("Stale capture succeeded");`,
     "stale-name-capture",
     async (cwd) => {
@@ -110,7 +110,7 @@ const name = declaration.matches[0].captures.name[0];
 await tools.write({path:"independent.txt",content:"before"});
 const results = await Promise.all([
   tools.replace({path:name,text:"total"}),
-  tools.replace({path:"independent.txt",start:"before",text:"after"})
+  tools.replace({path:"independent.txt",at:"before",text:"after"})
 ]);
 if (results.some(result => result === null)) throw Error("Concurrent edit failed");`,
     "name-capture-batch",
@@ -128,8 +128,9 @@ test("invalid and mixed name-capture requests never fall back to text replacemen
     `const declaration = await tools.lsp_search({declaration:"source.ts#count"});
 const name = declaration.matches[0].captures.name[0];
 for (const args of [
-  {path:{...name,start:"count"},text:"total"},
-  {path:name,text:""}, {path:name,start:"count",text:"total"},
+  {path:{...name,at:"count"},text:"total"},
+  {path:name,text:""}, {path:name,at:"count",text:"total"},
+  {at:name,text:"total"},
   {path:[name,declaration.matches[0]],text:"total"}
 ]) if (await tools.replace(args) !== null) throw Error("Invalid capture edit succeeded");`,
     "name-capture-refusals",

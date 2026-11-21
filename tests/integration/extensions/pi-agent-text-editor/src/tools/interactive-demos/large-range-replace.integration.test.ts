@@ -117,8 +117,8 @@ describe("interactive text editor demos", () => {
       expectedLines.splice(startIndex, endIndex - startIndex + 1, ...replacement.split("\n"));
       const arguments_ = {
         path: demoFileName,
-        start: formatLineHashAnchor(initialSource, startIndex + 1),
-        end: formatLineHashAnchor(initialSource, endIndex + 1),
+        from: formatLineHashAnchor(initialSource, startIndex + 1),
+        through: formatLineHashAnchor(initialSource, endIndex + 1),
         // Line anchors select their lines with their line breaks; the text keeps the last one.
         text: `${replacement}\n`,
       };

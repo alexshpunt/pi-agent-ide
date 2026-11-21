@@ -118,7 +118,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
     step(
       "replace-text",
       "replace",
-      { path: file, start: stepLine, text: `${stepLine} + ${cycle}` },
+      { path: file, at: stepLine, text: `${stepLine} + ${cycle}` },
       (result) => expectAll(result, ["Replaced selected text", `${stepLine} + ${cycle}`]),
     ),
     step(
@@ -254,7 +254,7 @@ const page = (await tools.read({ path: file, offset: ${lineOf(files, index)}, li
 const line = page.split("\\n").find((candidate) => candidate.includes(stepLine));
 const match = line && /^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|(.*)$/.exec(line);
 if (!match) throw new Error("no anchored line with " + stepLine);
-await tools.replace({ path: file, start: match[1], text: match[2].replace(stepLine, stepLine + " + ${cycle}") });
+await tools.replace({ path: file, at: match[1], text: match[2].replace(stepLine, stepLine + " + ${cycle}") });
 const [found, calls, diagnostics] = await Promise.all([
   tools.search({ query: stepLine + " + ${cycle}", path: file }),
   tools.ast_search({ pattern: ${JSON.stringify(`${name}($A)`)}, path: file, language: ${JSON.stringify(spec.astLanguage)} }),

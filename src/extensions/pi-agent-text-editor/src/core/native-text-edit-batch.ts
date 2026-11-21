@@ -29,6 +29,8 @@ import {
 import {
   allMatchesRetry,
   buildFailedTextMutationResult,
+  captureScriptMutation,
+  implicitSourceAnchor,
   mutationSources,
 } from "./text-mutation.ts";
 import { isWholeFileInvocation } from "./file-operation-tools.ts";
@@ -55,7 +57,6 @@ import {
 import { ALREADY_DONE_TEXT, alreadyDoneToolResult } from "./already-done.ts";
 import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.ts";
 import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.ts";
-import { captureScriptMutation } from "./text-mutation.ts";
 import {
   TextMutationAnchorAggregateError,
   TextMutationAnchorResolutionError,
@@ -360,6 +361,13 @@ class NativeTextEditBatchCoordinator {
           this.core.hasMatchingPreEditHandler(registration.name, input)) ||
         ((registration?.name === "copy" || registration?.name === "move") &&
           (isResultInput(input.path) || isResultInput(input.target)));
+      // Do not replace an invalid explicit selector with an inferred one. Validation and
+      // presentation of rejected calls belong to the tool.
+      try {
+        registration?.validateInput?.(input);
+      } catch {
+        ownsSource = true;
+      }
       // Only local, single-source Read/Search references can share immutable batch snapshots.
       // Keep the caller's input intact for every boundary call.
       const candidate = { ...input };
@@ -402,9 +410,7 @@ class NativeTextEditBatchCoordinator {
                     this.snapshotResults,
                   )
                 : undefined;
-            const firstAnchor = registration.anchors?.find(
-              (anchor) => anchor.sourceField === descriptor.field,
-            );
+            const firstAnchor = implicitSourceAnchor(registration, descriptor.field, input);
             if (source === undefined || firstAnchor === undefined) {
               ownsSource = true;
               continue;

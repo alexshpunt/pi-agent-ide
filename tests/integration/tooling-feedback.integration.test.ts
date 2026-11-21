@@ -64,7 +64,7 @@ test("whole-file Delete keeps its filesystem route beside a text edit batch", as
       {
         id: "edit",
         name: "insert",
-        arguments: { path: "note.txt", anchor: "keep", text: "ADDED\n" },
+        arguments: { path: "note.txt", after: "keep", text: "ADDED\n" },
       },
       ...removed.map((file, index) => ({
         id: `remove${index}`,
@@ -109,14 +109,14 @@ const sameFileEdits = [
   {
     tool: "insert",
     kind: "search",
-    args: { text: "ADDED\n", before: true },
-    after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+    args: { text: "ADDED\n" },
+    after: "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
   },
   {
     tool: "insert",
     kind: "uuid",
-    args: { text: "ADDED\n", before: true },
-    after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+    args: { text: "ADDED\n" },
+    after: "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
   },
 ] as const;
 
@@ -381,8 +381,8 @@ const consumers = [
     name: "insert-uuid",
     tool: "insert",
     kind: "uuid",
-    extra: { text: "BEFORE\n", before: true },
-    after: "first\nBEFORE\nOLD\nlast\n",
+    extra: { text: "AFTER\n" },
+    after: "first\nOLD\nAFTER\nlast\n",
   },
 ] as const;
 
@@ -491,7 +491,7 @@ test("direct references reject a changed snapshot without deleting its file", as
     await writeFile(path.join(cwd, "note.txt"), "first\nOLD\nlast\n");
     const result = await run(cwd, "direct-issued-stale", [
       call("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
-      call("change", "replace", { path: "note.txt", start: "OLD", text: "NEW" }),
+      call("change", "replace", { path: "note.txt", at: "OLD", text: "NEW" }),
       call("stale", "delete", { path: "$issued-uuid:selection" }),
     ]);
     expect(getToolExecution(result, "change").isError).toBe(false);
@@ -535,11 +535,11 @@ test.each([false, true])(
   async (queuedPayload) => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
-      const prefix = '{"path":"note.txt","anchor":"$issued-anchor:original:3","';
+      const prefix = '{"path":"note.txt","after":"$issued-anchor:original:3","';
       const payload = 'text":"BLOCKED"}';
       const result = await run(cwd, `streamed-insert-before-payload-${queuedPayload}`, [
         call("original", "read", { path: "note.txt", views: ["anchors"] }),
-        call("shift", "replace", { path: "note.txt", start: "gamma", text: "gamma2\nadded" }),
+        call("shift", "replace", { path: "note.txt", at: "gamma", text: "gamma2\nadded" }),
         assistantMessage(
           [
             toolCall({
@@ -555,7 +555,7 @@ test.each([false, true])(
         call("current", "read", { path: "note.txt", views: ["anchors"] }),
         call("recovery", "insert", {
           path: "note.txt",
-          anchor: "$issued-anchor:current:4",
+          after: "$issued-anchor:current:4",
           text: "recovered\n",
         }),
       ]);
@@ -584,7 +584,7 @@ test.each([{}, { text: "" }])(
       const result = await run(
         cwd,
         `complete-invalid-insert-${"text" in payload ? "empty" : "missing"}`,
-        [call("invalid", "insert", { path: "note.txt", anchor: "alpha", ...payload })],
+        [call("invalid", "insert", { path: "note.txt", after: "alpha", ...payload })],
       );
       expect(getToolExecution(result, "invalid").isError).toBe(true);
 

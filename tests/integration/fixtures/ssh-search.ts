@@ -10,8 +10,8 @@ export default function sshSearchFixture(pi: ExtensionAPI): void {
   pi.on("tool_call", (event) => {
     if (event.toolName !== "replace") return;
     const input = event.input as Record<string, unknown>;
-    if (input.start !== "SEARCH#0000:all:match") return;
+    if (input.at !== "SEARCH#0000:all:match") return;
     if (selection === undefined) throw new Error("Search did not register its remote selection");
-    input.start = selection;
+    input.at = selection;
   });
 }

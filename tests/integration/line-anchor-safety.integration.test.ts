@@ -99,7 +99,7 @@ test.each(["direct", "codemode"] as const)(
             tool: "replace",
             args: {
               path: file,
-              start: `${anchor}|OLD`,
+              at: `${anchor}|OLD`,
               text: `${prefix}${anchor}|NEW`,
             },
             error: true,
@@ -115,8 +115,8 @@ test.each(["direct", "codemode"] as const)(
           tool: "replace",
           args: {
             path: "retry.txt",
-            start: anchor,
-            end: anchor,
+            from: anchor,
+            through: anchor,
             text: `${anchor}|NEW`,
           },
           error: true,
@@ -125,7 +125,7 @@ test.each(["direct", "codemode"] as const)(
         {
           id: "retry",
           tool: "replace",
-          args: { path: "retry.txt", start: anchor, text: "NEW\n" },
+          args: { path: "retry.txt", at: anchor, text: "NEW\n" },
         },
       );
       await writeFile(path.join(cwd, "literal-prefix.txt"), initial);
@@ -136,7 +136,7 @@ test.each(["direct", "codemode"] as const)(
           tool: "replace",
           args: {
             path: "literal-prefix.txt",
-            start: "OLD",
+            at: "OLD",
             text: `${anchor}|NEW`,
           },
         },
@@ -145,7 +145,7 @@ test.each(["direct", "codemode"] as const)(
           tool: "replace",
           args: {
             path: "other-prefix.txt",
-            start: anchor,
+            at: anchor,
             text: "ZZZZZZZ|NEW\n",
           },
         },
@@ -179,14 +179,14 @@ test.each(["direct", "codemode"] as const)(
           {
             id: `change-${tool}`,
             tool: "replace",
-            args: { path: file, start: anchor, text: "NEW\n" },
+            args: { path: file, at: anchor, text: "NEW\n" },
           },
           {
             id: `stale-${tool}`,
             tool,
             args: {
               path: file,
-              [tool === "insert" ? "anchor" : "start"]: anchor,
+              [tool === "insert" ? "after" : "at"]: anchor,
               text: "BLOCKED",
             },
             error: true,
@@ -199,7 +199,7 @@ test.each(["direct", "codemode"] as const)(
         tool: "replace",
         args: {
           path: "literal.txt",
-          start: `literal ${anchor}|payload`,
+          at: `literal ${anchor}|payload`,
           text: "literal recovered",
         },
       });

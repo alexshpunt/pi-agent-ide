@@ -18,18 +18,18 @@ for (const mode of ["direct", "codemode"]) {
       },
       {
         tool: "replace",
-        args: { path: "replace.json", start: literal, end: literal, text: stable },
+        args: { path: "replace.json", from: literal, through: literal, text: stable },
       },
-      { tool: "insert", args: { path: "insert.json", anchor: literal, text: " ", before: true } },
+      { tool: "insert", args: { path: "insert.json", before: literal, text: " " } },
       {
         tool: "copy",
         args: {
           path: "source.json",
-          start: stable,
-          end: stable,
+          from: stable,
+          through: stable,
           target: "target.json",
-          targetStart: literal,
-          targetEnd: literal,
+          targetFrom: literal,
+          targetThrough: literal,
         },
       },
     ];
@@ -74,9 +74,9 @@ for (const mode of ["direct", "codemode"]) {
       ),
     );
     for (const [index, fields] of [
-      [2, ["start", "end"]],
-      [3, ["anchor"]],
-      [4, ["start", "end", "targetStart", "targetEnd"]],
+      [2, ["from", "through"]],
+      [3, ["before"]],
+      [4, ["from", "through", "targetFrom", "targetThrough"]],
     ] as const) {
       for (const field of fields) {
         for (const value of [

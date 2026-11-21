@@ -41,8 +41,8 @@ test("overflow overview preserves source coordinates for a later exact edit", as
         call("window", "read", { path: "large.ts", offset: 2100, limit: 3, views: ["anchors"] }),
         call("edit", "insert", {
           path: "large.ts",
-          anchor: "}",
-          before: true,
+          before: "}",
+
           text: "  finish();\n",
         }),
         assistantMessage([text("Done")]),

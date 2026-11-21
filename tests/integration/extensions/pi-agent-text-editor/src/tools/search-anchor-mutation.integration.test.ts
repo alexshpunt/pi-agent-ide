@@ -103,7 +103,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
               name: "replace",
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
-                start: "LINE#RUNTIME:1",
+                at: "LINE#RUNTIME:1",
                 text: "changed",
               },
             }),
@@ -119,7 +119,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-begin",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:2:all:match", start: "begin", text: "top" },
+              arguments: { path: "SEARCH#RUNTIME:2:all:match", at: "begin", text: "top" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -133,7 +133,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-end",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:3:all:match", start: "end", text: "bottom" },
+              arguments: { path: "SEARCH#RUNTIME:3:all:match", at: "end", text: "bottom" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -442,7 +442,7 @@ test("deletes a final no-LF line from a position-anchor union", async () => {
             toolCall({
               id: "delete-union-final",
               name: "delete",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", at: "end" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -475,7 +475,7 @@ test("inserts after a final no-LF end anchor with a path union", async () => {
             toolCall({
               id: "insert-final",
               name: "insert",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", anchor: "end", text: "inserted\n" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", after: "end", text: "inserted\n" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -508,7 +508,7 @@ test("deduplicates a final no-LF linewise target with end", async () => {
             toolCall({
               id: "replace-final",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end", text: "changed" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", at: "end", text: "changed" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -549,7 +549,7 @@ test("deletes a final no-LF line when exact and linewise endpoints merge", async
               name: "delete",
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:line",
-                start: "needle",
+                at: "needle",
               },
             }),
           ],
@@ -590,7 +590,7 @@ test("inserts after a final no-LF line when exact and linewise endpoints merge",
               id: "insert-final-exact",
               name: "insert",
               arguments: {
-                anchor: "needle",
+                after: "needle",
                 path: "SEARCH#RUNTIME:1:all:line",
                 text: "inserted\n",
               },
@@ -663,8 +663,8 @@ test("accepts search anchors in both replace span endpoints", async () => {
               id: "replace-span",
               name: "replace",
               arguments: {
-                start: "SEARCH#RUNTIME:1:1:match",
-                end: "SEARCH#RUNTIME:1:2:match",
+                from: "SEARCH#RUNTIME:1:1:match",
+                through: "SEARCH#RUNTIME:1:2:match",
                 text: "merged",
               },
             }),
@@ -709,7 +709,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target\n",
+                targetAfter: "target\n",
               },
             }),
           ],
@@ -752,7 +752,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target\n",
+                targetAfter: "target\n",
               },
             }),
           ],
@@ -824,7 +824,7 @@ test("mutates the complete selection retained by compacted search results", asyn
               id: "replace-incomplete",
               name: "replace",
               arguments: {
-                start: "SEARCH#RUNTIME:1:all:match",
+                at: "SEARCH#RUNTIME:1:all:match",
                 text: "changed",
               },
             }),

@@ -26,7 +26,7 @@ describe("pi-agent-text-editor delete", () => {
         tool: "delete",
         arguments: {
           path: relativeFile,
-          start: formatLineHashAnchor("before\ndelete-me\nafter\n", 2),
+          at: formatLineHashAnchor("before\ndelete-me\nafter\n", 2),
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);

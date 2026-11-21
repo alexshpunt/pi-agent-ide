@@ -105,12 +105,12 @@ test("whole-object transfers split text batches without changing file, tree or l
       toolCall({
         id: "replace-alpha",
         name: "replace",
-        arguments: { path: "edited.txt", start: "alpha", text: "ALPHA" },
+        arguments: { path: "edited.txt", at: "alpha", text: "ALPHA" },
       }),
       toolCall({
         id: "replace-beta",
         name: "replace",
-        arguments: { path: "edited.txt", start: "beta", text: "BETA" },
+        arguments: { path: "edited.txt", at: "beta", text: "BETA" },
       }),
       ...transfers.map(({ name, path: source, target }, index) =>
         toolCall({ id: `object-${index}`, name, arguments: { path: source, target } }),
@@ -119,12 +119,12 @@ test("whole-object transfers split text batches without changing file, tree or l
         id: "copy-range",
         name: "copy",
         // Literals select only their characters; the line breaks make these whole-line transfers.
-        arguments: { path: "ranges.txt", start: "copy-me\n", targetStart: "omega\n" },
+        arguments: { path: "ranges.txt", at: "copy-me\n", targetAfter: "omega\n" },
       }),
       toolCall({
         id: "move-range",
         name: "move",
-        arguments: { path: "ranges.txt", start: "move-me\n", targetStart: "keep\n" },
+        arguments: { path: "ranges.txt", at: "move-me\n", targetAfter: "keep\n" },
       }),
     ];
     const run = await new PiIntegrationTest({

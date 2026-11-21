@@ -159,12 +159,17 @@ const groups: [string[], string[]][] = [
   ],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
+  [["edit.replace-exclusive-range"], ["replace-exclusive-range"]],
   [["edit.delete-exact-range"], ["exact-range-delete"]],
+  [
+    ["edit.delete-exclusive-range", "edit.transfer-exclusive-range", "edit.transfer-insert-before"],
+    ["exclusive-delete-transfer"],
+  ],
   // Exact destination cases require object-form Search endpoints alongside a peer transfer.
   // Copy separately requires literal source endpoints and literal peer SLOT destination fields;
   // its task names those fields explicitly rather than leaving selector representation implicit.
   [["edit.copy-exact-range", "edit.copy-exact-destination"], ["exact-range-copy"]],
-  // Range routes validate equal issued selections across path/start/anchor forms globally;
+  // Range routes validate equal issued selections across explicit selectors and result paths;
   // exact-range-move also exercises multiline EOF selectors with LF/CRLF argument variants.
   [["edit.move-exact-range", "edit.move-exact-destination"], ["exact-range-move"]],
   [["edit.copy-source-range"], ["exact-range-copy", "selection-copy-move"]],

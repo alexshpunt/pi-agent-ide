@@ -57,9 +57,9 @@ for (const mode of ["direct", "codemode"]) {
     const searchId = "RESULT#22222222-bbbb-4bbb-8bbb-222222222222";
     const args = [
       { path: "task.txt", views: ["anchors"] },
-      { path: "task.txt", start: "D07BBXQ", text: "NEW" },
-      { path: "task.txt", anchor: "D07BBXQ" },
-      { path: "task.txt", start: "D07BBXQ" },
+      { path: "task.txt", at: "D07BBXQ", text: "NEW" },
+      { path: "task.txt", after: "D07BBXQ" },
+      { path: "task.txt", at: "D07BBXQ" },
       { path: "task.txt", query: "D07BBXQ" },
       { path: { id: searchId }, text: "TOKEN" },
     ];
@@ -80,12 +80,12 @@ for (const mode of ["direct", "codemode"]) {
     const fixture = task("replace-anchored-display");
     const args = [
       { path: "task.txt", views: ["anchors"] },
-      { path: "task.txt", start: "OLD", text: "OLD tail" },
-      { path: "task.txt", start: "AAAAAAA|OLD", text: "BAD" },
+      { path: "task.txt", at: "OLD", text: "OLD tail" },
+      { path: "task.txt", at: "AAAAAAA|OLD", text: "BAD" },
       { path: "task.txt", views: ["anchors"] },
-      { path: "task.txt", start: "BBBBBBB|OLD", text: "NEW" },
+      { path: "task.txt", at: "BBBBBBB|OLD", text: "NEW" },
       { path: "collision.txt", views: ["anchors"] },
-      { path: "collision.txt", start: "|OLD", text: "NEW" },
+      { path: "collision.txt", at: "|OLD", text: "NEW" },
     ];
     const groups = [[5], [0], [1], [2], [3], [4], [6]];
     const receipts = { 0: "AAAAAAA|OLD", 3: "BBBBBBB|OLD tail" };
@@ -99,8 +99,8 @@ for (const mode of ["direct", "codemode"]) {
     const reference = "SEARCH#beef:all:match";
     const args = [
       { path: "task.txt", offset: 2, limit: 1 },
-      { path: scope, start: "OLD", text: "NEW" },
-      { path: scope, start: reference, text: "NEW" },
+      { path: scope, at: "OLD", text: "NEW" },
+      { path: scope, at: reference, text: "NEW" },
     ];
     const receipts = { 0: `<uuid>${scope}</uuid>`, 1: reference };
     assert.ok(check(fixture, args, [[0], [1], [2]], mode, receipts));
@@ -124,10 +124,10 @@ for (const mode of ["direct", "codemode"]) {
     const args = [
       { path: "task.txt", text: "added" },
       { path: "task.txt" },
-      { path: "task.txt", anchor: "OLD", text: "added" },
-      { path: "task.txt", start: "OLD", target: "target.txt" },
+      { path: "task.txt", after: "OLD", text: "added" },
+      { path: "source.txt", at: "OLD", target: "target.txt" },
       { path: "target.txt" },
-      { path: "task.txt", start: "OLD", target: "target.txt", targetStart: "DEST" },
+      { path: "source.txt", at: "OLD", target: "target.txt", targetAfter: "DEST" },
     ];
     assert.ok(check(fixture, args, [[0], [1], [2, 3], [4], [5]], mode));
     assert.ok(check(fixture, args, [[3], [4], [5], [0], [1], [2]], mode));
@@ -143,7 +143,7 @@ for (const mode of ["direct", "codemode"]) {
     const args = [
       { adapter: "debugpy", program: "task.py" },
       { path: source, views: ["anchors"] },
-      { path: source, text: "breakpoint", anchor: "D07BBXQ" },
+      { path: source, text: "breakpoint", after: "D07BBXQ" },
       { path: source, views: ["breakpoints"] },
       { path: resource, text: "start" },
       { path: resource },

@@ -34,8 +34,8 @@ const rejected = toolCall({
 });
 const invalidRequests = [
   { id: "whitespace-rename", arguments: { text: " \t" } },
-  { id: "malformed-rename", arguments: { start: "count", text: "total" } },
-  { id: "end-rename", arguments: { end: "count", text: "total" } },
+  { id: "malformed-rename", arguments: { at: "count", text: "total" } },
+  { id: "range-rename", arguments: { from: "count", through: "count", text: "total" } },
 ];
 const invalidCalls = invalidRequests.map(({ id, arguments: args }) =>
   toolCall({

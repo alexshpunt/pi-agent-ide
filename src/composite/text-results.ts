@@ -21,6 +21,7 @@ import {
   TempResourceStore,
   normalizeStructuredArguments,
 } from "pi-agent-resource";
+import { editingSelectorFields } from "pi-agent-text-editor/api/text-selector-fields";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import { assertToolCallArgumentsNotBlocked } from "pi-agent-text-editor/api/tool-call-interceptor";
 import { READ_PROTOCOL, READ_API_VERSION } from "pi-agent-read/api/plugin-protocol";
@@ -49,15 +50,6 @@ const sourceFields: Record<string, readonly string[]> = {
   move: ["path", "target"],
   undo: ["file"],
   diff: ["before", "after"],
-};
-
-/** Selector fields that also take a value with an id, such as a Search match in Codemode. */
-const anchorFields: Record<string, readonly string[]> = {
-  replace: ["start", "end"],
-  delete: ["start", "end"],
-  insert: ["anchor"],
-  copy: ["start", "end", "targetStart", "targetEnd"],
-  move: ["start", "end", "targetStart", "targetEnd"],
 };
 
 /** What a failed call of a tool without source fields names in the Codemode failure block. */
@@ -366,7 +358,7 @@ export function createIdeTextResults(
           );
         }
       }
-      for (const field of anchorFields[event.toolName] ?? [])
+      for (const field of editingSelectorFields(event.toolName))
         if (input[field] !== undefined)
           input[field] = resultValueReference(store, input[field], context.cwd);
       for (const field of ["text", "content"]) {

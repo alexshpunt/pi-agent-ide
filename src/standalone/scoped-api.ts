@@ -6,9 +6,15 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { toolCallHeader } from "pi-agent-tool-ui";
-import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  resultValueId,
+  resultError,
+  withStructuredResult,
+} from "pi-agent-resource";
 import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
 import { getLastResolvedResource } from "#src/extensions/pi-agent-text-editor/src/api/last-resolved-resource.ts";
+import { editingSelectorFields } from "pi-agent-text-editor/api/text-selector-fields";
 import type { StandaloneResourceHostOptions, StandaloneResourceTool } from "./resource-host.ts";
 
 const verbs: readonly StandaloneResourceTool[] = [
@@ -168,9 +174,12 @@ export function createResourceHostApi(pi: ExtensionAPI, options: StandaloneResou
     }
     for (const field of sources)
       if (value[field] !== undefined) await checkSource(value[field], context, mutation);
-    for (const field of ["start", "end", "anchor", "targetStart", "targetEnd"]) {
+    for (const field of editingSelectorFields(name)) {
       const anchor = value[field];
-      if (typeof anchor === "string" && /^(?:RESULT#|SEARCH#|<system-result)/u.test(anchor))
+      if (
+        resultValueId(anchor) !== undefined ||
+        (typeof anchor === "string" && /^(?:RESULT#|SEARCH#|<system-result)/u.test(anchor))
+      )
         await checkSource(anchor, context, mutation);
     }
     if (name === "write" && typeof value.content !== "string")

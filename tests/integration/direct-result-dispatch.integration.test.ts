@@ -72,28 +72,28 @@ for (const [form, token] of tokens) {
           name: "replace",
           arguments: { path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" },
         },
-        { id: "inside", name: "replace", arguments: { path: token, start: "bet", text: "BET" } },
+        { id: "inside", name: "replace", arguments: { path: token, at: "bet", text: "BET" } },
         { id: "stale", name: "replace", arguments: { path: token, text: "STALE\n" } },
         {
           id: "path",
           name: "replace",
-          arguments: { path: "note.txt", start: "gamma", text: "GAMMA" },
+          arguments: { path: "note.txt", at: "gamma", text: "GAMMA" },
         },
         { id: "again", name: "read", arguments: { path: "note.txt", offset: 2, limit: 1 } },
         {
           id: "outside",
           name: "replace",
-          arguments: { path: again, start: "GAMMA", text: "BAD" },
+          arguments: { path: again, at: "GAMMA", text: "BAD" },
         },
         {
           id: "outside-range",
           name: "replace",
-          arguments: { path: again, start: "alpha", end: "BETa", text: "BAD" },
+          arguments: { path: again, from: "alpha", through: "BETa", text: "BAD" },
         },
         {
           id: "bad-anchor",
           name: "replace",
-          arguments: { path: "note.txt", start: "ZZZZZZZ", text: "DAMAGED" },
+          arguments: { path: "note.txt", at: "ZZZZZZZ", text: "DAMAGED" },
         },
       ]);
       expect(run.state?.model).toMatchObject({ provider: "scripted", id: "scripted-model" });
@@ -142,7 +142,7 @@ for (const kind of ["whole", "match", "capture"]) {
     if (!actual || actual.text !== expected.text) throw Error("Reference form changed selected text");
     const searched = await tools.search({ path: source, query: "count" });
     if (!searched || searched.matches.length !== 1) throw Error("Reference form lost its search scope");
-    const changed = await tools.replace({ path: source, ...(kind === "capture" ? {} : { start: "count" }), text: "renamed" + index });
+    const changed = await tools.replace({ path: source, ...(kind === "capture" ? {} : { at: "count" }), text: "renamed" + index });
     if (changed === null) throw Error("Reference form lost edit authority");
     index += 1;
   }
@@ -185,10 +185,10 @@ for (const [index, form] of ["uuid", "value", "prefix"].entries()) {
     .split("\n")
     .map((line) => line.split("|")[0]);
   // A refused call resolves to null; the Codemode result lists each reason. Only line 2 is inside.
-  for (const selector of [{ start: anchors[2] }, { start: anchors[0], end: anchors[1] }])
+  for (const selector of [{ at: anchors[2] }, { from: anchors[0], through: anchors[1] }])
     if ((await tools.replace({ path: source, ...selector, text: "BAD\n" })) !== null)
       throw Error("A selector outside the result was not rejected");
-  if ((await tools.replace({ path: source, start: anchors[1], text: "BETA" + index + "\n" })) === null)
+  if ((await tools.replace({ path: source, at: anchors[1], text: "BETA" + index + "\n" })) === null)
     throw Error("A selector inside the result was rejected");
   await tools.read({ path: "note.txt" });
   if ((await tools.replace({ path: source, text: "STALE" })) !== null)
@@ -196,7 +196,7 @@ for (const [index, form] of ["uuid", "value", "prefix"].entries()) {
 }
 if ((await tools.replace({ path: "00000000-0000-0000-0000-000000000000", text: "UNKNOWN" })) !== null)
   throw Error("An unknown reference authorized an edit");
-await tools.replace({ path: "note.txt", start: "gamma", text: "GAMMA" });
+await tools.replace({ path: "note.txt", at: "gamma", text: "GAMMA" });
 text("Reference boundaries verified");
 `,
           },

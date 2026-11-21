@@ -17,16 +17,15 @@ import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 const initial = "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n";
 const copy = {
   path: "same.txt",
-  start: "alpha",
-  end: "beta\n",
-  targetStart: "});",
+  from: "alpha",
+  through: "beta\n",
 };
 
 test.each([
-  ["standalone", "targetStart"],
-  ["codemode", "targetStart"],
-  ["standalone", "targetEnd"],
-  ["codemode", "targetEnd"],
+  ["standalone", "targetAfter"],
+  ["codemode", "targetAfter"],
+  ["standalone", "targetThrough"],
+  ["codemode", "targetThrough"],
 ] as const)(
   "Copy recovers a %s %s failure without blocking its validated source",
   async (surface, field) => {
@@ -42,13 +41,16 @@ test.each([
         path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
         JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
       );
+      const missingEnd = "MISSING_DESTINATION";
       const request =
-        field === "targetStart" ? copy : { ...copy, targetStart: "gap", targetEnd: "});" };
+        field === "targetAfter"
+          ? { ...copy, targetAfter: "});" }
+          : { ...copy, targetFrom: "gap", targetThrough: missingEnd };
       const rejectCopy = `await rejects(()=>tools.copy(${JSON.stringify(request)}));`;
       const corrected =
-        field === "targetStart"
-          ? '{path:"same.txt",start:"alpha",end:"beta\\n",targetStart:destination}'
-          : '{path:"same.txt",start:"alpha",end:"beta\\n",targetStart:"gap",targetEnd:destination}';
+        field === "targetAfter"
+          ? '{path:"same.txt",from:"alpha",through:"beta\\n",targetAfter:destination}'
+          : '{path:"same.txt",from:"alpha",through:"beta\\n",targetFrom:"gap",targetThrough:destination}';
       const run = await new PiIntegrationTest({
         testName: `copy-destination-recovery-${surface}-${field}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
@@ -60,7 +62,7 @@ test.each([
           ...(surface === "standalone"
             ? [
                 assistantMessage(
-                  [toolCall({ id: "ambiguous-copy", name: "copy", arguments: request })],
+                  [toolCall({ id: "rejected-copy", name: "copy", arguments: request })],
                   { stopReason: "toolUse" },
                 ),
               ]
@@ -92,19 +94,17 @@ text(await tools.copy(${corrected}));
       );
 
       if (surface === "standalone") {
-        expect(getToolExecution(run, "ambiguous-copy").isError).toBe(true);
-        expect(getToolResultText(run, "ambiguous-copy")).toContain("ambiguous");
+        expect(getToolExecution(run, "rejected-copy").isError).toBe(true);
       } else {
         const failures = codemodeFailures(getToolResultText(run, "corrected-copy"));
         expect(failures).toMatch(/^1 of 3 IDE calls failed:\n- copy same\.txt\n/u);
-        expect(failures).toContain("ambiguous");
       }
       expect(
         getToolExecution(run, "corrected-copy").isError,
         getToolResultText(run, "corrected-copy"),
       ).toBe(false);
       expect(await readFile(file, "utf8")).toBe(
-        field === "targetStart"
+        field === "targetAfter"
           ? "alpha\nbeta\ngap\n});\nINSERT_HERE\nalpha\nbeta\n});\ntail\n"
           : // The whole-line target keeps its own ending (LPT-1747).
             "alpha\nbeta\nalpha\nbeta\n});\ntail\n",

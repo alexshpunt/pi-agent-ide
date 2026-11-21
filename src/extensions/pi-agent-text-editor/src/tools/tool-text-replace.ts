@@ -7,9 +7,14 @@ import { refuseEndOfFileMarker } from "#src/tools/display-marker.ts";
 
 import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.ts";
 
-import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import {
-  resolveAnchorSpanRange,
+  sourceSelectors,
+  sourceTextSelector,
+  textSelectorAnchors,
+} from "#src/api/text-selector-fields.ts";
+import {
+  replaceSelectedSpan,
+  resolveTextSpan,
   selectionChanges,
   textSelections,
 } from "#src/tools/text-selection.ts";
@@ -27,7 +32,9 @@ export const replaceSchema = Type.Object(
         description: "Source selection. Omit to reuse the anchor’s file or the last source.",
       }),
     ),
-    ...sourceRangeProperties(),
+    ...sourceRangeProperties(
+      "Replace only this selection. Do not combine with range boundaries. Omit all selectors when path is an issued selection of the intended text.",
+    ),
     text: Type.String({
       description:
         "Replacement for each selected range; empty text deletes it. Over whole lines, the last line keeps its original ending. Use a single line break to leave one empty line. Outside the part you change, look-alike characters (special spaces, smart quotes, dashes) keep the original; send only look-alikes to normalize them.",
@@ -35,38 +42,21 @@ export const replaceSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-interface ReplaceParameters {
-  readonly path?: unknown;
-  /** Selectors hold anchor text: the IDE replaces a value with an id by its reference. */
-  readonly start?: unknown;
-  readonly end?: unknown;
-  readonly text: string;
-}
-
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
   name: "replace",
-  description: "Use replace to change selected text.",
+  description:
+    "Use replace to change text selected by a result, a single selector, or a pair of range boundaries.",
 
   promptSnippet: "Make precise file edits by replacing text using exact matches or anchors",
   parameters: replaceSchema,
   source: { field: "path", inherited: true },
-  anchors: [
-    {
-      field: "start",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "end",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-      optional: true,
-    },
-  ],
-  pair: ["start", "end"],
-  mutate: async (context, parameters: ReplaceParameters) => {
+  anchors: textSelectorAnchors("path", sourceSelectors, ["through", "before"]),
+  validateInput: sourceTextSelector,
+  mutate: async (context, parameters) => {
+    const selector = sourceTextSelector(parameters) ?? { kind: "single", first: "at" };
     refuseEndOfFileMarker(parameters.text);
-    const starts = await context.resolveAnchors("start");
+    const startField = selector.first;
+    const starts = await context.resolveAnchors(startField);
     const copiedAnchor = PRESENTED_LINE_ANCHOR_PATTERN.exec(parameters.text)?.[1];
     if (
       copiedAnchor !== undefined &&
@@ -82,8 +72,8 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
         `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from text and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
       );
     }
-    const selections = textSelections(starts, "start");
-    if (parameters.end === undefined && selections !== undefined) {
+    const selections = textSelections(starts, startField);
+    if (selector.kind === "single" && selections !== undefined) {
       const changes = selectionChanges(context, selections, parameters.text);
       refuseIdenticalReplacement(
         context,
@@ -101,14 +91,8 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
       };
     }
 
-    const span = await resolveAnchorSpanRange(
-      context,
-      starts,
-      "start",
-      "end",
-      parameters.end !== undefined,
-    );
-    const change = context.documentFor(span.source).replace(span, parameters.text);
+    const span = await resolveTextSpan(context, selector, starts);
+    const change = replaceSelectedSpan(context.documentFor(span.source), span, parameters.text);
     refuseIdenticalReplacement(context, [{ source: span.source, ...change }]);
     return {
       edits: new Map([[span.source, { changes: [change], action: "edited" }]]),

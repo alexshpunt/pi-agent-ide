@@ -40,8 +40,8 @@ test("pending native results gain exact authority only after their original-snap
             arguments: {
               code: `
 text(await tools.read({path:"note.txt"}));
-const first = await tools.replace({path:"note.txt",start:"alpha",text:"first\\r\\nalpha"});
-const second = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+const first = await tools.replace({path:"note.txt",at:"alpha",text:"first\\r\\nalpha"});
+const second = await tools.replace({path:"note.txt",at:"beta",text:"BETA"});
 
 if(typeof first!=="string" || typeof second!=="string") throw Error("Accepted edits need public result handles");
 const found=await tools.search({path:second,query:"BETA"});
@@ -95,7 +95,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
             id: "cancel",
             name: "codemode",
             arguments: {
-              code: '// @options: {"timeout_ms":2000}\nconst accepted = await tools.replace({path:"note.txt",start:"alpha",text:"PENDING"}); if(typeof accepted !== "string" || !accepted.startsWith("RESULT#")) throw Error("No public reserved result"); text(accepted); while(true) {}',
+              code: '// @options: {"timeout_ms":2000}\nconst accepted = await tools.replace({path:"note.txt",at:"alpha",text:"PENDING"}); if(typeof accepted !== "string" || !accepted.startsWith("RESULT#")) throw Error("No public reserved result"); text(accepted); while(true) {}',
             },
           }),
         ]),

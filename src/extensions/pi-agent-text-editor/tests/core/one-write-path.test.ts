@@ -211,59 +211,67 @@ async function run(
   return applyTextChanges(content, requiredValue(result.edits.get(source)).changes).content;
 }
 
+function runReplace(
+  content: string,
+  { start, end }: { readonly start: TextAnchor; readonly end?: TextAnchor },
+  text: string,
+): Promise<string> {
+  return end === undefined
+    ? run(replaceMutationTool, content, { at: start }, { at: "at", text })
+    : run(
+        replaceMutationTool,
+        content,
+        { from: start, through: end },
+        {
+          from: "from",
+          through: "through",
+          text,
+        },
+      );
+}
+
 describe.each(shapes)("on $name", (shape) => {
   const content = contentOf(shape);
   const { prefix, ending, suffix, startEnding: start, afterEnding: after } = shape;
   const sent = "A\nB";
 
   describe.each(selectors)("$name", (selector) => {
-    const { start: startAnchor, end } = selector.anchors(shape);
+    const selected = selector.anchors(shape);
+    const { start: startAnchor, end } = selected;
     const anchors: Record<string, TextAnchor> =
-      end === undefined ? { start: startAnchor } : { start: startAnchor, end };
-    const range = end === undefined ? {} : { end: "end" };
+      end === undefined ? { at: startAnchor } : { from: startAnchor, through: end };
+    const range = end === undefined ? { at: "at" } : { from: "from", through: "through" };
 
     test("replace writes line breaks with the line's ending and keeps the rest", async () => {
-      expect(
-        await run(replaceMutationTool, content, anchors, { start: "start", ...range, text: sent }),
-      ).toBe(`${prefix}A${start}B${ending}${suffix}`);
+      expect(await runReplace(content, selected, sent)).toBe(
+        `${prefix}A${start}B${ending}${suffix}`,
+      );
     });
 
     test("replace with a trailing line break", async () => {
-      expect(
-        await run(replaceMutationTool, content, anchors, {
-          start: "start",
-          ...range,
-          text: `${sent}\n`,
-        }),
-      ).toBe(`${prefix}A${start}B${ending}${suffix}`);
+      expect(await runReplace(content, selected, `${sent}\n`)).toBe(
+        `${prefix}A${start}B${ending}${suffix}`,
+      );
     });
 
     test("delete removes the span and nothing outside it", async () => {
       const removedLine =
         ending === "" ? prefix.slice(0, prefix.length - start.length) : prefix + suffix;
-      expect(await run(deleteMutationTool, content, anchors, { start: "start", ...range })).toBe(
-        removedLine,
-      );
+      expect(await run(deleteMutationTool, content, anchors, range)).toBe(removedLine);
     });
 
     test("empty replacement removes the line", async () => {
       const removedLine =
         ending === "" ? prefix.slice(0, prefix.length - start.length) : prefix + suffix;
-      expect(
-        await run(replaceMutationTool, content, anchors, { start: "start", ...range, text: "" }),
-      ).toBe(removedLine);
+      expect(await runReplace(content, selected, "")).toBe(removedLine);
     });
 
     test.each([1, 2])(
       "replacement with %i line breaks leaves that many empty lines",
       async (count) => {
-        expect(
-          await run(replaceMutationTool, content, anchors, {
-            start: "start",
-            ...range,
-            text: "\n".repeat(count),
-          }),
-        ).toBe(prefix + start.repeat(count - 1) + ending + suffix);
+        expect(await runReplace(content, selected, "\n".repeat(count))).toBe(
+          prefix + start.repeat(count - 1) + ending + suffix,
+        );
       },
     );
 
@@ -271,16 +279,7 @@ describe.each(shapes)("on $name", (shape) => {
 
     test.each([sent, `\n${sent}\n`])("insert before with text %j", async (text) => {
       expect(
-        await run(
-          insertMutationTool,
-          content,
-          { anchor: startAnchor },
-          {
-            anchor: "anchor",
-            text,
-            before: true,
-          },
-        ),
+        await run(insertMutationTool, content, { before: startAnchor }, { before: "before", text }),
       ).toBe(`${prefix}A${start}B${start}${shape.content}${ending}${suffix}`);
     });
 
@@ -293,9 +292,9 @@ describe.each(shapes)("on $name", (shape) => {
         await run(
           insertMutationTool,
           content,
-          { anchor: startAnchor },
+          { after: startAnchor },
           {
-            anchor: "anchor",
+            after: "after",
             text,
           },
         ),
@@ -306,9 +305,9 @@ describe.each(shapes)("on $name", (shape) => {
       const inserted = await run(
         insertMutationTool,
         content,
-        { anchor: startAnchor },
+        { after: startAnchor },
         {
-          anchor: "anchor",
+          after: "after",
           text: "added\n",
         },
       );
@@ -317,9 +316,9 @@ describe.each(shapes)("on $name", (shape) => {
         await run(
           deleteMutationTool,
           inserted,
-          { start: new LineAnchor(addedLine) },
+          { at: new LineAnchor(addedLine) },
           {
-            start: "start",
+            at: "at",
           },
         ),
       ).toBe(content);
@@ -339,10 +338,10 @@ describe("whole-line replacement", () => {
         await run(
           deleteMutationTool,
           content,
-          { start, end: new LineAnchor(3) },
+          { from: start, through: new LineAnchor(3) },
           {
-            start: "start",
-            end: "end",
+            from: "from",
+            through: "through",
           },
         ),
       ).toBe(["before", "after", ""].join(eol));
@@ -351,28 +350,15 @@ describe("whole-line replacement", () => {
 
   test("keeps the selected line separate from the next one", async () => {
     const content = "one\ntwo\nthree\n";
-    expect(
-      await run(
-        replaceMutationTool,
-        content,
-        { start: new LineAnchor(2) },
-        {
-          start: "start",
-          text: "TWO",
-        },
-      ),
-    ).toBe("one\nTWO\nthree\n");
+    expect(await runReplace(content, { start: new LineAnchor(2) }, "TWO")).toBe(
+      "one\nTWO\nthree\n",
+    );
   });
 
   test("of several lines keeps each untouched ending and the last line's own", async () => {
     const content = "one\r\ntwo\nthree\r\nfour";
     expect(
-      await run(
-        replaceMutationTool,
-        content,
-        { start: new LineAnchor(2), end: new LineAnchor(3) },
-        { start: "start", end: "end", text: "X\nY\n" },
-      ),
+      await runReplace(content, { start: new LineAnchor(2), end: new LineAnchor(3) }, "X\nY\n"),
     ).toBe("one\r\nX\nY\r\nfour");
   });
 });
@@ -385,9 +371,9 @@ describe("selections of several ranges", () => {
       { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 5 } },
       { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 4, column: 0 }, linewise: true },
     ]);
-    expect(
-      await run(replaceMutationTool, content, { start: merged }, { start: "start", text: "A\nB" }),
-    ).toBe("keep\r\nA\r\nB\r\nA\r\nB\r\nend\r\n");
+    expect(await runReplace(content, { start: merged }, "A\nB")).toBe(
+      "keep\r\nA\r\nB\r\nA\r\nB\r\nend\r\n",
+    );
   });
 
   test("deleting adjacent whole lines that end the file leaves no empty line", async () => {
@@ -396,9 +382,7 @@ describe("selections of several ranges", () => {
       { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 3, column: 0 }, linewise: true },
       { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 4 } },
     ]);
-    expect(await run(deleteMutationTool, content, { start: lines }, { start: "start" })).toBe(
-      "keep",
-    );
+    expect(await run(deleteMutationTool, content, { at: lines }, { at: "at" })).toBe("keep");
   });
 });
 
@@ -408,24 +392,18 @@ describe("copy and move", () => {
     async (tool) => {
       const content = "block\nkeep\nleft SLOT right\n";
       const anchors = {
-        start: new TextSelectionAnchor("block", source, [
+        at: new TextSelectionAnchor("block", source, [
           { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 2, column: 0 } },
         ]),
-        targetStart: new TextSelectionAnchor("SLOT", source, [
+        targetAt: new TextSelectionAnchor("SLOT", source, [
           { start: { lineNumber: 3, column: 5 }, end: { lineNumber: 3, column: 9 } },
         ]),
       };
       expect(
-        await run(
-          tool,
-          content,
-          { ...anchors, targetEnd: anchors.targetStart },
-          {
-            start: "start",
-            targetStart: "targetStart",
-            targetEnd: "targetEnd",
-          },
-        ),
+        await run(tool, content, anchors, {
+          at: "at",
+          targetAt: "targetAt",
+        }),
       ).toBe((tool === copyMutationTool ? "block\n" : "") + "keep\nleft block right\n");
     },
   );
@@ -435,17 +413,17 @@ describe("copy and move", () => {
     async (tool) => {
       const content = "block\nkeep\nslot\nnext\n";
       const anchors = {
-        start: new TextSelectionAnchor("block", source, [
+        at: new TextSelectionAnchor("block", source, [
           { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 5 } },
         ]),
-        targetStart: new TextSelectionAnchor("slot", source, [
+        targetAfter: new TextSelectionAnchor("slot", source, [
           { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 4 } },
         ]),
       };
       expect(
         await run(tool, content, anchors, {
-          start: "start",
-          targetStart: "targetStart",
+          at: "at",
+          targetAfter: "targetAfter",
         }),
       ).toBe((tool === copyMutationTool ? "block\n" : "") + "keep\nslot\nblock\nnext\n");
     },
@@ -454,22 +432,22 @@ describe("copy and move", () => {
   test("keep the copied bytes and separate them with the target's line ending", async () => {
     const content = "one\ntwo\r\nthree\r\nfour\n";
     const anchors = {
-      start: new LineAnchor(2),
-      end: new LineAnchor(3),
-      targetStart: new LineAnchor(4),
+      from: new LineAnchor(2),
+      through: new LineAnchor(3),
+      targetAfter: new LineAnchor(4),
     };
     expect(
       await run(copyMutationTool, content, anchors, {
-        start: "start",
-        end: "end",
-        targetStart: "targetStart",
+        from: "from",
+        through: "through",
+        targetAfter: "targetAfter",
       }),
     ).toBe("one\ntwo\r\nthree\r\nfour\ntwo\r\nthree\n");
     expect(
       await run(moveMutationTool, content, anchors, {
-        start: "start",
-        end: "end",
-        targetStart: "targetStart",
+        from: "from",
+        through: "through",
+        targetAfter: "targetAfter",
       }),
     ).toBe("one\nfour\ntwo\r\nthree\n");
   });
@@ -480,8 +458,8 @@ describe("copy and move", () => {
       await run(
         moveMutationTool,
         content,
-        { start: new LineAnchor(3), targetStart: new LineAnchor(1) },
-        { start: "start", targetStart: "targetStart" },
+        { at: new LineAnchor(3), targetAfter: new LineAnchor(1) },
+        { at: "at", targetAfter: "targetAfter" },
       ),
     ).toBe("one\r\nlast\r\ntwo");
   });
@@ -493,11 +471,10 @@ describe("copy and move", () => {
         copyMutationTool,
         content,
         {
-          start: new LineAnchor(1),
-          targetStart: new LineAnchor(2),
-          targetEnd: new LineAnchor(2),
+          at: new LineAnchor(1),
+          targetAt: new LineAnchor(2),
         },
-        { start: "start", targetStart: "targetStart", targetEnd: "targetEnd" },
+        { at: "at", targetAt: "targetAt" },
       ),
     ).toBe("SOURCE\nSOURCE\r\nkeep\n");
   });
@@ -530,12 +507,8 @@ describe.each([
   const content = contentOf(shape);
 
   describe.each(selectors)("$name", (selector) => {
-    const { start: startAnchor, end } = selector.anchors(shape);
-    const anchors: Record<string, TextAnchor> =
-      end === undefined ? { start: startAnchor } : { start: startAnchor, end };
-    const range = end === undefined ? {} : { end: "end" };
-    const replace = (text: string) =>
-      run(replaceMutationTool, content, anchors, { start: "start", ...range, text });
+    const selected = selector.anchors(shape);
+    const replace = (text: string) => runReplace(content, selected, text);
 
     test("keeps the original bytes outside the part the model changes", async () => {
       expect(await replace('export default "routes" - new;')).toBe(
@@ -561,8 +534,8 @@ describe("look-alike characters in an insertion", () => {
       await run(
         insertMutationTool,
         "a\u00A0b\nc\n",
-        { anchor: new LineAnchor(1) },
-        { anchor: "anchor", text: "d e" },
+        { after: new LineAnchor(1) },
+        { after: "after", text: "d e" },
       ),
     ).toBe("a\u00A0bd e\nc\n");
   });
@@ -605,29 +578,17 @@ describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
   // it as sent. Both results start with one BOM, and nothing outside the span changes.
   describe.each([bomShape, plainShape])("$name", (shape) => {
     describe.each(bomSelectors)("$name", (selector) => {
-      const { start: startAnchor, end } = selector.anchors(shape);
-      const anchors: Record<string, TextAnchor> =
-        end === undefined ? { start: startAnchor } : { start: startAnchor, end };
-      const range = end === undefined ? {} : { end: "end" };
+      const selected = selector.anchors(shape);
+      const { start: startAnchor, end } = selected;
 
       test("replace writes one BOM", async () => {
-        expect(
-          await run(replaceMutationTool, contentOf(shape), anchors, {
-            start: "start",
-            ...range,
-            text: "\uFEFFNEW",
-          }),
-        ).toBe("\uFEFFNEW\nnext\n");
+        expect(await runReplace(contentOf(shape), selected, "\uFEFFNEW")).toBe("\uFEFFNEW\nnext\n");
       });
 
       test("replace with text that has no BOM keeps the file's BOM", async () => {
-        expect(
-          await run(replaceMutationTool, contentOf(shape), anchors, {
-            start: "start",
-            ...range,
-            text: "NEW",
-          }),
-        ).toBe(`${shape.prefix}NEW\nnext\n`);
+        expect(await runReplace(contentOf(shape), selected, "NEW")).toBe(
+          `${shape.prefix}NEW\nnext\n`,
+        );
       });
 
       if (end !== undefined) return;
@@ -637,8 +598,8 @@ describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
           await run(
             insertMutationTool,
             contentOf(shape),
-            { anchor: startAnchor },
-            { anchor: "anchor", text: "\uFEFFA", before: true },
+            { before: startAnchor },
+            { before: "before", text: "\uFEFFA" },
           ),
         ).toBe("\uFEFFATARGET\nnext\n");
       });
@@ -646,20 +607,15 @@ describe("a BOM in the text written at the start of a file (LPT-1740)", () => {
   });
 
   test("a BOM further into the file is written as sent", async () => {
-    expect(
-      await run(
-        replaceMutationTool,
-        "\uFEFFone\ntwo\n",
-        { start: new LineAnchor(2) },
-        { start: "start", text: "\uFEFFtwo" },
-      ),
-    ).toBe("\uFEFFone\n\uFEFFtwo\n");
+    expect(await runReplace("\uFEFFone\ntwo\n", { start: new LineAnchor(2) }, "\uFEFFtwo")).toBe(
+      "\uFEFFone\n\uFEFFtwo\n",
+    );
     expect(
       await run(
         insertMutationTool,
         "\uFEFFone\n",
-        { anchor: new LineAnchor(1) },
-        { anchor: "anchor", text: "\uFEFFtwo\n" },
+        { after: new LineAnchor(1) },
+        { after: "after", text: "\uFEFFtwo\n" },
       ),
     ).toBe("\uFEFFone\n\uFEFFtwo\n");
   });

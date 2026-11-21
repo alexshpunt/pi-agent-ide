@@ -367,8 +367,8 @@ test("pending result strings confirm at dependent boundaries without invalidatin
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "pending-text-result-peers", [
       `
-const first=await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
-const second=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+const first=await tools.replace({path:"note.txt",at:"alpha",text:"ALPHA"});
+const second=await tools.replace({path:"note.txt",at:"beta",text:"BETA"});
 const shown=await tools.read({path:first});
 const found=await tools.search({path:second,query:"BETA"});
 if(!shown.text.includes("ALPHA")||found.matches.map(match=>match.text).join()!=="BETA") throw Error("A peer result expired at the common commit");
@@ -409,7 +409,7 @@ test.each(["missing", "ambiguous"] as const)(
       await writeFile(path.join(cwd, "note.txt"), initial);
       const destination = state === "missing" ? "second makrer" : "marker";
       const run = await runText(cwd, `move-retry-${state}`, [
-        `const failed = await tools.move({path:"note.txt",start:"move this\\n",targetStart:${JSON.stringify(destination)}});
+        `const failed = await tools.move({path:"note.txt",at:"move this\\n",targetAfter:${JSON.stringify(destination)}});
 if (failed !== null) throw Error("The invalid destination was accepted");
 const current = await tools.read({path:"note.txt"});
 if (current.text !== ${JSON.stringify(initial)}) throw Error("Failed Move changed the file");`,
@@ -417,9 +417,9 @@ if (current.text !== ${JSON.stringify(initial)}) throw Error("Failed Move change
           ? String.raw`const current = await tools.read({path:"note.txt",views:["anchors"]});
 const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|second marker/m.exec(current.text)?.[1];
 if (!anchor) throw Error("Read did not issue an anchor for the intended destination");
-await tools.move({path:"note.txt",start:"move this\n",targetStart:anchor});`
-          : `await tools.move({path:"note.txt",start:"move this\\n",targetStart:"second marker\\n"});`,
-        `await tools.replace({path:"note.txt",start:"keep this",text:"kept"});`,
+await tools.move({path:"note.txt",at:"move this\n",targetAfter:anchor});`
+          : `await tools.move({path:"note.txt",at:"move this\\n",targetAfter:"second marker\\n"});`,
+        `await tools.replace({path:"note.txt",at:"keep this",text:"kept"});`,
       ]);
       for (const id of ["script-0", "script-1", "script-2"]) {
         expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
@@ -484,11 +484,11 @@ test("a registered Search selection can recover an edit after an exact-text miss
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runText(cwd, "text-result-search-recovery", [
       String.raw`
-const failed=(await tools.replace({path:"note.txt",start:"missing",text:"BAD"}))===null;
+const failed=(await tools.replace({path:"note.txt",at:"missing",text:"BAD"}))===null;
 if(!failed) throw Error("Expected exact-text failure");
 const found=await tools.search({path:"note.txt",query:"beta"});
 await tools.replace({path:found,text:"BETA"});
-await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
+await tools.replace({path:"note.txt",at:"gamma",text:"GAMMA"});
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -513,7 +513,7 @@ const entered=await tools.insert({path:started.session,text:"Enter"});
 if(entered!==null) throw Error("Terminal Insert was treated as a file: "+entered);
 const shown=await tools.read({path:started.session});
 if(!shown.text.includes("resource:hello")) throw Error("Shell output lost: "+shown.text);
-const rejected=(await tools.replace({path:shown,start:"hello",text:"BAD"}))===null;
+const rejected=(await tools.replace({path:shown,at:"hello",text:"BAD"}))===null;
 if(!rejected) throw Error("Shell output granted text-edit authority");
 if((await tools.delete({path:shown}))!==null) throw Error("Terminal Delete selected text");
 `,

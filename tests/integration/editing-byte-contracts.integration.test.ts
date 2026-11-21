@@ -104,8 +104,9 @@ test.each(["direct", "codemode"] as const)(
         tool: entry.text === undefined ? "delete" : "replace",
         args: {
           path: entry.file,
-          start: entry.start,
-          ...(entry.text === undefined ? {} : { text: entry.text }),
+          ...(entry.text === undefined
+            ? { at: entry.start }
+            : { at: entry.start, text: entry.text }),
         },
       }));
       const conversation =
@@ -146,12 +147,12 @@ test.each(["all", "allSettled"] as const)(
         return line.slice(0, 7);
       };
       const results = await Promise.${method}([
-        tools.insert({path:insertSource,anchor:anchor(insertSource,"first"),text:"FIRST\\n"}),
-        tools.insert({path:insertSource,anchor:anchor(insertSource,"middle"),text:"MIDDLE\\n"}),
-        tools.insert({path:"./insert.txt",anchor:anchor(insertSource,"last"),text:"LAST\\n"}),
-        tools.delete({path:deleteSource,start:anchor(deleteSource,"first")}),
-        tools.delete({path:deleteSource,start:anchor(deleteSource,"middle")}),
-        tools.delete({path:"./delete.txt",start:anchor(deleteSource,"last")})
+        tools.insert({path:insertSource,after:anchor(insertSource,"first"),text:"FIRST\\n"}),
+        tools.insert({path:insertSource,after:anchor(insertSource,"middle"),text:"MIDDLE\\n"}),
+        tools.insert({path:"./insert.txt",after:anchor(insertSource,"last"),text:"LAST\\n"}),
+        tools.delete({path:deleteSource,at:anchor(deleteSource,"first")}),
+        tools.delete({path:deleteSource,at:anchor(deleteSource,"middle")}),
+        tools.delete({path:"./delete.txt",at:anchor(deleteSource,"last")})
       ]); ${collect}`;
       const result = await run(cwd, `parallel-byte-effects-${method}`, [
         message("script", "codemode", { code }),
@@ -194,7 +195,7 @@ test.each(["direct", "codemode"] as const)(
     await withTempWorkspace(async (cwd) => {
       const initial = "alpha\r\nbeta\r\n";
       await writeFile(path.join(cwd, "undo.txt"), initial);
-      const edit = { path: "undo.txt", start: "beta", text: "changed" };
+      const edit = { path: "undo.txt", at: "beta", text: "changed" };
       const undo = { file: "undo.txt", change: "last" };
       const result = await run(
         cwd,

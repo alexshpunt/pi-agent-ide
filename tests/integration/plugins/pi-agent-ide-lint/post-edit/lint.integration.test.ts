@@ -83,7 +83,7 @@ test("background lint reports fixable errors without changing the edited file", 
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(before, 1),
+        at: formatLineHashAnchor(before, 1),
         // A line anchor selects the line with its line break; the text keeps it.
         text: requested,
       },
@@ -113,7 +113,7 @@ test("an installed Ruff does not run without project evidence", async () => {
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor("value = 1\n", 1),
+        at: formatLineHashAnchor("value = 1\n", 1),
         text: "value = 2\n",
       },
     });
@@ -137,7 +137,7 @@ test("built-in Ruff uses an isolated cache", async () => {
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor("value = 1\n", 1),
+        at: formatLineHashAnchor("value = 1\n", 1),
         text: "value = 2\n",
       },
     });
@@ -186,7 +186,7 @@ test("malformed linter output does not break an edit", async () => {
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(before, 1),
+        at: formatLineHashAnchor(before, 1),
         // A line anchor selects the line with its line break; the text keeps it.
         text: after,
       },

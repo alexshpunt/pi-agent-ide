@@ -91,7 +91,20 @@ describe("capability route evidence", () => {
         );
       expect(check({ ...step.args }).passed).toBe(true);
       const selectors =
-        step.tool === "delete" ? ["start", "end"] : ["start", "end", "targetStart", "targetEnd"];
+        step.tool === "delete"
+          ? ["at", "from", "after", "through", "before"]
+          : [
+              "at",
+              "from",
+              "after",
+              "through",
+              "before",
+              "targetAt",
+              "targetFrom",
+              "targetAfter",
+              "targetThrough",
+              "targetBefore",
+            ];
       for (const selector of selectors) {
         // Pi removes optional null fields before invoking the tool.
         expect(check({ ...step.args, [selector]: null }).passed).toBe(true);
@@ -225,28 +238,28 @@ describe("capability route evidence", () => {
     {
       id: "exact-eof-crlf",
       index: 1,
-      field: "start",
+      field: "at",
       selector: "Last\nBlock",
       args: { path: "block.txt" },
     },
     {
       id: "exact-eof-crlf",
       index: 2,
-      field: "start",
+      field: "at",
       selector: "Last\nBlock",
       args: { path: "empty.txt", text: "" },
     },
     {
       id: "insert-before",
       index: 3,
-      field: "anchor",
+      field: "before",
       selector: "α\nβ",
-      args: { path: "block.txt", text: "[", before: true },
+      args: { path: "block.txt", text: "[" },
     },
     {
       id: "insert-before",
       index: 4,
-      field: "anchor",
+      field: "after",
       selector: "α\nβ",
       args: { path: "block.txt", text: "]" },
     },
@@ -507,7 +520,7 @@ describe("capability route evidence", () => {
     const route = {
       steps: [
         { tool: "read" },
-        { tool: "insert", reuse: { from: 0, field: ["anchor", "path"], kind: "anchor" } },
+        { tool: "insert", reuse: { from: 0, field: ["after", "path"], kind: "anchor" } },
       ],
     };
     expect(validateRoute(route, anchored, "direct").passed).toBe(true);
@@ -586,11 +599,11 @@ describe("capability route evidence", () => {
         type: "tool_execution_start",
         toolCallId: "d",
         toolName: "delete",
-        args: { path, start: "A" },
+        args: { path, at: "A" },
       },
       { type: "tool_execution_end", toolCallId: "d", isError: false },
     ];
-    const route = { steps: [{ tool: "delete", args: { path: "line.txt", start: "A" } }] };
+    const route = { steps: [{ tool: "delete", args: { path: "line.txt", at: "A" } }] };
     for (const path of [{ id: uuid }, `RESULT#${uuid}`])
       expect(validateRoute(route, [...read("line.txt"), ...edit(path)], "direct").passed).toBe(
         true,
@@ -655,14 +668,14 @@ describe("capability route evidence", () => {
     if (!rollback) throw Error("Missing Move rollback capability case");
     const source = ".tmp/move-rollback/restored-source.txt";
     const target = ".tmp/move-rollback/restored-target.txt";
-    const route = (start: string) => [
+    const route = (at: string) => [
       { type: "tool_execution_start", toolCallId: "m", toolName: "codemode", args: {} },
       {
         type: "tool_execution_start",
         toolCallId: "move",
         parentToolCallId: "m",
         toolName: "move",
-        args: { path: source, start, target, targetStart: "top" },
+        args: { path: source, at, target, targetAfter: "top" },
       },
       { type: "tool_execution_end", toolCallId: "move", toolName: "move", isError: false },
       { type: "tool_execution_end", toolCallId: "m", toolName: "codemode", isError: true },

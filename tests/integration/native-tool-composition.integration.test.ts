@@ -191,7 +191,7 @@ test("successful unchanged whole-file writes are reported", async () => {
 test("insert reports the missing-source cause without creating a file", async () => {
   await withTempWorkspace(async (cwd) => {
     const run = await runComposition(cwd, "insert-missing-source-cause", [
-      `await rejects(()=>tools.insert({path:"missing.txt",anchor:"KEEP",text:"NEW"}));`,
+      `await rejects(()=>tools.insert({path:"missing.txt",after:"KEEP",text:"NEW"}));`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
@@ -265,7 +265,7 @@ test("copy result composes without exposing internal write stages", async () => 
     await writeFile(path.join(cwd, "source.txt"), source);
     await writeFile(path.join(cwd, "target.txt"), "head\ntail\nalpha outside\n");
     const run = await runComposition(cwd, "copy-result-composition", [
-      `const copied = await tools.copy({path:"source.txt",start:"alpha\\n",target:"target.txt",targetStart:"head\\n"});
+      `const copied = await tools.copy({path:"source.txt",at:"alpha\\n",target:"target.txt",targetAfter:"head\\n"});
 check(!/\\b(?:accepted|pending)\\b/iu.test(copied),"Copy exposed internal write stages");
 text(copied);
 await tools.replace({path:copied,text:"CHANGED\\n"});`,
@@ -294,7 +294,7 @@ test.each(["structured", "legacy"] as const)(
 const destination=await tools.search({path:"format.txt",query:"format_me"});
 await rejects(()=>tools.replace({path:destination.matches[0],text:"format_me"}));
 const copied=await tools.copy({path:source,target:destination.matches[0]});`
-          : `const copied=await tools.copy({path:"source.txt",start:"format_me\\n",target:"format.txt",targetStart:"format_me\\n",targetEnd:"format_me\\n"});`;
+          : `const copied=await tools.copy({path:"source.txt",at:"format_me\\n",target:"format.txt",targetFrom:"format_me\\n",targetThrough:"format_me\\n"});`;
       const run = await runComposition(
         cwd,
         `copy-identical-${route}`,
@@ -352,10 +352,10 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));
               arguments: {
                 path: "source.txt",
                 // A literal selects only its characters; the line break makes the copy a no-op.
-                start: "alpha\n",
+                at: "alpha\n",
                 target,
-                targetStart: "alpha\n",
-                targetEnd: "alpha\n",
+                targetFrom: "alpha\n",
+                targetThrough: "alpha\n",
               },
             }),
           ),
@@ -393,9 +393,9 @@ test.each([false, true])(
           arguments: {
             path: "source.txt",
             // Literals select only their characters; the line breaks copy a whole line after head.
-            start: "alpha\n",
+            at: "alpha\n",
             target: "target.txt",
-            targetStart: "head\n",
+            targetAfter: "head\n",
           },
         }),
       ];
@@ -406,9 +406,9 @@ test.each([false, true])(
             name: "copy",
             arguments: {
               path: "source.txt",
-              start: "ABSENT",
+              at: "ABSENT",
               target: "bad.txt",
-              targetStart: "head",
+              targetAfter: "head",
             },
           }),
         );
@@ -454,17 +454,17 @@ text(await tools.replace({path:copied,text:"NEW\\n"}));`,
             toolCall({
               id: "replace-direct",
               name: "replace",
-              arguments: { path: "target.txt", start: "old", text: "new" },
+              arguments: { path: "target.txt", at: "old", text: "new" },
             }),
             toolCall({
               id: "copy-direct",
               name: "copy",
               arguments: {
                 path: "source.txt",
-                start: "alpha\n",
+                at: "alpha\n",
                 target: "target.txt",
-                targetStart: "alpha\n",
-                targetEnd: "alpha\n",
+                targetFrom: "alpha\n",
+                targetThrough: "alpha\n",
               },
             }),
           ],
@@ -503,8 +503,8 @@ test("a final no-op Copy keeps an earlier peer's real diff visible", async () =>
     await writeFile(path.join(cwd, "source.txt"), "alpha\n");
     await writeFile(path.join(cwd, "target.txt"), "old\nalpha\n");
     const run = await runComposition(cwd, "copy-no-op-after-peer-edit", [
-      `await tools.replace({path:"target.txt",start:"old",text:"new"});
-const copied=await tools.copy({path:"source.txt",start:"alpha\\n",target:"target.txt",targetStart:"alpha\\n",targetEnd:"alpha\\n"});
+      `await tools.replace({path:"target.txt",at:"old",text:"new"});
+const copied=await tools.copy({path:"source.txt",at:"alpha\\n",target:"target.txt",targetFrom:"alpha\\n",targetThrough:"alpha\\n"});
 text(copied);
 check((await tools.search({path:copied,query:"alpha"})).matches.length===1,"Peer edit lost Copy scope");`,
     ]);
@@ -523,7 +523,7 @@ test("native unchanged Copy commits without reporting an applied change", async 
     await writeFile(path.join(cwd, "source.txt"), "alpha\n");
     await writeFile(path.join(cwd, "destination.txt"), "alpha\n");
     const run = await runComposition(cwd, "copy-identical-commit", [
-      `const copied=await tools.copy({path:"source.txt",start:"alpha",target:"destination.txt",targetStart:"alpha",targetEnd:"alpha"});
+      `const copied=await tools.copy({path:"source.txt",at:"alpha",target:"destination.txt",targetFrom:"alpha",targetThrough:"alpha"});
 check((await tools.search({path:copied,query:"alpha"})).matches.length===1,"Commit lost unchanged destination");
 text(await tools.replace({path:copied,text:"NEW"}));`,
     ]);
@@ -692,7 +692,7 @@ test("Copy reports restored and unverified destinations after write failures", a
       "copy-rollback-reporting",
       [
         `for (const target of ["c07-probe:restored", "c07-probe:unrestored"]) {
-  const copied = await tools.copy({path:"c07-probe:source",start:"alpha\\n",target,targetStart:"head\\n"});
+  const copied = await tools.copy({path:"c07-probe:source",at:"alpha\\n",target,targetAfter:"head\\n"});
   check(copied===null,"Copy accepted a rejected write");
 }
 const state=await tools.fixture_copy_rollback_state({});
@@ -736,9 +736,9 @@ check(state.effects.find(item=>item.target==="c07-probe:unrestored")?.effect==="
               name: "copy",
               arguments: {
                 path: "rollback-source.txt",
-                start: "alpha\n",
+                at: "alpha\n",
                 target: "rollback-restored.txt",
-                targetStart: "head\n",
+                targetAfter: "head\n",
               },
             }),
             toolCall({
@@ -746,9 +746,9 @@ check(state.effects.find(item=>item.target==="c07-probe:unrestored")?.effect==="
               name: "copy",
               arguments: {
                 path: "rollback-source.txt",
-                start: "alpha\n",
+                at: "alpha\n",
                 target: "rollback-unrestored.txt",
-                targetStart: "head\n",
+                targetAfter: "head\n",
               },
             }),
           ],
@@ -773,7 +773,7 @@ test.each(["restored", "unrestored"] as const)(
         cwd,
         `copy-rollback-native-${outcome}`,
         [
-          `const copied=await tools.copy({path:"rollback-source.txt",start:"alpha\\n",target:${JSON.stringify(`rollback-${outcome}.txt`)},targetStart:"head\\n"});
+          `const copied=await tools.copy({path:"rollback-source.txt",at:"alpha\\n",target:${JSON.stringify(`rollback-${outcome}.txt`)},targetAfter:"head\\n"});
 text(copied);
 await rejects(()=>tools.search({path:copied,query:"alpha"}));
 const state=await tools.fixture_copy_rollback_state({});
@@ -815,7 +815,7 @@ test("Copy does not deny actual writes when receipt creation fails", async () =>
       "copy-execution-failure",
       [
         // Edit results present lines, and so build their receipt, only for line anchor edits.
-        `await rejects(()=>tools.copy({path:"c09-probe:source",start:"alpha",target:"c09-probe:target",targetStart:${JSON.stringify(formatLineHashAnchor("head\ntail\n", 1))}}));
+        `await rejects(()=>tools.copy({path:"c09-probe:source",at:"alpha",target:"c09-probe:target",targetAfter:${JSON.stringify(formatLineHashAnchor("head\ntail\n", 1))}}));
 const state=await tools.fixture_copy_execution_state({});
 check(state.values["c09-probe:source"]==="alpha\\n","Copy changed its source");
 check(state.values["c09-probe:target"]==="head\\nalpha\\ntail\\n","Probe lost the applied destination");
@@ -838,15 +838,15 @@ test("Copy resolves later exact selectors after a source miss", async () => {
     await writeFile(path.join(cwd, "source.txt"), "alpha\nbeta\n");
     await writeFile(path.join(cwd, "target.txt"), "head\ntail\n");
     const run = await runComposition(cwd, "copy-source-anchor-recovery", [
-      `await rejects(()=>tools.copy({path:"source.txt",start:"ABSENT",target:"target.txt",targetStart:"head"}));
+      `await rejects(()=>tools.copy({path:"source.txt",at:"ABSENT",target:"target.txt",targetAfter:"head"}));
 const source=await tools.search({path:"source.txt",query:"regex:alpha\\\\n",multiline:true});
-const copied=await tools.copy({path:source,target:"target.txt",targetStart:"head\\n"});
+const copied=await tools.copy({path:source,target:"target.txt",targetAfter:"head\\n"});
 check((await tools.search({path:copied,query:"alpha"})).matches.length===1,"Recovered Copy lost destination scope");
 check((await tools.read({path:"source.txt"})).text==="alpha\\nbeta\\n","Copy edited its recovery source");
-text(await tools.copy({path:"source.txt",start:"alpha\\n",target:"target.txt",targetStart:"head\\n"}));
+text(await tools.copy({path:"source.txt",at:"alpha\\n",target:"target.txt",targetAfter:"head\\n"}));
 await tools.replace({path:source,text:"ALPHA\\n"});
 await tools.read({path:"source.txt"});
-text(await tools.copy({path:"source.txt",start:"ALPHA\\n",target:"target.txt",targetStart:"tail\\n"}));`,
+text(await tools.copy({path:"source.txt",at:"ALPHA\\n",target:"target.txt",targetAfter:"tail\\n"}));`,
     ]);
     expect(getToolExecution(run, "compose-0").isError, getToolResultText(run, "compose-0")).toBe(
       false,
@@ -862,7 +862,7 @@ test("merged resource scheduling retains separate pending mutation targets", asy
     await writeFile(path.join(cwd, "first.txt"), "😀 old\r\nprotected first");
     await writeFile(path.join(cwd, "second.txt"), "old\r\nprotected second");
     const run = await runComposition(cwd, "merged-concurrent-result-targets", [
-      `const changes = await Promise.all([tools.replace({path:"first.txt",start:"old",text:"fresh"}), tools.replace({path:"second.txt",start:"old",text:"fresh"})]);
+      `const changes = await Promise.all([tools.replace({path:"first.txt",at:"old",text:"fresh"}), tools.replace({path:"second.txt",at:"old",text:"fresh"})]);
 for (const changed of changes) if (typeof changed !== "string" || !changed) throw Error(JSON.stringify(changed));
 const first = await tools.search({path:changes[0],query:"fresh"});
 const second = await tools.search({path:changes[1],query:"fresh"});
@@ -1058,7 +1058,7 @@ test("composes a pending replace result through scoped Search and another edit",
       "fresh outside\r\n😀 old block\r\nfresh outside",
     );
     const run = await runComposition(cwd, "replace-result-search-replace", [
-      `const changed = await tools.replace({path:"changed.txt",start:"old block",text:"fresh chunk"});
+      `const changed = await tools.replace({path:"changed.txt",at:"old block",text:"fresh chunk"});
 if (typeof changed !== "string") throw Error("Expected a pending native edit");
 const found = await tools.search({path:changed,query:"fresh"});
 if (found === null) throw Error(JSON.stringify(found));
@@ -1189,7 +1189,7 @@ test.each(["copy", "move"] as const)(
       const run = await runComposition(cwd, `${operation}-zero-width-destination`, [
         `const sourceWindow = await tools.read({path:"source.txt",limit:1});
 const source = await tools.search({path:sourceWindow,query:"ONE"});
-const point = await tools.replace({path:"destination.txt",start:"gap",text:""});
+const point = await tools.replace({path:"destination.txt",at:"gap",text:""});
 const changed = await tools.${operation}({path:[source.matches[0],source.matches[0]],target:point});
 if (typeof changed !== "string" || !changed) throw Error(JSON.stringify(changed));
 const found = await tools.search({path:changed,query:"ONE"});
@@ -1221,7 +1221,7 @@ await rejects(()=>tools.move({path:source,target:source}));
 await rejects(()=>tools.copy({path:"RESULT#forged",target:destination}));
 // An empty pairing succeeds without changes; a failure would be a fifth entry below.
 await tools.copy({path:[],target:[]});
-await tools.replace({path:"source.txt",start:"ONE",text:"NEW"});
+await tools.replace({path:"source.txt",at:"ONE",text:"NEW"});
 await rejects(()=>tools.move({path:source,target:destination}));
 text({refusals:4,empty:true});`,
     ]);
@@ -1246,7 +1246,7 @@ test.each(["copy", "move"] as const)(
       await writeFile(path.join(cwd, "destination.txt"), "anchor\r\nONE outside");
       const run = await runComposition(cwd, `${operation}-pending-legacy-result`, [
         // A partial source transfers characters even after a line anchor.
-        `const changed = await tools.${operation}({path:"source.txt",start:"ONE",target:"destination.txt",targetStart:${JSON.stringify(formatLineHashAnchor("anchor\r\nONE outside", 1))}});
+        `const changed = await tools.${operation}({path:"source.txt",at:"ONE",target:"destination.txt",targetAfter:${JSON.stringify(formatLineHashAnchor("anchor\r\nONE outside", 1))}});
 if (typeof changed !== "string" || !changed) throw Error("Legacy transfer did not return a reusable result");
 const found = await tools.search({path:changed,query:"ONE"});
 if (found === null || found.matches.length !== 1 || found.matches[0].path !== "destination.txt") throw Error("Pending output included removals or neighbors");
@@ -1357,7 +1357,7 @@ test("undo accepts only a whole-file source and returns the whole restored file"
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "restore.txt"), "fresh before\r\nold body\r\nfresh after");
     const run = await runComposition(cwd, "undo-whole-restored-output", [
-      `const changed = await tools.replace({path:"restore.txt",start:"old body",text:"new body"});
+      `const changed = await tools.replace({path:"restore.txt",at:"old body",text:"new body"});
 const window = await tools.read({path:"restore.txt",offset:2,limit:1});
 check(await tools.undo({file:window,change:"last"})===null,"Undo widened its input");
 const whole = await tools.read({path:"restore.txt"});
@@ -1600,7 +1600,7 @@ test("composes inserted text without searching identical neighbors", async () =>
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "inserted.txt"), "same before\r\nanchor\r\nsame after");
     const run = await runComposition(cwd, "insert-result-search-replace", [
-      `const changed = await tools.insert({path:"inserted.txt",anchor:"anchor",text:"same new\\n"});
+      `const changed = await tools.insert({path:"inserted.txt",after:"anchor",text:"same new\\n"});
 if (typeof changed !== "string") throw Error("Expected pending insert");
 const found = await tools.search({path:changed,query:"same"});
 if (found === null || found.matches.length !== 1 || found.matches[0].line !== 3) throw Error("Lost inserted scope");
@@ -1619,8 +1619,8 @@ test("maps a pending result past earlier batch peers and retains it across calls
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "peers.txt"), "x A\r\n😀 B");
     const run = await runComposition(cwd, "mutation-result-batch-peer-shifts", [
-      `await tools.replace({path:"peers.txt",start:"A",text:"FRESH\\r\\nSHIFT"});
-const changed = await tools.replace({path:"peers.txt",start:"B",text:"FRESH"});
+      `await tools.replace({path:"peers.txt",at:"A",text:"FRESH\\r\\nSHIFT"});
+const changed = await tools.replace({path:"peers.txt",at:"B",text:"FRESH"});
 store("changed",changed);
 const found = await tools.search({path:changed,query:"FRESH"});
 if (found === null || found.matches.length !== 1 || found.matches[0].line !== 3 || found.matches[0].text !== "FRESH") throw Error("Batch peer shifted target incorrectly");
@@ -1643,7 +1643,7 @@ test("Copy reports final formatting and retires its earlier destination selectio
       cwd,
       "copy-final-post-edit",
       [
-        `const copied=await tools.copy({path:"source.txt",start:"format_me\\n",target:"format.txt",targetStart:"head\\n"});
+        `const copied=await tools.copy({path:"source.txt",at:"format_me\\n",target:"format.txt",targetAfter:"head\\n"});
 store("copiedBeforeFormatting",copied);
 const found=await tools.search({path:copied,query:"format_me"});
 check(found.matches.length===1,"Copy formatted before script end");
@@ -1674,7 +1674,7 @@ test("runs post-edit handlers once after all dependent calls and then expires ol
       cwd,
       "mutation-result-final-post-edit",
       [
-        `const first = await tools.replace({path:"format.txt",start:"old body",text:"format_me"});
+        `const first = await tools.replace({path:"format.txt",at:"old body",text:"format_me"});
 const found = await tools.search({path:first,query:"format_me"});
 if (found === null || found.matches.length !== 1) throw Error("Post-edit handler ran before dependent Search");
 const second = await tools.replace({path:found,text:"final format_me"});
@@ -1704,7 +1704,7 @@ test("consumes a pending result directly in a dependent replace", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "direct.txt"), "new outside\nx old block\nnew outside\n");
     const run = await runComposition(cwd, "pending-result-direct-replace", [
-      `const first = await tools.replace({path:"direct.txt",start:"old block",text:"new block"});
+      `const first = await tools.replace({path:"direct.txt",at:"old block",text:"new block"});
 const second = await tools.replace({path:first,text:"FINAL"});
 if (typeof second !== "string") throw Error(JSON.stringify(second));
 text(second);`,
@@ -1722,7 +1722,7 @@ test("keeps an empty replacement as a resulting position rather than deleted tex
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "empty-replacement.txt"), "😀 old\r\nkeep");
     const run = await runComposition(cwd, "empty-replacement-result-position", [
-      `const changed = await tools.replace({path:"empty-replacement.txt",start:"old",text:""});
+      `const changed = await tools.replace({path:"empty-replacement.txt",at:"old",text:""});
 const removed = await tools.search({path:changed,query:"old"});
 if (removed === null || removed.matches.length !== 0) throw Error("Deleted bytes became live text");
 const separator = await tools.search({path:changed,query:"regex:[[:space:]]"});
@@ -1765,7 +1765,7 @@ test.each([false, true])(
               toolCall({
                 id: "standalone",
                 name: "replace",
-                arguments: { path: "format.txt", start: "old", text: "format_me" },
+                arguments: { path: "format.txt", at: "old", text: "format_me" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -1819,7 +1819,7 @@ test("a saved Insert explains why formatting removed its reusable target", async
               id: "insert",
               name: "insert",
               // A literal selects only its characters; the line breaks keep format_me on its own line.
-              arguments: { path: "format.txt", anchor: "old body\n", text: "format_me\n" },
+              arguments: { path: "format.txt", after: "old body\n", text: "format_me\n" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -1903,7 +1903,7 @@ test("finalizes surviving edits after an ordinary script error", async () => {
       cwd,
       "mutation-result-script-error-finalization",
       [
-        `const changed = await tools.replace({path:"format.txt",start:"old",text:"format_me"});
+        `const changed = await tools.replace({path:"format.txt",at:"old",text:"format_me"});
 text(changed); throw Error("planned failure");`,
         `const saved = await tools.fixture_result({});
 check(await tools.replace({path:saved,text:"WRONG"})===null,"Error finalization rebound a target");`,
@@ -1926,7 +1926,7 @@ test("rejects a pending result after its script deadline without creating write 
     await writeFile(path.join(cwd, "deadline.txt"), "old body\n");
     const run = await runComposition(cwd, "mutation-result-deadline", [
       `// @options: {"timeout_ms":2000}
-const changed = await tools.replace({path:"deadline.txt",start:"old",text:"NEW"});
+const changed = await tools.replace({path:"deadline.txt",at:"old",text:"NEW"});
 text(changed); while (true) {}`,
       `const saved = await tools.fixture_result({});
 check(await tools.replace({path:saved,text:"WRONG"})===null,"Cancelled result gained authority");`,
@@ -1947,7 +1947,7 @@ test.each(["GUARDED", "RACE"])(
         cwd,
         `pending-result-${replacement}`,
         [
-          `const changed = await tools.replace({path:"pending-guard.txt",start:"old",text:${JSON.stringify(replacement)}});
+          `const changed = await tools.replace({path:"pending-guard.txt",at:"old",text:${JSON.stringify(replacement)}});
 text(changed);
 const blocked = (await tools.search({path:changed,query:${JSON.stringify(replacement)}})) === null;
 if (!blocked) throw Error("Dependent Search was not blocked after write failure");`,

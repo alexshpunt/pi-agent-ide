@@ -73,6 +73,8 @@ export interface TextMutationAnchorField {
   readonly sourceField: string;
   readonly kinds: readonly string[];
   readonly optional?: boolean;
+  /** Resolve only after the first range boundary is known. */
+  readonly pairedEnd?: boolean;
   /** Values handled by the mutation itself instead of an anchor resolver. */
   readonly nonAnchorValues?: readonly string[];
 }
@@ -165,6 +167,8 @@ export interface TextMutationToolRegistration<TParameters extends TSchema = TSch
   readonly source: TextMutationSourceDescriptor;
   readonly anchors?: readonly TextMutationAnchorField[];
   readonly pair?: readonly [string, string];
+  /** Reject invalid combinations before resolving sources or running a semantic edit. */
+  readonly validateInput?: (input: Readonly<Record<string, unknown>>) => void;
   /** Execute a host transaction without opening one primary text resource. */
   readonly direct?: DirectTextMutationHandler;
   /** Whole-file operation used when the invocation contains no text selectors. */

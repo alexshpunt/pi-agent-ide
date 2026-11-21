@@ -16,11 +16,11 @@ export default function parallelEditBarrier(pi: ExtensionAPI): void {
     if (!event.parentToolCallId || event.toolName !== "insert") return;
     const input: Record<string, unknown> = event.input;
     if (typeof input.path !== "string" || path.basename(input.path) !== "insert.txt") return;
-    if (input.anchor === "middle" || input.anchor === "last") {
-      peers.add(input.anchor);
+    if (input.after === "middle" || input.after === "last") {
+      peers.add(input.after);
       if (peers.size === 2) release();
     }
-    if (input.anchor !== "first") return;
+    if (input.after !== "first") return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([

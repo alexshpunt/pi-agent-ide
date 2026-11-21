@@ -42,7 +42,7 @@ test.each(Object.entries(paths))(
     await withTempWorkspace(async (cwd) => {
       await fixture(cwd);
       const anchor = "$issued-anchor:selection:2" + (form === "jsonValue" ? "|OLD" : "");
-      const prefix = `{"path":${JSON.stringify(source)},"anchor":${JSON.stringify(anchor)},`;
+      const prefix = `{"path":${JSON.stringify(source)},"after":${JSON.stringify(anchor)},`;
       const payload = '"text":"MUST_NOT_BE_INSERTED"}';
       const run = await new PiIntegrationTest({
         testName: `stale-result-path-${form}`,
@@ -58,12 +58,12 @@ test.each(Object.entries(paths))(
             ? [
                 turn("copied", "replace", {
                   path: source,
-                  start: "$issued-anchor:selection:2|OLD",
+                  at: "$issued-anchor:selection:2|OLD",
                   text: "$issued-anchor:selection:2|NEW\n",
                 }),
               ]
             : []),
-          turn("change", "replace", { path: source, start: "OLD", text: "CHANGED" }),
+          turn("change", "replace", { path: source, at: "OLD", text: "CHANGED" }),
           assistantMessage(
             [
               text("Attempt the stale insertion."),
@@ -80,7 +80,7 @@ test.each(Object.entries(paths))(
           turn("current", "read", { path: "note.txt", views: ["anchors"] }),
           turn("recovery", "insert", {
             path: "note.txt",
-            anchor: "$issued-anchor:current:2",
+            after: "$issued-anchor:current:2",
             text: "RECOVERED\n",
           }),
           assistantMessage([text("Done")]),
@@ -94,7 +94,7 @@ test.each(Object.entries(paths))(
         guardId: "stale-anchor",
         effect: "not-applied",
         stoppedEarly: true,
-        field: "anchor",
+        field: "after",
       });
       expect(
         run.traceEvents.some((trace) => {
@@ -129,19 +129,19 @@ test("rejects unknown keys in every edit selector without applying file effects"
     const bad = { id: "$issued-uuid:selection", anchor: "unissued selector override" };
     const cases = [
       ["bad-path", "replace", { path: bad, text: "BAD" }],
-      ["bad-start", "replace", { path: "note.txt", start: bad, text: "BAD" }],
-      ["bad-end", "replace", { path: "note.txt", start: "keep", end: bad, text: "BAD" }],
-      ["bad-anchor", "insert", { path: "note.txt", anchor: bad, text: "BAD" }],
+      ["bad-at", "replace", { path: "note.txt", at: bad, text: "BAD" }],
+      ["bad-through", "replace", { path: "note.txt", from: "keep", through: bad, text: "BAD" }],
+      ["bad-anchor", "insert", { path: "note.txt", after: bad, text: "BAD" }],
       ["bad-target", "copy", { path: "note.txt", target: bad }],
-      ["bad-target-start", "copy", { path: "note.txt", target: "target.txt", targetStart: bad }],
+      ["bad-target-start", "copy", { path: "note.txt", target: "target.txt", targetAfter: bad }],
       [
         "bad-target-end",
         "move",
         {
           path: "note.txt",
           target: "target.txt",
-          targetStart: "destination",
-          targetEnd: bad,
+          targetFrom: "destination",
+          targetThrough: bad,
         },
       ],
       ["bad-path-array", "delete", { path: [bad] }],
@@ -187,8 +187,8 @@ test.each(Object.entries(paths))(
         tools: ["read", "replace"],
         conversation: [
           turn("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
-          turn("outside", "replace", { path: source, start: "keep", text: "BAD" }),
-          turn("inside", "replace", { path: source, start: "OLD", text: "NEW" }),
+          turn("outside", "replace", { path: source, at: "keep", text: "BAD" }),
+          turn("inside", "replace", { path: source, at: "OLD", text: "NEW" }),
           assistantMessage([text("Done")]),
         ],
       }).run("Retain the original result selection while inspecting anchors");
@@ -219,11 +219,11 @@ requireValue(await tools.replace({path: read, text: "READ\\n"}));
 const list = requireValue(await tools.search({path: "note.txt", query: "READ"}));
 requireValue(await tools.replace({path: list, text: "LIST"}));
 const found = requireValue(await tools.search({path: "note.txt", query: "LIST"}));
-requireValue(await tools.replace({path: "note.txt", start: found.matches[0], text: "MATCH"}));
+requireValue(await tools.replace({path: "note.txt", at: found.matches[0], text: "MATCH"}));
 const ast = requireValue(await tools.ast_search({path: "code.ts", pattern: "function $NAME() { return 7; }"}));
 requireValue(await tools.replace({path: ast.matches[0], text: "function astName() { return 8; }"}));
 const captures = requireValue(await tools.ast_search({path: "code.ts", pattern: "function $NAME() { return 8; }"}));
-requireValue(await tools.replace({path: "code.ts", start: captures.matches[0].captures.NAME[0], text: "captureName"}));
+requireValue(await tools.replace({path: "code.ts", at: captures.matches[0].captures.NAME[0], text: "captureName"}));
 `,
         }),
         assistantMessage([text("Done")]),

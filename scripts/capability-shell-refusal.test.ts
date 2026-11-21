@@ -69,7 +69,7 @@ for (const mode of ["direct", "codemode"]) {
   test.each([false, true])(
     `${mode} accepts the authority refusal with complete payload=%s`,
     (complete) => {
-      const args = { path: uuid(5), start: "hello", ...(complete ? { text: "BAD" } : {}) };
+      const args = { path: uuid(5), at: "hello", ...(complete ? { text: "BAD" } : {}) };
       expect(validateRoute(task, executions(mode, args), mode).passed).toBe(true);
     },
   );
@@ -80,20 +80,18 @@ for (const mode of ["direct", "codemode"]) {
     "Unable to read target: ENOENT",
   ])(`${mode} rejects a different failure: %s`, (refusal) => {
     expect(
-      validateRoute(task, executions(mode, { path: uuid(5), start: "hello" }, refusal), mode)
-        .passed,
+      validateRoute(task, executions(mode, { path: uuid(5), at: "hello" }, refusal), mode).passed,
     ).toBe(false);
   });
 
   test(`${mode} rejects a raw-shell shortcut even with the correct refusal`, () => {
     expect(
-      validateRoute(task, executions(mode, { path: shell, start: "hello", text: "BAD" }), mode)
-        .passed,
+      validateRoute(task, executions(mode, { path: shell, at: "hello", text: "BAD" }), mode).passed,
     ).toBe(false);
   });
 
   test(`${mode} still requires reading the original shell`, () => {
-    const events = executions(mode, { path: uuid(5), start: "hello" });
+    const events = executions(mode, { path: uuid(5), at: "hello" });
     const read = events.find(
       (event) =>
         event.type === "tool_execution_start" &&
@@ -110,7 +108,7 @@ test.each([
   ["Write", 1, 2],
   ["Insert", 2, 1],
 ] as const)("direct still requires reading the %s result", (_tool, index, other) => {
-  const events = executions("direct", { path: uuid(5), start: "hello" });
+  const events = executions("direct", { path: uuid(5), at: "hello" });
   const read = events.find(
     (event) => event.type === "tool_execution_start" && event.args?.path === uuid(index),
   );
@@ -120,6 +118,6 @@ test.each([
 });
 
 test("codemode accepts shell input without reading its null results", () => {
-  const events = executions("codemode", { path: uuid(5), start: "hello" });
+  const events = executions("codemode", { path: uuid(5), at: "hello" });
   expect(validateRoute(task, events, "codemode").passed).toBe(true);
 });

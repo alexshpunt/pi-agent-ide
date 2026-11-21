@@ -47,7 +47,7 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
       {
         id: "direct-edit",
         name: "demo_replace",
-        arguments: { path: "memory://demo/note", start: "changed", text: "direct" },
+        arguments: { path: "memory://demo/note", at: "changed", text: "direct" },
       },
       { id: "direct-verify", name: "demo_read", arguments: { path: "memory://demo/note" } },
       { id: "local-read", name: "demo_read", arguments: { path: "local.txt" } },

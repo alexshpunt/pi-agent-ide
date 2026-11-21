@@ -81,7 +81,7 @@ function passes(steps: RouteStep[], calls: Call[], mode: string) {
 for (const mode of ["direct", "codemode"]) {
   for (const tool of ["replace", "insert", "delete", "copy", "move"]) {
     void test(`${tool} accepts displayed anchors and inferred sources in ${mode}`, () => {
-      const field = tool === "insert" ? "anchor" : "start";
+      const field = tool === "insert" ? "after" : "at";
       const read: Call = {
         tool: "read",
         args: { path: "task.txt", views: ["anchors"] },
@@ -112,9 +112,9 @@ for (const mode of ["direct", "codemode"]) {
       );
     });
     void test(`${tool} accepts an equal multiline issued selection across argument forms in ${mode}`, () => {
-      const field = tool === "insert" ? "anchor" : "start";
+      const field = tool === "insert" ? "after" : "at";
       const extra = ["copy", "move"].includes(tool)
-        ? { target: "target.txt", targetStart: "SLOT", targetEnd: "SLOT" }
+        ? { target: "target.txt", targetAt: "SLOT" }
         : ["insert", "replace"].includes(tool)
           ? { text: "NEW" }
           : {};
@@ -203,7 +203,7 @@ for (const mode of ["direct", "codemode"]) {
       assert.ok(passes(newlineRoute, [scriptEndingAtNextLine, edit], mode));
     });
     void test(`${tool} preserves required whole-result reuse when selectors move in ${mode}`, () => {
-      const field = tool === "insert" ? "anchor" : "start";
+      const field = tool === "insert" ? "after" : "at";
       const route: RouteStep[] = [
         { tool: "search" },
         {
@@ -296,21 +296,19 @@ for (const mode of ["direct", "codemode"]) {
           tool,
           args: {
             path: "task.txt",
-            start: "尾界",
+            at: "尾界",
             target: "target.txt",
-            targetStart: "SLOT",
-            targetEnd: "SLOT",
+            targetAt: "SLOT",
           },
-          reuse: { from: 0, field: "targetStart", kind: "anchor" },
+          reuse: { from: 0, field: "targetAt", kind: "anchor" },
         },
       ];
       const edit: Call = {
         tool,
         args: {
           path: "task.txt",
-          start: "尾界",
-          targetStart: "SEARCH#EF01:1:match",
-          targetEnd: "SEARCH#EF01:1:match",
+          at: "尾界",
+          targetAt: "SEARCH#EF01:1:match",
         },
       };
       assert.ok(passes(route, [destination, edit], mode));

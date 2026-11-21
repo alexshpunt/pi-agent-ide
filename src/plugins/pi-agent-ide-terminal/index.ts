@@ -102,7 +102,7 @@ export default async function registerTerminal(
       insert: {
         parameters: {
           path: "shell:<session> sends keys to that terminal.",
-          anchor: "Omit for shell:<session>.",
+          after: "Omit both after and before for shell:<session>.",
           text: "For shell:<session>: named keys and chords such as Enter, Ctrl+C, Up, or caret forms such as ^C, separated by spaces or commas.",
         },
         promptGuidelines: [editingGuideline],
