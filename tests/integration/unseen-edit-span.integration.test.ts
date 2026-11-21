@@ -13,6 +13,8 @@ import {
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
+import { recoveryReadArguments } from "#integration/support/recovery-read.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
 
 const source = "main.cpp";
@@ -70,6 +72,60 @@ async function runCase(name: string, script: string, expected = original) {
     expect(await readFile(path.join(cwd, source), "utf8")).toBe(expected);
   });
 }
+
+test("the unseen-span refusal shows current boundaries and gives a Read that enables retry", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const fixture = [
+      "keep",
+      "#pragma region edit",
+      "function work() {",
+      ...Array.from({ length: 500 }, (_, i) => `int part_${i};`),
+      "}",
+      "#pragma endregion",
+      "keep too",
+      "",
+    ].join("\n");
+    await writeFile(path.join(cwd, source), fixture);
+    const edit = {
+      path: source,
+      from: "#pragma region edit",
+      through: "#pragma endregion",
+      text: "int updated;",
+    };
+    const run = (name: string, calls: ReturnType<typeof toolCall>[]) =>
+      new PiIntegrationTest({
+        testName: name,
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        rawMode: false,
+        tuiSize: { cols: 120, rows: 32 },
+        extensions: [path.resolve("src/pi-agent-ide.ts")],
+        tools: ["read", "replace"],
+        conversation: [
+          ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
+          assistantMessage([text("Done.")]),
+        ],
+      }).run("Replace the selected region");
+    const refused = await run("unseen-span-offer", [
+      toolCall({ id: "edit", name: "replace", arguments: edit }),
+    ]);
+    expect(getToolExecution(refused, "edit").isError).toBe(true);
+    const failure = getToolResultText(refused, "edit");
+    const boundaries = [
+      `${formatLineHashAnchor(fixture, 2)}|#pragma region edit`,
+      `${formatLineHashAnchor(fixture, 3)}|function work() {`,
+      `${formatLineHashAnchor(fixture, 505)}|#pragma endregion`,
+    ];
+    for (const line of boundaries) expect(failure).toContain(line);
+    const recovered = await run("unseen-span-retry", [
+      toolCall({ id: "read", name: "read", arguments: recoveryReadArguments(failure) }),
+      toolCall({ id: "edit", name: "replace", arguments: edit }),
+    ]);
+    for (const line of boundaries) expect(getToolResultText(recovered, "read")).toContain(line);
+    expect(getToolExecution(recovered, "edit").isError).toBe(false);
+    expect(await readFile(path.join(cwd, source), "utf8")).toBe("keep\nint updated;\nkeep too\n");
+  });
+});
 
 test("a truncated direct Read does not expose the unreturned middle of a file", async () => {
   await withTempWorkspace(async (cwd) => {

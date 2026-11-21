@@ -1,6 +1,11 @@
 import { requiredValue } from "pi-agent-invariant";
-import type { FragmentResolverRegistration } from "pi-agent-read/api/tools/read";
-import type { TextAnchor } from "pi-agent-text";
+import type {
+  FragmentResolverRegistration,
+  ReadFragmentContext,
+  ReadFragmentResolution,
+} from "pi-agent-read/api/tools/read";
+import { linesWithAnchor, type TextAnchor } from "pi-agent-text";
+import { anchoredLinePreviews } from "./anchor-preview.ts";
 
 import type { TextAnchorInTextRequest } from "#src/core/text-editor-core.ts";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
@@ -43,7 +48,7 @@ export function createReadFragmentResolver(
           await error.refreshRecovery();
         }
 
-        return { kind: "failed", message: describeAnchorError(error) };
+        return fragmentFailure(error, context);
       }
 
       return { kind: "resolved", originLine: anchorOriginLine(anchor) };
@@ -59,25 +64,40 @@ function anchorOriginLine(anchor: TextAnchor): number {
   return anchor.lineNumber;
 }
 
-function describeAnchorError(error: unknown): string {
+function fragmentFailure(
+  error: unknown,
+  { source, text }: ReadFragmentContext,
+): ReadFragmentResolution {
   if (!(error instanceof TextAnchorResolutionError)) {
-    return error instanceof Error ? error.message : String(error);
+    return { kind: "failed", message: error instanceof Error ? error.message : String(error) };
   }
 
   const parts = [error.message];
   const recovery = error.recovery;
+  let path = source;
 
   if (recovery?.kind === "candidates" && recovery.candidates.length > 0) {
-    for (const candidate of recovery.candidates.slice(0, MAX_SHOWN_CANDIDATES)) {
-      parts.push(`Candidate: line ${candidate.range.start.lineNumber}`);
+    const previews = anchoredLinePreviews(text);
+    const lines = new Set(recovery.candidates.map(({ range }) => range.start.lineNumber));
+    let shown = 0;
+    for (const lineNumber of lines) {
+      const row = previews.line(lineNumber);
+      if (row === undefined) continue;
+      if (shown === 0) parts.push("Candidates:");
+      parts.push(row);
+      const anchor = previews.anchors[lineNumber - 1];
+      if (
+        path === source &&
+        anchor !== undefined &&
+        linesWithAnchor(previews.anchors, anchor).length === 1
+      )
+        path = `${source}#${anchor}`;
+      if (++shown === MAX_SHOWN_CANDIDATES) break;
     }
-
-    const hidden = recovery.total - Math.min(recovery.candidates.length, MAX_SHOWN_CANDIDATES);
-
-    if (hidden > 0) {
-      parts.push(`(+${hidden} more candidates)`);
-    }
+    const hidden =
+      recovery.total - recovery.candidates.length + Math.max(0, lines.size - MAX_SHOWN_CANDIDATES);
+    if (hidden > 0) parts.push(`… ${hidden} more matches.`);
   }
 
-  return parts.join("\n");
+  return { kind: "failed", message: parts.join("\n"), retryPath: path };
 }

@@ -122,6 +122,8 @@ const groups: [string[], string[]][] = [
   [["edit.repeated-line-anchor-block-recovery"], ["repeated-line-anchor-after-block-delete"]],
   [["edit.line-anchor-range-interior-change"], ["line-anchor-range-interior-change"]],
   [["edit.unseen-edit-span"], ["unseen-edit-span"]],
+  [["read.fragment-recovery"], ["read-fragment-recovery"]],
+  [["edit.batch-overlap-recovery"], ["codemode-overlap-recovery"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],

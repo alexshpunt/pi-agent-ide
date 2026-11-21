@@ -7,11 +7,11 @@ import {
   type TextAnchorRecoveryRange,
 } from "pi-agent-text";
 
+import { previewAnchoredLine } from "./anchor-preview.ts";
 import { TextChangeDocument } from "./text-change-engine.ts";
 
 const SHOWN_CANDIDATES = 5;
 const MAX_MATCH_LINES = 12;
-const MAX_LINE_LENGTH = 120;
 
 /** Fields that use the last line of a match instead of its first. */
 const END_FIELDS = new Set(["through", "after", "targetThrough", "targetAfter"]);
@@ -71,11 +71,11 @@ export function presentAnchorCandidates(
     const offset = Math.max(1, first - padding);
     const to = Math.min(lines.length, last + padding);
     const rows = (from: number, to: number) =>
-      lines.slice(from - 1, to).map(({ content }, index) => {
-        const preview =
-          content.length > MAX_LINE_LENGTH ? `${content.slice(0, MAX_LINE_LENGTH)}…` : content;
-        return `${requiredValue(anchors[from + index - 1])}|${preview}`;
-      });
+      lines
+        .slice(from - 1, to)
+        .map(({ content }, index) =>
+          previewAnchoredLine(requiredValue(anchors[from + index - 1]), content),
+        );
     const truncated = last - first + 1 > MAX_MATCH_LINES;
     const parts = truncated
       ? [

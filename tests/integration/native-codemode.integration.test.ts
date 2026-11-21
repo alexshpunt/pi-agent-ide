@@ -12,6 +12,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { recoveryReadArguments } from "#integration/support/recovery-read.ts";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
@@ -728,7 +729,16 @@ test("overlapping accepted-snapshot edits identify the destination range", async
     expect(failure).toContain("targetFrom");
     expect(failure).toContain("targetThrough");
     expect(failure).toContain("replace");
-    expect(failure).toMatch(/\b21\b/u);
+    const before = formatLineHashAnchor(header + initial, 21);
+    expect(failure).toContain(`${before}|alpha`);
+    const offered = recoveryReadArguments(failure);
+    // Each shared Pi run stages the same fixture in a new workspace.
+    const args = { ...offered, path: path.basename(offered.path) };
+    const retry = await runScripts(cwd, "native-codemode-overlap-recover", [
+      `const found = await tools.read(${JSON.stringify(args)}); if (found === null) throw Error("Read failed"); text(found.text);`,
+    ]);
+    const current = formatLineHashAnchor(header + initial.replace("alpha", "FIRST"), 21);
+    expect(getToolResultText(retry, "script-0")).toContain(`${current}|FIRST`);
     expect(failure).not.toContain("script-0/2");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
       header + "FIRST\nbeta\ngamma\nomega\n",

@@ -1,5 +1,6 @@
 import { requiredValue } from "pi-agent-invariant";
-import type { TextAnchor } from "pi-agent-text";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
+import { createTextDocument, type TextAnchor } from "pi-agent-text";
 import { expect, test } from "vitest";
 
 import {
@@ -24,7 +25,7 @@ function coreResolving({ anchor, error }: CoreStubOptions): ReadFragmentAnchorSo
   };
 }
 function document() {
-  return { content: CONTENT };
+  return createTextDocument("x.ts", CONTENT);
 }
 
 test("maps a position anchor to its line number", async () => {
@@ -34,7 +35,7 @@ test("maps a position anchor to its line number", async () => {
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "bravo",
-    text: document() as never,
+    text: document(),
     cwd: "/w",
   });
 
@@ -53,36 +54,36 @@ test("maps a selection anchor to the first line of its first range", async () =>
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "charlie",
-    text: document() as never,
+    text: document(),
     cwd: "/w",
   });
 
   expect(outcome).toEqual({ kind: "resolved", originLine: 3 });
 });
 
-test("reports resolution failures with candidate lines", async () => {
+test("reports only candidates that exist in the rejected snapshot", async () => {
   const error = new TextAnchorResolutionError('Anchor "missing" does not match');
   error.recovery = {
     kind: "candidates",
-    total: 6,
+    total: 2,
     candidates: [
       { rank: 1, range: range(4) },
-      { rank: 2, range: range(9) },
+      { rank: 2, range: range(2) },
     ],
   };
   const resolver = createReadFragmentResolver(coreResolving({ error }));
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "missing",
-    text: document() as never,
+    text: document(),
     cwd: "/w",
   });
 
-  expect(outcome).toEqual({
-    kind: "failed",
-    message:
-      'Anchor "missing" does not match\nCandidate: line 4\nCandidate: line 9\n(+4 more candidates)',
-  });
+  expect(outcome.kind).toBe("failed");
+  if (outcome.kind !== "failed") throw new Error("Expected a fragment refusal");
+  const anchor = formatLineHashAnchor(CONTENT, 2);
+  expect(outcome.message).toContain(`${anchor}|bravo`);
+  expect(outcome.retryPath).toBe(`x.ts#${anchor}`);
 });
 
 test("passes through plain error messages", async () => {
@@ -92,7 +93,7 @@ test("passes through plain error messages", async () => {
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "alpha",
-    text: { content: "" } as never,
+    text: createTextDocument("x.ts", ""),
     cwd: "/w",
   });
 

@@ -3895,11 +3895,56 @@ add(
     expected: { "task.txt": "before\nBEGIN\nBODY NEW\nEND\nafter\n" },
   },
 );
+add(
+  "read-fragment-recovery",
+  ["read.fragment-recovery"],
+  "Read task.txt#alpha. The fragment matches twice, so Read must refuse. Use the anchored Read call printed in the refusal to read from the first candidate. For Codemode, finish the first script to see its failed Read, then make the retry in a new script. Do not edit the file.",
+  [
+    { tool: "read", args: { path: "task.txt#alpha" }, error: true, contains: "|alpha first" },
+    {
+      tool: "read",
+      args: { path: /(?:^|[\\/])task\.txt#[0-9A-HJKMNP-TV-Z]{7}$/u, views: ["anchors"] },
+      contains: "|alpha first",
+      after: [0],
+    },
+  ],
+  {
+    files: { "task.txt": "header\nalpha first\nseparator\nalpha second\n" },
+    expected: { "task.txt": "header\nalpha first\nseparator\nalpha second\n" },
+  },
+);
+add(
+  "codemode-overlap-recovery",
+  ["edit.batch-overlap-recovery"],
+  "In one native Codemode script, await Replace of the literal OLD with NEW in task.txt, then await Move of the literal tail onto literal OLD in the same file, using targetAt. Put no other tool calls between them. The Replace must commit; the Move must refuse on the overlapping text. Finish the script to see the refusal. Use its Read call in a new script and print the result. Do not edit again.",
+  [
+    { tool: "replace", args: { path: "task.txt", at: "OLD", text: "NEW" } },
+    {
+      tool: "move",
+      args: { path: "task.txt", at: "tail", targetAt: "OLD" },
+      error: true,
+      parentContains: "|OLD",
+      sameAssistantWith: 0,
+    },
+    {
+      tool: "read",
+      args: { path: /(?:^|[\\/])task\.txt$/u, views: ["anchors"] },
+      contains: "|NEW",
+      after: [1],
+    },
+  ],
+  {
+    modes: ["codemode"],
+    files: { "task.txt": "OLD\nkeep\ntail\n" },
+    expected: { "task.txt": "NEW\nkeep\ntail\n" },
+  },
+);
+
 const wideRangeFixture = `BEGIN\n${Array.from({ length: 500 }, (_, index) => `body ${index}\n`).join("")}END\nkeep\n`;
 add(
   "unseen-edit-span",
   ["edit.unseen-edit-span"],
-  "Read only line 1 and line 502 of task.txt in separate calls. Then call Replace on task.txt with literal from BEGIN, literal through END, and text NEW. It must refuse because only the endpoints were read. After the refusal, Read all of task.txt and retry the same Replace. The file should contain NEW and keep, each on its own line.",
+  "Read only line 1 and line 502 of task.txt in separate calls. Then call Replace on task.txt with literal from BEGIN, literal through END, and text NEW. It must refuse because only the endpoints were read. After the refusal, use the Read call it offers, then retry the same Replace. In Codemode, finish the first script to inspect the refusal before reading the selected span. The file should contain NEW and keep, each on its own line.",
   [
     { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 } },
     { tool: "read", args: { path: "task.txt", offset: 502, limit: 1 } },
@@ -3910,7 +3955,11 @@ add(
       error: true,
       after: [0, 1],
     },
-    { tool: "read", args: { path: "task.txt" }, after: [2] },
+    {
+      tool: "read",
+      args: { path: /(?:^|[\\/])task\.txt$/u, offset: 1, limit: 502, views: ["anchors"] },
+      after: [2],
+    },
     {
       tool: "replace",
       args: { path: "task.txt", from: "BEGIN", through: "END" },

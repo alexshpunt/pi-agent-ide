@@ -20,7 +20,8 @@ import {
 import { alreadyDoneFileResult, alreadyDoneToolResult } from "./already-done.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { postWriteFailureEffect } from "./text-mutation.ts";
-import type { TextTarget } from "pi-agent-text";
+import { anchoredLinePreviews, anchoredReadCall } from "./anchor-preview.ts";
+import { createTextDocument, type TextTarget } from "pi-agent-text";
 import { TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH } from "pi-agent-tool-call-interception";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
 import { quoteAnchorExcerpt } from "#src/api/anchor-excerpt.ts";
@@ -413,12 +414,20 @@ export async function planRegisteredTextBatch(
             .map((field) => `"${field}"`)
             .join(" through ");
           const snapshot = new TextChangeDocument(requiredValue(texts.get(source)));
-          const first = snapshot.lineNumberAt(prior.from);
-          const last = snapshot.lineNumberAt(Math.max(prior.from, prior.to - 1));
-          const lines = first === last ? `line ${first}` : `lines ${first}–${last}`;
+          const start = Math.max(prior.from, change.from);
+          const end = Math.min(prior.to, change.to);
+          const first = snapshot.lineNumberAt(start);
+          const last = snapshot.lineNumberAt(Math.max(start, end - 1));
+          const previews = anchoredLinePreviews(createTextDocument(source, snapshot.content));
+          const overlap = [previews.line(first)];
+          if (last > first + 1) overlap.push("…");
+          if (last > first) overlap.push(previews.line(last));
+          const rows = overlap.filter((line) => line !== undefined);
           throw new TextMutationInputError(
             "OVERLAPPING_EDITS",
-            `${registration.name} selector ${selector} overlaps an earlier ${owner.mutation.operation} edit at ${lines} of ${quoteAnchorExcerpt(source)}. Reread the current text before choosing a new selector.`,
+            `${registration.name} selector ${selector} overlaps an earlier ${owner.mutation.operation} edit in ${quoteAnchorExcerpt(source)}.` +
+              (rows.length === 0 ? "" : `\nOverlap before the batch:\n${rows.join("\n")}`) +
+              `\nAfter the batch, run ${anchoredReadCall(source)} before choosing a new selector.`,
           );
         }
       }
