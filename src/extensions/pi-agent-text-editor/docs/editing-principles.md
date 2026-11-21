@@ -30,7 +30,9 @@ For `replace`, use `at` to select one span, or omit all selectors when `path` is
 - `through` includes the first following match.
 - `before` stops before the first following match, at the previous line's end if the match starts at a line edge.
 
-To replace a block and keep the next block intact, pass the current block's first line as `from` and the next block's first line as `before`. To replace everything between two markers and keep both, pass the first marker as `after` and the second as `before`. An empty span between adjacent exclusive boundaries is an insertion point; between adjacent boundary lines, the new text goes on its own lines.
+If a block has its own closing line, end the range `through` that line to leave any blank lines after it intact. If it has no closing line and ends where the next block starts, end the range `before` the next block's first line, such as the next heading.
+
+To replace everything between two markers and keep both, pass the first marker as `after` and the second as `before`. An empty span between adjacent exclusive boundaries is an insertion point; between adjacent boundary lines, the new text goes on its own lines.
 
 ## 4. Selectors only locate; one algorithm writes
 

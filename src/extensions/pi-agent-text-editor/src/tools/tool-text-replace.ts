@@ -38,10 +38,10 @@ export const replaceSchema = Type.Object(
       "Begin after the unique opening match (on the next line if it reaches the end of a line). Pass through or before; do not combine with from or at. Use after and before together to replace the text between two markers and keep both.",
     ),
     through: anchorProperty(
-      "Include the first following match. Pass from or after; do not combine with before or at.",
+      "Include the first following match. Use through for a block's own closing line. Pair with from or after; omit before and at.",
     ),
     before: anchorProperty(
-      "Stop before the first following match (at the end of the previous line if it starts a line). Pass from or after; do not combine with through or at. To replace a block and keep the next block intact, use from for the first line of the current block and before for the first line of the next block.",
+      "Stop before the first following match. For a whole block, use before only if it has no closing line and ends at the next block's start, such as the next heading. Pair with from or after; omit through and at.",
     ),
     text: Type.String({
       description:
