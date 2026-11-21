@@ -242,7 +242,7 @@ test("rejects out-of-range origins from fragment resolvers", async () => {
   expect(result.details.failure).toBeDefined();
   expect(result.details.failure?.code).toBe("INVALID_RESOLVER_RESULT");
   const offeredPath = /\bread\(\{"path":(".*")\}\)/u.exec(
-    result.details.failure?.message ?? "",
+    result.content[0]?.type === "text" ? result.content[0].text : "",
   )?.[1];
   if (offeredPath === undefined) throw new Error("Expected a ready Read call");
   const recovered = await executeRead(read, JSON.parse(offeredPath) as string);

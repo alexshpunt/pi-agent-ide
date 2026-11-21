@@ -184,8 +184,14 @@ function deepestCause(failure: ReadFailure): Error | undefined {
 }
 
 const requestRecovery = "Supply path with a source or an unchanged result reference.";
-const fragmentRecovery = (source: string) =>
-  `Read ${JSON.stringify(source)} with views=["anchors"] and choose a current anchor.`;
+function readRetry(failure: ReadFailure): string | undefined {
+  const request =
+    failure.retry ??
+    (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined
+      ? { path: failure.source, views: ["anchors"] }
+      : undefined);
+  return request === undefined ? undefined : `Run read(${JSON.stringify(request)}).`;
+}
 
 function candidateLines(failure: ReadFailure): string[] {
   return failure.candidates?.length
@@ -207,9 +213,9 @@ export function readFailureRecovery(failure: ReadFailure): string[] {
   const code = error !== undefined && "code" in error ? error.code : undefined;
   const steps: string[] = [];
   if (code === "ENOENT" && !failure.candidates?.length) steps.push("Search for the correct path.");
+  const retry = readRetry(failure);
   if (failure.code === "INVALID_REQUEST") steps.push(requestRecovery);
-  else if (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined)
-    steps.push(fragmentRecovery(failure.source));
+  else if (retry !== undefined) steps.push(retry);
   else if (failure.code === "NO_RESOLVER")
     steps.push("Choose a supported source from the path parameter.");
   else if (failure.code === "NO_FRAGMENT_RESOLVER")
@@ -236,9 +242,9 @@ function readFailureMessage(failure: ReadFailure): string {
     reason = "This source is not supported. Choose a supported source from the path parameter.";
   else if (failure.code === "NO_FRAGMENT_RESOLVER")
     reason = "This anchor is not supported. Read the source without the anchor.";
+  const retry = readRetry(failure);
   if (failure.code === "INVALID_REQUEST") reason += `. ${requestRecovery}`;
-  else if (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined)
-    reason += `\n${fragmentRecovery(failure.source)}`;
+  else if (retry !== undefined) reason += `\n${retry}`;
   const source = failure.source === undefined ? "" : ` for ${JSON.stringify(failure.source)}`;
   return `Read failed${source}: ${reason}`;
 }

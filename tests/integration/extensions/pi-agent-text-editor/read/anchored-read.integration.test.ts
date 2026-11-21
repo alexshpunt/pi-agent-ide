@@ -137,6 +137,7 @@ test("rejects an ambiguous anchor with candidate lines", async () => {
 
     expect(getToolResultMessage(result, "ambiguous").isError).toBe(true);
     const failureText = getToolResultText(result, "ambiguous");
+    expect([...failureText.matchAll(/\bread\(\{/gu)]).toHaveLength(1);
     const second = formatLineHashAnchor(fixtureLines.join("\n"), 2);
     const fourth = formatLineHashAnchor(fixtureLines.join("\n"), 4);
     expect(failureText).toContain(`${second}|${fixtureLines[1]}`);

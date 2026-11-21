@@ -83,7 +83,7 @@ test("reports only candidates that exist in the rejected snapshot", async () => 
   if (outcome.kind !== "failed") throw new Error("Expected a fragment refusal");
   const anchor = formatLineHashAnchor(CONTENT, 2);
   expect(outcome.message).toContain(`${anchor}|bravo`);
-  expect(outcome.message).toContain(JSON.stringify(`x.ts#${anchor}`));
+  expect(outcome.retryPath).toBe(`x.ts#${anchor}`);
 });
 
 test("passes through plain error messages", async () => {

@@ -2,9 +2,10 @@ import { requiredValue } from "pi-agent-invariant";
 import type {
   FragmentResolverRegistration,
   ReadFragmentContext,
+  ReadFragmentResolution,
 } from "pi-agent-read/api/tools/read";
 import { linesWithAnchor, type TextAnchor } from "pi-agent-text";
-import { anchoredLinePreviews, anchoredReadCall } from "./anchor-preview.ts";
+import { anchoredLinePreviews } from "./anchor-preview.ts";
 
 import type { TextAnchorInTextRequest } from "#src/core/text-editor-core.ts";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
@@ -47,7 +48,7 @@ export function createReadFragmentResolver(
           await error.refreshRecovery();
         }
 
-        return { kind: "failed", message: describeAnchorError(error, context) };
+        return fragmentFailure(error, context);
       }
 
       return { kind: "resolved", originLine: anchorOriginLine(anchor) };
@@ -63,9 +64,12 @@ function anchorOriginLine(anchor: TextAnchor): number {
   return anchor.lineNumber;
 }
 
-function describeAnchorError(error: unknown, { source, text }: ReadFragmentContext): string {
+function fragmentFailure(
+  error: unknown,
+  { source, text }: ReadFragmentContext,
+): ReadFragmentResolution {
   if (!(error instanceof TextAnchorResolutionError)) {
-    return error instanceof Error ? error.message : String(error);
+    return { kind: "failed", message: error instanceof Error ? error.message : String(error) };
   }
 
   const parts = [error.message];
@@ -95,6 +99,5 @@ function describeAnchorError(error: unknown, { source, text }: ReadFragmentConte
     if (hidden > 0) parts.push(`… ${hidden} more matches.`);
   }
 
-  parts.push(`Try ${anchoredReadCall(path)}.`);
-  return parts.join("\n");
+  return { kind: "failed", message: parts.join("\n"), retryPath: path };
 }

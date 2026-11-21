@@ -51,6 +51,8 @@ export interface ReadFailure {
   readonly stage?: ReadPipelineStage;
   readonly message: string;
   readonly cause?: unknown;
+  /** A next Read call for this failure, offered without executing it. */
+  readonly retry?: ReadRequest;
   /** Ranked exact paths offered as hints, never read automatically. */
   readonly candidates?: readonly { readonly path: string }[];
 }
@@ -92,7 +94,12 @@ export interface ReadFragmentContext {
 export type ReadFragmentResolution =
   | { readonly kind: "resolved"; readonly originLine: number }
   | { readonly kind: "not-handled" }
-  | { readonly kind: "failed"; readonly message: string };
+  | {
+      readonly kind: "failed";
+      readonly message: string;
+      /** Suggested source or source#anchor to read with the anchors view. */
+      readonly retryPath?: string;
+    };
 
 export interface FragmentResolverRegistration {
   readonly id: string;
@@ -480,7 +487,12 @@ export function isReadFragmentResolution(value: unknown): value is ReadFragmentR
   }
 
   if (value.kind === "failed") {
-    return typeof value.message === "string" && value.message.length > 0;
+    return (
+      typeof value.message === "string" &&
+      value.message.length > 0 &&
+      (value.retryPath === undefined ||
+        (typeof value.retryPath === "string" && value.retryPath.length > 0))
+    );
   }
 
   return value.kind === "resolved" && typeof value.originLine === "number";
