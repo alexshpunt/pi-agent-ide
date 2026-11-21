@@ -51,7 +51,8 @@ const singleTurn = (id: string, name: string, args: Record<string, unknown>) =>
 
 test("editing tools reject mixed, incomplete, and legacy selectors without changing either file", async () => {
   await withTempWorkspace(async (cwd) => {
-    const src = await createFixture(cwd, "source.txt", source);
+    const sourceWithBooleanText = `${source}false\n`;
+    const src = await createFixture(cwd, "source.txt", sourceWithBooleanText);
     const dst = await createFixture(cwd, "target.txt", target);
     const result = await new PiIntegrationTest({
       testName: "unified-invalid-edit-selectors",
@@ -71,7 +72,7 @@ test("editing tools reject mixed, incomplete, and legacy selectors without chang
       ],
     }).run("Check the supplied selector forms.");
     for (const [id] of malformed) expect(getToolExecution(result, id).isError, id).toBe(true);
-    await expect(readFile(src, "utf8")).resolves.toBe(source);
+    await expect(readFile(src, "utf8")).resolves.toBe(sourceWithBooleanText);
     await expect(readFile(dst, "utf8")).resolves.toBe(target);
   });
 }, 90_000);
