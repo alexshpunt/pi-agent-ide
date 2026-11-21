@@ -960,7 +960,7 @@ async function resolveAnchoredOrigin(
         code: "INVALID_RESOLVER_RESULT",
         source: state.source,
         resolverId: registration.id,
-        message: `Fragment resolver ${registration.id} returned out-of-range origin line ${outcome.originLine}`,
+        message: `The fragment resolved outside the source. Run read(${JSON.stringify({ path: state.source })}) without the fragment.`,
       });
     }
 

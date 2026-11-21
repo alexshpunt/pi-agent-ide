@@ -141,7 +141,9 @@ test("rejects an ambiguous anchor with candidate lines", async () => {
     const fourth = formatLineHashAnchor(fixtureLines.join("\n"), 4);
     expect(failureText).toContain(`${second}|${fixtureLines[1]}`);
     expect(failureText).toContain(`${fourth}|${fixtureLines[3]}`);
-    const args = recoveryReadArguments(failureText);
+    const offered = recoveryReadArguments(failureText);
+    // Each shared Pi run stages the same fixture in a new workspace.
+    const args = { ...offered, path: path.basename(offered.path) };
     const retry = await runReadCalls({
       cwd: directory,
       testName: "anchored-read-recover",

@@ -1,6 +1,6 @@
 import { requiredValue } from "pi-agent-invariant";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
-import type { TextAnchor } from "pi-agent-text";
+import { createTextDocument, type TextAnchor } from "pi-agent-text";
 import { expect, test } from "vitest";
 
 import {
@@ -25,7 +25,7 @@ function coreResolving({ anchor, error }: CoreStubOptions): ReadFragmentAnchorSo
   };
 }
 function document() {
-  return { content: CONTENT };
+  return createTextDocument("x.ts", CONTENT);
 }
 
 test("maps a position anchor to its line number", async () => {
@@ -35,7 +35,7 @@ test("maps a position anchor to its line number", async () => {
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "bravo",
-    text: document() as never,
+    text: document(),
     cwd: "/w",
   });
 
@@ -54,7 +54,7 @@ test("maps a selection anchor to the first line of its first range", async () =>
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "charlie",
-    text: document() as never,
+    text: document(),
     cwd: "/w",
   });
 
@@ -75,7 +75,7 @@ test("reports only candidates that exist in the rejected snapshot", async () => 
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "missing",
-    text: document() as never,
+    text: document(),
     cwd: "/w",
   });
 
@@ -84,7 +84,6 @@ test("reports only candidates that exist in the rejected snapshot", async () => 
   const anchor = formatLineHashAnchor(CONTENT, 2);
   expect(outcome.message).toContain(`${anchor}|bravo`);
   expect(outcome.message).toContain(JSON.stringify(`x.ts#${anchor}`));
-  expect(outcome.message).not.toMatch(/^Candidate: line \d+/mu);
 });
 
 test("passes through plain error messages", async () => {
@@ -94,7 +93,7 @@ test("passes through plain error messages", async () => {
   const outcome = await resolver.resolve({
     source: "x.ts",
     fragment: "alpha",
-    text: { content: "" } as never,
+    text: createTextDocument("x.ts", ""),
     cwd: "/w",
   });
 

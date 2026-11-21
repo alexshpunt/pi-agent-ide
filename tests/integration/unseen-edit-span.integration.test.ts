@@ -98,6 +98,7 @@ test("the unseen-span refusal shows current boundaries and gives a Read that ena
         artifactsDir: testArtifactsDir(import.meta.filename),
         cwd,
         rawMode: false,
+        tuiSize: { cols: 120, rows: 32 },
         extensions: [path.resolve("src/pi-agent-ide.ts")],
         tools: ["read", "replace"],
         conversation: [

@@ -731,7 +731,9 @@ test("overlapping accepted-snapshot edits identify the destination range", async
     expect(failure).toContain("replace");
     const before = formatLineHashAnchor(header + initial, 21);
     expect(failure).toContain(`${before}|alpha`);
-    const args = recoveryReadArguments(failure);
+    const offered = recoveryReadArguments(failure);
+    // Each shared Pi run stages the same fixture in a new workspace.
+    const args = { ...offered, path: path.basename(offered.path) };
     const retry = await runScripts(cwd, "native-codemode-overlap-recover", [
       `const found = await tools.read(${JSON.stringify(args)}); if (found === null) throw Error("Read failed"); text(found.text);`,
     ]);

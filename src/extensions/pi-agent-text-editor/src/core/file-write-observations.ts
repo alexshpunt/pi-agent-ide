@@ -9,6 +9,8 @@ import {
   takeFileTextWindows,
   type FileTextRead,
 } from "pi-agent-resource";
+import { createTextDocument, type TextDocument } from "pi-agent-text";
+import { anchoredLinePreviews, anchoredReadCall } from "./anchor-preview.ts";
 import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import { TextMutationInputError } from "#src/api/mutation-tool.ts";
 import { TextChangeDocument, type TextRange } from "./text-change-engine.ts";
@@ -70,11 +72,12 @@ function rangesInSnapshot(
   return result;
 }
 
-function describeBoundaries(document: TextChangeDocument, from: number, to: number): string {
+function describeBoundaries(document: TextDocument, from: number, to: number): string {
+  const previews = anchoredLinePreviews(document);
   const regions: number[] = [];
   const declarations: number[] = [];
   for (let line = from; line <= to; line++) {
-    const text = document.text(document.lineRange(line, line));
+    const text = document.lines[line - 1]?.content ?? "";
     if (/^\s*#\s*pragma\s+(?:end)?region\b/u.test(text)) regions.push(line);
     else if (
       /^(?:namespace|class|struct|enum|interface|typedef|def|fn|function)\b|^(?:[\w:*&<>]+ +)+[\w:]+\([^;]*\)\s*\{/u.test(
@@ -83,14 +86,15 @@ function describeBoundaries(document: TextChangeDocument, from: number, to: numb
     )
       declarations.push(line);
   }
-  const describe = (name: string, lines: number[]) =>
-    lines.length === 0
-      ? []
-      : [
-          `${lines.length} ${name} ${lines.length === 1 ? "boundary" : "boundaries"} at lines ${lines.slice(0, 5).join(", ")}${lines.length > 5 ? ", …" : ""}`,
-        ];
-  const crossed = [...describe("region", regions), ...describe("declaration", declarations)];
-  return crossed.length === 0 ? "" : ` Crosses ${crossed.join(" and ")}.`;
+  const maxPerKind = 5;
+  const lines = [
+    ...new Set([from, ...regions.slice(0, maxPerKind), ...declarations.slice(0, maxPerKind), to]),
+  ];
+  const rows = lines.sort((a, b) => a - b).flatMap((line) => previews.line(line) ?? []);
+  const omitted =
+    Math.max(0, regions.length - maxPerKind) + Math.max(0, declarations.length - maxPerKind);
+  if (omitted > 0) rows.push(`… ${omitted} more boundaries.`);
+  return rows.join("\n");
 }
 
 /** Observations belong to the session; internal planning or recovery reads cannot advance them. */
@@ -221,7 +225,9 @@ export class FileWriteObservations {
     if (small(unseen)) return;
     throw new TextMutationInputError(
       "UNSEEN_EDIT_SPAN",
-      `The anchors select lines ${first}–${last} (${last - first + 1} lines), including ${unseen.lines} lines with ${unseen.characters} characters this session has not seen.${describeBoundaries(document, first, last)} Use closer anchors, or Read these lines first (in pages if needed) and retry.`,
+      `The selection includes ${unseen.lines} lines or parts of lines this session has not seen.\n` +
+        `Selection endpoints and boundaries:\n${describeBoundaries(createTextDocument(source, document.content), first, last)}\n` +
+        `Use closer anchors or run ${anchoredReadCall(source, { offset: first, limit: last - first + 1 })}. Follow any Read continuation before retrying.`,
     );
   }
 
