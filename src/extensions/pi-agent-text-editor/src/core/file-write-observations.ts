@@ -76,7 +76,8 @@ function describeBoundaries(document: TextDocument, from: number, to: number): s
   const previews = anchoredLinePreviews(document);
   const regions: number[] = [];
   const declarations: number[] = [];
-  for (let line = from; line <= to; line++) {
+  // The endpoints are already in the preview and do not count against the boundary budget.
+  for (let line = from + 1; line < to; line++) {
     const text = document.lines[line - 1]?.content ?? "";
     if (/^\s*#\s*pragma\s+(?:end)?region\b/u.test(text)) regions.push(line);
     else if (
