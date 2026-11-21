@@ -58,7 +58,11 @@ import { createUnifiedDiff } from "#src/core/mutation-result/diff.ts";
 import { finalStateLineNumbers } from "#src/core/mutation-result/final-state-fragment.ts";
 import { imageWriteResult, planImageWrite } from "#src/core/image-write.ts";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
-import { formatAmbiguousCandidates } from "#src/core/ambiguous-candidates.ts";
+import {
+  candidateWindow,
+  formatAmbiguousCandidates,
+  shownCandidateLines,
+} from "#src/core/ambiguous-candidates.ts";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import {
@@ -2189,16 +2193,43 @@ async function anchorFailureToolResult(
   const reference = resolution instanceof TextAnchorResourceResolutionError;
   // An ambiguous selector lists its matches, each with its own anchor, instead of a file excerpt.
   const snapshot = resolution.snapshot();
-  const listing =
-    ambiguous && !reference && recovery?.kind === "candidates" && snapshot !== undefined
-      ? formatAmbiguousCandidates({
-          field: contextual.field,
-          source: snapshot.source,
-          content: snapshot.content,
-          candidates: recovery.candidates.map(({ range }) => range),
-          total: recovery.total,
-        })
-      : undefined;
+  let listing: string | undefined;
+  if (ambiguous && !reference && recovery?.kind === "candidates" && snapshot !== undefined) {
+    const candidates = recovery.candidates.map(({ range }) => range);
+    // Reading each match's window gives every line its anchor and keeps the window, so two of
+    // its line anchors can pair as a range.
+    const matchWindows = await Promise.all(
+      shownCandidateLines(candidates).map(async (lines) => {
+        const read = await readTextAnchorRecovery(
+          core,
+          { path: contextual.source, ...candidateWindow(lines) },
+          {
+            cwd: context.cwd,
+            ...(context.signal !== undefined && { signal: context.signal }),
+          },
+        )?.catch(() => {
+          context.signal?.throwIfAborted();
+          return undefined;
+        });
+        if (read === undefined || read.isError === true) return undefined;
+        const body = read.content
+          .flatMap((block) => (block.type === "text" ? [block.text] : []))
+          .join("\n")
+          // Read's continuation notice names no edit and would repeat for every match.
+          .replace(/\n*\[\d+ more lines in source\.[^\]]*\]\s*$/u, "")
+          .trimEnd();
+        return body.length === 0 ? undefined : body;
+      }),
+    );
+    listing = formatAmbiguousCandidates({
+      field: contextual.field,
+      source: snapshot.source,
+      content: snapshot.content,
+      candidates,
+      total: recovery.total,
+      windows: matchWindows,
+    });
+  }
   const windows =
     listing !== undefined || !showRecovery || (reference && contextual.source === contextual.anchor)
       ? []

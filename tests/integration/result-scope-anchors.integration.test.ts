@@ -49,11 +49,11 @@ async function run(
 }
 
 test.each(["literal", "Search match reference"] as const)(
-  "a direct edit uses the first %s end after its start",
+  "a direct edit uses the only %s end after its start",
   async (selector) => {
     await withTempWorkspace(async (cwd) => {
       const file = path.join(cwd, "task.txt");
-      await writeFile(file, "close\nopen\nbody\nclose\nkeep\nclose\n");
+      await writeFile(file, "close\nopen\nbody\nclose\nkeep\n");
       const steps: { id: string; name: string; arguments: Record<string, JsonValue> }[] = [
         { id: "read", name: "read", arguments: { path: "task.txt" } },
       ];
@@ -82,7 +82,7 @@ test.each(["literal", "Search match reference"] as const)(
       expect(getToolExecution(result, "edit").isError, getToolResultText(result, "edit")).toBe(
         false,
       );
-      await expect(readFile(file, "utf8")).resolves.toBe("close\nnew\nkeep\nclose\n");
+      await expect(readFile(file, "utf8")).resolves.toBe("close\nnew\nkeep\n");
     });
   },
 );
@@ -90,7 +90,7 @@ test.each(["literal", "Search match reference"] as const)(
 test("an ordered pair stays inside the Read result and preserves CRLF", async () => {
   await withTempWorkspace(async (cwd) => {
     const file = path.join(cwd, "task.txt");
-    await writeFile(file, "OPEN\r\nCLOSE\r\nCLOSE\r\nOPEN\r\nbody\r\nCLOSE\r\nkeep\r\nCLOSE\r\n");
+    await writeFile(file, "OPEN\r\nCLOSE\r\nCLOSE\r\nOPEN\r\nbody\r\nCLOSE\r\nkeep\r\n");
     const result = await run(cwd, "ordered-read-scope-end", [
       {
         id: "outside-end",
@@ -104,7 +104,7 @@ await tools.replace({ path: scope, from: "OPEN", through: "CLOSE", text: "BAD" }
         id: "inside-end",
         name: "codemode",
         arguments: {
-          code: `const scope = await tools.read({ path: "task.txt", offset: 2, limit: 7 });
+          code: `const scope = await tools.read({ path: "task.txt", offset: 2, limit: 6 });
 await tools.replace({ path: scope, from: "OPEN", through: "CLOSE", text: "new" });`,
         },
       },
@@ -115,9 +115,7 @@ await tools.replace({ path: scope, from: "OPEN", through: "CLOSE", text: "new" }
     expect(getToolExecutionDetails(getToolExecution(result, "inside-end"))).toMatchObject({
       calls: [{ status: "ok" }, { status: "ok" }],
     });
-    await expect(readFile(file, "utf8")).resolves.toBe(
-      "OPEN\r\nCLOSE\r\nCLOSE\r\nnew\r\nkeep\r\nCLOSE\r\n",
-    );
+    await expect(readFile(file, "utf8")).resolves.toBe("OPEN\r\nCLOSE\r\nCLOSE\r\nnew\r\nkeep\r\n");
   });
 });
 

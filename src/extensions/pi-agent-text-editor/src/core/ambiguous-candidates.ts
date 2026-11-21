@@ -6,7 +6,9 @@ import {
 
 /** How many matches an ambiguity refusal lists. */
 const SHOWN_CANDIDATES = 5;
+/** Lines shown around a match, and the most lines shown of one match. */
 const CONTEXT_LINES = 1;
+const MAX_MATCH_LINES = 12;
 const MAX_LINE_LENGTH = 120;
 
 /** Fields whose boundary is the end of the match; the others take its first line. */
@@ -19,25 +21,17 @@ const SPAN_FIELDS: ReadonlyMap<string, readonly [string, string]> = new Map([
   ["targetAt", ["targetFrom", "targetThrough"]],
 ]);
 
-export interface AmbiguousCandidates {
-  readonly field: string;
-  readonly source: string;
-  readonly content: string;
-  /** The matches in file order; for a second boundary that is nearest to the first one first. */
-  readonly candidates: readonly TextAnchorRecoveryCandidateRange[];
-  readonly total: number;
+/** The first and last line of one match. */
+export interface CandidateLines {
+  readonly first: number;
+  readonly last: number;
 }
 
-/**
- * The matches of an ambiguous selector: for each its line number, line anchor and the lines around
- * it, then one call that selects the first match by its anchor in the same field. The tool never
- * picks among the matches; the next call does.
- */
-export function formatAmbiguousCandidates(options: AmbiguousCandidates): string {
-  const { field, source, content, candidates, total } = options;
-  const lines = createTextDocument(source, content).lines;
-  const anchors = textLineAnchors(source, content);
-  const shown = candidates.slice(0, SHOWN_CANDIDATES).map((range) => {
+/** The matches an ambiguity refusal lists, in the order given. */
+export function shownCandidateLines(
+  candidates: readonly TextAnchorRecoveryCandidateRange[],
+): readonly CandidateLines[] {
+  return candidates.slice(0, SHOWN_CANDIDATES).map((range) => {
     const first = range.start.lineNumber;
     const last = Math.max(
       first,
@@ -47,22 +41,62 @@ export function formatAmbiguousCandidates(options: AmbiguousCandidates): string 
     );
     return { first, last };
   });
+}
+
+/** The Read window that shows a match with its surrounding lines. */
+export function candidateWindow({ first, last }: CandidateLines): {
+  readonly offset: number;
+  readonly limit: number;
+} {
+  const offset = Math.max(1, first - CONTEXT_LINES);
+  return {
+    offset,
+    limit: Math.min(last - first + 1, MAX_MATCH_LINES) + (first - offset) + CONTEXT_LINES,
+  };
+}
+
+export interface AmbiguousCandidates {
+  readonly field: string;
+  readonly source: string;
+  readonly content: string;
+  /** The matches in file order; for a second boundary that is nearest to the first one first. */
+  readonly candidates: readonly TextAnchorRecoveryCandidateRange[];
+  readonly total: number;
+  /**
+   * The lines of each shown match as Read presents them, with the anchor of every line. Reading
+   * a window also lets two of its line anchors pair as a range. Without one, the lines are
+   * rendered here without their anchors.
+   */
+  readonly windows?: readonly (string | undefined)[];
+}
+
+/**
+ * The matches of an ambiguous selector: for each its line number, line anchor and the lines around
+ * it, then one call that selects the first match by its anchor in the same field. The tool never
+ * picks among the matches; the next call does.
+ */
+export function formatAmbiguousCandidates(options: AmbiguousCandidates): string {
+  const { field, source, content, candidates, total, windows = [] } = options;
+  const lines = createTextDocument(source, content).lines;
+  const anchors = textLineAnchors(source, content);
+  const shown = shownCandidateLines(candidates);
   const width = String(Math.min(lines.length, (shown.at(-1)?.last ?? 1) + CONTEXT_LINES)).length;
-  const row = (number: number, marker: string) =>
-    `${marker}${String(number).padStart(width)}| ${truncate(lines[number - 1]?.content ?? "")}`;
 
   const blocks = shown.map(({ first, last }, index) => {
-    const rows: string[] = [];
-    for (
-      let number = Math.max(1, first - CONTEXT_LINES);
-      number <= Math.min(lines.length, last + CONTEXT_LINES);
-      number++
-    )
-      rows.push(row(number, number >= first && number <= last ? "> " : "  "));
     const place =
       first === last
         ? `line ${first}, anchor ${anchors[first - 1] ?? ""}`
         : `lines ${first}-${last}, anchors ${anchors[first - 1] ?? ""} to ${anchors[last - 1] ?? ""}`;
+    const read = windows[index];
+    if (read !== undefined) return `${index + 1}. ${place}\n${read}`;
+    const rows: string[] = [];
+    const end = Math.min(lines.length, Math.min(last, first + MAX_MATCH_LINES - 1) + CONTEXT_LINES);
+    for (let number = Math.max(1, first - CONTEXT_LINES); number <= end; number++) {
+      const marker = number >= first && number <= last ? "> " : "  ";
+      rows.push(
+        `${marker}${String(number).padStart(width)}| ${truncate(lines[number - 1]?.content ?? "")}`,
+      );
+    }
     return `${index + 1}. ${place}\n${rows.join("\n")}`;
   });
 
@@ -75,7 +109,7 @@ export function formatAmbiguousCandidates(options: AmbiguousCandidates): string 
 
 function exampleCall(
   field: string,
-  { first, last }: { readonly first: number; readonly last: number },
+  { first, last }: CandidateLines,
   anchors: readonly string[],
 ): string {
   const firstAnchor = anchors[first - 1] ?? "";
