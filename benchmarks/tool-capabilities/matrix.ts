@@ -159,6 +159,7 @@ const groups: [string[], string[]][] = [
   ],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
+  [["edit.single-from", "edit.overlapping-inclusive-range"], ["lenient-edit-ranges"]],
   [["edit.replace-exclusive-range"], ["replace-exclusive-range"]],
   [["edit.delete-exact-range"], ["exact-range-delete"]],
   [

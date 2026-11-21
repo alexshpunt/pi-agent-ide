@@ -2015,6 +2015,52 @@ add(
 );
 
 add(
+  "lenient-edit-ranges",
+  ["edit.single-from", "edit.overlapping-inclusive-range"],
+  'Copy from copy-source.txt to copy-target.txt with from "OPEN END-" alone, targetFrom "SLOT old", and targetThrough "SLOT". Move from move-source.txt to move-target.txt with from "OPEN END-", through "END", and targetFrom "SLOT old" alone. Do not pass at or targetAt. Select only OPEN END- in each source and replace only SLOT old in each target. Leave the later END and SLOT matches untouched.',
+  [
+    {
+      tool: "copy",
+      args: {
+        path: "copy-source.txt",
+        target: "copy-target.txt",
+        from: "OPEN END-",
+        through: undefined,
+        before: undefined,
+        targetFrom: "SLOT old",
+        targetThrough: "SLOT",
+      },
+    },
+    {
+      tool: "move",
+      args: {
+        path: "move-source.txt",
+        target: "move-target.txt",
+        from: "OPEN END-",
+        through: "END",
+        targetFrom: "SLOT old",
+        targetThrough: undefined,
+        targetBefore: undefined,
+      },
+    },
+  ],
+  {
+    files: {
+      "copy-source.txt": "END before\r\nleft OPEN END-END stays\r\n",
+      "copy-target.txt": "left SLOT old SLOT stays\n",
+      "move-source.txt": "END before\r\nleft OPEN END-END stays\r\n",
+      "move-target.txt": "left SLOT old SLOT stays\n",
+    },
+    expected: {
+      "copy-source.txt": "END before\r\nleft OPEN END-END stays\r\n",
+      "copy-target.txt": "left OPEN END- SLOT stays\n",
+      "move-source.txt": "END before\r\nleft END stays\r\n",
+      "move-target.txt": "left OPEN END- SLOT stays\n",
+    },
+  },
+);
+
+add(
   "replace-exclusive-range",
   ["edit.replace-exclusive-range"],
   'Use Replace to change only the text between // BEGIN and the first // END that follows it in task.txt: pass "// BEGIN" as after, "// END" as before, and "new" as text. Keep all markers and later content. In empty.txt use the same boundaries to insert two lines, one containing first and one containing second, between adjacent markers. In block.txt replace the opening marker and body but keep the closing marker: use from "// BEGIN", before "// END", and text "new". In inline.txt keep "left " and replace everything after it through the first semicolon: pass after "left ", through ";", and text "new;".',

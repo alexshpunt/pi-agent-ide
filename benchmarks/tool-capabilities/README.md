@@ -45,7 +45,7 @@ The `replace-anchored-display` case checks that Replace refuses a stale displaye
 
 The `exact-range-replace` case checks that a literal `through` paired with `from` skips an earlier match and stops at the first following match, leaving later matches untouched. The revised direct and Codemode paid routes remain unverified.
 
-Replace, Delete, Copy and Move use `at` for a single selector and `from` or `after` with `through` or `before` for a range. The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the nearest closing marker, and support insertion between adjacent CRLF marker lines. It also checks both mixed inclusive/exclusive pairs. Its paid routes remain unverified. The `exclusive-delete-transfer` case checks source and destination exclusive ranges and insertion with `targetBefore` alone while preserving both markers. Its paid routes remain unverified.
+Replace, Delete, Copy and Move accept `at` or `from` alone for one selection. The `lenient-edit-ranges` case checks standalone `from` and `targetFrom` and contained `through` and `targetThrough` matches, with repeated closing text left untouched. Its paid routes remain unverified. The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the nearest closing marker, and support insertion between adjacent CRLF marker lines. It also checks both mixed inclusive/exclusive pairs. Its paid routes remain unverified. The `exclusive-delete-transfer` case checks source and destination exclusive ranges and insertion with `targetBefore` alone while preserving both markers. Its paid routes remain unverified.
 
 ### Case contracts
 

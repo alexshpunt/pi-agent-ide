@@ -193,6 +193,7 @@ function readSelector(
     );
   }
   if (closing === undefined) {
+    if (opening === from) return { kind: "single", first: from };
     if (allowInsertion && opening === after) return { kind: "insert-after", first: after };
     throw new TextMutationInputError(
       "MISSING_RANGE_BOUNDARY",

@@ -32,7 +32,7 @@ export interface TextMutation {
   readonly afterWrite?: () => void | Promise<void>;
 }
 
-/** The exclusive end of a unique first selector, in source offsets. */
+/** The earliest offset where a paired closing match may begin. */
 export interface PairedAnchorStart {
   readonly source: string;
   readonly offset: number;

@@ -35,7 +35,7 @@ const malformed = [
     "move",
     { at: "body", targetAt: "HEAD", targetFrom: "HEAD", targetThrough: "TAIL" },
   ],
-  ["copy-without-target-end", "copy", { at: "body", targetFrom: "HEAD" }],
+  ["copy-without-target-start", "copy", { at: "body", targetThrough: "TAIL" }],
   ["move-without-target-start", "move", { at: "body", targetThrough: "TAIL" }],
   ["copy-legacy-target", "copy", { at: "body", targetStart: "HEAD", targetEnd: "TAIL" }],
   ["move-legacy-source", "move", { start: "OPEN", end: "CLOSE", targetBefore: "HEAD" }],
