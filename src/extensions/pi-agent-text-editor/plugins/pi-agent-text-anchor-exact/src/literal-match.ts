@@ -115,7 +115,12 @@ export type LiteralMatch =
   | { readonly kind: "before-start" }
   | { readonly kind: "missing" };
 
-/** Finds the one source span the literal selects: the first phase that finds it decides. */
+/**
+ * Finds the one source span the literal selects: the first phase that finds it decides. For the
+ * second boundary of a pair, `endAfter` is the offset the boundary may start at or after: only
+ * the matches from there on count, and several of them are ambiguous. Matches before it are
+ * irrelevant unless none follows, which the caller then reports as a reversed or missing end.
+ */
 export function matchLiteral(
   content: string,
   value: string,
@@ -131,12 +136,13 @@ export function matchLiteral(
       continue;
     }
     const earlier: LiteralSpan[] = [];
-    const [following] = find((span) => {
+    const [following, another] = find((span) => {
       if (!accept(span)) return false;
       if (span.from >= endAfter) return true;
       if (earlier.length < 2) earlier.push(span);
       return false;
-    }, 1);
+    }, 2);
+    if (another !== undefined) return { kind: "ambiguous" };
     if (following !== undefined) return { kind: "unique", span: following };
     // Do not advance to a more tolerant phase if this one already matched.
     const [first, second] = earlier;

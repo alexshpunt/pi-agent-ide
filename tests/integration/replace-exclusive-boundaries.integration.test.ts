@@ -14,7 +14,7 @@ import { expect, test } from "vitest";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { createFixture, withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
-const fixture = "START repeated\nEND\nEND\n// BEGIN\nold\n\n// FINISH\n// FINISH\n";
+const fixture = "START repeated\nEND\nEND\n// BEGIN\nold\n\n// FINISH\n";
 const source = "fixture.txt";
 const invalidForms = {
   "legacy-start": { start: "START" },
@@ -24,7 +24,6 @@ const invalidForms = {
   "at-with-range": { at: "START", from: "START", through: "END" },
   "both-starts": { from: "START", after: "// BEGIN", before: "// FINISH" },
   "both-ends": { after: "// BEGIN", through: "END", before: "// FINISH" },
-  "from-alone": { from: "START" },
   "after-alone": { after: "// BEGIN" },
   "through-alone": { through: "END" },
   "before-alone": { before: "// FINISH" },
@@ -40,7 +39,7 @@ const edit = (id: string, fields: Record<string, unknown>) =>
     { stopReason: "toolUse" },
   );
 
-test("replace validates selector forms and uses the nearest closing match", async () => {
+test("replace validates selector forms and pairs the only closing match after the opening one", async () => {
   await withTempWorkspace(async (cwd) => {
     const file = await createFixture(cwd, source, fixture);
     const run = await new PiIntegrationTest({
@@ -79,7 +78,7 @@ test("replace validates selector forms and uses the nearest closing match", asyn
     expect(unchanged).not.toContain("NEW");
     expect(getToolExecution(run, "nearest").isError).toBe(false);
     await expect(readFile(file, "utf8")).resolves.toBe(
-      "START repeated\nEND\nEND\n// BEGIN\nNEW\n// FINISH\n// FINISH\n",
+      "START repeated\nEND\nEND\n// BEGIN\nNEW\n// FINISH\n",
     );
   });
 }, 90_000);

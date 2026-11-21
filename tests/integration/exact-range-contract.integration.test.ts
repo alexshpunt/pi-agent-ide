@@ -82,7 +82,7 @@ for (const route of ["direct", "codemode"] as const) {
         for (const nestedThrough of [false, true]) {
           const source = `${tool}-opening-${nestedThrough}.txt`;
           const from = "OPEN\r\nEND-";
-          const suffix = "END stays\r\n";
+          const suffix = "more stays\r\n";
           files[source] = `pre END\r\nleft ${from}${suffix}`;
           const transfer = tool === "copy" || tool === "move";
           expected[source] =
@@ -91,8 +91,8 @@ for (const route of ["direct", "codemode"] as const) {
               : `pre END\r\nleft ${tool === "replace" ? "NEW" : ""}${suffix}`;
           const target = `${tool}-destination-${nestedThrough}.txt`;
           if (transfer) {
-            files[target] = "left SLOT old SLOT stays\n";
-            expected[target] = `left ${from} SLOT stays\n`;
+            files[target] = "left SLOT old stays\n";
+            expected[target] = `left ${from} stays\n`;
           }
           edits.push({
             tool,

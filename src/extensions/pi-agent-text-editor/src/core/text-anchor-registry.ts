@@ -79,6 +79,12 @@ export class TextAnchorResolutionError extends Error {
     );
   }
 
+  /** The text the rejection was produced against. */
+  public snapshot(): { readonly source: string; readonly content: string } | undefined {
+    const context = this.recoveryContext;
+    return context === undefined ? undefined : { source: context.source, content: context.content };
+  }
+
   /** The complete selection of the same snapshot used to produce the recovery. */
   public allMatchesTarget():
     | (TextTarget & {

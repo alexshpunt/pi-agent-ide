@@ -308,21 +308,21 @@ test("allows unique whitespace-only exact text", () => {
 
 test.each([
   {
-    content: "end\r\nmark\r\nSTART\r\nend\r\nmark\r\nend\r\nmark",
+    content: "end\r\nmark\r\nSTART\r\nend\r\nmark",
     value: "end\nmark",
     after: 16,
     line: 4,
     endLine: 5,
   },
   {
-    content: "end mark\nSTART\nend mark\nend mark",
+    content: "end mark\nSTART\nend mark",
     value: "end mark",
     after: 14,
     line: 3,
     endLine: 3,
   },
 ])(
-  "selects the first eligible tolerant match for $value",
+  "selects the one tolerant match after the start for $value, ignoring earlier ones",
   ({ content, value, after, line, endLine }) => {
     expect(rangesOf(resolve(value, content, after))).toEqual([
       {
@@ -333,12 +333,34 @@ test.each([
   },
 );
 
-test("an anchored-view end skips earlier copies of the same displayed fragment", () => {
-  const content = "END line\nSTART\nEND line\nEND line\n";
+test.each([
+  { content: "end\r\nmark\r\nSTART\r\nend\r\nmark\r\nend\r\nmark", value: "end\nmark", after: 16 },
+  { content: "end mark\nSTART\nend mark\nend mark", value: "end mark", after: 14 },
+  { content: "END line\nSTART\nEND line\nEND line\n", value: "|END", after: 14 },
+])("refuses several matches after the start for $value (LPT-1773)", ({ content, value, after }) => {
+  expect(resolve(value, content, after)).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "ambiguous" },
+  });
+});
+
+test("an anchored-view end after the start ignores earlier copies of the same displayed fragment", () => {
+  const content = "END line\nSTART\nEND line\n";
   // A trailing pipe plus source text is enough when the copy starts at the pipe.
   expect(rangesOf(resolve("|END", content, 14))).toEqual([
     { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 3 } },
   ]);
+});
+
+test("findExactTextMatches lists only the matches after the start", () => {
+  const content = "END a\nSTART\nEND b\nEND c\n";
+  const found = findExactTextMatches(
+    "END",
+    { source: "fixture.txt", content, lines: content.split("\n"), cwd: "/project", endAfter: 6 },
+    10,
+  );
+  expect(found.total).toBe(2);
+  expect(found.ranges.map((range) => range.start.lineNumber)).toEqual([3, 4]);
 });
 
 test("earlier exact matches are not replaced by a fuzzy match after the start", () => {

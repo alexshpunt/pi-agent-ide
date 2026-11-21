@@ -25,10 +25,10 @@ export function sourceRangeProperties(at: string) {
       "Begin after the unique opening match (on the next line if it reaches the end of a line). Pass through or before; do not combine with from or at. Use after and before together to select the text between two markers and keep both.",
     ),
     through: anchorProperty(
-      "Include the first match at or after the start of from (or after the opening match with after). Use for a block's own closing line. Pair with from or after; omit before and at.",
+      "Include the match at or after the start of from (or after the opening match with after); it must match once there, so use its line anchor when the text repeats. Use for a block's own closing line. Pair with from or after; omit before and at.",
     ),
     before: anchorProperty(
-      "Stop before the first following match. For a whole block, use before only if it has no closing line and ends at the next block's start, such as the next heading. Pair with from or after; omit through and at.",
+      "Stop before the match after the opening match; it must match once there, so use its line anchor when the text repeats. For a whole block, use before only if it has no closing line and ends at the next block's start, such as the next heading. Pair with from or after; omit through and at.",
     ),
   };
 }
@@ -49,10 +49,10 @@ export function targetProperties(directorySemantics: string) {
       "Use alone to insert after this selection. Pair with targetThrough or targetBefore to replace a range without including this opening match.",
     ),
     targetThrough: anchorProperty(
-      "Include the first match at or after the start of targetFrom (or after the opening match with targetAfter). Use for a block's own closing line.",
+      "Include the match at or after the start of targetFrom (or after the opening match with targetAfter); it must match once there, so use its line anchor when the text repeats. Use for a block's own closing line.",
     ),
     targetBefore: anchorProperty(
-      "Use alone to insert before this selection. Pair with targetFrom or targetAfter to stop before the first following match; use for a whole block only if it has no closing line and ends at the next block's start.",
+      "Use alone to insert before this selection. Pair with targetFrom or targetAfter to stop before the match after it, which must match once there; use for a whole block only if it has no closing line and ends at the next block's start.",
     ),
   };
 }
