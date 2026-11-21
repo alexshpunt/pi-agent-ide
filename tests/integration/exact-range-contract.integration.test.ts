@@ -63,7 +63,8 @@ for (const route of ["direct", "codemode"] as const) {
           files[source] = `keep\r\n段🙂${ending}`;
           files[target] = "left TARGET right\n";
           expected[source] = tool === "move" ? "keep\r\n" : files[source];
-          expected[target] = `left 段🙂${ending} right\n`;
+          // A whole-line source loses its trailing separator at an inline destination.
+          expected[target] = "left 段🙂 right\n";
           edits.push({
             tool,
             args: {
