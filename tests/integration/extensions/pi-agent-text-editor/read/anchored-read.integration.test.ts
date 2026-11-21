@@ -13,6 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, expect, test } from "vitest";
 
+import { recoveryReadArguments } from "#integration/support/recovery-read.ts";
 import type { ReadResultDetails } from "pi-agent-read/api/tools/read";
 import { generateReadExtensions } from "pi-agent-read/testing";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
@@ -136,8 +137,20 @@ test("rejects an ambiguous anchor with candidate lines", async () => {
 
     expect(getToolResultMessage(result, "ambiguous").isError).toBe(true);
     const failureText = getToolResultText(result, "ambiguous");
-    expect(failureText).toContain("Candidate: line 2");
-    expect(failureText).toContain("Candidate: line 4");
+    const second = formatLineHashAnchor(fixtureLines.join("\n"), 2);
+    const fourth = formatLineHashAnchor(fixtureLines.join("\n"), 4);
+    expect(failureText).toContain(`${second}|${fixtureLines[1]}`);
+    expect(failureText).toContain(`${fourth}|${fixtureLines[3]}`);
+    const args = recoveryReadArguments(failureText);
+    const retry = await runReadCalls({
+      cwd: directory,
+      testName: "anchored-read-recover",
+      calls: [{ id: "retry", ...args }],
+    });
+    const message = getToolResultMessage<ReadResultDetails>(retry, "retry");
+    expect(message.isError).toBe(false);
+    expect(message.details.startLine).toBe(2);
+    expect(getToolResultText(retry, "retry")).toContain(`${second}|${fixtureLines[1]}`);
   });
 });
 
