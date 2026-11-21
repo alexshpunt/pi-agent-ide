@@ -23,7 +23,12 @@ Matching and writing follow different rules.
 
 Matching locates the span. The write algorithm decides which line separators belong to a whole-line edit.
 
-For `replace`, pass `after` instead of `start` to begin just after the opening match, on the next line when it ends at a line edge. Pass `before` instead of `end` to stop just before the next closing match, at the previous line's end when it begins at a line edge. Pair each exclusive boundary with an opposite boundary. An empty span between adjacent boundaries is an insertion point; between adjacent marker lines, the new text goes on its own lines.
+For `replace`, use these boundary recipes:
+
+- To replace a block and keep the next block intact, pass the current block's first line as `start` and the next block's first line as `before`.
+- To replace everything between two lines and keep both, pass the first line as `after` and the second as `before`.
+
+Use `after` instead of `start` to begin just after the opening match, on the next line when it ends at a line edge. Use `before` instead of `end` to stop just before the first following match, at the previous line's end when that match starts at a line edge. Pair each exclusive boundary with an opposite boundary. An empty span between adjacent boundaries is an insertion point; between adjacent boundary lines, the new text goes on its own lines.
 
 ## 4. Selectors only locate; one algorithm writes
 

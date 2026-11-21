@@ -33,10 +33,10 @@ export const replaceSchema = Type.Object(
       end: "Include the first match after the opening selector at the end of the range; omit before.",
     }),
     after: anchorProperty(
-      "Begin after a unique opening match (on the next line at a line edge); omit start and pass end or before.",
+      "Begin after a unique opening match (on the next line if the match reaches the end of a line); omit start and pass end or before. To replace everything between two lines and keep both, pass the first line as after and the second as before.",
     ),
     before: anchorProperty(
-      "Stop before the first following match (at the previous line’s end at a line edge); omit end and pass start or after.",
+      "Stop before the first following match (at the end of the previous line if the match starts a line); omit end and pass start or after. To replace a block and keep the next block intact, pass the first line of the current block as start and the first line of the next block as before.",
     ),
     text: Type.String({
       description:
