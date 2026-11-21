@@ -62,7 +62,7 @@ for (const route of ["direct", "codemode"] as const) {
           const target = `${tool}-target-${index}.txt`;
           files[source] = `keep\r\n段🙂${ending}`;
           files[target] = "left TARGET right\n";
-          expected[source] = tool === "move" ? "keep\r\n" : files[source];
+          expected[source] = tool === "move" ? `keep${ending}` : files[source];
           // A whole-line source loses its trailing separator at an inline destination.
           expected[target] = "left 段🙂 right\n";
           edits.push({
@@ -148,7 +148,7 @@ for (const route of ["direct", "codemode"] as const) {
         expect(getToolExecution(result, id).isError).toBe(false);
       }
       for (const [file, content] of Object.entries(expected)) {
-        expect(await readFile(path.join(cwd, file)), file).toEqual(Buffer.from(content));
+        expect.soft(await readFile(path.join(cwd, file)), file).toEqual(Buffer.from(content));
       }
       expect(result.tuiRenderedOutput).toContain("α");
       expect(result.tuiRenderedOutput).toContain("β");
