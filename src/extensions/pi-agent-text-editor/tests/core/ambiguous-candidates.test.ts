@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 import { createExactTextAnchorResolver } from "pi-agent-text-anchor-exact/api/anchor";
 import { createLineHashAnchorResolver } from "pi-agent-text-anchor-line-hash/api/anchor";
@@ -46,11 +46,34 @@ afterEach(async () => {
   await rm(cwd, { recursive: true, force: true });
 });
 
-async function fixture(files: Record<string, string>) {
+test("zero recovery context lines hides the neighbors, not the candidates", async () => {
+  const original = "unshown neighbor\nfirst red\nsecond red\n";
+  const f = await fixture({ "test.txt": original }, false, 0);
+  const refused = await f.run(replaceMutationTool, { path: "test.txt", at: "red", text: "blue" });
+  expect(refused.result.details.effect).toBe("not-applied");
+  expect(refused.text).not.toContain("unshown neighbor");
+  expect(refused.text).toContain("first red");
+});
+
+async function fixture(files: Record<string, string>, fuzzyEnabled = false, contextLines?: number) {
   for (const [name, content] of Object.entries(files))
     await writeFile(path.join(cwd, name), content);
   const store = new ResultTargetStore();
-  const core = createTextEditorCore();
+  const core = await (async () => {
+    if (contextLines === undefined) return createTextEditorCore();
+    const configDir = path.join(cwd, ".pi", "pi-agent-ide");
+    await mkdir(configDir, { recursive: true });
+    await writeFile(
+      path.join(configDir, "text-editor.json"),
+      JSON.stringify({ recovery: { contextLines } }),
+    );
+    const workingDirectory = vi.spyOn(process, "cwd").mockReturnValueOnce(cwd);
+    try {
+      return createTextEditorCore();
+    } finally {
+      workingDirectory.mockRestore();
+    }
+  })();
   for (const tool of [
     replaceMutationTool,
     deleteMutationTool,
@@ -71,7 +94,7 @@ async function fixture(files: Record<string, string>) {
         type: "major",
       });
       api.addAnchorResolver({
-        resolver: createExactTextAnchorResolver(recovery),
+        resolver: createExactTextAnchorResolver({ ...recovery, fuzzyEnabled }),
         kind: TEXT_SEARCH_ANCHOR_KIND,
         type: "auxiliary",
         priority: 10_000,
@@ -117,7 +140,19 @@ async function fixture(files: Record<string, string>) {
     };
   };
   const content = (name: string) => readFile(path.join(cwd, name), "utf8");
-  return { run, content };
+  const matchSet = (name: string, numbers: readonly number[]) =>
+    store.registerAllMatchesReference(
+      {
+        source: path.join(cwd, name),
+        expectedContent: requiredAnchor(files[name]),
+        ranges: numbers.map((lineNumber) => ({
+          start: { lineNumber, column: 0 },
+          end: { lineNumber, column: 3 },
+        })),
+      },
+      cwd,
+    );
+  return { run, content, matchSet };
 }
 
 /** The anchor Read shows before a line of a file. */
@@ -163,11 +198,8 @@ describe("a second boundary must match once after the first (LPT-1773)", () => {
     // Every closing brace after the signature is a candidate, nearest first.
     expect(refused.result.details.anchorRecoveries?.[0]?.total).toBe(4);
     const text = refused.text;
-    for (const line of [6, 8, 13, 15]) {
-      expect(text).toContain(`line ${line}`);
-      expect(text).toContain(anchorOf(cpp, line));
-    }
-    expect(text.indexOf(`line 6`)).toBeLessThan(text.indexOf(`line 8`));
+    for (const line of [6, 8, 13, 15]) expect(text).toContain(anchored(cpp, line));
+    expect(text.indexOf(anchored(cpp, 6))).toBeLessThan(text.indexOf(anchored(cpp, 8)));
 
     // The function's own closing line, picked from the list, moves the whole function.
     const moved = await f.run(moveMutationTool, { ...input, through: anchorOf(cpp, 8) });
@@ -251,10 +283,13 @@ describe("a second boundary must match once after the first (LPT-1773)", () => {
       through: "END",
     });
     expect(refused.result.details.anchorRecoveries?.[0]?.total).toBe(3);
-    expect(refused.text).not.toContain("line 1");
     expect(refused.text).not.toContain(anchorOf(source, 1));
-    expect(refused.text.indexOf("line 3")).toBeLessThan(refused.text.indexOf("line 4"));
-    expect(refused.text.indexOf("line 4")).toBeLessThan(refused.text.indexOf("line 5"));
+    expect(refused.text.indexOf(anchored(source, 3))).toBeLessThan(
+      refused.text.indexOf(anchored(source, 4)),
+    );
+    expect(refused.text.indexOf(anchored(source, 4))).toBeLessThan(
+      refused.text.indexOf(anchored(source, 5)),
+    );
   });
 
   test("at most five candidates are listed and the rest is counted", async () => {
@@ -266,8 +301,9 @@ describe("a second boundary must match once after the first (LPT-1773)", () => {
       through: "END",
     });
     for (const line of [2, 3, 4, 5, 6]) expect(refused.text).toContain(anchorOf(source, line));
-    for (const line of [7, 8, 9]) expect(refused.text).not.toContain(anchorOf(source, line));
-    expect(refused.text).toMatch(/\b3 more\b/u);
+    // The sixth match may appear as context around the fifth.
+    for (const line of [8, 9]) expect(refused.text).not.toContain(anchorOf(source, line));
+    expect(refused.result.details.anchorRecoveries?.[0]?.total).toBe(8);
   });
 
   test("a match inside the first boundary still ends the range there when it is the only one", async () => {
@@ -444,7 +480,7 @@ const cases: readonly Case[] = [
 ];
 
 describe.each(cases)("$name refuses an ambiguous match and lists candidates", (item) => {
-  test("nothing changes, candidates carry line numbers and anchors, and the example works", async () => {
+  test("nothing changes, candidates use Read anchors, and the example works", async () => {
     const f = await fixture({ "src.txt": source, "dst.txt": destination });
     const content = item.file === "src.txt" ? source : destination;
     const refused = await f.run(item.tool, item.input);
@@ -453,10 +489,8 @@ describe.each(cases)("$name refuses an ambiguous match and lists candidates", (i
     expect(await f.content("dst.txt")).toBe(destination);
     expect(refused.result.details.anchorRecoveries?.[0]?.total).toBe(item.lines.length);
 
-    for (const line of item.lines) {
-      expect(refused.text).toContain(`line ${line}`);
-      expect(refused.text).toContain(anchorOf(content, line));
-    }
+    for (const line of item.lines) expect(refused.text).toContain(anchored(content, line));
+    expect(refused.text).not.toMatch(/\blines? \d/u);
     // One ready call, written for the refused field with the first candidate's anchor.
     const first = anchorOf(content, item.lines[0] ?? 1);
     expect(refused.text).toMatch(new RegExp(`${item.field}: "${first}"`, "u"));
@@ -464,4 +498,81 @@ describe.each(cases)("$name refuses an ambiguous match and lists candidates", (i
     const retried = await f.run(item.tool, { ...item.input, ...same(item.field, first) });
     expect(retried.result.details.effect, retried.text).not.toBe("not-applied");
   });
+});
+
+function anchored(content: string, line: number): string {
+  return `${anchorOf(content, line)}|${content.split("\n")[line - 1]}`;
+}
+
+describe.each(cases)("$name refuses a missing match", (item) => {
+  test("the current near match and its context are anchored and the example works", async () => {
+    const number = item.lines[0] ?? 1;
+    const original = item.file === "src.txt" ? source : destination;
+    const rows = original.split("\n");
+    const actual = `${rows[number - 1]} unique recovery marker with a long suffix`;
+    rows[number - 1] = actual;
+    const current = rows.join("\n");
+    const files = { "src.txt": source, "dst.txt": destination, [item.file]: current };
+    const f = await fixture(files, true);
+    const input = { ...item.input, [item.field]: actual.replace("recovery", "recvoery") };
+    const refused = await f.run(item.tool, input);
+    expect(refused.result.details.effect).toBe("not-applied");
+    expect(await f.content(item.file)).toBe(current);
+    expect(refused.text).toContain(anchored(current, number));
+    expect(refused.text).toContain(anchored(current, number + 1));
+    expect(refused.text).not.toMatch(/\blines? \d/u);
+
+    const anchor = anchorOf(current, number);
+    expect(refused.text).toContain(`${item.field}: "${anchor}"`);
+    const retry = await f.run(item.tool, { ...input, [item.field]: anchor });
+    expect(retry.result.details.effect, retry.text).not.toBe("not-applied");
+  });
+});
+
+describe.each(
+  cases.filter(
+    ({ field, input }) =>
+      (field === "through" || field.startsWith("target") || input.from !== undefined) &&
+      /^(?:target)?(?:through|before)$/iu.test(field),
+  ),
+)("$name refuses a multi-match end reference", (item) => {
+  test("candidates use current anchors and the first in document order works", async () => {
+    const f = await fixture({ "src.txt": source, "dst.txt": destination });
+    const current = item.file === "src.txt" ? source : destination;
+    const endRef = f.matchSet(item.file, [...item.lines].reverse());
+    const input = { ...item.input, [item.field]: endRef };
+    const refused = await f.run(item.tool, input);
+    expect(refused.result.details.effect).toBe("not-applied");
+    expect(await f.content(item.file)).toBe(current);
+    for (const line of item.lines) expect(refused.text).toContain(anchored(current, line));
+    expect(refused.text).not.toMatch(/\blines? \d/u);
+
+    const first = anchorOf(current, item.lines[0] ?? 1);
+    expect(refused.text).toContain(`${item.field}: "${first}"`);
+    const retry = await f.run(item.tool, { ...input, [item.field]: first });
+    expect(retry.result.details.effect, retry.text).not.toBe("not-applied");
+  });
+});
+
+test("a fuzzy closing candidate before the opening boundary is not offered for retry", async () => {
+  const current = lines("unique recovery marker with a long suffix", "BEGIN", "keep");
+  const f = await fixture({ "src.txt": current }, true);
+  const refused = await f.run(deleteMutationTool, {
+    path: "src.txt",
+    from: "BEGIN",
+    through: "unique recvoery marker with a long suffix",
+  });
+  expect(refused.result.details.effect).toBe("not-applied");
+  expect(await f.content("src.txt")).toBe(current);
+  expect(refused.text).not.toContain(anchored(current, 1));
+  expect(refused.text).not.toMatch(/through: "[A-Z\d]{7}"/u);
+});
+
+test("a selector with no candidate does not suggest an unrelated anchor", async () => {
+  const f = await fixture({ "src.txt": source }, true);
+  const refused = await f.run(deleteMutationTool, { path: "src.txt", at: "ZZZZZZZZZZZ forgotten" });
+  expect(refused.result.details.effect).toBe("not-applied");
+  expect(await f.content("src.txt")).toBe(source);
+  expect(refused.text).not.toContain(anchorOf(source, 1));
+  expect(refused.text).toMatch(/\b(?:Read|Search)\b/u);
 });

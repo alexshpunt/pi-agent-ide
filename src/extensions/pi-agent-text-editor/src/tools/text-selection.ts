@@ -6,6 +6,7 @@ import {
   type TextMutationChange,
   type TextMutationContext,
 } from "#src/api/mutation-tool.ts";
+import { TextMutationAnchorCandidatesError } from "#src/core/text-mutation-anchor-error.ts";
 import { selectorFields, type TextSelector } from "#src/api/text-selector-fields.ts";
 import type { TextAnchor } from "pi-agent-text";
 import type {
@@ -181,14 +182,23 @@ async function resolveAnchorSpanRange(
     if (nearest === undefined) {
       throw new TextMutationInputError(
         "ANCHOR_NOT_FOUND_AFTER_START",
-        `No match for ${endField} follows ${startField} in "${start.source}". Choose a later match for ${endField}.`,
+        `No match for ${endField} follows ${startField} in "${start.source}". Use Read or Search to find a later match.`,
       );
     }
     if (others.length > 0) {
-      const places = following.map(({ offset }) => `line ${document.lineNumberAt(offset)}`);
-      throw new TextMutationInputError(
+      throw new TextMutationAnchorCandidatesError(
         "ANCHOR_AMBIGUOUS_AFTER_START",
-        `${following.length} matches for ${endField} follow ${startField} in "${start.source}" (${places.join(", ")}). Select one match for ${endField}, such as its line anchor.`,
+        `${following.length} matches for ${endField} follow ${startField} in "${start.source}". Select one match.`,
+        {
+          field: endField,
+          source: start.source,
+          content: document.content,
+          candidates: following
+            .toSorted((a, b) => a.offset - b.offset)
+            .map(({ index }) => requiredValue(endpoints[index])),
+          total: following.length,
+          minimumOffset: minimumEndStart,
+        },
       );
     }
     selectedEnds = new Map([

@@ -1,3 +1,5 @@
+import { TextMutationInputError } from "#src/api/mutation-tool.ts";
+import type { AnchorCandidates } from "#src/core/anchor-candidates.ts";
 import { TextAnchorResolutionError } from "#src/core/text-anchor-registry.ts";
 
 export class TextMutationAnchorResolutionError extends Error {
@@ -9,6 +11,17 @@ export class TextMutationAnchorResolutionError extends Error {
     readonly resolution: TextAnchorResolutionError,
   ) {
     super(resolution.message, { cause: resolution });
+  }
+}
+
+/** A resolved selection is not usable as a single boundary; present its matches on refusal. */
+export class TextMutationAnchorCandidatesError extends TextMutationInputError {
+  public constructor(
+    code: string,
+    message: string,
+    readonly candidates: AnchorCandidates,
+  ) {
+    super(code, message);
   }
 }
 

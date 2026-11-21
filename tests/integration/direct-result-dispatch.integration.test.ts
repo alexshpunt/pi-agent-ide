@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { JsonValue } from "@earendil-works/pi-ai";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 import { expect, test } from "vitest";
 import {
   assistantMessage,
@@ -99,7 +100,9 @@ for (const [form, token] of tokens) {
       expect(run.state?.model).toMatchObject({ provider: "scripted", id: "scripted-model" });
       for (const id of ["outside", "outside-range"]) {
         expect(getToolExecution(run, id).isError).toBe(true);
-        expect(getToolResultText(run, id)).toContain("The result selects note.txt line 2.");
+        const refusal = getToolResultText(run, id);
+        expect(refusal).toContain(formatLineHashAnchor("alpha\nBETa\nGAMMA\n", 2));
+        expect(refusal).not.toMatch(/\blines? \d/u);
         expect(getToolResultText(run, id)).not.toContain("ENOENT");
       }
       expect(getToolExecution(run, "inside").isError, getToolResultText(run, "inside")).toBe(false);
@@ -208,10 +211,13 @@ text("Reference boundaries verified");
     expect(getToolExecution(run, "code").isError, output).toBe(false);
     const failures = codemodeFailures(output).split("\n- ").slice(1);
     expect(failures, output).toHaveLength(10);
-    for (const [index, failure] of failures.slice(0, 9).entries())
-      if (index % 3 < 2)
-        expect(failure).toContain("outside the result's selection: note.txt line 2");
-      else expect(failure).toContain("expired after its snapshot changed");
+    for (const [index, failure] of failures.slice(0, 9).entries()) {
+      if (index % 3 < 2) {
+        const selected = index < 3 ? "beta" : `BETA${Math.floor(index / 3) - 1}`;
+        expect(failure).toContain(formatLineHashAnchor(`alpha\n${selected}\ngamma\n`, 2));
+        expect(failure).not.toMatch(/\blines? \d/u);
+      } else expect(failure).toContain("expired after its snapshot changed");
+    }
     expect(failures[9]).toMatch(/^replace 00000000-0000-0000-0000-000000000000\n/u);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA2\nGAMMA\n");
   });

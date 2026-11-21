@@ -2817,22 +2817,21 @@ add(
 add(
   "copy-destination-recovery",
   ["edit.copy-destination-recovery"],
-  "Exercise Copy destination recovery in task.txt. First Copy with path task.txt, from alpha, through beta and targetAfter equal to the ambiguous text });, and wait for its rejection result before reading the current file with anchors. Copy that same alpha-through-beta block after INSERT_HERE, using its issued destination anchor as targetAfter. Keep the source selection unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
+  "Exercise Copy destination recovery in task.txt. First Copy with path task.txt, from alpha, through beta and targetAfter equal to the ambiguous text });, and wait for the refusal. Copy the same alpha-through-beta block after INSERT_HERE using the destination anchor printed in the refusal's context, not a separate Read. Keep the source selection unchanged. The rejected call must leave the file unchanged and the corrected call must copy the block exactly once.",
   [
     {
       tool: "copy",
       args: { path: "task.txt", targetAfter: "});" },
       error: true,
-      contains: "ambiguous",
     },
-    { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [0] },
     {
       tool: "copy",
       args: {
         path: "task.txt",
-        targetAfter: /^[0-9A-HJKMNP-TV-Z]{7}$/u,
+        targetAfter: /^[0-9A-HJKMNP-TV-Z]{7}(?:\|[^\r\n]*(?:\r?\n)?)?$/u,
       },
-      reuse: reuse(1, "targetAfter", "anchor"),
+      reuse: reuse(0, "targetAfter", "anchor"),
+      after: [0],
     },
   ],
   {
@@ -2845,7 +2844,7 @@ add(
 add(
   "move-destination-recovery",
   ["edit.move-destination-recovery"],
-  "First call Move on task.txt with at set explicitly to the empty string and targetAfter set to second marker, and wait for the empty selector refusal. Then call Move on task.txt with the exact text move this followed by its line break as at and the misspelled second makrer as targetAfter. After that refusal, read task.txt with anchors. Retry the same Move, changing only targetAfter to the issued anchor for the second marker line. Move the line exactly once. Once that Move succeeds, replace the exact text keep this with kept. Preserve every other line. In Codemode, wait for the result of each call before the next.",
+  "First call Move on task.txt with at set explicitly to the empty string and targetAfter set to second marker, and wait for the empty selector refusal. Then call Move on task.txt with the exact text move this followed by its line break as at and the misspelled second makrer as targetAfter. Retry the same Move, changing only targetAfter to the anchor for the second marker line printed in the refusal. Move the line exactly once. Once that Move succeeds, replace the exact text keep this with kept. Preserve every other line. In Codemode, wait for the result of each call before the next.",
   [
     {
       tool: "move",
@@ -2860,18 +2859,21 @@ add(
       error: true,
       exactText: ["at", "targetAfter"],
     },
-    { tool: "read", args: { path: "task.txt", views: ["anchors"] }, after: [1] },
     {
       tool: "move",
-      args: { path: "task.txt", at: "move this\n", targetAfter: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
+      args: {
+        path: "task.txt",
+        at: "move this\n",
+        targetAfter: /^[0-9A-HJKMNP-TV-Z]{7}(?:\|[^\r\n]*(?:\r?\n)?)?$/u,
+      },
       exactText: ["at"],
-      reuse: reuse(2, "targetAfter", "anchor"),
-      after: [2],
+      reuse: reuse(1, "targetAfter", "anchor"),
+      after: [1],
     },
     {
       tool: "replace",
       args: { path: "task.txt", at: "keep this", text: "kept" },
-      after: [3],
+      after: [2],
     },
   ],
   {
@@ -3919,10 +3921,9 @@ add(
   { files: { "task.txt": wideRangeFixture }, expected: { "task.txt": "NEW\nkeep\n" } },
 );
 add(
-  // Agent-facing scope refusals are unchanged; native anchor-rejection cards have scripted Pi coverage.
   "result-selector-scope",
   ["compose.result-selector-scope"],
-  "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as at and text BAD: the anchor lies outside the result's selection, so the call must fail and name that selection. Wait for that refusal before passing the same line-2 result as path with the anchor the first Read shows before line 2 as at and text NEW followed by a newline. Changing line 2 before the refusal would make the bounded result stale and hide the scope check. Preserve all other bytes.",
+  "Read task.txt with anchors; each line is shown after its 7-character anchor and a |. Then read only line 2 of task.txt. Pass that line-2 Read result unchanged as Replace's path together with the anchor the first Read shows before line 3 as at and text BAD: the anchor lies outside the result's selection, so the call must fail and show the anchor for the selected line. Wait for that refusal before passing the same line-2 result as path with the anchor the first Read shows before line 2 as at and text NEW followed by a newline. Changing line 2 before the refusal would make the bounded result stale and hide the scope check. Preserve all other bytes.",
   [
     { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
     // The window may also come from the first Read's result of the same file.
@@ -3932,7 +3933,7 @@ add(
       args: { at: /^[0-9A-HJKMNP-TV-Z]{7}$/u },
       reuse: [reuse(1), reuse(0, "at", "anchor")],
       error: true,
-      contains: "outside the result's selection: task.txt line 2",
+      contains: "D07BBXQ", // The unchanged OLD line in the default fixture.
       excludes: "ENOENT",
     },
     {
