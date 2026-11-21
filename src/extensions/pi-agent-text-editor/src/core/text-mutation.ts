@@ -10,13 +10,7 @@ import {
 import path from "node:path";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { TextEditCompletion } from "#src/api/edit-completion.ts";
-import type {
-  TextAnchorRecoveryCandidateRange,
-  TextAnchorRecoveryRange,
-  TextAnchorRejection,
-  TextSelectionRange,
-  TextTarget,
-} from "pi-agent-text";
+import type { TextAnchorRejection, TextSelectionRange, TextTarget } from "pi-agent-text";
 
 import {
   type AgentToolResult,
@@ -58,11 +52,7 @@ import { createUnifiedDiff } from "#src/core/mutation-result/diff.ts";
 import { finalStateLineNumbers } from "#src/core/mutation-result/final-state-fragment.ts";
 import { imageWriteResult, planImageWrite } from "#src/core/image-write.ts";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
-import {
-  candidateWindow,
-  formatAmbiguousCandidates,
-  shownCandidateLines,
-} from "#src/core/ambiguous-candidates.ts";
+import { presentAnchorCandidates, type AnchorCandidates } from "#src/core/anchor-candidates.ts";
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import {
@@ -110,6 +100,7 @@ import { expandReferenceList } from "./reference-list.ts";
 import {
   contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
+  TextMutationAnchorCandidatesError,
   TextMutationAnchorResolutionError,
 } from "#src/core/text-mutation-anchor-error.ts";
 import {
@@ -1140,11 +1131,39 @@ export function createMutationContext(
             start?.source === target.source ? start.offset : undefined,
           );
         } catch (error) {
+          // Don't change which literals are ambiguous. Only narrow the suggested retries to
+          // where a closing anchor could pair with this opening anchor.
+          let retryScope: readonly TextSelectionRange[] | undefined;
+          if (start !== undefined) {
+            if (start.source !== target.source) {
+              retryScope = [];
+            } else if (ranges.length > 1) {
+              const opening = [...scopedPlacements].find(
+                ([other, placement]) =>
+                  placement.source === start.source &&
+                  (definition.anchors ?? []).some(
+                    (sibling) =>
+                      sibling.field === other && sibling.sourceField === descriptor.sourceField,
+                  ),
+              )?.[1];
+              const range =
+                opening?.indices.length === 1
+                  ? ranges[requiredValue(opening.indices[0])]
+                  : undefined;
+              retryScope = range === undefined ? [] : [range];
+            }
+          }
           throw contextualizeTextMutationAnchorError(
-            error instanceof TextAnchorResolutionError && ranges.length > 0
+            error instanceof TextAnchorResolutionError &&
+              (ranges.length > 0 || retryScope !== undefined)
               ? error.withReason(
-                  `${error.message.replace(/\.?$/u, ".")} The result selects ${describe(target)}.`,
-                  error.rejection?.contextRange ?? scopeWindow(ranges),
+                  ranges.length === 0
+                    ? error.message
+                    : `${error.message.replace(/\.?$/u, ".")} The result selects ${describe(target)}.`,
+                  ranges.length === 0
+                    ? undefined
+                    : (error.rejection?.contextRange ?? scopeWindow(ranges)),
+                  retryScope,
                 )
               : error,
             definition.name,
@@ -2188,92 +2207,19 @@ async function anchorFailureToolResult(
         })
       : undefined;
 
-  // A reference such as SEARCH#…:all:match names resources, not a position: reading it as a path
-  // would only resolve it again, and the first lines of a file say nothing about it.
-  const reference = resolution instanceof TextAnchorResourceResolutionError;
-  // An ambiguous selector lists its matches, each with its own anchor, instead of a file excerpt.
   const snapshot = resolution.snapshot();
-  let listing: string | undefined;
-  if (ambiguous && !reference && recovery?.kind === "candidates" && snapshot !== undefined) {
-    const candidates = recovery.candidates.map(({ range }) => range);
-    // Reading each match's window gives every line its anchor and keeps the window, so two of
-    // its line anchors can pair as a range.
-    const matchWindows = await Promise.all(
-      shownCandidateLines(candidates).map(async (lines) => {
-        const read = await readTextAnchorRecovery(
-          core,
-          { path: contextual.source, ...candidateWindow(lines) },
-          {
-            cwd: context.cwd,
-            ...(context.signal !== undefined && { signal: context.signal }),
-          },
-        )?.catch(() => {
-          context.signal?.throwIfAborted();
-          return undefined;
-        });
-        if (read === undefined || read.isError === true) return undefined;
-        const body = read.content
-          .flatMap((block) => (block.type === "text" ? [block.text] : []))
-          .join("\n")
-          // Read's continuation notice names no edit and would repeat for every match.
-          .replace(/\n*\[\d+ more lines in source\.[^\]]*\]\s*$/u, "")
-          .trimEnd();
-        return body.length === 0 ? undefined : body;
-      }),
-    );
-    listing = formatAmbiguousCandidates({
-      field: contextual.field,
-      source: snapshot.source,
-      content: snapshot.content,
-      candidates,
-      total: recovery.total,
-      windows: matchWindows,
-    });
-  }
-  const windows =
-    listing !== undefined || !showRecovery || (reference && contextual.source === contextual.anchor)
-      ? []
-      : recovery?.kind === "candidates"
-        ? recoveryWindows(
-            recovery.candidates.map(({ range }) => range),
-            core.recoveryContextLines(),
-          )
-        : resolution.rejection?.contextRange === undefined
-          ? []
-          : [resolution.rejection.contextRange];
-  // An anchor no line produces has no position to show lines around; the first lines would only mislead.
-  if (
-    showRecovery &&
-    listing === undefined &&
-    windows.length === 0 &&
-    !reference &&
-    resolution.rejection?.code !== "stale"
-  ) {
-    windows.push({ offset: 1, limit: 40 });
-  }
-
-  const reads = await Promise.all(
-    windows.map((range) =>
-      readTextAnchorRecovery(
-        core,
-        { path: contextual.source, ...range },
-        {
-          cwd: context.cwd,
-          ...(context.signal !== undefined && { signal: context.signal }),
-        },
-      )?.catch(() => {
-        context.signal?.throwIfAborted();
-        return undefined;
-      }),
-    ),
-  );
-  const recoveryTexts: string[] = listing === undefined ? [] : [listing];
-  for (const read of reads) {
-    if (read === undefined || read.isError === true) continue;
-    recoveryTexts.push(
-      ...read.content.filter((block) => block.type === "text").map((block) => block.text),
-    );
-  }
+  const recoveryContext =
+    recovery?.kind === "candidates" && snapshot !== undefined
+      ? await anchorCandidateContext(core, context, {
+          field: contextual.field,
+          source: snapshot.source,
+          content: snapshot.content,
+          ...(snapshot.endAfter !== undefined && { minimumOffset: snapshot.endAfter }),
+          ...(snapshot.scope !== undefined && { scope: snapshot.scope }),
+          candidates: recovery.candidates.map(({ range }) => range),
+          total: recovery.total,
+        })
+      : undefined;
 
   const allMatches = canOfferAll ? resolution.allMatchesTarget() : undefined;
   const offer: AllMatchesOffer | undefined =
@@ -2299,7 +2245,6 @@ async function anchorFailureToolResult(
       },
     ],
   });
-  const recoveryContext = recoveryTexts.join("\n");
   const rejectionCode = resolution.rejection?.code;
   const content =
     rejectionCode === "stale"
@@ -2311,7 +2256,7 @@ async function anchorFailureToolResult(
             field: contextual.field,
             path: contextual.source,
             anchor: contextual.anchor,
-            ...(recoveryContext.length > 0 && { context: recoveryContext }),
+            ...(recoveryContext !== undefined && { context: recoveryContext }),
           } satisfies StaleAnchorMessageDetails,
           resolution.message,
         )
@@ -2345,23 +2290,50 @@ interface AllMatchesOffer {
   readonly field: AllMatchesRetry["field"];
 }
 
+async function anchorCandidateContext(
+  core: TextEditorCore,
+  context: ExtensionContext,
+  options: AnchorCandidates,
+): Promise<string | undefined> {
+  const presented = presentAnchorCandidates(options, core.recoveryContextLines());
+  if (presented === undefined) return undefined;
+  // Keep Read's guarded range history for the windows shown, but never use a later read
+  // as the display snapshot for a refusal.
+  await Promise.all(
+    presented.windows.map(async (window) => {
+      try {
+        await readTextAnchorRecovery(
+          core,
+          { path: options.source, ...window },
+          {
+            cwd: context.cwd,
+            ...(context.signal !== undefined && { signal: context.signal }),
+          },
+        );
+      } catch {
+        context.signal?.throwIfAborted();
+      }
+    }),
+  );
+  return presented.text;
+}
+
 function formatRejectedAnchorMessage(
   failure: TextMutationAnchorResolutionError,
   code: TextAnchorRejection["code"] | undefined,
   reason: string,
-  recoveryContext: string,
+  recoveryContext: string | undefined,
   offer?: AllMatchesOffer,
 ): string {
+  const next =
+    recoveryContext === undefined
+      ? "No candidates to show. Use Read or Search to find a current anchor, or retry with unique exact text."
+      : `\n\n${recoveryContext}`;
   if (offer !== undefined) {
     // The all-matches step leads: it is the step an agent asked to change every match needs.
-    const one =
-      recoveryContext.length > 0
-        ? "use an anchor below or longer unique text"
-        : "get an anchor with Read/Search or use longer unique text";
     return (
       `[SYSTEM] ${failure.toolName} blocked: ${quoteAnchorExcerpt(failure.anchor)} matches ${offer.count} times in "${failure.source}". ` +
-      `To change all of them, pass ${offer.reference} as ${offer.field}; to change one, ${one}.` +
-      (recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`)
+      `To change all of them, pass ${offer.reference} as ${offer.field}.${recoveryContext === undefined ? " " : ""}${next}`
     );
   }
   const state =
@@ -2374,47 +2346,15 @@ function formatRejectedAnchorMessage(
           : code === "invalid"
             ? "was rejected"
             : "could not be resolved";
-  const guidance =
-    code === "before-start"
-      ? "Choose an end selector that matches after the start."
-      : code === "outside-scope"
-        ? "Choose text inside the result's selection, or pass the file path to edit elsewhere."
-        : code === "ambiguous" && recoveryContext.length > 0
-          ? "Nothing was changed. Select one match by its anchor below, or retry with text that matches exactly once."
-          : failure.resolution.resolverId === "exact-text"
-            ? `${recoveryContext.length > 0 ? "Use a current anchor below or from Read/Search" : "Get a current anchor with Read/Search"}, or retry with text that matches exactly once.`
-            : recoveryContext.length > 0
-              ? "If the intended text is represented below, use its candidate anchor. Otherwise, reread the relevant section and choose a current anchor."
-              : "Reread the relevant section and choose a current anchor.";
-  const context = recoveryContext.length === 0 ? "" : `\n\n${recoveryContext}`;
   const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${quoteAnchorExcerpt(failure.anchor)} ${state} in "${failure.source}"`;
-  // Nothing is shown below a reference without a position; its reason carries the next step.
-  if (failure.resolution instanceof TextAnchorResourceResolutionError && context.length === 0)
+  // Reference failures carry resolver-specific guidance; there is no single source snapshot.
+  if (
+    failure.resolution instanceof TextAnchorResourceResolutionError &&
+    recoveryContext === undefined
+  )
     return `${subject}: ${reason}`;
-  return `${subject}. ${guidance} (${reason})${context}`;
-}
-
-function recoveryWindows(
-  ranges: readonly TextAnchorRecoveryCandidateRange[],
-  contextLines: number,
-): TextAnchorRecoveryRange[] {
-  const windows = ranges
-    .map((range) => ({
-      offset: Math.max(1, range.start.lineNumber - contextLines),
-      limit: range.end.lineNumber - range.start.lineNumber + 1 + contextLines * 2,
-    }))
-    .sort((left, right) => left.offset - right.offset);
-  const merged: TextAnchorRecoveryRange[] = [];
-  for (const window of windows) {
-    const previous = merged[merged.length - 1];
-    if (previous === undefined || window.offset > previous.offset + previous.limit) {
-      merged.push(window);
-      continue;
-    }
-    const end = Math.max(previous.offset + previous.limit, window.offset + window.limit);
-    merged[merged.length - 1] = { offset: previous.offset, limit: end - previous.offset };
-  }
-  return merged;
+  const punctuated = /[.!?]$/u.test(reason) ? reason : `${reason}.`;
+  return `${subject}: ${punctuated}${recoveryContext === undefined ? " " : ""}${next}`;
 }
 
 export async function buildFailedTextMutationResult(
@@ -2425,13 +2365,16 @@ export async function buildFailedTextMutationResult(
   retry?: AllMatchesRetry,
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (failure.cause instanceof TextMutationInputError) {
-    return failureToolResult(
-      failure.source,
-      failure.cause.code,
-      failure.message,
-      effect,
-      failure.rollback,
-    );
+    const inputError = failure.cause;
+    let message = failure.message;
+    if (inputError instanceof TextMutationAnchorCandidatesError && effect === "not-applied") {
+      const candidates = await anchorCandidateContext(core, context, inputError.candidates);
+      message +=
+        candidates === undefined
+          ? " No candidates to show. Use Read or Search to find a later match."
+          : `\n\n${candidates}`;
+    }
+    return failureToolResult(failure.source, inputError.code, message, effect, failure.rollback);
   }
   if (failure.rollback !== undefined) {
     return failureToolResult(

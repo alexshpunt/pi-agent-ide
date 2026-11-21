@@ -364,6 +364,43 @@ test("an ambiguity retry changes each selected range without touching the gap be
   expect(await f.content("test.txt")).toBe("first blue\ngap red\nthird blue\n");
 });
 
+test("a paired refusal offers only ends in the opening selector's scope range", async () => {
+  const original = "begin\nfirst close\nsecond close\ngap\nother close\n";
+  const f = await fixture({ "test.txt": original });
+  const scope = f.store.register(
+    [
+      {
+        source: path.join(cwd, "test.txt"),
+        expectedContent: original,
+        ranges: (
+          [
+            [1, 4],
+            [5, 6],
+          ] as const
+        ).map(([first, end]) => ({
+          start: { lineNumber: first, column: 0 },
+          end: { lineNumber: end, column: 0 },
+          linewise: true,
+        })),
+      },
+    ],
+    cwd,
+  );
+  const input = { path: scope, from: "begin", through: "close", text: "replaced\n" };
+  const failed = await f.run(replaceMutationTool, input);
+  expect(failed.result.details.effect).toBe("not-applied");
+  expect(await f.content("test.txt")).toBe(original);
+  expect(
+    failed.result.details.anchorRecoveries?.[0]?.candidates.map(
+      ({ range }) => range.start.lineNumber,
+    ),
+  ).toEqual([2, 3]);
+  const through = lineAnchor("test.txt", original, 2);
+  expect(failed.text).toContain(`through: "${through}"`);
+  await f.run(replaceMutationTool, { ...input, through });
+  expect(await f.content("test.txt")).toBe("replaced\nsecond close\ngap\nother close\n");
+});
+
 test("an ambiguity reference neither adds later matches nor edits a changed selection", async () => {
   const original = "left red\nright red\n";
   const f = await fixture({ "test.txt": original, "changed.txt": original });
@@ -677,6 +714,9 @@ test("an anchor outside the result fails and changes nothing", async () => {
   });
   expect(outside.result.details.effect).toBe("not-applied");
   const exact = await f.run(replaceMutationTool, { path: read, at: "last", text: "BAD" });
+  const refusal = outside.result.details.results?.[0]?.errors[0]?.reason ?? "";
+  expect(refusal).toContain(lineAnchor("task.txt", content, 2));
+  expect(refusal).not.toMatch(/\blines? \d/u);
   expect(exact.result.details.effect).toBe("not-applied");
   expect(await f.content("task.txt")).toBe(content);
 });

@@ -60,8 +60,10 @@ export class TextAnchorResolutionError extends Error {
   public withReason(
     reason: string,
     contextRange?: TextAnchorRecoveryRange,
+    recoveryScope?: TextAnchorResolverContext["scope"],
   ): TextAnchorResolutionError {
     const range = contextRange ?? this.rejection?.contextRange;
+    const snapshot = this.recoveryContext;
     // A reference failure keeps its own presentation, so keep its class.
     const Kind = this.constructor as typeof TextAnchorResolutionError;
     return new Kind(
@@ -73,16 +75,17 @@ export class TextAnchorResolutionError extends Error {
         reason,
         ...(range !== undefined && { contextRange: range }),
       },
-      this.recovery,
+      recoveryScope === undefined ? this.recovery : undefined,
       this.recoverAgain,
-      this.recoveryContext,
+      recoveryScope === undefined || snapshot === undefined
+        ? snapshot
+        : { ...snapshot, scope: recoveryScope },
     );
   }
 
   /** The text the rejection was produced against. */
-  public snapshot(): { readonly source: string; readonly content: string } | undefined {
-    const context = this.recoveryContext;
-    return context === undefined ? undefined : { source: context.source, content: context.content };
+  public snapshot(): TextAnchorResolverContext | undefined {
+    return this.recoveryContext;
   }
 
   /** The complete selection of the same snapshot used to produce the recovery. */
@@ -110,10 +113,21 @@ export class TextAnchorResolutionError extends Error {
   /** Recomputes recovery against a supplied or original immutable source snapshot. */
   public async refreshRecovery(context?: TextAnchorResolverContext): Promise<void> {
     const recoveryContext = context ?? this.recoveryContext;
-    if (this.recoverAgain !== undefined && recoveryContext !== undefined) {
-      this.recovery = await this.recoverAgain(recoveryContext);
-      this.recoveryContext = recoveryContext;
+    if (this.recoverAgain === undefined || recoveryContext === undefined) return;
+    const rejected = this.recoveryContext;
+    const bounded = rejected?.scope !== undefined || rejected?.endAfter !== undefined;
+    // Scope ranges and pairing offsets belong to the rejected snapshot. A sibling edit in a
+    // batch can invalidate both; don't offer a retry without those constraints.
+    if (
+      bounded &&
+      (recoveryContext.content !== rejected.content || recoveryContext.source !== rejected.source)
+    ) {
+      this.recovery = { kind: "unavailable" };
+      return;
     }
+    const snapshot = bounded ? rejected : recoveryContext;
+    this.recovery = await this.recoverAgain(snapshot);
+    this.recoveryContext = snapshot;
   }
 }
 

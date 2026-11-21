@@ -4,6 +4,7 @@ import {
   assistantMessage,
   getToolExecution,
   getToolResultMessage,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -122,6 +123,83 @@ test.each(Object.entries(paths))(
     });
   },
 );
+
+test("attributes a stale range start to its own field without unrelated candidates", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await fixture(cwd);
+    const run = await new PiIntegrationTest({
+      testName: "stale-range-start-no-candidates",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      isolateUserResources: true,
+      timeoutMs: 120_000,
+      extensions,
+      tools: ["read", "replace"],
+      conversation: [
+        turn("before", "read", { path: "note.txt", views: ["anchors"] }),
+        turn("change", "replace", { path: "note.txt", at: "OLD", text: "CHANGED" }),
+        turn("stale", "replace", {
+          path: "note.txt",
+          from: "$issued-anchor:before:2",
+          through: "$issued-anchor:before:3",
+          text: "MUST NOT APPLY",
+        }),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Refuse a stale opening selector");
+    expect(getToolExecution(run, "stale").isError).toBe(true);
+    const details = getToolResultMessage(run, "stale").details;
+    expect(details).toMatchObject({
+      guardId: "stale-anchor",
+      effect: "not-applied",
+      field: "from",
+    });
+    expect(details).not.toHaveProperty("context");
+    expect(getToolResultText(run, "stale")).not.toMatch(/^[A-Z\d]{7}\|/mu);
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("keep\nCHANGED\nlast\n");
+  });
+});
+
+test("uses the anchored context in a refusal without a follow-up Read", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await fixture(cwd);
+    const original = "header\nmarker a\nINSERT_HERE\nmarker b\ntail\n";
+    await writeFile(path.join(cwd, "target.txt"), original);
+    const run = await new PiIntegrationTest({
+      testName: "copy-retry-from-refusal",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      isolateUserResources: true,
+      rawMode: false,
+      timeoutMs: 120_000,
+      extensions,
+      tools: ["copy"],
+      conversation: [
+        turn("refuse", "copy", {
+          path: "note.txt",
+          at: "OLD\n",
+          target: "target.txt",
+          targetAfter: "marker",
+        }),
+        turn("retry", "copy", {
+          path: "note.txt",
+          at: "OLD\n",
+          target: "target.txt",
+          targetAfter: "$issued-anchor:refuse:3",
+        }),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Copy one line using the destination context in the refusal");
+    expect(getToolExecution(run, "refuse").isError).toBe(true);
+    expect(getToolResultMessage(run, "refuse").details).toMatchObject({ effect: "not-applied" });
+    expect(getToolResultText(run, "refuse")).toMatch(/^[A-Z\d]{7}\|INSERT_HERE$/mu);
+    expect(getToolExecution(run, "retry").isError).toBe(false);
+    expect(await readFile(path.join(cwd, "target.txt"), "utf8")).toBe(
+      original.replace("INSERT_HERE\n", "INSERT_HERE\nOLD\n"),
+    );
+    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("keep\nOLD\nlast\n");
+  });
+});
 
 test("rejects unknown keys in every edit selector without applying file effects", async () => {
   await withTempWorkspace(async (cwd) => {

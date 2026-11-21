@@ -88,12 +88,7 @@ for (const mode of ["direct", "codemode"]) {
           targetAfter: "});",
         },
         error: true,
-        text: "ambiguous",
-      },
-      {
-        tool: "read",
-        args: { path: "task.txt", views: ["anchors"] },
-        text: "S5BM5NA|alpha\nFDCR4F0|beta\n7EQS4MN|INSERT_HERE",
+        text: "7EQS4MN|INSERT_HERE",
       },
       {
         tool: "copy",
@@ -105,8 +100,18 @@ for (const mode of ["direct", "codemode"]) {
         },
       },
     ];
-    const route = steps("copy-destination-recovery");
-    assert.ok(check(route, calls, mode));
+    const task = capabilityCases.find((entry) => entry.id === "copy-destination-recovery");
+    assert.ok(task);
+    const route = task.steps;
+    const checked = validateRoute(task, events(calls, mode), mode);
+    assert.ok(checked.passed, checked.reasons.join("\n"));
+    assert.ok(
+      !check(
+        route,
+        calls.map((call) => (call.error ? { ...call, text: "" } : call)),
+        mode,
+      ),
+    );
     assert.ok(
       !check(
         route,
@@ -120,7 +125,7 @@ for (const mode of ["direct", "codemode"]) {
         [
           ...calls.slice(0, -1),
           {
-            ...calls[3],
+            ...calls[2],
             tool: "copy",
             args: { path: "task.txt", from: "alpha", through: "beta", targetAfter: "INSERT_HERE" },
           },

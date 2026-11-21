@@ -19,8 +19,8 @@ export function formatStaleAnchorMessage(
   const context = details.context === undefined ? "" : `\n\n${details.context}`;
   const guidance =
     details.context === undefined
-      ? `Reread only the relevant section of "${details.path}" and use its current anchors.`
-      : `If the required line is represented by one of the context lines below, use that anchor. Otherwise, reread only the relevant section of "${details.path}" and regenerate the anchor.`;
+      ? `No candidates to show. Use Read or Search in "${details.path}" to find a current anchor.`
+      : "Use a current candidate only if it matches the intended line.";
   const earlyStop = details.stoppedEarly
     ? "The guard intentionally stopped this call during streaming, before the full arguments or payload arrived. Missing text is a consequence of that stop, not a missing-payload mistake. Retrying the same stale selector will be refused again. "
     : "";

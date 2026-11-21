@@ -146,15 +146,11 @@ function resolveLineHashAnchor(
     };
   }
 
-  const shown = numbers
-    .slice(0, MAX_CANDIDATES)
-    .map((lineNumber) => `${lineNumber}`)
-    .join(", ");
   return {
     kind: "rejected",
     rejection: {
       code: "ambiguous",
-      reason: `anchor "${value}" names ${numbers.length} lines (${shown}${numbers.length > MAX_CANDIDATES ? ", …" : ""}); read them for distinct anchors`,
+      reason: `anchor "${value}" names ${numbers.length} lines`,
     },
   };
 }

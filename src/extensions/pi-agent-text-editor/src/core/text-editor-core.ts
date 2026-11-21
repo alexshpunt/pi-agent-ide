@@ -495,7 +495,6 @@ export interface TextEditorCore {
   registerTool(tool: TextEditorToolId): void;
   waitForPendingPlugins(): Promise<void>;
   renderGeneralPromptGuideline(kinds?: ReadonlySet<string>): string | undefined;
-  /** Returns the configured number of lines around recovery candidates. */
   recoveryContextLines(): number;
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
   /** Plugin text for one schema field of a tool, from active plugins only. */

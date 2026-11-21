@@ -6,7 +6,6 @@
   "dependencies": {
     "@earendil-works/pi-coding-agent": "1.5.2",
     "pi-agent-invariant": "workspace:^",
-    "pi-agent-read": "workspace:^",
     "pi-agent-resource": "workspace:^",
     "pi-agent-text-editor": "workspace:^"
   },

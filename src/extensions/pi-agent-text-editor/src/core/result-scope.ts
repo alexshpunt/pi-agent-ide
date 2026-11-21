@@ -1,6 +1,12 @@
 import path from "node:path";
 import type { ResolvedResultTargets, ResultTargetStore } from "pi-agent-resource";
-import type { TextAnchor, TextAnchorRecoveryRange, TextSelectionRange } from "pi-agent-text";
+import {
+  createTextDocument,
+  documentLineAnchors,
+  type TextAnchor,
+  type TextAnchorRecoveryRange,
+  type TextSelectionRange,
+} from "pi-agent-text";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import type { TextChangeDocument, TextRange } from "./text-change-engine.ts";
 
@@ -91,7 +97,7 @@ export function scopeRangeIndices(
   }
 }
 
-/** Names a file's selected ranges as an agent reads them, such as `task.txt lines 2-4`. */
+/** Names a result's scope by the anchors bounding each selected range, not by line numbers. */
 export function describeScope(
   source: string,
   scope: readonly TextSelectionRange[],
@@ -101,25 +107,18 @@ export function describeScope(
   // A file inside the workspace is named relative to it, as the agent usually names it.
   const root = cwd.endsWith(path.sep) ? cwd : cwd + path.sep;
   const shown = source.startsWith(root) ? source.slice(root.length) : source;
-  const lines = document.content.split("\n");
-  const parts = scope.map((range) => {
-    const { start, end } = range;
-    const last = lastLine(range);
-    const wholeLines =
-      start.column === 0 &&
-      (end.column === 0
-        ? end.lineNumber > start.lineNumber
-        : end.column >= (lines[end.lineNumber - 1]?.length ?? 0));
-    if (wholeLines)
-      return last === start.lineNumber
-        ? `line ${start.lineNumber}`
-        : `lines ${start.lineNumber}-${last}`;
-    // Columns are shown one-based, from the first selected character through the last.
-    return start.lineNumber === end.lineNumber
-      ? `line ${start.lineNumber} columns ${start.column + 1}-${end.column}`
-      : `${start.lineNumber}:${start.column + 1} to ${end.lineNumber}:${end.column}`;
+  if (scope.length === 0) return shown;
+  const { lines } = createTextDocument(source, document.content);
+  const anchors = documentLineAnchors(lines);
+  const limit = 5;
+  const parts = scope.slice(0, limit).flatMap((range) => {
+    const first = anchors[range.start.lineNumber - 1];
+    const last = anchors[lastLine(range) - 1];
+    if (first === undefined || last === undefined) return [];
+    return [first === last ? first : `${first} through ${last}`];
   });
-  return `${shown} ${parts.join(", ")}`;
+  const omitted = scope.length > limit ? `, … ${scope.length - limit} more ranges` : "";
+  return parts.length === 0 ? shown : `${shown} (${parts.join(", ")}${omitted})`;
 }
 
 /** The lines of a selection, shown as recovery context when an anchor misses it. */
