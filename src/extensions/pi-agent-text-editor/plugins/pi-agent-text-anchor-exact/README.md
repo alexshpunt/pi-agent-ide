@@ -14,7 +14,7 @@ Two endpoints may use different anchor formats:
 replace(path="src/store.ts", from="function load() {", through="K7M2QX4", text="replacement")
 ```
 
-In a pair, exact-text endpoints keep the literal match boundaries, including any newlines supplied in the text. They do not expand to containing lines or include an unsupplied trailing line ending. The range starts at the left edge of the opening match and ends at the right edge of the closing match; a line-anchor endpoint keeps its complete line. The same rule applies to paired copy and move destination selectors.
+In a pair, exact-text endpoints keep the literal match boundaries, including any newlines supplied in the text. They do not expand to containing lines or include an unsupplied trailing line ending. With `from` and `through`, the range starts at the left edge of the opening match and includes both matches in full, even when the closing match starts inside the opening match. A line-anchor endpoint marks its line's content boundary when paired with exact text. The same rule applies to paired copy and move destination selectors.
 
 Missing or ambiguous text never changes a file. The error can show candidates with fresh anchors for selecting one match. For missing text, these can be conservative fuzzy candidates. An ambiguous literal can also return a `SEARCH#…:all:match` selector for [editing every non-overlapping match](/src/extensions/pi-agent-text-editor/docs/editing-principles.md#3-tolerant-matching-strict-writing).
 
