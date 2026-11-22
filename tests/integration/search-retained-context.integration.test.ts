@@ -12,7 +12,7 @@ import {
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
-test("retained multiline Search matches keep full context and remain editable after later searches", async () => {
+test("retained multiline Search matches keep full context and remain editable after searches of a growing file", async () => {
   await withTempWorkspace(async (cwd) => {
     const original = "keep\r\nprefix first\r\nlast suffix\r\nkeep\r\n";
     await writeFile(path.join(cwd, "task.txt"), original);
@@ -23,7 +23,7 @@ test("retained multiline Search matches keep full context and remain editable af
       rawMode: false,
       environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
       extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
-      tools: ["search", "replace", "codemode"],
+      tools: ["search", "replace", "bash", "codemode"],
       conversation: [
         assistantMessage(
           [
@@ -49,6 +49,8 @@ const match = first.matches[0];
 if (match.text !== "first\\r\\nlast" || match.lineText !== "prefix first\\r\\nlast suffix\\r") throw Error("Lost context");
 store("retained", match);
 for (let index = 0; index < 5; index++) {
+  const append = await tools.bash({command: "printf '%s\\\\r\\\\n' 'append-" + index + "' >> task.txt"});
+  if (append.exit_code !== 0) throw Error("Fixture append failed");
   const later = await tools.search({path:"task.txt",query:"keep"});
   if (later.complete !== true || later.matches.length !== 2) throw Error("Later search failed");
 }
@@ -80,7 +82,7 @@ text("NEW");`,
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(getToolResultText(run, "retain")).toContain("prefix first\r\nlast suffix");
     expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
-      "keep\r\nprefix NEW suffix\r\nkeep\r\n",
+      "keep\r\nprefix NEW suffix\r\nkeep\r\nappend-0\r\nappend-1\r\nappend-2\r\nappend-3\r\nappend-4\r\n",
     );
   });
 });
