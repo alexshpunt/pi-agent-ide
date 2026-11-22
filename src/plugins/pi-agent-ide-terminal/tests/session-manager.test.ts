@@ -64,6 +64,39 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
     await expect(access(snapshot.fullOutputPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  test("drains the last lines before publishing completion despite a stalled PTY reader", async () => {
+    const manager = createManager();
+    const lineCount = 20_000;
+    const expected = Array.from({ length: lineCount }, (_, index) => `line ${index + 1}\r\n`).join(
+      "",
+    );
+    const session = manager.start({
+      command: `stty -echo; seq -f 'line %g' ${lineCount - 100}; IFS= read -r _; seq -f 'line %g' ${lineCount - 99} ${lineCount}`,
+      background: true,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+    const prefix = `line ${lineCount - 100}\r\n`;
+    const beforeTail = new Promise<void>((resolve) => {
+      const unsubscribe = manager.onDidChange(() => {
+        if (!session.output.endsWith(prefix)) return;
+        unsubscribe();
+        session.process?.pause();
+        resolve();
+      });
+    });
+    const atCompletion = new Promise<string>((resolve) => {
+      manager.onDidComplete((completed) => resolve(completed.output));
+    });
+    await beforeTail;
+    await manager.write(session.source, "\n");
+    await manager.wait(session.source);
+    const output = await atCompletion;
+    expect(output).toHaveLength(expected.length);
+    expect(output).toBe(expected);
+    expect(await readFile(session.fullOutputPath, "utf8")).toBe(expected);
+  });
+
   test("classifies a command timeout exit", async () => {
     const manager = createManager();
     const session = manager.start({

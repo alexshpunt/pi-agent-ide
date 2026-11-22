@@ -18,6 +18,10 @@ const root = path.resolve();
 const workspace = path.join(root, ".agents/tmp/terminal-integration/workspace");
 const extension = path.join(root, "src/pi-agent-ide.ts");
 
+function numberedOutput(prefix: string): string {
+  return Array.from({ length: 20_000 }, (_, index) => `${prefix}${index + 1}\n`).join("");
+}
+
 afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
@@ -84,7 +88,7 @@ test.runIf(process.platform !== "win32")(
               id: "run-large-output",
               name: "bash",
               arguments: {
-                command: "node -e 'for(let i=1;i<=2100;i++) console.log(\"line-\"+i)'",
+                command: "node -e 'for(let i=1;i<=20000;i++) console.log(\"line-\"+i)'",
               },
             }),
           ],
@@ -98,14 +102,13 @@ test.runIf(process.platform !== "win32")(
     const details = getToolExecutionDetails(execution) as { readonly fullOutputPath: string };
     const agentText = getToolResultText(result, "run-large-output");
     expect(agentText).not.toContain("line-1\n");
-    expect(agentText).toContain("line-2100");
+    expect(agentText).toContain("line-20000");
     expect(agentText).toContain("Earlier output omitted");
     expect(agentText).toContain(details.fullOutputPath);
-    const fullOutput = await readFile(details.fullOutputPath, "utf8");
-    expect(fullOutput).toContain("line-1");
-    expect(fullOutput).toContain("line-2100");
+    const fullOutput = (await readFile(details.fullOutputPath, "utf8")).replaceAll("\r\n", "\n");
+    expect(fullOutput).toBe(numberedOutput("line-"));
     expect(result.tuiRenderedOutput).not.toContain("line-1\n");
-    expect(result.tuiRenderedOutput).toContain("line-2100");
+    expect(result.tuiRenderedOutput).toContain("line-20000");
     expect(result.tuiRenderedOutput.split("\n").length).toBeLessThan(1_200);
     await rm(details.fullOutputPath, { force: true });
   },
@@ -204,7 +207,7 @@ test("delivers a background completion into a new agent turn", async () => {
     artifactsDir: testArtifactsDir(import.meta.filename, path.join(root, ".agents/tmp/test-runs")),
     cwd: workspace,
     extensions: [extension],
-    tools: [tool],
+    tools: [tool, "read"],
     rawMode: false,
     transport: "tui",
     environment: { SHELL: windows ? "powershell.exe" : "/bin/bash" },
@@ -219,32 +222,49 @@ test("delivers a background completion into a new agent turn", async () => {
             arguments: {
               command: windows
                 ? "Start-Sleep -Seconds 4; Write-Output 'background-terminal-ok'"
-                : "sleep 4; printf 'background-terminal-ok'",
+                : "sleep 4; node -e 'for(let i=1;i<=20000;i++) console.log(\"background-line-\"+i)'",
               background: true,
+              name: "tail-worker",
             },
           }),
         ],
         { stopReason: "toolUse" },
       ),
       assistantMessage([text("I will continue while it runs.", { delayMs: 0 })]),
+      assistantMessage(
+        [
+          toolCall({
+            id: "read-background",
+            name: "read",
+            arguments: { path: "shell:tail-worker", offset: -5 },
+          }),
+        ],
+        { stopReason: "toolUse" },
+      ),
       assistantMessage([text("I received the background completion.")]),
     ],
   }).run("Start background terminal work and handle its completion");
 
-  expect(getToolExecutionDetails(getToolExecution(result, "run-background"))).toMatchObject({
-    status: "running",
-    background: true,
-  });
-  expect(getToolCallNames(result)).toEqual([tool]);
+  const started = getToolExecutionDetails(getToolExecution(result, "run-background")) as {
+    readonly fullOutputPath: string;
+  };
+  expect(started).toMatchObject({ status: "running", background: true });
+  expect(getToolCallNames(result)).toEqual([tool, "read"]);
   const settled = result.traceEvents.findIndex((event) => event.type === "agent_settled");
   const completion = result.traceEvents.findIndex((event) =>
     JSON.stringify(event).includes('"customType":"terminal-completion"'),
   );
+  const marker = windows ? "background-terminal-ok" : "background-line-20000";
   expect(settled).toBeGreaterThanOrEqual(0);
   expect(completion).toBeGreaterThan(settled);
-  expect(JSON.stringify(result.traceEvents)).toContain("background-terminal-ok");
-  expect(result.providerRequests.length).toBeGreaterThanOrEqual(3);
-  if (!windows) expect(result.tuiRenderedOutput).toContain("background-terminal-ok");
+  expect(JSON.stringify(result.providerRequests[2]?.messages)).toContain(marker);
+  expect(getToolResultText(result, "read-background")).toContain(marker);
+  if (!windows) {
+    expect(result.tuiRenderedOutput).toContain(marker);
+    const log = (await readFile(started.fullOutputPath, "utf8")).replaceAll("\r\n", "\n");
+    expect(log).toBe(numberedOutput("background-line-"));
+  }
+  await rm(started.fullOutputPath, { force: true });
 });
 
 test.runIf(process.platform !== "win32")(

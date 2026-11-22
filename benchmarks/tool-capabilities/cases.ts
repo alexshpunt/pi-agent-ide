@@ -4134,7 +4134,7 @@ add(
     "shell.file-authority-refusal",
     "shell.delete",
   ],
-  'Start Bash with command IFS= read -r line; printf \'%s\\n\' "$line" and background true; it waits for one input line, prints that line and exits. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter and wait for the Write result before inserting the Enter key. Wait for the Insert result before reading the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource. The direct route may read all three sources together in one Read path array; preserve each actual result reference. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/at, before the text payload arrives; that early refusal is valid. After the refusal, search the shell\'s retained output with query "hello", and wait for the Search result before deleting the shell session. Report the line printed by the shell. Do not edit files.',
+  'Start Bash with command IFS= read -r line; printf \'%s\\nSHELL-FINAL-LINE\\n\' "$line" and background true; it waits for one input line, prints that line and then SHELL-FINAL-LINE before exiting. Wait for that first Bash result before choosing the shared-tool follow-up arguments from the available terminal guidance. Use its returned shell resource: write the text hello without Enter and wait for the Write result before inserting the Enter key. Wait for the Insert result before reading the unchanged Write and Insert results to inspect that same shell. In Codemode, Write and Insert to a shell resolve to null because they select no text; skip those two Reads. Also read the completed shell using its original resource and check that it includes SHELL-FINAL-LINE. The direct route may read all three sources together in one Read path array; preserve each actual result reference. Next attempt to replace hello with BAD through that terminal Read result and confirm the no-reusable-text-selection refusal: terminal output grants no file-edit authority. The streaming guard may refuse after path/at, before the text payload arrives; that early refusal is valid. After the refusal, search the shell\'s retained output with query "hello", and wait for the Search result before deleting the shell session. Report the echoed input line, hello. Do not edit files.',
   [
     { tool: "bash", args: { background: true } },
     { tool: "write", args: { content: "hello" }, reuse: reuse(0, "path", "shell") },
@@ -4142,7 +4142,7 @@ add(
     // A Codemode script gets null for terminal input, so only a direct route can read its result.
     { tool: "read", reuse: reuse(1), contains: "hello", modes: ["direct"] },
     { tool: "read", reuse: reuse(2), contains: "hello", modes: ["direct"] },
-    { tool: "read", reuse: reuse(0, "path", "shell"), contains: "hello", after: [2] },
+    { tool: "read", reuse: reuse(0, "path", "shell"), contains: "SHELL-FINAL-LINE", after: [2] },
     {
       tool: "replace",
       // Authority checks may refuse before either the selector or the payload arrives.

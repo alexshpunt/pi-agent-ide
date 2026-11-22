@@ -344,7 +344,7 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
       tool: "read",
       args: { path: sources },
       text: `<system-result><uuid>${uuid}</uuid></system-result>\n${sources
-        .map(() => "--- shell:input-check ---\nhello")
+        .map(() => "--- shell:input-check ---\nhello\nSHELL-FINAL-LINE")
         .join("\n")}`,
     },
     {
@@ -358,6 +358,13 @@ void test("shell roundtrip accepts one multi-source Read without losing any sour
   ];
   const route = steps("shell-roundtrip");
   assert.ok(check(route, calls));
+  assert.ok(
+    !check(route, [
+      ...calls.slice(0, 3),
+      { ...calls[3], text: calls[3].text?.replaceAll("\nSHELL-FINAL-LINE", "") },
+      ...calls.slice(4),
+    ]),
+  );
   assert.ok(
     check(route, [
       ...calls.slice(0, 3),
