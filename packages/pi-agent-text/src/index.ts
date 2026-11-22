@@ -73,3 +73,8 @@ export {
 export { storeText, restoreText, type StoredText } from "./stored-text.ts";
 
 export { endsWithNoFinalLineBreakMarker, NO_FINAL_LINE_BREAK } from "./no-final-line-break.ts";
+export {
+  SEARCH_HIGHLIGHT_OPEN,
+  SEARCH_HIGHLIGHT_CLOSE,
+  stripSearchHighlights,
+} from "./search-highlight.ts";

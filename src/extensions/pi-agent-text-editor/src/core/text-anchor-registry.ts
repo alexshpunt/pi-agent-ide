@@ -25,6 +25,12 @@ import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 
 import type { TextAnchorInspectionOutcome } from "#src/api/anchor-inspection.ts";
 const resolvedAnchorTypes = new WeakMap<TextAnchor, TextAnchorType>();
+const resolvedAnchorNotices = new WeakMap<TextAnchor, string>();
+
+/** Returns the result notice for a selector resolved by a fallback. */
+export function resolvedTextAnchorNotice(anchor: TextAnchor): string | undefined {
+  return resolvedAnchorNotices.get(anchor);
+}
 
 /** Returns the registered resolver type that produced an anchor. */
 export function resolvedTextAnchorType(anchor: TextAnchor): TextAnchorType | undefined {
@@ -73,6 +79,9 @@ export class TextAnchorResolutionError extends Error {
       {
         code: this.rejection?.code ?? "invalid",
         reason,
+        ...(this.rejection?.searchHighlightRetry !== undefined && {
+          searchHighlightRetry: this.rejection.searchHighlightRetry,
+        }),
         ...(range !== undefined && { contextRange: range }),
       },
       recoveryScope === undefined ? this.recovery : undefined,
@@ -98,6 +107,7 @@ export class TextAnchorResolutionError extends Error {
     const context = this.recoveryContext;
     if (
       this.rejection?.code !== "ambiguous" ||
+      this.rejection.searchHighlightRetry !== undefined ||
       this.recovery?.kind !== "candidates" ||
       this.recovery.allMatches === undefined ||
       context === undefined
@@ -409,6 +419,7 @@ export class TextAnchorRegistrySnapshot {
       attachTextAnchorRenderer(attempt.anchor, resolver, resolver.id);
 
       resolvedAnchorTypes.set(attempt.anchor, type);
+      if (attempt.notice !== undefined) resolvedAnchorNotices.set(attempt.anchor, attempt.notice);
       return attempt.anchor;
     }
 

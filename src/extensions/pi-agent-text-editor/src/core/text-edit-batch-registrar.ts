@@ -56,6 +56,7 @@ import {
   preflightMutationAnchors,
   presentedFinalStateLines,
   textMutationOperationReceipts,
+  withMutationResultMetadata,
 } from "#src/core/text-mutation.ts";
 import { registerBlockedToolCallSink } from "#src/core/tool-call-interceptor/coordinator.ts";
 
@@ -374,14 +375,8 @@ export async function planRegisteredTextBatch(
       return {
         callId,
         mutation: {
-          ...mutation,
+          ...withMutationResultMetadata(mutation, mutationContext),
           operation: registration.name,
-          resultPresentations: new Map(
-            [...mutation.edits.keys()].map((source) => [
-              source,
-              mutationContext.resultPresentationFor(source),
-            ]),
-          ),
         },
       };
     }),
@@ -691,6 +686,7 @@ export async function executeRegisteredTextBatch(
       source,
       {
         changes: edits.flatMap((edit) => edit.changes),
+        selectorStatuses: edits.flatMap((edit) => edit.selectorStatuses ?? []),
         action: edits.some((edit) => edit.action === "overwritten") ? "overwritten" : "edited",
       },
       resource.after.content,

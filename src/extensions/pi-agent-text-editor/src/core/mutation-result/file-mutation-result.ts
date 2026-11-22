@@ -81,6 +81,8 @@ export interface FileError {
   reason?: string | undefined;
   /** Editor failure code of the step that failed when `code` is a provider's own code. */
   stage?: string | undefined;
+  /** A failed attempt to match without Search highlight delimiters. */
+  readonly searchHighlightFallback?: true;
   /** Closed provider retry metadata, without private transport diagnostics. */
   readonly metadata?: ResourceErrorMetadata;
 }
