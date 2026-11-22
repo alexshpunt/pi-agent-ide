@@ -4,6 +4,7 @@ export {
 } from "./json-structured-arguments.ts";
 export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.ts";
 export {
+  EDIT_EXECUTION_TIMEOUT_MS,
   EDIT_WAIT_TIMEOUT_MS,
   NAVIGATION_TIMEOUT_MS,
   SEARCH_TIMEOUT_MS,
@@ -11,6 +12,7 @@ export {
   ideToolTimeoutMs,
   reportToolEffect,
   runWithToolDeadline,
+  runWithinToolDeadline,
   snapshotOnToolDeadline,
   toolDeadlineFailure,
   trackToolCleanup,

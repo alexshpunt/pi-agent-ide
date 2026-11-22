@@ -1,5 +1,10 @@
-import { ResourceError, type AgentContent, type ResourceResolver } from "pi-agent-resource";
-import { expect, test } from "vitest";
+import {
+  EDIT_EXECUTION_TIMEOUT_MS,
+  ResourceError,
+  type AgentContent,
+  type ResourceResolver,
+} from "pi-agent-resource";
+import { expect, test, vi } from "vitest";
 
 import {
   TEXT_EDITOR_API_VERSION,
@@ -7,8 +12,41 @@ import {
   type TextEditorPlugin,
 } from "#src/api/plugin-protocol.ts";
 import { createTextEditorCore } from "#src/core/text-editor-core.ts";
-import { createPostEditScope } from "#src/core/post-edit-scope.ts";
+import { createPostEditScope, deferPostEdit } from "#src/core/post-edit-scope.ts";
 import { withTextEditOrigin } from "#src/core/text-edit-origin.ts";
+
+test("deferred processing times out without losing the applied edit receipt", async () => {
+  vi.useFakeTimers();
+  try {
+    const scope = createPostEditScope("/workspace");
+    const source = "/workspace/slow.txt";
+    const cancelled = vi.fn();
+    const failure = vi.fn();
+    scope.run(() =>
+      deferPostEdit(source, (signal) => {
+        signal.addEventListener("abort", cancelled, { once: true });
+        return new Promise<never>(() => {});
+      }),
+    );
+    const finishing = expect(scope.finish(undefined, failure)).rejects.toBeInstanceOf(
+      AggregateError,
+    );
+    await vi.advanceTimersByTimeAsync(EDIT_EXECUTION_TIMEOUT_MS);
+    await finishing;
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(failure).toHaveBeenCalledWith(
+      source,
+      expect.objectContaining({
+        code: "TOOL_TIMEOUT",
+        target: source,
+        effect: "applied",
+        timeoutMs: EDIT_EXECUTION_TIMEOUT_MS,
+      }),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 test("waits for post-edit work after writing and rereads the final text", async () => {
   const core = createTextEditorCore();

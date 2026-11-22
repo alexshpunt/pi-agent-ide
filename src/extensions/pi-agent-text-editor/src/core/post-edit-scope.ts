@@ -1,10 +1,16 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { requiredValue } from "pi-agent-invariant";
-import { EDIT_WAIT_TIMEOUT_MS, ResourceScheduler, resourceAccesses } from "pi-agent-resource";
+import {
+  EDIT_EXECUTION_TIMEOUT_MS,
+  EDIT_WAIT_TIMEOUT_MS,
+  ResourceScheduler,
+  resourceAccesses,
+  runWithinToolDeadline,
+} from "pi-agent-resource";
 import type { TextResourceEditOutcome } from "./text-editor-core.ts";
 
 type Completed = Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>;
-type Finalize = () => Promise<Completed>;
+type Finalize = (signal: AbortSignal) => Promise<Completed>;
 const active = new AsyncLocalStorage<{
   readonly pending: Map<string, Finalize>;
   readonly immediate: boolean;
@@ -78,10 +84,26 @@ export function createPostEditScope(cwd = process.cwd()) {
         const scheduler = new ResourceScheduler();
         const outcomes = await Promise.allSettled(
           work.map(([source, finalize]) =>
-            scheduler.run(resourceAccesses(source, cwd, "write"), finalize, undefined, {
-              waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
-              waitFor: source,
-            }),
+            runWithinToolDeadline(
+              "editor post-processing",
+              source,
+              EDIT_EXECUTION_TIMEOUT_MS,
+              undefined,
+              "applied",
+              (signal) =>
+                scheduler.run(
+                  resourceAccesses(source, cwd, "write"),
+                  () => finalize(signal),
+                  signal,
+                  {
+                    waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+                    waitFor: source,
+                  },
+                ),
+              (error) => {
+                throw error;
+              },
+            ),
           ),
         );
         for (const [index, outcome] of outcomes.entries()) {

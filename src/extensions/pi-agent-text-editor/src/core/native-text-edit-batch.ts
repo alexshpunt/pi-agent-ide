@@ -39,12 +39,14 @@ import { resolveResultScope } from "./result-scope.ts";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.ts";
 import { writeProblemNotices } from "./write-agent-result.ts";
 import {
+  EDIT_EXECUTION_TIMEOUT_MS,
   EDIT_WAIT_TIMEOUT_MS,
   ResourceScheduler,
   ResourceError,
   resourceAccesses,
   connectResultTargets,
   resultError,
+  runWithinToolDeadline,
   type ResultTargetStore,
   type StructuredResult,
 } from "pi-agent-resource";
@@ -1111,6 +1113,7 @@ class NativeTextEditBatchCoordinator {
       }
       try {
         await this.resultTargets.verify({ targets, complete: true }, signal);
+        signal.throwIfAborted();
         this.resultTargets.confirm(reference, targets, script.context.cwd);
       } catch (error) {
         this.resultTargets.reject(
@@ -1239,35 +1242,52 @@ class NativeTextEditBatchCoordinator {
           observedSources.length > 0,
       });
       if (!completed) script.errors.push(failedBatchSummary(calls, batch.entries, script.ordinals));
-      return completed;
+      else if (outcome.status === "error")
+        script.errors.push(...outcome.errors.map(({ message }) => message));
+      return completed && outcome.status !== "error";
     };
     try {
       signal.throwIfAborted();
-      const captured = await withTextEditOrigin(this.core, script.id, () =>
-        script.postEdits.run(() =>
-          captureScriptMutation(this.core, () =>
-            executeRegisteredTextBatch(
-              this.core,
-              registrations,
-              { edits: batch.entries, expectedExistence: batch.existence },
-              signal,
-              undefined,
-              script.context,
-              journal.reporter(),
-              () => {},
-              // Results and targets describe what was written: the plan of the last attempt.
-              (plan, snapshots) => {
-                batch.plan = plan;
-                batch.snapshots.clear();
-                for (const [source, content] of snapshots) batch.snapshots.set(source, content);
-                unchangedCalls = callsUnchanged();
-              },
+      const captured = await runWithinToolDeadline(
+        "editor batch",
+        [...batch.requests.keys()].join(", "),
+        EDIT_EXECUTION_TIMEOUT_MS,
+        signal,
+        "not-applied",
+        async (deadlineSignal) => {
+          const result = await withTextEditOrigin(this.core, script.id, () =>
+            script.postEdits.run(() =>
+              captureScriptMutation(this.core, () =>
+                executeRegisteredTextBatch(
+                  this.core,
+                  registrations,
+                  { edits: batch.entries, expectedExistence: batch.existence },
+                  deadlineSignal,
+                  undefined,
+                  script.context,
+                  journal.reporter(),
+                  () => {},
+                  // Results and targets describe what was written: the plan of the last attempt.
+                  (plan, snapshots) => {
+                    batch.plan = plan;
+                    batch.snapshots.clear();
+                    for (const [source, content] of snapshots) batch.snapshots.set(source, content);
+                    unchangedCalls = callsUnchanged();
+                  },
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+          deadlineSignal.throwIfAborted();
+          observedSources = result.completions.map((completion) => completion.resourceSource);
+          if (result.kind === "failed") throw result.error;
+          await this.settleTargets(script, batch, journal, result.completions, deadlineSignal);
+          return result;
+        },
+        (error) => {
+          throw error;
+        },
       );
-      observedSources = captured.completions.map((completion) => completion.resourceSource);
-      if (captured.kind === "failed") throw captured.error;
       const alreadyDone =
         captured.completions.length === 0 &&
         journal
@@ -1291,7 +1311,6 @@ class NativeTextEditBatchCoordinator {
               },
             };
       script.results.push(...(value.details.results ?? []));
-      await this.settleTargets(script, batch, journal, captured.completions, signal);
       const presentation = {
         parentToolCallId: script.id,
         calls: batch.entries.map((entry) => entry.callId),

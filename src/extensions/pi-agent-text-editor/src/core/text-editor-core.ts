@@ -2048,9 +2048,16 @@ async function finalizeTextResource<Result>(
   const deferred =
     !skipPostEdit &&
     !request.postProcessingFinal &&
-    deferPostEdit(request.resource.source, () =>
+    deferPostEdit(request.resource.source, (signal) =>
       finalizeTextResource({
         ...request,
+        context: {
+          ...request.context,
+          signal:
+            request.context.signal === undefined
+              ? signal
+              : AbortSignal.any([request.context.signal, signal]),
+        },
         savedText,
         ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
         postProcessingFinal: true,
@@ -2076,6 +2083,7 @@ async function finalizeTextResource<Result>(
   request.context.signal?.aborted
     ? []
     : request.postEditHandlers) {
+    if (request.context.signal?.aborted) break;
     try {
       const data = await registration.handler(transaction);
 
