@@ -17,7 +17,7 @@ export {
   toolDeadlineFailure,
   trackToolCleanup,
   type DeadlineEffect,
-  type ToolDeadlineError,
+  ToolDeadlineError,
 } from "./tool-deadline.ts";
 export { resourceAccesses } from "./resource-access.ts";
 export {
