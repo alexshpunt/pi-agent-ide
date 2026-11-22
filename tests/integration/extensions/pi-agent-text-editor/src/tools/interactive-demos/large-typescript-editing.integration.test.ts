@@ -426,7 +426,9 @@ function insertAfter(
     arguments: {
       path: file,
       after: formatLineHashAnchor(source, anchorIndex + 1),
-      text: `${insertion}\n`,
+      // The first break at each edge of the block is a separator, so a leading empty
+      // insertion line needs its own extra break.
+      text: `\n${insertion}\n`,
     },
     after: afterLines.join("\n"),
     inspection: { offset: anchorIndex + 1, limit: 1 },

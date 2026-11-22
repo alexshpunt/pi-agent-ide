@@ -28,7 +28,10 @@ const targets = (configured ? JSON.parse(configured) : []) as {
   workspace: string;
 }[];
 
-test.skipIf(targets.length === 0).each(targets)(
+// Vitest rejects a file without tests, so an unconfigured run registers one skipped case.
+const cases = targets.length > 0 ? targets : [{ id: "unconfigured", host: "", workspace: "" }];
+
+test.skipIf(targets.length === 0).each(cases)(
   "$id: file tools read, edit, undo, copy, move and delete on a Windows target",
   async ({ id, host, workspace }) => {
     const backend = new SshBackend({ id, host, workspace, os: "windows" });

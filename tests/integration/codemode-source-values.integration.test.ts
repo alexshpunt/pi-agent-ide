@@ -63,7 +63,8 @@ text("transfers-complete");`,
     for (const form of ["value", "object", "id"]) {
       const contents = (suffix: string) =>
         readFile(path.join(cwd, `${form}-${suffix}.txt`), "utf8");
-      expect(await contents("source")).toBe("\n");
+      // "source" spans its whole line, so moving it out also removes the line's ending.
+      expect(await contents("source")).toBe("");
       expect(await contents("target")).toBe("left NEW right\n");
       expect(await contents("copy")).toBe("left source right\n");
       expect(await contents("move")).toBe("left source right\n");

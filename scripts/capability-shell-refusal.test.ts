@@ -41,14 +41,21 @@ function executions(
       },
     );
   };
-  call("bash", { command: "read value; printf '%s\\n' \"$value\"", background: true }, shell);
+  call(
+    "bash",
+    {
+      command: "IFS= read -r line; printf '%s\\nSHELL-FINAL-LINE\\n' \"$line\"",
+      background: true,
+    },
+    shell,
+  );
   call("write", { path: shell, content: "hello" }, result(1));
   call("insert", { path: shell, text: "Enter" }, result(2));
   if (mode === "direct") {
     call("read", { path: uuid(1) }, result(3));
     call("read", { path: uuid(2) }, result(4));
   }
-  call("read", { path: shell }, result(5));
+  call("read", { path: shell }, `${result(5)}\nSHELL-FINAL-LINE`);
   call("replace", args, refusal, true);
   call("search", { path: shell, query: "hello" }, "hello");
   call("search", { query: "process:pi" }, "process:42");

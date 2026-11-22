@@ -291,14 +291,15 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "latest-first",
               name: "insert",
-              arguments: { path: latestName, after: "end", text: "first" },
+              // A leading break lands the single line separately at the unterminated end.
+              arguments: { path: latestName, after: "end", text: "\nfirst" },
             }),
           ),
           toolMessage(
             toolCall({
               id: "latest-second",
               name: "insert",
-              arguments: { path: latestName, after: "end", text: "second" },
+              arguments: { path: latestName, after: "end", text: "\nsecond" },
             }),
           ),
           toolMessage(
@@ -385,7 +386,7 @@ if (receipt === null) throw Error("Large move failed");`,
             toolCall({
               id: "selective-source-edit",
               name: "insert",
-              arguments: { path: fileName, after: "end", text: "gamma" },
+              arguments: { path: fileName, after: "end", text: "\ngamma" },
             }),
           ),
           toolMessage(
