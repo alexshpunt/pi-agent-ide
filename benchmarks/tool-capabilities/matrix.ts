@@ -455,6 +455,8 @@ const groups: [string[], string[]][] = [
   [["read.image", "read.pdf"], ["read-media"]],
   [["compose.codemode-image-value"], ["codemode-image-value"]],
   [["compose.read-image-write"], ["read-image-write"]],
+  // This paid case checks a successful Write. The real-Pi edit-window-writes tests
+  // check stale Write recovery on both routes, including applying a fresh anchor.
   [["write.json-text"], ["write-json-text"]],
   [["web.read", "web.search"], ["web-read-search"]],
 ];

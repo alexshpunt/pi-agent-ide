@@ -258,8 +258,9 @@ export class FileWriteObservations {
   }
 }
 
-const conflict =
-  "File changed since this session read or wrote it. Read the whole current file and rebuild the content, or use a targeted edit.";
+function staleWriteRefusal(source: string): string {
+  return `Use replace, insert, delete or move on current text. The file changed; do not retry the whole-file write. Get fresh anchors with ${anchoredReadCall(source)}.`;
+}
 
 /** Pin even an unobserved file's first snapshot: a guarded-write retry cannot rebase a payload. */
 export function guardWholeFileWrite(
@@ -268,16 +269,19 @@ export function guardWholeFileWrite(
 ): NonNullable<TextResourceEditRequest["checkSnapshot"]> {
   let first: { identity: string; digest: string | undefined } | undefined;
   return async ({ source, resolvedBy, existed, content }, cwd) => {
-    if (expectedContent !== undefined && (!existed || expectedContent !== content)) return conflict;
+    if (expectedContent !== undefined && (!existed || expectedContent !== content))
+      return staleWriteRefusal(source);
     if (!isTextFile(resolvedBy, source)) return;
     const keys = await fileTextKeys(source, cwd);
     const identity = keys[0] ?? source;
     const digest = existed ? fileTextDigest(content) : undefined;
     if (first === undefined) {
       if (expectedContent === undefined && observations?.matches(keys, digest) === false)
-        return conflict;
+        return staleWriteRefusal(source);
       first = { identity, digest };
     }
-    return identity !== first.identity || digest !== first.digest ? conflict : undefined;
+    return identity !== first.identity || digest !== first.digest
+      ? staleWriteRefusal(source)
+      : undefined;
   };
 }
