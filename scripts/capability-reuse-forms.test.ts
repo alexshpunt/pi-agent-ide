@@ -209,11 +209,15 @@ describe("shell-roundtrip", () => {
   const task = capabilityCase("shell-roundtrip");
   const shell = "shell:0123abcd";
   const reread = uuid("4");
+  const shellOutput = "output:\nhello\nSHELL-FINAL-LINE";
   const calls = (writeRead: Omit<Call, "parent">[]): Omit<Call, "parent">[] => [
     {
       id: "bash",
       tool: "bash",
-      args: { command: "read line; echo $line", background: true },
+      args: {
+        command: `IFS= read -r line; printf '%s\\nSHELL-FINAL-LINE\\n' "$line"`,
+        background: true,
+      },
       uuid: uuid("1"),
       text: `session: ${shell}\nstatus: running`,
       value: { output: "", session: shell },
@@ -238,8 +242,8 @@ describe("shell-roundtrip", () => {
       tool: "read",
       args: { path: shell },
       uuid: reread,
-      text: "output:\nhello",
-      value: { text: "output:\nhello", id: `RESULT#${reread}` },
+      text: shellOutput,
+      value: { text: shellOutput, id: `RESULT#${reread}` },
     },
     {
       id: "replace",
