@@ -242,6 +242,7 @@ const groups: [string[], string[]][] = [
     ["edit.transfer-refusal", "edit.move-policy-refusal", "edit.approval-headless-move"],
     ["directory-transfer-gates"],
   ],
+  [["edit.parallel-same-file-replace"], ["parallel-same-file-replace"]],
   [["compose.parallel-object-transfer-refusals"], ["parallel-directory-transfer-gates"]],
   [["compose.approval-refusal-read"], ["delete-policy-gates", "directory-transfer-gates"]],
   [

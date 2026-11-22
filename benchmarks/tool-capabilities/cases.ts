@@ -1241,6 +1241,30 @@ add(
     },
   },
 );
+{
+  const slots = ["apple", "banana", "cherry", "date", "elderberry", "fig"];
+  add(
+    "parallel-same-file-replace",
+    ["edit.parallel-same-file-replace"],
+    (api) =>
+      `Read parallel.txt. Then send six Replace calls on parallel.txt: for each of ${slots.join(", ")}, use literal at "old <name>" and text "new <name>", substituting the corresponding name. ${parallelCalls(api, slots.length)} Do not retry or send the edits one at a time. Preserve the brackets, CRLF separators and absence of a final newline.`,
+    [
+      { tool: "read", args: { path: "parallel.txt" } },
+      ...slots.map((slot, index): RouteStep => ({
+        tool: "replace",
+        args: { path: "parallel.txt", at: `old ${slot}` },
+        exactText: ["at"],
+        after: [0],
+        ...(index > 0 && { sameAssistantWith: 1 }),
+      })),
+    ],
+    {
+      modes: ["direct"],
+      files: { "parallel.txt": slots.map((slot) => `[old ${slot}]`).join("\r\n") },
+      expected: { "parallel.txt": slots.map((slot) => `[new ${slot}]`).join("\r\n") },
+    },
+  );
+}
 for (const operation of ["delete", "insert"] as const) {
   add(
     `search-line-batch-${operation}`,
