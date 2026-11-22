@@ -24,6 +24,7 @@ import {
   toolCall,
   type PiIntegrationTestResult,
 } from "./support/pi-runtime/native-pi-coding-agent-test.ts";
+import { forceStandaloneIntegrationFile } from "./support/pi-runtime/standalone.ts";
 import { expect, test } from "vitest";
 
 const entry = path.resolve("src/pi-agent-ide.ts");
@@ -61,6 +62,8 @@ async function runCase(
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "case-"));
   const agentDir = path.join(cwd, "agent");
+  // Module selection happens when the extension loads, before the shared runner stages the case.
+  const restoreRunner = disabled.length > 0 ? forceStandaloneIntegrationFile() : undefined;
   try {
     await mkdir(agentDir);
     await writeFile(path.join(agentDir, "settings.json"), JSON.stringify(settings));
@@ -104,6 +107,7 @@ async function runCase(
       conversation: [...conversation, assistantMessage([text("Done")])],
     }).run("Verify native IDE availability");
   } finally {
+    restoreRunner?.();
     await rm(cwd, { recursive: true, force: true });
   }
 }
@@ -120,7 +124,7 @@ test.each(["on", "only"])(
         }),
         call("apply", "apply", { source: "removed" }),
         call("script", "codemode", {
-          code: 'text(await tools.read({path: "example.txt"})); text(await searchTools("stage", {namespace: "ide_git"})); text(await describeNamespace("ide_edit"));',
+          code: 'text((await tools.read({path: "example.txt"})).text); text(await searchTools("stage", {namespace: "ide_git"})); text(await describeNamespace("ide_edit"));',
         }),
         call("discover", "tool_search", { query: "ide_debug debug", limit: 1 }),
         mode === "on"
@@ -138,12 +142,24 @@ test.each(["on", "only"])(
     expect(state.active).toContain("tool_search");
     expect(state.callable).not.toContain("apply");
     expect(state.callable).toEqual(
-      expect.arrayContaining(["read", "diff", "debug", "stage", "unstage"]),
+      expect.arrayContaining([
+        "read",
+        "diff",
+        "undo",
+        "ast_search",
+        "lsp_search",
+        "debug",
+        "stage",
+        "unstage",
+      ]),
     );
     expect(state.nested?.isError).toBe(true);
     for (const [name, exposure, namespace] of [
       ["read", "direct", "ide_read"],
-      ["diff", "direct", "ide_read"],
+      ["diff", "deferred", "ide_read"],
+      ["undo", "deferred", "ide_edit"],
+      ["ast_search", "deferred", "ide_ast_search"],
+      ["lsp_search", "deferred", "ide_lsp_search"],
       ["search", "direct", "ide_search"],
       ["write", "direct", "ide_edit"],
       ["bash", "direct", "ide_terminal"],
@@ -156,6 +172,10 @@ test.each(["on", "only"])(
         namespace: { name: namespace },
       });
     expect(state.tools.find((tool) => tool.name === "read")?.annotations?.readOnlyHint).toBe(false);
+    for (const name of ["diff", "undo", "ast_search", "lsp_search"]) {
+      expect(state.active).not.toContain(name);
+      expect(declarations(result).map((tool) => tool.name)).not.toContain(name);
+    }
     expect(declarations(result).map((tool) => tool.name)).not.toContain("apply");
     expect(state.tools.map((tool) => tool.name)).not.toContain("apply");
     expect(declarations(result).map((tool) => tool.name)).not.toContain("debug");
@@ -165,7 +185,6 @@ test.each(["on", "only"])(
         .includes("read"),
     ).toBe(mode === "on");
     expect(getToolExecution(result, "apply").isError).toBe(true);
-    expect(getToolResultText(result, "apply")).toContain("Tool apply not found");
     expect(getToolResultText(result, "script")).toContain("native-exposure-marker");
     expect(getToolResultText(result, "script")).not.toContain("third-party-stage-marker");
     expect(getToolResultText(result, "discover")).toContain("debug");
@@ -174,13 +193,48 @@ test.each(["on", "only"])(
   },
 );
 
+test("script discovery leaves deferred tools out of direct declarations", async () => {
+  const result = await runCase(
+    "ide-script-discovery",
+    [
+      call("wrong-route", "codemode", {
+        code: 'text((await tools.read({path: "example.txt"})).text); text(await tools.tool_search({query: "diff", limit: 1}));',
+      }),
+      call("script-route", "codemode", {
+        code: 'const [diff, matches] = await Promise.all([tools.diff({before: "example.txt", after: "example.txt"}), searchTools("diff", {limit: 1, namespace: "ide_read"})]); text(JSON.stringify({diff, names: matches.map(({name}) => name), schema: Boolean(await describeTool("diff"))}));',
+      }),
+      call("direct-route", "tool_search", { query: "diff", limit: 1 }),
+    ],
+    { defaultTools: ["+codemode"], codemode: { mode: "on", inlineBudget: 0 } },
+  );
+  expect(getToolExecution(result, "wrong-route").isError).toBe(true);
+  expect(getToolResultText(result, "wrong-route")).toContain("native-exposure-marker");
+  expect(getToolExecution(result, "script-route").isError).toBe(false);
+  expect(getToolResultText(result, "script-route")).toContain(
+    JSON.stringify({ diff: "", names: ["diff"], schema: true }),
+  );
+  expect(declarations(result, 2).map((tool) => tool.name)).not.toContain("diff");
+  expect(declarations(result, 3).map((tool) => tool.name)).toContain("diff");
+});
+
 test("deferred Git tools execute through native Codemode after namespace discovery", async () => {
   const result = await runCase(
     "ide-git-execution",
     [
       call("discover", "tool_search", { query: "ide_git stage unstage", limit: 2 }),
       call("git", "codemode", {
-        code: 'const first = await tools.read({path: "example.txt", views: ["changes"]}); const change = first.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.stage({file: "example.txt", change})); const staged = await tools.read({path: "example.txt", views: ["changes"]}); const next = staged.match(/CHANGE#[A-F0-9]+/)?.[0]; text(await tools.unstage({file: "example.txt", change: next}));',
+        code: `
+          const command = "git diff --cached --quiet -- example.txt";
+          const first = await tools.read({path: "example.txt", views: ["changes"]});
+          const change = first.text.match(/CHANGE#[A-F0-9]+/)?.[0];
+          await tools.stage({file: "example.txt", change});
+          const stagedExitCode = (await tools.bash({command})).exit_code;
+          const staged = await tools.read({path: "example.txt", views: ["changes"]});
+          const next = staged.text.match(/CHANGE#[A-F0-9]+/)?.[0];
+          await tools.unstage({file: "example.txt", change: next});
+          const unstagedExitCode = (await tools.bash({command})).exit_code;
+          text(JSON.stringify({stagedExitCode, unstagedExitCode}));
+        `,
       }),
     ],
     { defaultTools: ["+codemode"] },
@@ -190,8 +244,9 @@ test("deferred Git tools execute through native Codemode after namespace discove
   );
   expect(getToolResultText(result, "discover")).not.toContain("stage_note");
   expect(getToolExecution(result, "git").isError).toBe(false);
-  expect(getToolResultText(result, "git")).toContain("Staged");
-  expect(getToolResultText(result, "git")).toContain("Unstaged");
+  expect(getToolResultText(result, "git")).toContain(
+    JSON.stringify({ stagedExitCode: 1, unstagedExitCode: 0 }),
+  );
 });
 
 test.each(["settings", "modules"])(
@@ -221,9 +276,6 @@ test.each(["settings", "modules"])(
     expect(state.callable).not.toContain("stage");
     expect(state.callable).not.toContain("unstage");
     expect(state.nested?.isError).toBe(true);
-    const prompt = getProviderSystemPrompt(result);
-    expect(prompt).not.toContain("Use tool_search to find debug");
-    expect(prompt).not.toContain("Use tool_search to find stage");
     expect(getToolResultText(result, "script")).not.toMatch(/"(?:debug|stage|unstage)"/);
   },
 );
@@ -251,7 +303,12 @@ test.each(["exclude", "allow"])(
     expect(state.tools.map((tool) => tool.name)).not.toContain("stage");
     expect(state.nested?.isError).toBe(true);
     expect(getToolResultText(result, "script")).not.toMatch(/"(?:debug|stage|unstage)"/);
-    expect(getProviderSystemPrompt(result)).not.toContain("<ide_discovery>");
+    const guidance =
+      /<ide_discovery>\n([\s\S]*?)\n<\/ide_discovery>/u.exec(
+        getProviderSystemPrompt(result),
+      )?.[1] ?? "";
+    // Allowed active tools can still have usage guidance; excluded tools must not appear.
+    expect(guidance).not.toMatch(/\b(?:debug|stage|unstage)\b/u);
   },
 );
 

@@ -1,4 +1,4 @@
-import { storeText, restoreText, type StoredText } from "pi-agent-text";
+import { storeText, restoreText, stripSearchHighlights, type StoredText } from "pi-agent-text";
 import type { SearchToolDetails, SearchResultFile, SearchResultRange } from "./search-result.ts";
 
 type StoredLine =
@@ -10,18 +10,13 @@ interface StoredSearchDetails extends Omit<SearchToolDetails, "files"> {
   })[];
 }
 
-/** Uses the output without match delimiters as a stable text-reference source. */
-function sourceText(text: string): string {
-  return text.replaceAll("⟦", "").replaceAll("⟧", "");
-}
-
 /** Stores match geometry while sharing line text with the saved tool output. */
 export function compactSearchDetails(
   details: SearchToolDetails,
   text: string,
 ): StoredSearchDetails {
   const { files, ...rest } = details;
-  const source = sourceText(text);
+  const source = stripSearchHighlights(text);
   return {
     ...rest,
     storedFiles: files.map(({ lines, ...file }) => ({
@@ -41,7 +36,7 @@ export function restoreSearchDetails(
 ): SearchToolDetails {
   if ("files" in value) return value;
   const { storedFiles, ...rest } = value;
-  const source = sourceText(text);
+  const source = stripSearchHighlights(text);
   return {
     ...rest,
     files: storedFiles.map(({ lines, ...file }) => ({

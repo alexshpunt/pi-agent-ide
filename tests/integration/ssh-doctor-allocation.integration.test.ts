@@ -6,6 +6,11 @@ import { SshBackendRegistry } from "#src/backend/registry.ts";
 import * as channels from "#src/backend/ssh-channel.ts";
 import { startSshFixture } from "./support/ssh-fixture.ts";
 import { probeOwnedDoctorAllocation } from "./support/ssh-doctor-allocation-probe.ts";
+import type { SshCommand } from "#src/backend/ssh-transport.ts";
+
+/** Prepend fixture code to the doctor probe program. */
+const prefixed = (command: SshCommand, prefix: string): SshCommand =>
+  typeof command === "string" ? command : { python: `${prefix}${command.python}` };
 
 // Lose only the owned allocation reply after its real filesystem effects. Keep a private receipt for RED cleanup.
 test("Doctor cleans its native allocation when its creation receipt is lost", async () => {
@@ -30,12 +35,11 @@ test("Doctor cleans its native allocation when its creation receipt is lost", as
     intercepted.mockImplementationOnce((target, command, args, cwd, context) =>
       start(
         target,
-        command,
-        [
-          "-c",
-          `import builtins, pathlib\ndef lose_owned_reply(value, *args, **kwargs):\n    pathlib.Path(${JSON.stringify(receipt)}).write_text(value, encoding="utf8")\nbuiltins.print = lose_owned_reply\n${args[1]}`,
-          ...args.slice(2),
-        ],
+        prefixed(
+          command,
+          `import builtins, pathlib\ndef lose_owned_reply(value, *args, **kwargs):\n    pathlib.Path(${JSON.stringify(receipt)}).write_text(value, encoding="utf8")\nbuiltins.print = lose_owned_reply\n`,
+        ),
+        args,
         cwd,
         context,
       ),
@@ -118,12 +122,11 @@ test("failed native entry creation releases only its newly created container", a
     intercepted.mockImplementationOnce((target, command, args, cwd, context) =>
       start(
         target,
-        command,
-        [
-          "-c",
-          `import tempfile\ndef refuse_owned_entry(*args, **kwargs):\n    raise OSError("Owned entry allocation refused")\ntempfile.mkdtemp = refuse_owned_entry\n${args[1]}`,
-          ...args.slice(2),
-        ],
+        prefixed(
+          command,
+          `import tempfile\ndef refuse_owned_entry(*args, **kwargs):\n    raise OSError("Owned entry allocation refused")\ntempfile.mkdtemp = refuse_owned_entry\n`,
+        ),
+        args,
         cwd,
         context,
       ),
@@ -165,9 +168,8 @@ test("native rollback preserves a foreign probe entry and reports its cleanup re
     intercepted.mockImplementationOnce((target, command, args, cwd, context) =>
       start(
         target,
-        command,
-        [
-          "-c",
+        prefixed(
+          command,
           `import builtins, json, pathlib
 def lose_owned_reply(value, *args, **kwargs):
     data = json.loads(value)
@@ -175,9 +177,9 @@ def lose_owned_reply(value, *args, **kwargs):
         pathlib.Path(${JSON.stringify(receipt)}).write_text(value, encoding="utf8")
         pathlib.Path(data['directory'], 'external.txt').write_text("external café", encoding="utf8")
 builtins.print = lose_owned_reply
-${args[1]}`,
-          ...args.slice(2),
-        ],
+`,
+        ),
+        args,
         cwd,
         context,
       ),

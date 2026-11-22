@@ -71,27 +71,15 @@ test.each(["applied", "already-staged", "stale"] as const)(
       expect(execution.isError).toBe(state === "stale");
       expect(getToolExecutionDetails(execution)).toMatchObject({ action: "stage", change, file });
       const agentText = getToolResultText(run, "stage");
-      expect(agentText).toMatch(
-        /^<system-result\b[^>]*><uuid>[a-f\d-]{36}<\/uuid><\/system-result>\n/u,
-      );
-      const message = agentText.slice(agentText.indexOf("\n") + 1);
-      expect(message).toContain(
-        state === "applied"
-          ? "Staged"
-          : state === "already-staged"
-            ? "already staged"
-            : "not available",
-      );
-      // Native wrapping may split words. Compare all useful text, not one fixed layout.
-      expect(run.tuiRenderedOutput.replaceAll(/\s/gu, "")).toContain(
-        message.replaceAll(/\s/gu, ""),
-      );
-      for (const internal of [
-        "<system-result",
-        "<uuid>",
-        "Internal reference; not part of the file.",
-      ])
-        expect(run.tuiRenderedOutput).not.toContain(internal);
+      const resultFrame = /^<system-result\b[^>]*><uuid>[a-f\d-]{36}<\/uuid><\/system-result>\n/u;
+      expect(resultFrame.test(agentText)).toBe(state !== "stale");
+      if (state !== "stale") {
+        // The native display keeps the result body, regardless of prose and line wrapping.
+        const body = agentText.replace(resultFrame, "").replaceAll(/\s/gu, "");
+        expect(body.length).toBeGreaterThan(0);
+        expect(run.tuiRenderedOutput.replaceAll(/\s/gu, "")).toContain(body);
+      }
+      expect(run.tuiRenderedOutput).not.toMatch(/<\/?(?:system-result|uuid)\b/u);
       await expect(readFile(file, "utf8")).resolves.toBe(current);
       expect((await git(["show", `:${fileName}`])).stdout).toBe(
         state === "stale" ? baseline : current,

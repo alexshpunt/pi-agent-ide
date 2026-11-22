@@ -177,6 +177,50 @@ test("a refused output reread never hides a saved edit or grants source authorit
   expect(result.details.metadata?.resultTarget).toBeUndefined();
   expect(result.details.metadata?.targetUnavailable).toContain("blocked");
 });
+test("a concurrent write prevents output authority without undoing a successful edit", async () => {
+  const store = new ResultTargetStore();
+  const core = createTextEditorCore();
+  setMutationSnapshotReader(core, async (source) => ({
+    source,
+    expectedContent: "peer\nnew",
+    readCurrent: async () => "peer\nnew",
+    ranges: [],
+  }));
+  const result = await attachCommittedMutationTarget(
+    {
+      content: [],
+      details: {
+        effect: "applied",
+        results: [
+          new FileMutationResult({
+            ok: true,
+            path: "/workspace/note.txt",
+            rawChanges: [
+              {
+                editIndex: 0,
+                fromA: 0,
+                toA: 3,
+                fromB: 0,
+                toB: 3,
+                removedText: "old",
+                insertedText: "new",
+              },
+            ],
+          }),
+        ],
+      },
+    },
+    [completion("old", "new")],
+    core,
+    store,
+    "replace",
+    "/workspace",
+  );
+  expect(result.isError).not.toBe(true);
+  expect(result.details.effect).toBe("applied");
+  expect(result.details.metadata?.resultTarget).toBeUndefined();
+  expect(result.details.metadata?.targetUnavailable).toBeTruthy();
+});
 function completion(before: string, after: string, resolvedBy = "filesystem"): TextEditCompletion {
   return {
     source: "/workspace/note.txt",

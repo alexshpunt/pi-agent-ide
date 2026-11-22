@@ -17,7 +17,7 @@ const cases = [
   {
     name: "fresh-path-and-anchor",
     source: "note.txt",
-    anchor: "start",
+    anchor: "at",
     stale: false,
     error: false,
     payload: "OLD\nADDED",
@@ -26,20 +26,21 @@ const cases = [
   {
     name: "stale-result-and-anchor",
     source: "$issued-uuid:selection",
-    anchor: "start",
+    anchor: "at",
     stale: true,
     error: true,
     payload: "NEW",
     after: "keep\nCHANGED\nlast\n",
   },
   {
-    name: "replace-with-start",
+    // The match lies inside the Search result, which scopes it.
+    name: "replace-at",
     source: "$issued-uuid:selection",
-    anchor: "start",
+    anchor: "at",
     stale: false,
-    error: true,
+    error: false,
     payload: "NEW",
-    after: "keep\nOLD\nlast\n",
+    after: "keep\nNEW\nlast\n",
   },
   {
     name: "replace-selected-result",
@@ -95,7 +96,7 @@ test.each(cases)(
                     toolCall({
                       id: "change",
                       name: "replace",
-                      arguments: { path: "note.txt", start: "OLD", text: "CHANGED" },
+                      arguments: { path: "note.txt", at: "OLD", text: "CHANGED" },
                     }),
                   ],
                   { stopReason: "toolUse" },
@@ -125,10 +126,6 @@ test.each(cases)(
         getToolExecutions(run).filter((execution) => execution.toolCallId === "consume"),
       ).toHaveLength(1);
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(entry.after);
-      if (entry.name === "replace-with-start") {
-        expect(getToolResultText(run, "consume")).toContain("RESULT_INPUT_REJECTED");
-        expect(getToolResultText(run, "consume")).not.toContain("ENOENT");
-      }
     });
   },
 );

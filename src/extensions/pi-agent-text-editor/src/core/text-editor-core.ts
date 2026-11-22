@@ -22,6 +22,9 @@ import {
   isAgentContent,
   ResourceError,
   isResourceResolutionAttempt,
+  EDIT_EXECUTION_TIMEOUT_MS,
+  EDIT_WAIT_TIMEOUT_MS,
+  reportToolEffect,
   resourceScheduler,
   resourceAccesses,
   type ResourceAccess,
@@ -88,10 +91,12 @@ import {
   TextAnchorRegistry,
   type TextAnchorRegistrySnapshot,
 } from "#src/core/text-anchor-registry.ts";
+import { currentTextEditRun } from "#src/core/source-change-retry.ts";
 import {
   applyTextChanges,
   type TextChange,
   type TextChangeResult,
+  type TextChangeDocument,
 } from "#src/core/text-change-engine.ts";
 import { previewTextMutation } from "#src/core/text-mutation.ts";
 import { loadTextEditorConfig, recoverySection } from "#src/core/text-editor-config.ts";
@@ -177,7 +182,10 @@ function scopedResolvers(
     sources.map(async (source) => {
       try {
         for (const { resolver } of cached) {
-          const attempt = await resolver.tryResolve(source, context);
+          const attempt = await resolver.tryResolve(
+            source,
+            mode === "write" ? { ...context, deferSnapshot: true } : context,
+          );
           if (!isResourceResolutionAttempt(attempt)) return undefined;
           if (attempt.kind === "not-handled") continue;
           if (attempt.kind === "failed") return undefined;
@@ -282,6 +290,7 @@ export interface TextResourceEditFailure {
   readonly code:
     | "CONFLICT"
     | "INVALID_REQUEST"
+    | "SOURCE_CHANGED"
     | "INVALID_RESOLVER_RESULT"
     | "INVALID_RESOURCE_CONTENT"
     | "INVALID_WRITE_CONTENT"
@@ -322,11 +331,23 @@ export type TextResourceEditOutcome<Result> =
 export interface TextResourceEditRequest {
   /** Reject a resource created or removed since its batch snapshot was captured. */
   readonly expectedExistence?: boolean;
+  /** Check the resolved transaction snapshot before planning any writes. */
+  readonly checkSnapshot?: (
+    snapshot: TextResourceSnapshot,
+    cwd: string,
+  ) => Promise<string | undefined>;
   readonly source: string;
   readonly read: boolean;
   readonly allowReadFailure?: boolean;
   /** Allow an anchored semantic action to use a read-only resource. */
   readonly requireWrite?: boolean;
+}
+
+export interface TextResourceSnapshot {
+  readonly source: string;
+  readonly resolvedBy: string;
+  readonly existed: boolean;
+  readonly content: string;
 }
 
 export interface TextResourcesMutationResult<Result> {
@@ -359,6 +380,9 @@ export type ResolveResourceTextAnchor = (
   source: string,
   value: string,
   kinds?: readonly string[],
+  /** Ranges of the source the anchor is limited to; see TextAnchorResolverContext.scope. */
+  scope?: TextAnchorResolverContext["scope"],
+  endAfter?: number,
 ) => Promise<TextAnchor>;
 
 /** Input for resolving an anchor value against already-available text content. */
@@ -376,6 +400,13 @@ export interface TextResourcesEditContext
   extends ResourceResolverContext, TextMutationGuardContext {}
 
 export interface TextEditorCore {
+  readonly checkSpan?: (
+    source: string,
+    cwd: string,
+    document: TextChangeDocument,
+    from: number,
+    to: number,
+  ) => Promise<void>;
   /** Run whole-object deletion policies in registration order; denial and errors block removal. */
   beforeDelete(event: BeforeDeleteEvent): Promise<void>;
   /** Capture the prior destination before a whole-file publication, then finalize its saved text. */
@@ -449,6 +480,8 @@ export interface TextEditorCore {
       resolveAnchor: ResolveResourceTextAnchor,
     ) => TextResourcesMutationResult<unknown> | Promise<TextResourcesMutationResult<unknown>>,
   ): Promise<TextMutationPreviewOutcome>;
+  /** Selected pre-edit planners require the standalone pipeline. */
+  hasMatchingPreEditHandler(tool: TextEditorToolId, input: unknown): boolean;
   getSemanticMutationHandler(
     tool: TextEditorToolId,
     input: unknown,
@@ -468,7 +501,6 @@ export interface TextEditorCore {
   registerTool(tool: TextEditorToolId): void;
   waitForPendingPlugins(): Promise<void>;
   renderGeneralPromptGuideline(kinds?: ReadonlySet<string>): string | undefined;
-  /** Returns the configured number of lines around recovery candidates. */
   recoveryContextLines(): number;
   renderToolPromptGuideline(tool: TextEditorToolId): string | undefined;
   /** Plugin text for one schema field of a tool, from active plugins only. */
@@ -482,6 +514,7 @@ export function createTextEditorCore(
     core: TextEditorCore,
   ) => void,
   resultTargets?: ResultTargetStore,
+  observation: Pick<TextEditorCore, "checkSpan"> = {},
 ): TextEditorCore {
   const projectConfig = loadTextEditorConfig(process.cwd());
   const resolvers: RegisteredResolver[] = [];
@@ -504,11 +537,26 @@ export function createTextEditorCore(
   const fileOperationResolvers: FileOperationResolver[] = [];
   let registrationQueue = Promise.resolve();
   const scheduler = resourceScheduler;
+  const fileOperationWaitPolicy = {
+    waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+    waitTimeoutForAccesses: (accesses: readonly ResourceAccess[]) =>
+      accesses.length > 0 &&
+      accesses.every(
+        ({ resource, group = resource }) => group.startsWith("file:") || group.startsWith("ssh://"),
+      )
+        ? EDIT_EXECUTION_TIMEOUT_MS
+        : undefined,
+  };
   const enqueueMutation = <T>(
     action: () => Promise<T>,
     signal?: AbortSignal,
     accesses?: Promise<readonly ResourceAccess[] | undefined>,
-  ): Promise<T> => scheduler.run(accesses, action, signal);
+  ): Promise<T> =>
+    scheduler.run(accesses, action, signal, {
+      waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+      waitTimeoutForAccesses: (resolved) =>
+        resolved.length > 0 ? EDIT_EXECUTION_TIMEOUT_MS : undefined,
+    });
   const registerContributions = (draft: PluginContributionDraft): void => {
     validateContributionDraft(
       draft,
@@ -634,6 +682,7 @@ export function createTextEditorCore(
     );
   };
   const core: TextEditorCore = {
+    ...observation,
     async beforeDelete(event) {
       for (const registration of [...deleteGuards]) {
         event.signal?.throwIfAborted();
@@ -765,6 +814,8 @@ export function createTextEditorCore(
             ).then((sets) => sets.flat());
       return scheduler.run(accesses, action, signal, {
         allowNestedWrites: scope?.allowNestedEdits === true,
+        ...fileOperationWaitPolicy,
+        waitFor: scope === undefined ? "the file operation reservation" : scope.sources.join(", "),
       });
     },
     executeFileOperation: (operation, input, cwd, signal, deletion) =>
@@ -796,11 +847,15 @@ export function createTextEditorCore(
         read,
         [...mutationGuards],
       );
+      context.signal?.throwIfAborted();
+      reportToolEffect("unknown");
       try {
         for (const file of files) {
+          context.signal?.throwIfAborted();
           await mkdir(path.dirname(file.source), { recursive: true });
           await writeFile(file.source, file.bytes, { signal: context.signal });
         }
+        reportToolEffect("applied");
       } catch (error) {
         throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
           effect: "unknown",
@@ -836,6 +891,14 @@ export function createTextEditorCore(
       editCompletionListeners.add(listener);
       return () => editCompletionListeners.delete(listener);
     },
+    hasMatchingPreEditHandler(tool, input): boolean {
+      return handlers.some(
+        (registered) =>
+          registered.tool === tool &&
+          registered.registration.stage === "text-pre-edit" &&
+          registered.registration.when?.(input) === true,
+      );
+    },
     getSemanticMutationHandler(tool, input): TextSemanticMutationHandler | undefined {
       const matches = semanticHandlers.filter(
         (registered) => registered.tool === tool && registered.handler.matches(input),
@@ -852,13 +915,17 @@ export function createTextEditorCore(
       return inspectTextResource(request, [...resolvers], anchorRegistry.snapshot(), resultTargets);
     },
     resolveTextAnchorResources(value, kinds, context): Promise<readonly TextTarget[] | undefined> {
-      return anchorRegistry.snapshot().resolveResources(value, context, new Set(kinds));
+      return anchorRegistry
+        .snapshot()
+        .resolveResources(value, withEditRun(context), new Set(kinds));
     },
     textTargetResolver(): TextTargetResolver {
       return {
         id: "text-editor-anchors",
         tryResolve: async (value, context) => {
-          const targets = await anchorRegistry.snapshot().resolveResources(value, context);
+          const targets = await anchorRegistry
+            .snapshot()
+            .resolveResources(value, withEditRun(context));
           return targets === undefined ? { kind: "not-handled" } : { kind: "resolved", targets };
         },
       };
@@ -867,7 +934,7 @@ export function createTextEditorCore(
       const context: TextAnchorResolverContext = {
         source: request.source,
         content: request.content,
-        lines: request.content.length === 0 ? [] : request.content.split(/\r?\n/u),
+        lines: request.content.length === 0 ? [] : request.content.split("\n"),
         cwd: request.cwd,
         ...(request.signal !== undefined && { signal: request.signal }),
       };
@@ -1205,10 +1272,12 @@ async function inspectTextResource(
     try {
       const source = resultTargets.source(request.source, request.cwd);
       if (Array.isArray(source) || (typeof source === "string" && source.startsWith("RESULT#"))) {
-        const selected = resultTargets.resolve(source, request.cwd);
+        const selected = resultTargets.resolve(source, request.cwd, { forScope: true });
         if (!selected.complete)
           return { kind: "failed", reason: "Incomplete result selections cannot authorize edits." };
-        await resultTargets.verify(selected, request.signal);
+        // Like the edit itself: selections of a local file follow its changes, and the check under
+        // the file lock decides; only sources the store cannot follow are verified here.
+        await resultTargets.verifyUnfollowed(selected, request.signal);
         for (const target of selected.targets) {
           const inspected = await inspectTextResource(
             { ...request, source: target.source },
@@ -1285,7 +1354,7 @@ async function inspectTextResource(
     return anchors.inspect(request.anchors, request.kinds, {
       source: resource.source,
       content: content[0].text,
-      lines: content[0].text.length === 0 ? [] : content[0].text.split(/\r?\n/u),
+      lines: content[0].text.length === 0 ? [] : content[0].text.split("\n"),
       cwd: request.cwd,
       ...(request.signal !== undefined && { signal: request.signal }),
     });
@@ -1339,7 +1408,7 @@ async function previewTextResources(
     }
 
     const texts = new Map([...prepared].map(([source, item]) => [source, item.before.content]));
-    const mutation = await operation(texts, (source, value, kinds) => {
+    const mutation = await operation(texts, (source, value, kinds, scope, endAfter) => {
       const item = prepared.get(source);
 
       if (item === undefined) {
@@ -1348,7 +1417,11 @@ async function previewTextResources(
 
       return anchorResolvers.resolve(
         value,
-        item.anchorContext,
+        {
+          ...item.anchorContext,
+          ...(scope === undefined ? {} : { scope }),
+          ...(endAfter === undefined ? {} : { endAfter }),
+        },
         kinds === undefined ? undefined : new Set(kinds),
       );
     });
@@ -1358,7 +1431,7 @@ async function previewTextResources(
       const applied =
         changes === undefined
           ? { content: item.before.content, changes: [] }
-          : applyTextChanges(item.before.content, changes, !item.existed);
+          : applyTextChanges(item.before.content, changes);
       return {
         path: source,
         existed: item.existed,
@@ -1439,11 +1512,26 @@ async function editTextResources<Result>(
     if (request.expectedExistence !== undefined && request.expectedExistence !== outcome.existed) {
       throw new Error(`Snapshot source ${source} was created or removed before the edit batch.`);
     }
+    const conflict = await request.checkSnapshot?.(
+      {
+        source: outcome.resource.source,
+        resolvedBy: outcome.resolverId,
+        existed: outcome.existed,
+        content: outcome.before.content,
+      },
+      context.cwd,
+    );
+    if (conflict !== undefined)
+      return {
+        kind: "failed",
+        completed: [],
+        failure: { code: "CONFLICT", source, message: conflict },
+      };
     prepared.set(source, outcome);
   }
 
   const texts = new Map([...prepared].map(([source, item]) => [source, item.before.content]));
-  const mutation = await operation(texts, (source, value, kinds) => {
+  const mutation = await operation(texts, (source, value, kinds, scope, endAfter) => {
     const item = prepared.get(source);
 
     if (item === undefined) {
@@ -1452,7 +1540,11 @@ async function editTextResources<Result>(
 
     return anchorResolvers.resolve(
       value,
-      item.anchorContext,
+      {
+        ...item.anchorContext,
+        ...(scope === undefined ? {} : { scope }),
+        ...(endAfter === undefined ? {} : { endAfter }),
+      },
       kinds === undefined ? undefined : new Set(kinds),
     );
   });
@@ -1519,7 +1611,7 @@ async function editTextResources<Result>(
 
   for (const [source, changes] of mutation.changes) {
     const item = requiredValue(prepared.get(source));
-    applied.set(source, applyTextChanges(item.before.content, changes, !item.existed));
+    applied.set(source, applyTextChanges(item.before.content, changes));
   }
 
   const plan: TextMutationPlan = {
@@ -1612,6 +1704,7 @@ async function editTextResources<Result>(
     const item = requiredValue(prepared.get(source));
     return text !== undefined && (!item.existed || text !== item.before.content);
   });
+  if (written.length > 0) reportToolEffect("unknown");
   const writes = await Promise.allSettled(
     written.map(async (source) => {
       const item = requiredValue(prepared.get(source));
@@ -1685,6 +1778,7 @@ async function editTextResources<Result>(
       completed: [],
     };
   }
+  if (written.length > 0) reportToolEffect("applied");
   const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
 
   let finalizingSource = written[0] ?? sources[0] ?? "";
@@ -1857,7 +1951,10 @@ async function prepareTextResource(
           context.signal === undefined ? {} : { signal: context.signal },
         );
       } catch (error) {
-        if (!allowReadFailure) {
+        const file = resolver.id === "filesystem" || resolver.id === "ssh";
+        // Only absence authorizes creating a file. Permission or transport errors are not absence.
+        const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
+        if (!allowReadFailure || (file && !missing)) {
           return {
             failure: {
               code: "READ_FAILED",
@@ -1967,9 +2064,16 @@ async function finalizeTextResource<Result>(
   const deferred =
     !skipPostEdit &&
     !request.postProcessingFinal &&
-    deferPostEdit(request.resource.source, () =>
+    deferPostEdit(request.resource.source, (signal) =>
       finalizeTextResource({
         ...request,
+        context: {
+          ...request.context,
+          signal:
+            request.context.signal === undefined
+              ? signal
+              : AbortSignal.any([request.context.signal, signal]),
+        },
         savedText,
         ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
         postProcessingFinal: true,
@@ -1995,6 +2099,7 @@ async function finalizeTextResource<Result>(
   request.context.signal?.aborted
     ? []
     : request.postEditHandlers) {
+    if (request.context.signal?.aborted) break;
     try {
       const data = await registration.handler(transaction);
 
@@ -2079,7 +2184,7 @@ async function finalizeTextResource<Result>(
   }
 
   let after = finalAfter;
-  // Presenters cost a whole-document pass (AST parsing, line hashing); run them only for shown lines.
+  // Presenters cost a whole-document pass (AST parsing, deriving line anchors); run them only for shown lines.
   const lineNumbers = new Set(
     request.context.signal?.aborted
       ? []
@@ -2284,6 +2389,8 @@ async function editTextResource<Result>(
       };
     }
 
+    context.signal?.throwIfAborted();
+    reportToolEffect("unknown");
     try {
       await resource.write(finalContent, {
         ...(context.signal !== undefined && { signal: context.signal }),
@@ -2301,6 +2408,7 @@ async function editTextResource<Result>(
       };
     }
 
+    reportToolEffect("applied");
     try {
       return await finalizeTextResource({
         requestedSource: source,
@@ -2354,6 +2462,7 @@ async function runPreEditHandlers<Input>(
     }
 
     try {
+      if (registered.registration.when && !registered.registration.when(state.input)) continue;
       state = (await registered.registration.handler(state)) as TextPreEditState<Input>;
     } catch (error) {
       return {
@@ -3094,6 +3203,12 @@ function replayMutationTools(
   for (const registration of mutationTools.values()) {
     listener(registration);
   }
+}
+
+/** Resolution context with the edit whose attempt is running, so retries can reuse its results. */
+function withEditRun<Context extends TextAnchorResourceResolverContext>(context: Context): Context {
+  const edit = context.edit ?? currentTextEditRun();
+  return edit === undefined ? context : { ...context, edit };
 }
 
 function addMutationRegistration(

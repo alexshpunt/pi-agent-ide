@@ -42,9 +42,9 @@ async function schema(disabled: string[], latePlugin = false) {
 
 test("delivers late plugin metadata to the real Pi provider", async () => {
   const read = await schema([], true);
-  const { path: source, views } = read.properties;
-  expect(source?.description).toContain("current-schema-format");
-  expect(source?.description).not.toContain("old-schema-format");
+  const { offset, views } = read.properties;
+  expect(offset?.description).toContain("current-schema-format");
+  expect(offset?.description).not.toContain("old-schema-format");
   expect(views?.description).toContain("late-view");
   expect(views).toMatchObject({ type: "array", items: { type: "string" } });
 });

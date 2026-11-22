@@ -12,14 +12,20 @@ import {
 } from "pi-agent-text-editor/api/plugin-protocol";
 import type { ResolvedSshSource, SshBackendRegistry } from "./registry.ts";
 import { remoteLocation } from "./identity.ts";
-import { localTransferSource, transferFile } from "./file-transfer.ts";
+import { localTransferSource, settleInOrder, transferFile } from "./file-transfer.ts";
 import { checkCapturedRevision } from "./file-revision.ts";
 import { SshBackendError } from "./ssh.ts";
 
 interface Endpoint extends FileTransferEndpoint {
   readonly remote?: ResolvedSshSource;
   readonly source: string;
+  /** A Windows target cannot hold every name a POSIX tree can. */
+  readonly windows?: boolean;
 }
+
+// Characters Windows forbids in names, and device names it reserves in every extension.
+const windowsForbiddenName =
+  /[<>:"\\|?*\u0000-\u001f]|[. ]$|^(?:con|prn|aux|nul|com\d|lpt\d)(?:\..*)?$/iu;
 
 /** Resolve each endpoint on its selected owner; never interpret SSH paths on the controller. */
 function endpoint(
@@ -42,7 +48,9 @@ function endpoint(
     source: remote.location.source,
     path: remote.location.path,
     cwd,
+    windows: remote.backend.target.os === "windows",
     files: {
+      ...(remote.backend.target.os === "windows" && { caseInsensitive: true }),
       owner: JSON.stringify([remote.backend.target.host, remote.backend.target.configFile ?? null]),
       realpath: (file) => remote.backend.realpath(file, context),
       inspect: (file) => remote.backend.lstat(file, context),
@@ -62,6 +70,8 @@ function leaf(owner: Endpoint, root: string, relative: string): string {
     paths.sep === "\\" &&
     relative.split("/").some((name) => name.includes("\\") || name.includes(":"))
   )
+    throw new SshBackendError("INVALID_TARGET", owner.source, "not-applied");
+  if (owner.windows === true && relative.split("/").some((name) => windowsForbiddenName.test(name)))
     throw new SshBackendError("INVALID_TARGET", owner.source, "not-applied");
   return paths.join(root, ...relative.split("/"));
 }
@@ -161,10 +171,12 @@ export async function transferObject(
           context,
         );
       } else {
-        await transferFile(registry, operation, input, context, captured, async () => {
-          await checkEntry(source, guard.source.path, root);
-          await checkEntry(target, guard.target.path, guard.target.entries[0]);
-        });
+        await transferFile(registry, operation, input, context, captured, () =>
+          settleInOrder([
+            checkEntry(source, guard.source.path, root),
+            checkEntry(target, guard.target.path, guard.target.entries[0]),
+          ]),
+        );
       }
     } else {
       if (
@@ -195,13 +207,14 @@ export async function transferObject(
         context.signal?.throwIfAborted();
         const from = leaf(source, guard.source.path, entry.relativePath);
         const to = leaf(target, guard.target.path, entry.relativePath);
-        await checkEntry(source, from, entry);
         const expected = destination.get(entry.relativePath);
-        await checkEntry(target, to, expected);
+        await settleInOrder([checkEntry(source, from, entry), checkEntry(target, to, expected)]);
         if (entry.kind === "directory") {
           if (expected === undefined) started = true;
+          let identity: FileObjectEntry["identity"] | undefined;
+          // A remote target reports the identity it created; that saves an lstat round trip.
           if (target.remote)
-            await target.remote.backend.ensureObjectDirectory(
+            identity = await target.remote.backend.ensureObjectDirectory(
               to,
               entry.mode | 0o700,
               expected?.revision ?? null,
@@ -210,9 +223,10 @@ export async function transferObject(
           else if (expected === undefined) {
             await directoryParents(path.dirname(to));
             await mkdir(to, { mode: entry.mode | 0o700 });
+            identity = (await target.files.inspect(to)).identity;
           }
-          if (expected === undefined)
-            createdDirectories.set(entry.relativePath, (await target.files.inspect(to)).identity);
+          if (expected === undefined && identity !== undefined)
+            createdDirectories.set(entry.relativePath, identity);
         } else if (entry.kind === "symlink") {
           started = true;
           if (entry.link === undefined)
@@ -241,10 +255,8 @@ export async function transferObject(
               { path: fromSource, target: toSource },
               context,
               undefined,
-              async () => {
-                await checkEntry(source, from, entry);
-                await checkEntry(target, to, expected);
-              },
+              () =>
+                settleInOrder([checkEntry(source, from, entry), checkEntry(target, to, expected)]),
             );
         }
       }
@@ -271,7 +283,8 @@ export async function transferObject(
             const info = await fd.stat();
             if (String(info.dev) !== created.device || String(info.ino) !== created.inode)
               throw new SshBackendError("TRANSFER_TARGET_CHANGED", target.source, "unknown");
-            await fd.chmod(entry.mode & 0o7777);
+            // Windows has no POSIX directory modes; fchmod on a directory handle fails with EPERM.
+            if (process.platform !== "win32") await fd.chmod(entry.mode & 0o7777);
           } finally {
             await fd.close();
           }

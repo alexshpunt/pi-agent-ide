@@ -17,8 +17,7 @@ afterAll(() => extensions.dispose());
 
 const lines = ["alpha", "bravo", "charlie", "delta", "echo"] as const;
 const content = lines.join("\n");
-const anchor = (lineNumber: number): string =>
-  createLineHashAnchor(lineNumber, lines[lineNumber - 1]).value;
+const anchor = (lineNumber: number): string => createLineHashAnchor(content, lineNumber).value;
 
 describe("line-hash anchors through text editor tools", () => {
   test("inserts after a line-hash anchor", async () => {
@@ -26,7 +25,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-insert",
       "insert",
-      { anchor: after, text: "inserted" },
+      { after: after, text: "inserted\n" },
       [after],
       ["alpha", "bravo", "inserted", "charlie", "delta", "echo"].join("\n"),
     );
@@ -36,16 +35,15 @@ describe("line-hash anchors through text editor tools", () => {
     const canonical = anchor(2);
     const variants = [
       { name: "separator", value: `${canonical}|` },
-      { name: "file-prefix", value: `insert.txt:${canonical}|` },
-      { name: "code-span", value: `use \`${canonical}|\` here` },
-      { name: "surrounded", value: `prefix ${canonical} suffix` },
+      { name: "padded", value: `  ${canonical}|bravo` },
+      { name: "spaced", value: ` ${canonical} ` },
     ] as const;
 
     for (const variant of variants) {
       await runLineHashScenario(
         `line-hash-extract-${variant.name}`,
         "insert",
-        { anchor: variant.value, text: "inserted" },
+        { after: variant.value, text: "inserted\n" },
         [canonical],
         ["alpha", "bravo", "inserted", "charlie", "delta", "echo"].join("\n"),
       );
@@ -58,7 +56,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-replace",
       "replace",
-      { start, end, text: "replaced" },
+      { from: start, through: end, text: "replaced" },
       [start, end],
       ["alpha", "replaced", "delta", "echo"].join("\n"),
     );
@@ -70,7 +68,7 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-delete",
       "delete",
-      { start, end },
+      { from: start, through: end },
       [start, end],
       ["alpha", "delta", "echo"].join("\n"),
     );
@@ -83,9 +81,9 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-copy",
       "copy",
-      { start, end, targetStart: target },
+      { from: start, through: end, targetAfter: target },
       [start, end, target],
-      ["alpha", "bravo", "charlie", "delta", "echo", "bravo", "charlie", ""].join("\n"),
+      ["alpha", "bravo", "charlie", "delta", "echo", "bravo", "charlie"].join("\n"),
     );
   });
 
@@ -96,9 +94,9 @@ describe("line-hash anchors through text editor tools", () => {
     await runLineHashScenario(
       "line-hash-move",
       "move",
-      { start, end, targetStart: target },
+      { from: start, through: end, targetAfter: target },
       [start, end, target],
-      ["alpha", "delta", "echo", "bravo", "charlie", ""].join("\n"),
+      ["alpha", "delta", "echo", "bravo", "charlie"].join("\n"),
     );
   });
 });
@@ -134,11 +132,13 @@ async function runLineHashScenario(
     expect(getToolExecution(result, mutationCallId).isError).toBe(false);
     expectTextToolDiff(scenario, relativeFile, content, expectedContent);
     const finalState = postflightCallIds.map((id) => getToolResultText(result, id)).join("\n");
-    expect(finalState).toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
+    expect(finalState).toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|/mu);
     expect(finalState).not.toMatch(/^[+ -]\|/mu);
 
     for (const [index, line] of expectedContent.replace(/\n$/u, "").split("\n").entries()) {
-      expect(finalState).toContain(`${createLineHashAnchor(index + 1, line).value}|${line}`);
+      expect(finalState).toContain(
+        `${createLineHashAnchor(expectedContent, index + 1).value}|${line}`,
+      );
     }
     await expect(readFile(file, "utf8")).resolves.toBe(expectedContent);
   });

@@ -1,5 +1,4 @@
 import path from "node:path";
-import { readFile } from "node:fs/promises";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
@@ -12,6 +11,10 @@ import { startSshTcpDapTransport } from "./dap-tcp-transport.ts";
 import { prepareSshNodeDebugger } from "./dap-node-transport.ts";
 import { prepareSshJavaDebugger } from "./dap-java-transport.ts";
 import type { DebugSessionOptions } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
+import { packagedSource } from "./packaged-source.ts";
+
+const rWorker = packagedSource(new URL("./dap-r-worker.py", import.meta.url));
+const powershellWorker = packagedSource(new URL("./dap-powershell-worker.py", import.meta.url));
 
 type StdioRecipe = {
   readonly command: string;
@@ -331,7 +334,7 @@ export function createSshDebuggerWorkspaceOwner(
           );
         }
         if (options.adapter === "r") {
-          const worker = await readFile(new URL("./dap-r-worker.py", import.meta.url), "utf8");
+          const worker = await rWorker;
           const transport = await startSshDapTransport(registry, root.location.source, {
             command: "python3",
             args: ["-c", worker],
@@ -359,10 +362,7 @@ export function createSshDebuggerWorkspaceOwner(
           };
         }
         if (options.adapter === "powershell") {
-          const worker = await readFile(
-            new URL("./dap-powershell-worker.py", import.meta.url),
-            "utf8",
-          );
+          const worker = await powershellWorker;
           const transport = await startSshDapTransport(registry, root.location.source, {
             command: "python3",
             args: ["-c", worker],

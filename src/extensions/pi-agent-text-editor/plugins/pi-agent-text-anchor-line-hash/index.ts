@@ -14,11 +14,13 @@ import {
 
 import { createLineHashAnchorResolver } from "./src/anchor.ts";
 import { createLineHashPresenter } from "./src/read-handler.ts";
+import { LineHashRangeHistory } from "./src/range-history.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default async function registerLineHashTextAnchor(pi: ExtensionAPI): Promise<void> {
-  const presenter = createLineHashPresenter();
+  const history = new LineHashRangeHistory();
+  const presenter = createLineHashPresenter(history);
   const readPlugin = {
     protocol: READ_PROTOCOL,
     apiVersion: READ_API_VERSION,
@@ -26,7 +28,7 @@ export default async function registerLineHashTextAnchor(pi: ExtensionAPI): Prom
     setup(api) {
       api.addView({ view: "anchors", presenter });
       api.describe({
-        views: "anchors — LINE#HASH references for edits.",
+        views: "anchors — line anchors for edits.",
       });
     },
   } satisfies ReadPlugin;
@@ -36,7 +38,7 @@ export default async function registerLineHashTextAnchor(pi: ExtensionAPI): Prom
     id: "text-anchor-line-hash",
     setup(api) {
       api.addAnchorResolver({
-        resolver: createLineHashAnchorResolver(),
+        resolver: createLineHashAnchorResolver(history),
         kind: TEXT_POSITION_ANCHOR_KIND,
         type: "major",
       });

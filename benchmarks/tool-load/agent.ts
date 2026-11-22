@@ -54,6 +54,7 @@ export interface AgentResult {
 
 const TOOLS = [
   "read",
+  "outline",
   "search",
   "replace",
   "insert",

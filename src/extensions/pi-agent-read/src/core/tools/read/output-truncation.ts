@@ -1,4 +1,5 @@
 import { stat } from "node:fs/promises";
+import { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -19,6 +20,39 @@ export const READ_OUTPUT_MAX_BYTES = DEFAULT_MAX_BYTES;
 
 export const READ_OUTPUT_MAX_LINES = DEFAULT_MAX_LINES;
 
+/** Last source line present in a head-truncated, single-window projection. */
+export function lastShownReadLine(
+  script: Extract<NonNullable<ReadToolResult["script"]>, { kind: "text" }>,
+  truncation: TruncationResult,
+) {
+  if (truncation.outputLines === 0) return;
+  if (!(script.presented ?? script.content).startsWith(truncation.content)) return;
+
+  // Pi counts LF-delimited rows. Annotations can add rows and bare CR does not end a row.
+  const countLf = (text: string | undefined) => text?.match(/\n/gu)?.length ?? 0;
+  const annotationRows = (
+    rows: NonNullable<(typeof script.lines)[number]["presentation"]>["before"],
+  ) =>
+    (rows ?? []).reduce(
+      (count, row) => count + 1 + countLf(row.prefix) + countLf(row.content) + countLf(row.suffix),
+      0,
+    );
+  const fullRows = truncation.outputLines - (truncation.lastLinePartial ? 1 : 0);
+  let row = 0;
+  let last: (typeof script.lines)[number] | undefined;
+  for (const line of script.lines) {
+    const presentation = script.presented === undefined ? undefined : line.presentation;
+    row += annotationRows(presentation?.before) + countLf(presentation?.prefix);
+    if (row >= fullRows) break;
+    last = line;
+    row +=
+      countLf(presentation?.suffix) +
+      annotationRows(presentation?.after) +
+      countLf(line.lineEnding);
+  }
+  return last;
+}
+
 export async function limitReadOutput(
   result: ReadToolResult,
   request: ReadRequest,
@@ -32,16 +66,22 @@ export async function limitReadOutput(
     return result;
   }
 
-  const truncation = truncateHead(block.text, {
+  // The marker is not a source line: it neither counts toward the output budget nor survives a cut.
+  const markerSuffix = `\n${NO_FINAL_LINE_BREAK}`;
+  const sourceText =
+    result.details.noFinalLineBreak === true && block.text.endsWith(markerSuffix)
+      ? block.text.slice(0, -markerSuffix.length)
+      : block.text;
+  const truncation = truncateHead(sourceText, {
     maxBytes: READ_OUTPUT_MAX_BYTES,
     maxLines: READ_OUTPUT_MAX_LINES,
   });
 
   if (truncation.truncated) {
     const temporarySource =
-      saveFullOutput === undefined ? undefined : await saveFullOutput(block.text);
+      saveFullOutput === undefined ? undefined : await saveFullOutput(sourceText);
     const baseNotice = truncation.firstLineExceedsLimit
-      ? await oversizedFirstLineNotice(block.text, result.details, request)
+      ? await oversizedFirstLineNotice(sourceText, result.details, request)
       : truncatedOutputNotice(truncation, result.details, request, originLine);
     const notice =
       temporarySource === undefined
@@ -267,8 +307,9 @@ function truncatedDetails(
   details: ReadResultDetails,
   truncation: TruncationResult,
 ): ReadResultDetails {
+  const { noFinalLineBreak: _cut, ...kept } = details;
   return {
-    ...details,
+    ...kept,
     ...(details.lines !== undefined && { lines: details.lines.slice(0, truncation.outputLines) }),
     truncation,
   };

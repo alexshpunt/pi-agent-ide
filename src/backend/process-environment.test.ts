@@ -16,7 +16,7 @@ test("executable discovery sends one owned candidate set without returning envir
     ]),
   ).toEqual([true, false]);
   expect(execute).toHaveBeenCalledTimes(1);
-  expect(execute.mock.calls[0]?.[1][2]).toBe(
+  expect(execute.mock.calls[0]?.[1][0]).toBe(
     JSON.stringify([
       { command: "/workspace/.venv/bin/server" },
       { command: "missing", path: "/custom/bin" },

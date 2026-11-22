@@ -1,0 +1,25 @@
+import { parallelToolFamily } from "#src/composite/parallel-tool-guidance.ts";
+import { routeStepApplies, type CapabilityCase } from "./validation.ts";
+
+export { parallelToolFamily as parallelCallFormat };
+
+/** Describe one independent direct batch using the selected API format. */
+export function parallelCalls(api: string | undefined, count: number): string {
+  const formats = {
+    responses: "in one multi_tool_use.parallel call",
+    completions: "in one assistant message's tool_calls array",
+    anthropic: "as separate tool_use blocks in one assistant message",
+    neutral: "in one assistant message before receiving any of their results",
+  };
+  return `Treat these ${count} calls as independent. Submit all ${count} direct calls together ${formats[parallelToolFamily(api)]}.`;
+}
+
+/** Render a case for the selected model API and execution route. */
+export function capabilityPrompt(task: CapabilityCase, mode: string, api?: string): string {
+  const body = task.promptForApi?.(api) ?? task.prompt;
+  const route = task.steps
+    .filter((step) => routeStepApplies(step, mode))
+    .map((step) => step.tool)
+    .join(", ");
+  return `This is a small tool capability check in a disposable fixture.\n${body}\nRequired tool executions (extra inspection is allowed): ${route}. Order calls only when they reuse an earlier result or the task states a dependency. Run independent calls in any order. Recover from failed calls when a successful operation is required.\n${mode === "codemode" ? "Native Codemode-only mode is enabled. Perform every requested IDE operation, including Bash, inside Codemode. Session tools are callable without discovery. For optional discovery use searchTools or describeTool inside scripts. Native tool_search is excluded from this route and has no tools.tool_search method. Keep tool results unchanged when passing them between calls." : "Use direct tool calls for the requested IDE operations, not Codemode."}\nUse the requested route, not shell/file-editing substitutes. Extra inspection is allowed. Do not modify unrelated files. Finish with a short factual answer.\n`;
+}

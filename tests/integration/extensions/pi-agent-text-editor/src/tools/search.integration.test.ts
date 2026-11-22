@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 
 import {
   assistantMessage,
@@ -106,7 +107,7 @@ describe("pi-agent-text-editor search", () => {
     );
   }, 180_000);
 
-  test("deletes selected lines with only their own separators", async () => {
+  test("deletes selected lines while preserving the final line-ending state", async () => {
     await runExplicitSearchDeletion(
       "search-anchor-delete-lf",
       "legacyName first\nkeep\n",
@@ -120,7 +121,12 @@ describe("pi-agent-text-editor search", () => {
     await runExplicitSearchDeletion(
       "search-anchor-delete-final-unterminated",
       "keep\nlegacyName final",
-      "keep\n",
+      "keep",
+    );
+    await runExplicitSearchDeletion(
+      "search-anchor-delete-final-unterminated-crlf",
+      "keep\r\nlegacyName final",
+      "keep",
     );
   }, 180_000);
 
@@ -158,7 +164,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-bare-result",
                 name: "replace",
-                arguments: { start: `SEARCH#${searchId}:1`, text: "BROKEN" },
+                arguments: { at: `SEARCH#${searchId}:1`, text: "BROKEN" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -168,7 +174,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-bare-all",
                 name: "replace",
-                arguments: { start: `SEARCH#${searchId}:all`, text: "BROKEN" },
+                arguments: { at: `SEARCH#${searchId}:all`, text: "BROKEN" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -204,8 +210,8 @@ describe("pi-agent-text-editor search", () => {
 
       const query = "legacy(?:Name|Value)";
       const matches = [
-        searchMatch(first, 1, firstText.split("\n")[0], "legacyName"),
-        searchMatch(first, 2, firstText.split("\n")[1], "LEGACYVALUE"),
+        searchMatch(first, 1, requiredValue(firstText.split("\n")[0]), "legacyName"),
+        searchMatch(first, 2, requiredValue(firstText.split("\n")[1]), "LEGACYVALUE"),
         searchMatch(second, 1, secondText.trimEnd(), "legacyName"),
       ];
       const searchId = createSearchSessionId(query, matches, directory, {
@@ -249,7 +255,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: replaceCallId,
                 name: "replace",
-                arguments: { start: allAnchor, text: "modernName" },
+                arguments: { at: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -319,7 +325,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-with-unrelated-path",
                 name: "replace",
-                arguments: { path: unrelated, start: allAnchor, text: "modernName" },
+                arguments: { path: unrelated, at: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -329,7 +335,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-with-explicit-path",
                 name: "replace",
-                arguments: { path: first, start: allAnchor, text: "modernName" },
+                arguments: { path: first, at: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -395,7 +401,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-with-search-all-only",
                 name: "replace",
-                arguments: { start: allAnchor, text: "modernName" },
+                arguments: { at: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -458,7 +464,7 @@ describe("pi-agent-text-editor search", () => {
               toolCall({
                 id: "replace-stale-search",
                 name: "replace",
-                arguments: { start: allAnchor, text: "modernName" },
+                arguments: { at: allAnchor, text: "modernName" },
               }),
             ],
             { stopReason: "toolUse" },
@@ -645,8 +651,9 @@ async function runExplicitSearchReplacement(
               id: `${testName}-replace`,
               name: "replace",
               arguments: {
-                start: selector.replace("SEARCH_SELECTOR", `SEARCH#${searchId}`),
-                text: "UPDATED",
+                at: selector.replace("SEARCH_SELECTOR", `SEARCH#${searchId}`),
+                // A :line selection includes its line break, so its replacement sends one.
+                text: selector.endsWith(":line") ? "UPDATED\n" : "UPDATED",
               },
             }),
           ],
@@ -669,8 +676,9 @@ async function runExplicitSearchDeletion(
 ): Promise<void> {
   await withTempWorkspace(async (directory) => {
     const source = path.join(directory, "anchors.txt");
-    const lines = sourceText.split(/\r?\n/u);
-    const lineNumber = lines[0] === "legacyName first" ? 1 : 2;
+    // Only LF ends a line: a CRLF line's Search text keeps its CR.
+    const lines = sourceText.split("\n");
+    const lineNumber = lines[0]?.startsWith("legacyName") === true ? 1 : 2;
     const lineText = lines[lineNumber - 1] ?? "";
     await writeFile(source, sourceText, "utf8");
     const matches = [searchMatch(source, lineNumber, lineText, "legacyName")];
@@ -696,7 +704,7 @@ async function runExplicitSearchDeletion(
             toolCall({
               id: `${testName}-delete`,
               name: "delete",
-              arguments: { start: `SEARCH#${searchId}:1:line` },
+              arguments: { at: `SEARCH#${searchId}:1:line` },
             }),
           ],
           { stopReason: "toolUse" },

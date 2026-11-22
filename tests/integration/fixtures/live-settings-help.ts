@@ -33,7 +33,7 @@ export default function liveSettingsHelp(pi: ExtensionAPI): void {
       if (handler === undefined || ctx.mode !== "tui") throw new Error("Help is unavailable");
       if (args.action === "open") {
         if (pending !== undefined) throw new Error("Help is already open");
-        pending = handler("", ctx as ExtensionCommandContext).finally(() => {
+        pending = handler("", ctx as unknown as ExtensionCommandContext).finally(() => {
           pending = undefined;
         });
       } else {

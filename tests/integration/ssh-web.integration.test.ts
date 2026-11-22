@@ -383,12 +383,12 @@ test("cancelling target HTTP reaps its actual reader before returning", async ()
     interception.mockImplementationOnce((owner, command, args, cwd, context) =>
       start(
         owner,
-        command,
-        [
-          "-c",
-          `import os; open(${JSON.stringify(marker)}, "w").write(str(os.getpid()))\n${args[1]}`,
-          ...args.slice(2),
-        ],
+        typeof command === "string"
+          ? command
+          : {
+              python: `import os; open(${JSON.stringify(marker)}, "w").write(str(os.getpid()))\n${command.python}`,
+            },
+        args,
         cwd,
         context,
       ),

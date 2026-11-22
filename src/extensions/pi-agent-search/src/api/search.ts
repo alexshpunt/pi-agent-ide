@@ -1,9 +1,17 @@
 import type { AgentToolResult, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { ResolvedResultTargets } from "pi-agent-resource";
 
+export { searchCallPolicy } from "./search-call-policy.ts";
+
 export interface SearchRequest {
   readonly query: string;
   readonly path?: string;
+  /**
+   * Several listed files and directories, in place of `path`. Only resolvers that declare
+   * `supportsPathList` receive it; each root is searched like `path`, and a file found under
+   * several roots counts once.
+   */
+  readonly paths?: readonly string[];
   readonly include?: string;
   readonly exclude?: string;
   readonly caseSensitive?: boolean;
@@ -57,6 +65,12 @@ export interface SearchContext {
   readonly environmentForSource?: (source: string) => SearchEnvironment | undefined;
   /** Trusted snapshot scopes resolved by the owning tool; never accepted as raw JSON coordinates. */
   readonly scope?: ResolvedResultTargets;
+  /**
+   * Resolve `scope` again against the text its sources have now. Its regions whose lines changed
+   * move to the same region of the current text and are marked `adjusted`. Retry with it when a
+   * source changed during a search.
+   */
+  readonly rescope?: (signal?: AbortSignal) => Promise<ResolvedResultTargets>;
   readonly environment?: SearchEnvironment;
   readonly cwd: string;
   readonly signal?: AbortSignal;
@@ -71,6 +85,8 @@ export type SearchResolutionAttempt =
 export interface SearchResolver {
   /** Handle exact source ranges instead of widening a structured input to a path. */
   readonly supportsResultScope?: boolean;
+  /** Accept `paths`, a list of files and directories searched together. */
+  readonly supportsPathList?: boolean;
   /** Accept `multiline: true`; other resolvers fail such requests instead of matching per line. */
   readonly supportsMultiline?: boolean;
   /** Complete read scope for resolving and formatting. Empty means no resource reads;
@@ -98,7 +114,7 @@ export interface SearchResolver {
 export interface SearchResolverRegistration {
   readonly resolver: SearchResolver;
   readonly priority?: number;
-  /** Handle unclaimed text after specialized resolvers; also accept empty protocol queries. */
+  /** Handle unclaimed text after specialized resolvers. */
   readonly fallback?: boolean;
 }
 
@@ -142,12 +158,22 @@ export interface SearchSelectionMatch {
   readonly startColumn: number;
   readonly endColumn: number;
   readonly matchedText: string;
+  /** First containing line, used by single-line renderers. */
   readonly lineText: string;
+  /** Complete spanned lines from the registration snapshot, without the final line ending. */
+  readonly linesText?: string;
 }
 export interface SearchSelectionSnapshot {
   readonly matches: readonly SearchSelectionMatch[];
   readonly complete: boolean;
   readonly notices?: readonly string[];
+  /** Effective matching query after any broadening. */
+  readonly query?: string;
+  /**
+   * Text of each source as the backend searched it. A refresh that returns it is checked against
+   * this text instead of reading the file again, which another writer may change in between.
+   */
+  readonly contents?: ReadonlyMap<string, string>;
 }
 /** Keep the original backend when refreshing an all-selection or observing an edit. */
 export interface SearchSelectionRegistration extends SearchSelectionSnapshot {
@@ -188,7 +214,11 @@ export interface SearchPluginApi {
   describe(description: SearchDescriptionSource): void;
   /** Add an operational guideline while this search plugin is active. */
   addPromptGuideline(guideline: SearchDescriptionSource): void;
-  /** Execute configured resolvers and register references before returning script data. */
+  /**
+   * Execute configured resolvers and register references before returning script data. The
+   * `script` audience is a caller that hands the result to a script: its structured data has no
+   * size limit.
+   */
   search(
     request: SearchInput,
     context: SearchContext,
@@ -222,8 +252,21 @@ export interface SearchToolDetails {
 
 export { searchSchema } from "#src/api/search-parameters.ts";
 export { renderSearchMatches } from "./presentation.ts";
-export { containsSearchMatch } from "./search-scope.ts";
+export { containsSearchMatch, currentScope, SearchScopeChangedError } from "./search-scope.ts";
 export { splitGlobList } from "./glob-list.ts";
+export {
+  SearchCaptureGuard,
+  SearchCaptureLimitError,
+  type CapturedSearchMatch,
+} from "./search-capture.ts";
+export { markNullFields, nullFieldsMessage } from "./null-fields.ts";
+export {
+  describePathArgument,
+  isResultReference,
+  pathMachine,
+  plainPathList,
+  uniquePaths,
+} from "./path-list.ts";
 export {
   fuzzyLimits,
   isFuzzyResultData,

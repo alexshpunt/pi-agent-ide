@@ -1,35 +1,54 @@
 import type { AstScopeManager } from "./ast/manager.ts";
 import type { TextAnchorResolver } from "pi-agent-text";
 
-const scopeAnchorPattern = /^scope-(begin|end)-[A-Z0-9]{3,4}(?:-[1-9]\d*)?$/;
+/** `scope-begin-` or `scope-end-` and the line anchor of the scope's first line. */
+const scopeAnchorPattern = /^scope-(begin|end)-[0-9A-HJKMNP-TV-Z]{7}$/;
+/** Content hashes with an optional repeat suffix, issued before scopes were named by line anchors. */
+const earlierScopeAnchorPattern = /^scope-(begin|end)-[A-Z0-9]{3,4}(?:-[1-9]\d*)?$/;
 
 export function createAstScopeAnchorResolver(manager: AstScopeManager): TextAnchorResolver {
   return {
     id: "ast-scope",
     description:
-      '`scope-begin-HASH` / `scope-end-HASH` from read views: ["ast"] — first/last lines of a scope. Any numeric suffix is part of the anchor.',
+      '`scope-begin-ANCHOR` / `scope-end-ANCHOR` from read views: ["ast"] — first/last lines of the scope whose first line has line anchor ANCHOR.',
     renderFull(value) {
       return value;
     },
     renderCompact(value) {
-      return scopeAnchorPattern.exec(value)?.[1] === "begin" ? "scope start" : "scope end";
+      const boundary = (scopeAnchorPattern.exec(value) ??
+        earlierScopeAnchorPattern.exec(value))?.[1];
+      return boundary === "begin" ? "scope start" : "scope end";
     },
     async tryResolve(value, context) {
+      const stale = {
+        kind: "rejected",
+        rejection: { code: "stale", reason: `AST scope anchor ${value} is stale` },
+      } as const;
+      if (earlierScopeAnchorPattern.test(value)) {
+        return stale;
+      }
       if (!scopeAnchorPattern.test(value)) {
         return { kind: "not-handled" };
       }
 
       try {
         const scopes = await manager.getDocumentScopes(context.source, context.cwd, context.lines);
-        const scope = scopes.find(
+        const matches = scopes.filter(
           (candidate) =>
             candidate.beginAnchor.value === value || candidate.endScopeAnchor.value === value,
         );
+        const [scope] = matches;
 
         if (scope === undefined) {
+          return stale;
+        }
+        if (matches.length > 1) {
           return {
             kind: "rejected",
-            rejection: { code: "stale", reason: `AST scope anchor ${value} is stale` },
+            rejection: {
+              code: "ambiguous",
+              reason: `AST scope anchor ${value} names ${String(matches.length)} scopes`,
+            },
           };
         }
 

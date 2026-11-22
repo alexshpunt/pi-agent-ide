@@ -34,7 +34,9 @@ export default async function registerTerminal(
       triggers: [
         { tool: "bash" },
         { tool: "powershell" },
-        ...["read", "write", "insert", "delete"].map((tool) => ({
+        { tool: "remote_bash" },
+        { tool: "remote_powershell" },
+        ...["read", "search", "write", "insert", "delete", "move"].map((tool) => ({
           tool,
           resourcePrefixes: ["shell:"],
         })),
@@ -50,7 +52,16 @@ export default async function registerTerminal(
   const ui = new TerminalUi(pi, manager);
   const removeProcessProvider = agentIdeProcessRegistry(pi).add(terminalProcessProvider(manager));
 
-  await Promise.all([registerTerminalResources(pi, manager), registerTerminalSearch(pi, manager)]);
+  // Listing and searching `shell:` cover the sessions this Pi session started.
+  let ownerSessionId: string | undefined;
+  const currentSessionId = (): string | undefined => ownerSessionId;
+  pi.on("session_start", (_event, context) => {
+    ownerSessionId = context.sessionManager.getSessionId();
+  });
+  await Promise.all([
+    registerTerminalResources(pi, manager, currentSessionId),
+    registerTerminalSearch(pi, manager, currentSessionId),
+  ]);
   const presentation = () => toolPresentation(context?.preferences["ui.terminal"]);
   const releaseForegroundWaits = registerTerminalTools(
     pi,
@@ -67,18 +78,18 @@ export default async function registerTerminal(
   registerIdeCapability(pi, {
     version: 1,
     id: "terminal",
-    tools: ["bash", "powershell"],
+    tools: ["bash", "powershell", "remote_bash", "remote_powershell"],
     schemas: {
       read: {
         parameters: {
-          path: "shell:<session> — status and output tail.",
+          path: "shell: — terminal sessions started in this Pi session; shell:<session> — status and output tail.",
           views:
-            "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time, up to 10 s and 20 frames.",
+            "On shell:<session>: image[:scale=S] — screen image; sequence[:duration=D,interval=I,scale=S] — frames over time. Duration and interval are in seconds (defaults: 2 and 0.5); up to 10 s and 20 frames.",
         },
       },
       search: {
         promptGuidelines: [
-          "path shell:<session> searches the retained text output of that terminal, including rows outside its current screen.",
+          "path shell:<session> searches the retained text output of that terminal, including rows outside its current screen; path shell: searches every terminal session of this Pi session.",
         ],
       },
       write: {
@@ -91,7 +102,7 @@ export default async function registerTerminal(
       insert: {
         parameters: {
           path: "shell:<session> sends keys to that terminal.",
-          anchor: "Omit for shell:<session>.",
+          after: "Omit both after and before for shell:<session>.",
           text: "For shell:<session>: named keys and chords such as Enter, Ctrl+C, Up, or caret forms such as ^C, separated by spaces or commas.",
         },
         promptGuidelines: [editingGuideline],
@@ -99,6 +110,11 @@ export default async function registerTerminal(
       delete: {
         parameters: { path: "shell:<session> ends that session." },
         promptGuidelines: [editingGuideline],
+      },
+      move: {
+        parameters: {
+          path: "shell:<session> with target shell:<name> renames that terminal session.",
+        },
       },
     },
   });

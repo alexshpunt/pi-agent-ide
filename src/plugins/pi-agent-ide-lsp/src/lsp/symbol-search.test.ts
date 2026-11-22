@@ -1,12 +1,14 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ResolvedResultTargets } from "pi-agent-resource";
+import { requiredValue } from "pi-agent-invariant";
 import { LspClient } from "./client.ts";
 import { LspManager } from "./manager.ts";
 import { LspServerRegistry } from "./registry.ts";
 import { searchSymbols } from "./symbol-search.ts";
+import type { LspWorkspaceOwner } from "./workspace-owner.ts";
 
 const workspaces: string[] = [];
 afterEach(async () => {
@@ -41,6 +43,7 @@ async function fixture() {
     .mockImplementation(async (method, parameters) => {
       const input = parameters as { textDocument?: { uri: string } };
       if (method === "workspace/symbol") return definitions;
+      if (method === "textDocument/documentSymbol") return [];
       if (method === "textDocument/references")
         return input.textDocument?.uri === definitions[0].location.uri
           ? [definitions[0].location, location("a.ts", 1, 0, 4), location("b.ts", 0, 0, 4)]
@@ -64,7 +67,7 @@ async function fixture() {
       },
     ],
   };
-  return { cwd, manager, sendRequest, resultScope };
+  return { cwd, manager, client, sendRequest, resultScope };
 }
 
 test("an explicitly excluded file is an empty scope, not an unavailable provider", async () => {
@@ -77,7 +80,7 @@ test("an explicitly excluded file is an empty scope, not an unavailable provider
     { path: "a.ts", exclude: "a.ts" },
     manager,
   );
-  expect(result).toEqual({ hits: [], complete: true });
+  expect(result).toEqual({ hits: [], contents: new Map(), complete: true });
   expect(manager.prepareWorkspaceSymbols).not.toHaveBeenCalled();
 });
 
@@ -171,6 +174,35 @@ test("uses a reference inside the scope to seed navigation without mixing same-n
   expect(result.hits.every((hit) => hit.symbol.source === path.join(cwd, "a.ts"))).toBe(true);
 });
 
+test("leaves out declarations and references in a deleted file and names that file", async () => {
+  const { cwd, manager, sendRequest } = await fixture();
+  const kept = await searchSymbols("same", cwd, 100, undefined, { path: "." }, manager);
+  // The server's index still holds a copy of a.ts that another session deleted.
+  const copy = path.join(cwd, "copy.ts");
+  const place = {
+    uri: pathToFileURL(copy).href,
+    range: { start: { line: 1, character: 0 }, end: { line: 1, character: 4 } },
+  };
+  const answer = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters, signal) => {
+    const result: unknown = await answer?.(method, parameters, signal);
+    if (method === "workspace/symbol")
+      return [...(result as unknown[]), { name: "same", kind: 12, location: place }];
+    if (method === "textDocument/references") return [...(result as unknown[]), place];
+    return result;
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, { path: "." }, manager);
+  const scoped = await searchSymbols("same", cwd, 100, undefined, { path: "a.ts" }, manager);
+
+  expect(result.hits).toEqual(kept.hits);
+  expect(result.complete).toBe(kept.complete);
+  expect(result.missing).toEqual([copy]);
+  // A file outside the searched path could not have been listed, so it is not named.
+  expect(scoped.hits.length).toBeGreaterThan(0);
+  expect(scoped.missing).toBeUndefined();
+});
+
 test("uses a provider selectionRange when workspace symbols span a whole declaration", async () => {
   const { cwd, manager, sendRequest } = await fixture();
   const source = "export function same() { same(); }\r\n";
@@ -213,6 +245,62 @@ test("uses a provider selectionRange when workspace symbols span a whole declara
     undefined,
   );
 });
+
+test("lists each overload with its selector when the symbol index lags behind the file", async () => {
+  const { cwd, manager, sendRequest } = await fixture();
+  const lines = [
+    "int clamp(int v);",
+    "int clamp(float v);",
+    "int clamp(int v) { return v; }",
+    "int clamp(float v) { return clamp(1); }",
+  ];
+  await writeFile(path.join(cwd, "a.ts"), `${lines.join("\n")}\n`);
+  const uri = pathToFileURL(path.join(cwd, "a.ts")).href;
+  const at = (line: number, from: number) => ({
+    start: { line, character: from },
+    end: { line, character: from + 5 },
+  });
+  const entry = (line: number, detail: string) => ({
+    name: "clamp",
+    kind: 12,
+    detail,
+    range: { start: { line, character: 0 }, end: { line, character: lines[line]?.length ?? 0 } },
+    selectionRange: at(line, 4),
+  });
+  sendRequest.mockImplementation(async (method, parameters) => {
+    // The index still has the definitions one column to the right of the current text.
+    if (method === "workspace/symbol")
+      return [
+        { name: "clamp", kind: 12, location: { uri, range: at(2, 5) } },
+        { name: "clamp", kind: 12, location: { uri, range: at(3, 5) } },
+      ];
+    if (method === "textDocument/documentSymbol")
+      return [
+        entry(0, "int (int)"),
+        entry(1, "int (float)"),
+        entry(2, "int (int)"),
+        entry(3, "int (float)"),
+      ];
+    if (method === "textDocument/references") {
+      const { line } = (parameters as { position: { line: number } }).position;
+      return line % 2 === 0
+        ? [at(0, 4), at(2, 4), at(3, 28)].map((range) => ({ uri, range }))
+        : [at(1, 4), at(3, 4)].map((range) => ({ uri, range }));
+    }
+    throw Error(`Unexpected request ${method}`);
+  });
+  const result = await searchSymbols("clamp", cwd, 100, undefined, { path: "a.ts" }, manager);
+  expect(
+    result.hits.map((hit) => [hit.role, hit.lineNumber, hit.startColumn, hit.symbol.selector]),
+  ).toEqual([
+    ["reference", 1, 4, ["clamp(int)"]],
+    ["reference", 2, 4, ["clamp(float)"]],
+    ["definition", 3, 4, ["clamp(int)"]],
+    ["definition", 4, 4, ["clamp(float)"]],
+    ["reference", 4, 28, ["clamp(int)"]],
+  ]);
+});
+
 test("does not treat failed reference requests or missing providers as no matches", async () => {
   const { cwd, manager, sendRequest } = await fixture();
   sendRequest.mockImplementation(async (method) => {
@@ -238,13 +326,333 @@ test("does not treat failed reference requests or missing providers as no matche
   );
 });
 
-test("rejects stale source scopes and cancelled searches before creating targets", async () => {
+test("a result scope follows a write elsewhere in its file before the server answers", async () => {
+  const { cwd, manager, sendRequest, resultScope } = await fixture();
+  const original = requiredValue(resultScope.targets[0]).expectedContent;
+  // Another session inserts a line above the scope after it was resolved; the server already
+  // answers for the new text.
+  await writeFile(path.join(cwd, "a.ts"), `// peer\r\n${original}`);
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const answer: unknown = await next?.(method, parameters);
+    return method === "workspace/symbol" || method === "textDocument/references"
+      ? shiftedLocations(answer, path.join(cwd, "a.ts"))
+      : answer;
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, { resultScope }, manager);
+
+  expect(result.hits).toMatchObject([
+    { lineNumber: 2, startColumn: 6, endColumn: 10, matchedText: "same", role: "definition" },
+  ]);
+});
+
+test("a result scope follows a write elsewhere in its file while the server answers", async () => {
+  const { cwd, manager, client, sendRequest, resultScope } = await fixture();
+  const source = path.join(cwd, "a.ts");
+  const original = requiredValue(resultScope.targets[0]).expectedContent;
+  // The server synced the text the scope came from, then another session inserts a line above
+  // the scope while the server answers.
+  vi.spyOn(client, "documentContent").mockImplementation((uri) =>
+    uri === pathToFileURL(source).href ? original : undefined,
+  );
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    if (method === "workspace/symbol") await writeFile(source, `// peer\r\n${original}`);
+    return next?.(method, parameters);
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, { resultScope }, manager);
+
+  expect(result.hits).toMatchObject([
+    { lineNumber: 2, startColumn: 6, endColumn: 10, matchedText: "same", role: "definition" },
+  ]);
+});
+
+/** Server locations in `source` one line further down, as an answer for a text with a new first line. */
+function shiftedLocations(answer: unknown, source: string): unknown {
+  if (!Array.isArray(answer)) return answer;
+  const uri = pathToFileURL(source).href;
+  const shift = (location: { uri: string; range: LspRange }) =>
+    location.uri !== uri
+      ? location
+      : {
+          ...location,
+          range: {
+            start: { ...location.range.start, line: location.range.start.line + 1 },
+            end: { ...location.range.end, line: location.range.end.line + 1 },
+          },
+        };
+  return answer.map((item: { uri?: string; location?: { uri: string; range: LspRange } }) =>
+    item.location !== undefined
+      ? { ...item, location: shift(item.location) }
+      : shift(item as { uri: string; range: LspRange }),
+  );
+}
+type LspRange = {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+};
+
+test("asks for references at the position of the text the server holds, not of the text the declaration was read from", async () => {
+  const { cwd, manager, client, sendRequest } = await fixture();
+  const source = path.join(cwd, "a.ts");
+  const uri = pathToFileURL(source).href;
+  const original = '"😀"; same();\r\nsame();\r\n';
+  // Each open here publishes the file as it is now, as another search or edit in this process
+  // does, so the server's text runs ahead of the text a declaration was read from while another
+  // session keeps writing.
+  let served = original;
+  vi.spyOn(client, "documentContent").mockImplementation((target) =>
+    target === uri ? served : undefined,
+  );
+  vi.mocked(manager.openFile).mockImplementation(async (file) => {
+    const target = pathToFileURL(path.resolve(cwd, file)).href;
+    if (target === uri) served = await readFile(source, "utf8");
+    return { client, uri: target, languageId: "cpp" };
+  });
+  vi.spyOn(manager, "filesContaining").mockResolvedValue([source]);
+  const name = {
+    start: { line: 0, character: 6 },
+    end: { line: 0, character: 10 },
+  };
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const input = parameters as { textDocument?: { uri: string }; position?: { line: number } };
+    if (method === "textDocument/documentSymbol" && input.textDocument?.uri === uri) {
+      // Another session inserts a line above the declaration after it was read; the coverage
+      // check's diagnostics open then publishes the new text to the server.
+      await writeFile(source, `// peer\r\n${original}`);
+      return [
+        {
+          name: "same",
+          kind: 12,
+          range: { start: { line: 0, character: 0 }, end: { line: 0, character: 13 } },
+          selectionRange: name,
+        },
+      ];
+    }
+    if (method === "textDocument/diagnostic") return { kind: "full", items: [] };
+    if (method === "textDocument/references" && input.textDocument?.uri === uri)
+      // The server answers for its own text: a position of the older text names another line.
+      return input.position?.line === 1
+        ? shiftedLocations(await next?.(method, parameters), source)
+        : [];
+    return next?.(method, parameters);
+  });
+
+  const result = await searchSymbols(
+    "same",
+    cwd,
+    100,
+    undefined,
+    { path: "a.ts", navigation: "references" },
+    manager,
+  );
+
+  expect(result.hits.map((hit) => [hit.role, path.basename(hit.source), hit.lineNumber])).toEqual([
+    ["definition", "a.ts", 2],
+    ["reference", "a.ts", 3],
+    ["reference", "b.ts", 1],
+  ]);
+  expect(result.complete).toBe(true);
+});
+
+test("lists every reference when another session's write reaches the server while it answers", async () => {
+  const { cwd, manager, client, sendRequest } = await fixture();
+  const source = path.join(cwd, "a.ts");
+  const uri = pathToFileURL(source).href;
+  const original = '"😀"; same();\r\nsame();\r\n';
+  const advanced = `// peer\r\n${original}`;
+  let served = original;
+  vi.spyOn(client, "documentContent").mockImplementation((target) =>
+    target === uri ? served : undefined,
+  );
+  vi.mocked(manager.openFile).mockImplementation(async (file) => {
+    const target = pathToFileURL(path.resolve(cwd, file)).href;
+    if (target === uri) served = await readFile(source, "utf8");
+    return { client, uri: target, languageId: "typescript" };
+  });
+  const next = sendRequest.getMockImplementation();
+  // Every answer names the text the server holds: the file's own line moves down by one once
+  // another session's write reaches it.
+  const shift = () => (served === advanced ? 1 : 0);
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const input = parameters as { textDocument?: { uri: string }; position?: { line: number } };
+    if (input.textDocument?.uri !== uri && method !== "workspace/symbol")
+      return next?.(method, parameters);
+    if (method === "textDocument/documentSymbol")
+      return shift() === 0
+        ? []
+        : [
+            {
+              name: "same",
+              kind: 12,
+              range: { start: { line: 1, character: 0 }, end: { line: 1, character: 13 } },
+              selectionRange: {
+                start: { line: 1, character: 6 },
+                end: { line: 1, character: 10 },
+              },
+            },
+          ];
+    if (method === "textDocument/references") {
+      // The write and our read of it land between the request and its answer.
+      await writeFile(source, advanced);
+      served = advanced;
+      return input.position?.line === 1
+        ? shiftedLocations(await next?.(method, parameters), source)
+        : [];
+    }
+    const answer: unknown = await next?.(method, parameters);
+    return shift() === 0 ? answer : shiftedLocations(answer, source);
+  });
+
+  const result = await searchSymbols(
+    "same",
+    cwd,
+    100,
+    undefined,
+    { path: "a.ts", navigation: "references" },
+    manager,
+  );
+
+  expect(result.hits.map((hit) => [hit.role, path.basename(hit.source), hit.lineNumber])).toEqual([
+    ["definition", "a.ts", 2],
+    ["reference", "a.ts", 3],
+    ["reference", "b.ts", 1],
+  ]);
+  // Each hit describes the text returned for its file, the file as it is after the write, so its
+  // anchors can register from that text without reading the file again.
+  expect(result.contents.get(source)).toBe(advanced);
+  expect(result.contents.get(path.join(cwd, "b.ts"))).toBe("same();\n");
+  for (const hit of result.hits) {
+    // Only LF ends a line: a CRLF line's text keeps its CR.
+    const line = requiredValue(result.contents.get(hit.source)).split("\n")[hit.lineNumber - 1];
+    expect(line).toBe(hit.lineText);
+    expect(line?.slice(hit.startColumn, hit.endColumn)).toBe(hit.matchedText);
+  }
+});
+
+test("rejects a scope whose own text changed and cancelled searches before creating targets", async () => {
   const { cwd, manager, resultScope } = await fixture();
   await writeFile(path.join(cwd, "a.ts"), "external edit\n");
   await expect(
     searchSymbols("same", cwd, 100, undefined, { resultScope }, manager),
-  ).rejects.toThrow(/stale/iu);
+  ).rejects.toThrow(/no longer be found/iu);
   await expect(searchSymbols("same", cwd, 100, AbortSignal.abort(), {}, manager)).rejects.toThrow(
     /abort/iu,
   );
+});
+
+/**
+ * A workspace on an owner such as an SSH host, where every read is a remote operation, with a
+ * server that finds `label` declared in `note.ts` and used in `reference.ts`.
+ */
+function ownedWorkspace() {
+  const root = "ssh://fixture/workspace";
+  const files = new Map([
+    ["/workspace/note.ts", { content: "const label = 1;\n", version: 1 }],
+    ["/workspace/reference.ts", { content: "label;\n", version: 1 }],
+  ]);
+  const reads: string[] = [];
+  const file = (source: string) => {
+    const name = new URL(source).pathname;
+    return { name, entry: requiredValue(files.get(name)) };
+  };
+  const unused = () => {
+    throw new Error("Unexpected owner operation");
+  };
+  const owner: LspWorkspaceOwner = {
+    // The client never starts a process: its start is mocked below.
+    transport: () => ({ start: unused, toServerUri: (uri) => uri, fromServerUri: (uri) => uri }),
+    readText: async (source) => {
+      reads.push(`text ${file(source).name}`);
+      return file(source).entry.content;
+    },
+    readSnapshot: async (source) => {
+      const { name, entry } = file(source);
+      reads.push(`snapshot ${name}`);
+      return { content: entry.content, version: String(entry.version) };
+    },
+    readBytes: unused,
+    exists: async (source) => files.has(new URL(source).pathname),
+    isFile: async (source) => files.has(new URL(source).pathname),
+    entries: async () =>
+      [...files.keys()].map((name) => ({ name: path.posix.basename(name), kind: "file" as const })),
+  };
+  const manager = LspManager.init(
+    LspServerRegistry.fromConfig(
+      {
+        version: 1,
+        servers: {
+          owned: {
+            command: ["owned-server"],
+            rootMarkers: [],
+            languages: { typescript: { extensions: [".ts"] } },
+            capabilities: ["diagnostics"],
+          },
+        },
+      },
+      root,
+    ),
+    owner,
+  );
+  vi.spyOn(LspClient.prototype, "start").mockResolvedValue();
+  vi.spyOn(LspClient.prototype, "shutdown").mockResolvedValue();
+  vi.spyOn(LspClient.prototype, "sendNotification").mockImplementation(() => {});
+  vi.spyOn(LspClient.prototype, "hasWorkspaceSymbolCapability", "get").mockReturnValue(true);
+  const note = `${root}/note.ts`;
+  const reference = `${root}/reference.ts`;
+  const at = (uri: string, character: number) => ({
+    uri,
+    range: { start: { line: 0, character }, end: { line: 0, character: character + 5 } },
+  });
+  const sendRequest = vi
+    .spyOn(LspClient.prototype, "sendRequest")
+    .mockImplementation(async (method) => {
+      if (method === "workspace/symbol")
+        return [{ name: "label", kind: 13, location: at(note, 6) }];
+      if (method === "textDocument/documentSymbol") return [];
+      if (method === "textDocument/references") return [at(note, 6), at(reference, 0)];
+      throw Error(`Unexpected request ${method}`);
+    });
+  return { root, files, reads, manager, sendRequest };
+}
+
+test("an owned workspace search reads each file once, plus the final change check", async () => {
+  const { root, reads, manager } = ownedWorkspace();
+
+  const result = await searchSymbols("label", root, 100, undefined, {}, manager);
+
+  expect(result.hits.map((hit) => [hit.role, hit.source, hit.lineNumber])).toEqual([
+    ["definition", `${root}/note.ts`, 1],
+    ["reference", `${root}/reference.ts`, 1],
+  ]);
+  // The server opens `note.ts` with the text the hits are matched on, instead of reading it again.
+  expect(reads.toSorted()).toEqual([
+    "snapshot /workspace/note.ts",
+    "snapshot /workspace/note.ts",
+    "snapshot /workspace/reference.ts",
+    "snapshot /workspace/reference.ts",
+  ]);
+});
+
+test("an owned workspace search moves its hits onto a file written while the server answers", async () => {
+  const { root, files, manager, sendRequest } = ownedWorkspace();
+  const next = sendRequest.getMockImplementation();
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const answer: unknown = await next?.(method, parameters);
+    // Another session inserts a line above the declaration after this pass read the file.
+    if (method === "textDocument/references")
+      files.set("/workspace/note.ts", { content: "// peer\nconst label = 1;\n", version: 2 });
+    return answer;
+  });
+
+  const result = await searchSymbols("label", root, 100, undefined, {}, manager);
+
+  expect(result.hits.map((hit) => [hit.role, hit.source, hit.lineNumber])).toEqual([
+    ["definition", `${root}/note.ts`, 2],
+    ["reference", `${root}/reference.ts`, 1],
+  ]);
+  expect(result.contents.get(`${root}/note.ts`)).toBe("// peer\nconst label = 1;\n");
 });

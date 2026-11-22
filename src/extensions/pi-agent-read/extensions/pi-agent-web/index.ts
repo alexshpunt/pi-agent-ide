@@ -98,9 +98,6 @@ export async function registerWebWithOwner(
     setup(api) {
       // Claim URL scopes before local query resolvers such as regex.
       api.addResolver({ resolver: createWebSearchResolver(webResolver), priority: -100 });
-      api.describe(
-        "HTTP(S) Search reuses converted page text for zero-result identifier spelling suggestions. Candidate groups carry the URL and line ranges, never editable SEARCH references.",
-      );
     },
   } satisfies SearchPlugin;
   await Promise.all([

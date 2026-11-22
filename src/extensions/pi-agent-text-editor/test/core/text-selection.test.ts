@@ -5,7 +5,7 @@ import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import { insertionChanges, selectionChanges } from "#src/tools/text-selection.ts";
 
-test("keeps the preceding separator when deleting a non-linewise final match", () => {
+test("removes the preceding separator when an exact match is the last line (LPT-1747)", () => {
   const source = "source.txt";
   const document = new TextChangeDocument("header\nneedle");
   const context = {
@@ -23,8 +23,8 @@ test("keeps the preceding separator when deleting a non-linewise final match", (
 
   const changes = selectionChanges(context as TextMutationContext, new Map([[source, anchor]]), "");
 
-  expect(changes.get(source)).toEqual([{ from: 7, to: 13, insert: "" }]);
-  expect(document.content.slice(0, 7) + document.content.slice(13)).toBe("header\n");
+  expect(changes.get(source)).toEqual([{ from: 6, to: 13, insert: "" }]);
+  expect(applyTextChanges(document.content, changes.get(source) ?? []).content).toBe("header");
 });
 
 test("coalesces adjacent no-LF linewise deletions into one non-overlapping change", () => {
@@ -83,7 +83,7 @@ test("coalesces adjacent CRLF linewise deletions into one non-overlapping change
   expect(applyTextChanges(document.content, changes ?? []).content).toBe("");
 });
 
-test("keeps separators for adjacent non-linewise match deletions", () => {
+test("coalesces adjacent exact matches that cover whole lines (LPT-1747)", () => {
   const source = "source.txt";
   const document = new TextChangeDocument("needle\nneedle");
   const context = { documentFor: () => document } as Pick<TextMutationContext, "documentFor">;
@@ -104,11 +104,8 @@ test("keeps separators for adjacent non-linewise match deletions", () => {
     "",
   ).get(source);
 
-  expect(changes).toEqual([
-    { from: 0, to: 6, insert: "" },
-    { from: 7, to: 13, insert: "" },
-  ]);
-  expect(applyTextChanges(document.content, changes ?? []).content).toBe("\n");
+  expect(changes).toEqual([{ from: 0, to: 13, insert: "" }]);
+  expect(applyTextChanges(document.content, changes ?? []).content).toBe("");
 });
 
 test("inserts before a whole-line selection", () => {
@@ -126,7 +123,7 @@ test("inserts before a whole-line selection", () => {
   const changes = insertionChanges(
     context as TextMutationContext,
     new Map([[source, anchor]]),
-    "inserted",
+    "inserted\n",
     true,
   ).get(source);
 

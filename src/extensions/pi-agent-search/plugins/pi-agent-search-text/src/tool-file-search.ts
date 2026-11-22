@@ -1,6 +1,12 @@
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
+  describePathArgument,
+  isResultReference,
+  markNullFields,
+  nullFieldsMessage,
+  searchCallPolicy,
+  searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
   type SearchResolver,
@@ -11,6 +17,7 @@ import {
   withToolCallInterceptionRendering,
 } from "pi-agent-tool-call-interception";
 import { toolCallHeader } from "pi-agent-tool-ui";
+import { resultError, trackScriptCalls, withStructuredResult } from "pi-agent-resource";
 import { Type, type Static } from "typebox";
 
 import type { FileSearchOptions } from "#src/resolvers.ts";
@@ -23,12 +30,19 @@ export const fileSearchSchema = Type.Object(
         "Glob (*, **, ?, [abc], {a,b}) or plain text matched as a case-insensitive subsequence. A glob with / matches paths relative to path; one without / matches file names at any depth.",
     }),
     path: Type.Optional(
-      Type.String({ description: "Directory to search, local or ssh://; defaults to cwd." }),
+      Type.Union([Type.String(), Type.Array(Type.String())], {
+        description:
+          "Directory or file to search, or an array of them, local or ssh://; defaults to cwd.",
+      }),
     ),
     include: Type.Optional(Type.String({ description: "Include glob" })),
     exclude: Type.Optional(Type.String({ description: "Exclude glob" })),
     limit: Type.Optional(
-      Type.Integer({ minimum: 1, maximum: 1000, description: "Maximum files (default 100)." }),
+      Type.Integer({
+        minimum: 1,
+        maximum: 1000,
+        description: "Maximum files (default 100; in Codemode, all files).",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -42,6 +56,8 @@ export function registerFileSearchTool(
   resolver: SearchResolver,
   search: Promise<SearchPluginApi>,
 ): void {
+  // A call from a script, such as Codemode, lists every match unless it sets a limit.
+  const scriptCall = trackScriptCalls(pi, "file_search");
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
@@ -60,6 +76,8 @@ export function registerFileSearchTool(
         promptSnippet: "Find file paths by glob or partial name",
         parameters: fileSearchSchema,
         outputSchema: searchOutputSchema,
+        prepareArguments: (arguments_) =>
+          markNullFields(arguments_, fileSearchSchema) as FileSearchParameters,
         renderCall(parameters, theme, context) {
           return toolCallHeader(
             context.lastComponent,
@@ -71,7 +89,7 @@ export function registerFileSearchTool(
                   ? []
                   : [
                       {
-                        text: `in ${parameters.path}`,
+                        text: `in ${describePathArgument(parameters.path)}`,
                         color: "accent" as const,
                         truncate: "start" as const,
                       },
@@ -112,13 +130,27 @@ export function registerFileSearchTool(
           );
         },
         async execute(
-          _id,
+          id,
           parameters: FileSearchParameters,
           signal,
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
-          const options: FileSearchOptions = { pattern: parameters.pattern };
+          const nulls = nullFieldsMessage(parameters);
+          if (nulls !== undefined) return fileSearchFailure(nulls);
+          const { limit, audience, uncappedFiles } = searchCallPolicy(
+            parameters.limit,
+            scriptCall(id),
+            "files",
+          );
+          const options: FileSearchOptions = {
+            pattern: parameters.pattern,
+            ...(uncappedFiles && { uncapped: true }),
+          };
+          if (parameters.path !== undefined && [parameters.path].flat().some(isResultReference))
+            return fileSearchFailure(
+              "file_search takes file and directory paths, not Read/Search results. Pass the paths themselves.",
+            );
           return (await (
             await search
           ).searchWith(
@@ -129,7 +161,7 @@ export function registerFileSearchTool(
               ...(parameters.path === undefined ? {} : { path: parameters.path }),
               ...(parameters.include === undefined ? {} : { include: parameters.include }),
               ...(parameters.exclude === undefined ? {} : { exclude: parameters.exclude }),
-              ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+              ...(limit === undefined ? {} : { limit }),
               options: { files: options },
             },
             {
@@ -137,10 +169,23 @@ export function registerFileSearchTool(
               ...(signal !== undefined && { signal }),
               ...(onUpdate !== undefined && { onUpdate }),
             },
+            // A script's call returns every path, however large the list.
+            audience,
           )) as AgentToolResult<SearchToolDetails>;
         },
       },
       new ToolCallInterceptionRenderStore(),
     ),
+  );
+}
+
+function fileSearchFailure(message: string): AgentToolResult<SearchToolDetails> {
+  return withStructuredResult(
+    {
+      content: [{ type: "text", text: message }],
+      details: { failure: { code: "INVALID_REQUEST", message } },
+    },
+    searchDataSchema,
+    { status: "error", errors: [resultError(new Error(message), "SEARCH_FAILED")] },
   );
 }

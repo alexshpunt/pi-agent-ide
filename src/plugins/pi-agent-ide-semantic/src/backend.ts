@@ -224,6 +224,12 @@ export async function indexProject(
   return status;
 }
 
+/** A semantic search result: the readable text and its files in rank order, without ranges. */
+export interface SemanticSearchResult {
+  readonly text: string;
+  readonly files: readonly string[];
+}
+
 /** Search an existing index; ColGREP incrementally refreshes it before every query. */
 export async function searchProject(
   cwd: string,
@@ -234,7 +240,7 @@ export async function searchProject(
     readonly include?: string;
     readonly exclude?: string;
   } = {},
-): Promise<string> {
+): Promise<SemanticSearchResult> {
   const project = localProject(cwd);
   if (!query.trim()) throw new Error("A semantic search query is required");
   const status = await inspectProject(project, options);
@@ -318,7 +324,7 @@ export async function searchProject(
       files.set(file, ranges);
     }
   }
-  if (!files.size) return "No semantic search results.";
+  if (!files.size) return { text: "No semantic search results.", files: [] };
   if (singleFile) {
     const lines: string[] = [];
     for (const [file, ranges] of files) {
@@ -327,9 +333,15 @@ export async function searchProject(
       if (selected.length > 15)
         lines.push(`${selected.length - 15} additional retrieved ranges omitted`);
     }
-    return `Approximate ranges (read before editing):\n${lines.join("\n")}`;
+    return {
+      text: `Approximate ranges (read before editing):\n${lines.join("\n")}`,
+      files: [...files.keys()],
+    };
   }
-  return [...files]
-    .map(([file, ranges]) => `${file}  (${ranges.size} retrieved candidates)`)
-    .join("\n");
+  return {
+    text: [...files]
+      .map(([file, ranges]) => `${file}  (${ranges.size} retrieved candidates)`)
+      .join("\n"),
+    files: [...files.keys()],
+  };
 }

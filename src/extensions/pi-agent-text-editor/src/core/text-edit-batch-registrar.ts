@@ -1,31 +1,34 @@
 import {
   connectResultTargets,
+  normalizeStructuredArguments,
+  resultValueId,
+  resultValueReference,
   type ResultTargetStore,
   type ResultSourceTarget,
 } from "pi-agent-resource";
 import { retryWhenSourceChanged } from "#src/core/source-change-retry.ts";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
-import { withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.ts";
+import { TextMutationInputError, withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.ts";
 import { isResultInput } from "./result-transfer.ts";
+import { isWholeFileInvocation } from "./file-operation-tools.ts";
 import {
   committedMutationTargets,
   describeUnavailableCopyTarget,
-  unchangedCopySources,
+  isAlreadyDoneMutation,
   verifyMutationTargets,
 } from "./mutation-result-targets.ts";
+import { alreadyDoneFileResult, alreadyDoneToolResult } from "./already-done.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { postWriteFailureEffect } from "./text-mutation.ts";
-import { renderTextAnchor } from "pi-agent-text";
-import {
-  TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH,
-  type ToolCallAnchorRenderState,
-} from "pi-agent-tool-call-interception";
+import { anchoredLinePreviews, anchoredReadCall } from "./anchor-preview.ts";
+import { createTextDocument, type TextTarget } from "pi-agent-text";
+import { TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH } from "pi-agent-tool-call-interception";
 import { FileMutationAgentResult } from "#src/core/mutation-result/file-mutation-agent-result.ts";
-import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
+import { quoteAnchorExcerpt } from "#src/api/anchor-excerpt.ts";
 import {
   applyTextChanges,
-  type TextChange,
   TextChangeDocument,
+  type TextChange,
 } from "#src/core/text-change-engine.ts";
 import {
   executeWithBatchCoordinator,
@@ -40,18 +43,20 @@ import {
   type TextBatchParams,
 } from "#src/core/text-edit-batch.ts";
 import {
-  contextualizeTextMutationAnchorError,
   TextMutationAnchorAggregateError,
   TextMutationAnchorResolutionError,
 } from "#src/core/text-mutation-anchor-error.ts";
 import {
+  allMatchesRetry,
   buildFailedCopyWriteResult,
   buildFailedTextMutationResult,
   buildSuccessfulTextMutationResult,
   mutationSources,
+  createMutationContext,
   preflightMutationAnchors,
   presentedFinalStateLines,
   textMutationOperationReceipts,
+  withMutationResultMetadata,
 } from "#src/core/text-mutation.ts";
 import { registerBlockedToolCallSink } from "#src/core/tool-call-interceptor/coordinator.ts";
 
@@ -128,12 +133,41 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
       if (registration === undefined) {
         return;
       }
-      // Batched calls bypass prepareArguments, so apply the same empty-anchor rule here.
+      // Batched snapshots bypass the tool argument-preparation boundary.
       const call = {
         ...rawCall,
-        arguments: withoutEmptyOptionalAnchors(registration.anchors, rawCall.arguments),
+        arguments: {
+          ...withoutEmptyOptionalAnchors(
+            registration.anchors,
+            normalizeStructuredArguments(rawCall.arguments, registration.parameters, {
+              cwd: context.cwd,
+              sourceFields: [
+                registration.source.field,
+                ...(registration.source.targets ?? []).map((target) => target.field),
+              ],
+              resolveSource: (value) => resultTargets.source(value, context.cwd, true),
+            }),
+          ),
+        },
       };
 
+      // Streaming batches also bypass the standalone object-anchor normalization.
+      try {
+        for (const { field } of registration.anchors ?? []) {
+          if (resultValueId(call.arguments[field]) !== undefined)
+            call.arguments[field] = resultValueReference(
+              resultTargets,
+              call.arguments[field],
+              context.cwd,
+            );
+        }
+      } catch {
+        // Let the standalone boundary report rejected references without scheduling a write.
+        return;
+      }
+      if (core.hasMatchingPreEditHandler(registration.name, call.arguments)) return;
+      // Whole-object transfers use the same filesystem pipeline as standalone calls.
+      if (isWholeFileInvocation(registration.wholeFileOperation, call.arguments)) return;
       // Derived protocol targets need their owning execution pipeline, not snapshot batching.
       const selectorFields = [
         registration.source.field,
@@ -162,7 +196,7 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
             (registration.anchors ?? []).some(({ field }) => call.arguments[field] !== undefined)
           )
             return;
-          const resolved = resultTargets.resolve(input, context.cwd);
+          const resolved = resultTargets.resolve(input, context.cwd, { forEdit: true });
           if (!resolved.complete || resolved.targets.length !== 1) return;
           selection = resolved.targets[0];
           if (
@@ -239,6 +273,8 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
   };
 
   core.onMutationTool((registration) => {
+    // Whole-file Write must check its own observation, not a shared batch snapshot.
+    if (registration.name === "write") return;
     registrations.set(registration.name, registration);
     sourceTools.push(registration.name);
   });
@@ -255,11 +291,12 @@ export async function planRegisteredTextBatch(
   context: ExtensionContext,
   signal: AbortSignal | undefined,
   renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
-  priorChanges: ReadonlyMap<string, readonly TextChange[]> = new Map(),
+  priorPlan?: PlannedTextBatch,
+  checkSpan?: TextEditorCore["checkSpan"],
 ): Promise<PlannedTextBatch> {
   const mutations: PlannedTextBatch["mutations"][number][] = [];
   const failures: PlannedTextBatch["failures"][number][] = [];
-  const changes = new Map([...priorChanges].map(([source, edits]) => [source, [...edits]]));
+  const changes = new Map<string, readonly TextChange[]>(priorPlan?.changes);
   // Compute against immutable snapshots together; accept conflicts in call order.
   const planned = await Promise.allSettled(
     parameters.edits.map(async (entry): Promise<PlannedTextBatch["mutations"][number]> => {
@@ -267,80 +304,79 @@ export async function planRegisteredTextBatch(
       const selection = parameters.selections?.get(entry.callId);
       if (selection !== undefined && texts.get(selection.source) !== selection.expectedContent)
         throw new Error("The selected source changed before the edit batch. Resolve it again.");
-      const { callId, op: _op, ...input } = entry;
+      const { callId, op: _op, implicitAnchors, scopedSources, ...input } = entry;
       const sources = mutationSources(registration, input);
-      const sourceFor = (field: string): string => requiredValue(sources.get(field));
-      const documentFor = (source: string) =>
-        new TextChangeDocument(requiredValue(texts.get(source)));
-      const majorAnchorSources = new Set<string>();
-      const publish = (field: string, state: ToolCallAnchorRenderState) =>
-        renderArguments(callId, {
-          [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
-        });
-      const resolveAnchors = async (field: string) => {
-        const descriptor = (registration.anchors ?? []).find((anchor) => anchor.field === field);
-        const value = input[field];
-        if (
-          selection !== undefined &&
-          descriptor?.sourceField === registration.source.field &&
-          value === undefined
-        ) {
-          return new Map([
-            [selection.source, new TextSelectionAnchor(field, selection.source, selection.ranges)],
-          ]);
-        }
-        const source = descriptor === undefined ? undefined : sources.get(descriptor.sourceField);
-        if (descriptor === undefined || typeof value !== "string" || source === undefined) {
-          publish(field, { kind: "failed" });
-          throw new Error(`Unable to resolve mutation anchor ${field}`);
-        }
-        try {
-          const anchor = await resolveAnchor(source, value, descriptor.kinds);
-          if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(source);
-          const rendered = renderTextAnchor(anchor, value, { source, anchor });
-          publish(field, {
-            kind: "resolved",
-            full: rendered.full,
-            compact: rendered.compact,
-            resolverId: rendered.resolverId,
-          });
-          return new Map([[source, anchor]]);
-        } catch (error) {
-          publish(field, { kind: "failed" });
-          throw contextualizeTextMutationAnchorError(
-            error,
-            registration.name,
-            field,
-            source,
-            value,
-          );
-        }
+      const implicitTargets = new Map<string, readonly TextTarget[]>();
+      const scopes = new Map<string, readonly TextTarget[]>();
+      const selectedTarget = async (
+        source: string,
+        reference: string,
+        kinds: readonly string[],
+      ) => {
+        const anchor = await resolveAnchor(source, reference, kinds);
+        if (!TextSelectionAnchor.is(anchor))
+          throw new Error("Typed batch source must select text.");
+        return { source, ranges: anchor.ranges };
       };
-      const mutationContext = {
-        cwd: context.cwd,
-        ...(signal !== undefined && { signal }),
-        sourceDocument: documentFor(sourceFor(registration.source.field)),
-        sourceFor,
-        documentFor,
-        targetDocument: (field: string) => documentFor(sourceFor(field)),
-        resolveAnchors,
-        async resolveAnchor(field: string) {
-          return requiredValue((await resolveAnchors(field)).values().next().value);
+      for (const [field, reference] of Object.entries(implicitAnchors ?? {})) {
+        const descriptor = requiredValue(
+          registration.anchors?.find((anchor) => anchor.field === field),
+        );
+        implicitTargets.set(field, [
+          await selectedTarget(
+            requiredValue(sources.get(descriptor.sourceField)),
+            reference,
+            descriptor.kinds,
+          ),
+        ]);
+      }
+      for (const [field, reference] of Object.entries(scopedSources ?? {})) {
+        const descriptor = requiredValue(
+          registration.anchors?.find((anchor) => anchor.sourceField === field),
+        );
+        scopes.set(field, [
+          await selectedTarget(requiredValue(sources.get(field)), reference, descriptor.kinds),
+        ]);
+      }
+      if (selection !== undefined) {
+        const descriptor = requiredValue(
+          registration.anchors?.find((anchor) => anchor.sourceField === registration.source.field),
+        );
+        implicitTargets.set(descriptor.field, [selection]);
+      }
+      const mutationContext = createMutationContext(
+        registration,
+        input,
+        { cwd: context.cwd, ...(signal !== undefined && { signal }) },
+        {
+          fields: sources,
+          anchors: new Map(
+            (registration.anchors ?? []).map((anchor) => [
+              anchor.field,
+              [requiredValue(sources.get(anchor.sourceField))],
+            ]),
+          ),
+          implicitTargets,
+          scopes,
+          targets: [],
+          resources: [...sources.values()],
+          aliases: new Map(),
         },
-      };
+        texts,
+        resolveAnchor,
+        (field, state) =>
+          renderArguments(callId, {
+            [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: { [field]: state },
+          }),
+        checkSpan,
+      );
       await preflightMutationAnchors(registration, input, mutationContext);
       const mutation = await registration.mutate(mutationContext, input);
       return {
         callId,
         mutation: {
-          ...mutation,
+          ...withMutationResultMetadata(mutation, mutationContext),
           operation: registration.name,
-          resultPresentations: new Map(
-            [...mutation.edits.keys()].map((source) => [
-              source,
-              majorAnchorSources.has(source) ? "major-anchor" : "plain",
-            ]),
-          ),
         },
       };
     }),
@@ -354,12 +390,40 @@ export async function planRegisteredTextBatch(
       if (result.status === "rejected") throw result.reason;
       const mutation = result.value.mutation;
       for (const [source, edit] of mutation.edits) {
-        if (
-          edit.changes.some((change) =>
-            (changes.get(source) ?? []).some((prior) => textChangesConflict(prior, change)),
-          )
-        ) {
-          throw new Error(`Text mutation ${callId} overlaps an earlier successful mutation.`);
+        const previous = changes.get(source);
+        if (previous === undefined) continue;
+        for (const change of edit.changes) {
+          const prior = previous.find((candidate) => textChangesConflict(candidate, change));
+          if (prior === undefined) continue;
+          const ownsChange = ({ mutation: earlier }: PlannedTextBatch["mutations"][number]) =>
+            earlier.edits.get(source)?.changes.includes(prior) === true;
+          const owner = requiredValue(
+            priorPlan?.mutations.find(ownsChange) ?? mutations.find(ownsChange),
+          );
+          const fields =
+            change.selectorFields ??
+            (registration.anchors ?? [])
+              .filter((anchor) => typeof input[anchor.field] === "string")
+              .map((anchor) => anchor.field);
+          const selector = (fields.length > 0 ? fields : [registration.source.field])
+            .map((field) => `"${field}"`)
+            .join(" through ");
+          const snapshot = new TextChangeDocument(requiredValue(texts.get(source)));
+          const start = Math.max(prior.from, change.from);
+          const end = Math.min(prior.to, change.to);
+          const first = snapshot.lineNumberAt(start);
+          const last = snapshot.lineNumberAt(Math.max(start, end - 1));
+          const previews = anchoredLinePreviews(createTextDocument(source, snapshot.content));
+          const overlap = [previews.line(first)];
+          if (last > first + 1) overlap.push("…");
+          if (last > first) overlap.push(previews.line(last));
+          const rows = overlap.filter((line) => line !== undefined);
+          throw new TextMutationInputError(
+            "OVERLAPPING_EDITS",
+            `${registration.name} selector ${selector} overlaps an earlier ${owner.mutation.operation} edit in ${quoteAnchorExcerpt(source)}.` +
+              (rows.length === 0 ? "" : `\nOverlap before the batch:\n${rows.join("\n")}`) +
+              `\nAfter the batch, run ${anchoredReadCall(source)} before choosing a new selector.`,
+          );
         }
       }
       mutations.push(result.value);
@@ -386,7 +450,8 @@ export async function executeRegisteredTextBatch(
   context: ExtensionContext,
   reporter: BatchExecutionReporter,
   renderArguments: (toolCallId: string, patch: Readonly<Record<string, unknown>>) => void,
-  planned?: PlannedTextBatch,
+  /** Receives the plan of the last attempt and the texts it was planned on. */
+  onPlanned?: (plan: PlannedTextBatch, snapshots: ReadonlyMap<string, string>) => void,
   resultTargets?: ResultTargetStore,
 ): Promise<AgentToolResult<TextBatchDetails>> {
   const prepared = parameters.edits.map((entry) => {
@@ -426,34 +491,28 @@ export async function executeRegisteredTextBatch(
   }
 
   let outcome: TextResourcesEditOutcome<PlannedTextBatch>;
-  let executionPlan = planned;
+  let executionPlan: PlannedTextBatch | undefined;
   const guardedSnapshots = new Map<string, string>();
 
-  // A batch planned inside the transaction can run again when another process wrote one of its
-  // files first; a batch planned outside it or bound to snapshots cannot.
-  const replannable = planned === undefined && parameters.expectedContent === undefined;
+  // Planning inside the transaction lets the batch run again on the current text when another
+  // process wrote one of its files first, as content anchors still find their text there.
   const edit = () =>
     core.editTexts(
       [...requests.values()],
       { cwd: context.cwd, intent, ...(signal !== undefined && { signal }) },
       async (texts, resolveAnchor) => {
         for (const [source, content] of texts) guardedSnapshots.set(source, content);
-        for (const [source, expected] of parameters.expectedContent ?? []) {
-          if (!texts.has(source) || texts.get(source) !== expected) {
-            throw new Error(`Snapshot source ${source} changed before the edit batch.`);
-          }
-        }
-        const result =
-          planned ??
-          (await planRegisteredTextBatch(
-            registrations,
-            parameters,
-            texts,
-            resolveAnchor,
-            context,
-            signal,
-            renderArguments,
-          ));
+        const result = await planRegisteredTextBatch(
+          registrations,
+          parameters,
+          texts,
+          resolveAnchor,
+          context,
+          signal,
+          renderArguments,
+          undefined,
+          core.checkSpan,
+        );
         executionPlan = result;
         return {
           changes: result.changes,
@@ -465,7 +524,7 @@ export async function executeRegisteredTextBatch(
       },
     );
   try {
-    outcome = replannable ? await retryWhenSourceChanged(edit) : await edit();
+    outcome = await retryWhenSourceChanged(edit);
   } catch (error) {
     return failTextBatch(
       core,
@@ -475,6 +534,7 @@ export async function executeRegisteredTextBatch(
       reporter,
     );
   }
+  if (executionPlan !== undefined) onPlanned?.(executionPlan, guardedSnapshots);
 
   if (outcome.kind === "failed") {
     const mutationResults = new Map<string, AgentToolResult<FileMutationBatchResult>>();
@@ -551,15 +611,13 @@ export async function executeRegisteredTextBatch(
     const callDisplayResults = [...mutation.edits].flatMap(([source, edit]) => {
       const resource = outcome.resources.find((candidate) => candidate.source === source);
       if (resource === undefined) {
-        return [];
+        const before = guardedSnapshots.get(source);
+        const untouched =
+          before === undefined ? undefined : alreadyDoneFileResult(source, before, edit.changes);
+        return untouched === undefined ? [] : [untouched];
       }
 
-      // The core already validated the write; a created empty resource has no text delta.
-      const ownAfter = applyTextChanges(
-        resource.before.content,
-        edit.changes,
-        resource.before.content.length === 0,
-      ).content;
+      const ownAfter = applyTextChanges(resource.before.content, edit.changes).content;
       return [
         buildSuccessfulTextMutationResult(
           resource,
@@ -587,12 +645,9 @@ export async function executeRegisteredTextBatch(
     displayResults.push(...callDisplayResults);
     callIdsByDisplayResult.push(...callDisplayResults.map(() => callId));
 
-    const unchangedCopy =
-      mutation.operation === "copy" &&
-      mutation.edits.size > 0 &&
-      unchangedCopySources(mutation, guardedSnapshots).size === mutation.edits.size;
+    const unchanged = isAlreadyDoneMutation(mutation, guardedSnapshots);
     for (const source of mutation.edits.keys()) {
-      if (unchangedCopy && finalCallIdBySource.has(source)) continue;
+      if (unchanged && finalCallIdBySource.has(source)) continue;
       finalCallIdBySource.set(source, callId);
       finalPresentationBySource.set(source, mutation.resultPresentations.get(source) ?? "plain");
     }
@@ -605,7 +660,24 @@ export async function executeRegisteredTextBatch(
       return edit === undefined ? [] : [edit];
     });
 
-    if (resource === undefined || edits.length === 0) {
+    if (edits.length === 0) {
+      continue;
+    }
+    if (resource === undefined) {
+      // A source whose every target already had its text is not written but is still reported.
+      const before = guardedSnapshots.get(source);
+      const untouched =
+        before === undefined
+          ? undefined
+          : alreadyDoneFileResult(
+              source,
+              before,
+              edits.flatMap((edit) => edit.changes),
+            );
+      if (untouched === undefined) continue;
+      resultsByCallId.get(finalCallId)?.push(untouched);
+      results.push(untouched);
+      callIdsByResult.push(finalCallId);
       continue;
     }
 
@@ -614,6 +686,7 @@ export async function executeRegisteredTextBatch(
       source,
       {
         changes: edits.flatMap((edit) => edit.changes),
+        selectorStatuses: edits.flatMap((edit) => edit.selectorStatuses ?? []),
         action: edits.some((edit) => edit.action === "overwritten") ? "overwritten" : "edited",
       },
       resource.after.content,
@@ -678,8 +751,7 @@ export async function executeRegisteredTextBatch(
         metadata = { targetUnavailable: errorMessage(error) };
       }
       const copy = mutation.operation === "copy";
-      const unchanged =
-        copy && unchangedCopySources(mutation, guardedSnapshots).size === mutation.edits.size;
+      const unchanged = isAlreadyDoneMutation(mutation, guardedSnapshots);
       const ownResults = resultsByCallId.get(callId) ?? [];
       const displayed = displayResultsByCallId.get(callId) ?? [];
       const receipt = textBatchResult(
@@ -691,11 +763,7 @@ export async function executeRegisteredTextBatch(
       const ownReceipt = {
         ...receipt,
         ...(unchanged
-          ? {
-              content: [
-                { type: "text" as const, text: "No changes: destination already has this text." },
-              ],
-            }
+          ? { content: alreadyDoneToolResult([mutation], guardedSnapshots).content }
           : !copy && ownResults.length === 0
             ? {
                 content: [
@@ -731,7 +799,14 @@ export async function executeRegisteredTextBatch(
     );
   }
 
+  const preparedById = new Map(prepared.map((item) => [item.callId, item]));
   for (const failure of failures) {
+    const call = preparedById.get(failure.callId);
+    // Refreshed snippets in a batch no longer carry the original selector scope.
+    const retry =
+      call === undefined || call.input.scopedSources !== undefined
+        ? undefined
+        : allMatchesRetry(call.registration.name, call.input, resultTargets);
     const anchorFailures =
       failure.error instanceof TextMutationAnchorAggregateError
         ? failure.error.failures
@@ -760,6 +835,7 @@ export async function executeRegisteredTextBatch(
       },
       context,
       failure.effect,
+      retry,
     );
     const failureResults = failedResult.details.results ?? [];
     reporter.fail(failure.callId, {
@@ -773,14 +849,10 @@ export async function executeRegisteredTextBatch(
     callIdsByDisplayResult.push(...failureResults.map(() => failure.callId));
   }
 
+  // Progress goes to RPC before tool_result can project the engine's snapshots for display.
   onUpdate?.({
     content: [{ type: "text", text: "post-edit progress" }],
-    details: {
-      results: [...results],
-      callIdsByResult: [...callIdsByResult],
-      displayResults: [...displayResults],
-      callIdsByDisplayResult: [...callIdsByDisplayResult],
-    },
+    details: { results: undefined, callIdsByResult: [] },
   });
   const result = textBatchResult(results, callIdsByResult, displayResults, callIdsByDisplayResult);
   return mutationResults.size === 0

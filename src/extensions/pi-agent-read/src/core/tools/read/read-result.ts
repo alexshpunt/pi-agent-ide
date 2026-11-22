@@ -1,4 +1,8 @@
-import { createTextDocument, renderPresentedTextDocument } from "pi-agent-text";
+import {
+  createTextDocument,
+  NO_FINAL_LINE_BREAK,
+  renderPresentedTextDocument,
+} from "pi-agent-text";
 
 import type {
   ReadFailure,
@@ -21,7 +25,12 @@ export function createReadState(
   content: AgentContent,
   source: string,
   resolverId: string,
-  options: { readonly preserveTruncatedOutput: boolean; readonly textMode: "final" | "normal" },
+  options: {
+    readonly preserveTruncatedOutput: boolean;
+    readonly textMode: "final" | "normal";
+    /** Entry names when the content is a directory listing. */
+    readonly entries?: readonly string[];
+  },
 ): ReadState {
   if (!isSingleTextContent(content)) {
     return {
@@ -40,6 +49,7 @@ export function createReadState(
     content,
     source,
     resolvedBy: resolverId,
+    ...(options.entries === undefined ? {} : { entries: [...options.entries] }),
     preserveTruncatedOutput: options.preserveTruncatedOutput,
     textMode: options.textMode,
     contentKind: "text",
@@ -101,11 +111,20 @@ export function projectReadState(
           lineEnding: index === lines.length - 1 && stoppedEarly ? "" : line.lineEnding,
         })),
       });
+  // The marker follows the last line of a file without a final line break. It is display text:
+  // not a line, so the script data and the line counts do not hold it. Other sources, such as
+  // resource text or Linear bodies, have no file end to show.
+  const noFinalLineBreak =
+    state.textMode === "normal" &&
+    (state.resolvedBy === "filesystem" || state.resolvedBy === "ssh") &&
+    state.entries === undefined &&
+    !stoppedEarly &&
+    lines.at(-1)?.lineEnding === "";
   const originalBlock = state.content[0];
   const content: TextContent[] = [
     {
       type: "text",
-      text: renderedText,
+      text: noFinalLineBreak ? `${renderedText}\n${NO_FINAL_LINE_BREAK}` : renderedText,
       ...(originalBlock.textSignature !== undefined && {
         textSignature: originalBlock.textSignature,
       }),
@@ -121,6 +140,8 @@ export function projectReadState(
         plain && !stoppedEarly
           ? renderedText
           : lines.map((line) => line.content + line.lineEnding).join(""),
+      ...(plain ? {} : { presented: renderedText }),
+      ...(state.entries === undefined ? {} : { entries: state.entries }),
       lines,
       startLine: lines[0]?.lineNumber ?? 0,
       endLine: lines.at(-1)?.lineNumber ?? 0,
@@ -133,6 +154,7 @@ export function projectReadState(
       endLine: lines.at(-1)?.lineNumber ?? 0,
       totalLines,
       lines,
+      ...(noFinalLineBreak && { noFinalLineBreak }),
     },
   };
 }
@@ -162,8 +184,14 @@ function deepestCause(failure: ReadFailure): Error | undefined {
 }
 
 const requestRecovery = "Supply path with a source or an unchanged result reference.";
-const fragmentRecovery = (source: string) =>
-  `Read ${JSON.stringify(source)} with views=["anchors"] and choose a current anchor.`;
+function readRetry(failure: ReadFailure): string | undefined {
+  const request =
+    failure.retry ??
+    (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined
+      ? { path: failure.source, views: ["anchors"] }
+      : undefined);
+  return request === undefined ? undefined : `Run read(${JSON.stringify(request)}).`;
+}
 
 function candidateLines(failure: ReadFailure): string[] {
   return failure.candidates?.length
@@ -185,9 +213,9 @@ export function readFailureRecovery(failure: ReadFailure): string[] {
   const code = error !== undefined && "code" in error ? error.code : undefined;
   const steps: string[] = [];
   if (code === "ENOENT" && !failure.candidates?.length) steps.push("Search for the correct path.");
+  const retry = readRetry(failure);
   if (failure.code === "INVALID_REQUEST") steps.push(requestRecovery);
-  else if (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined)
-    steps.push(fragmentRecovery(failure.source));
+  else if (retry !== undefined) steps.push(retry);
   else if (failure.code === "NO_RESOLVER")
     steps.push("Choose a supported source from the path parameter.");
   else if (failure.code === "NO_FRAGMENT_RESOLVER")
@@ -214,9 +242,9 @@ function readFailureMessage(failure: ReadFailure): string {
     reason = "This source is not supported. Choose a supported source from the path parameter.";
   else if (failure.code === "NO_FRAGMENT_RESOLVER")
     reason = "This anchor is not supported. Read the source without the anchor.";
+  const retry = readRetry(failure);
   if (failure.code === "INVALID_REQUEST") reason += `. ${requestRecovery}`;
-  else if (failure.code === "FRAGMENT_FAILED" && failure.source !== undefined)
-    reason += `\n${fragmentRecovery(failure.source)}`;
+  else if (retry !== undefined) reason += `\n${retry}`;
   const source = failure.source === undefined ? "" : ` for ${JSON.stringify(failure.source)}`;
   return `Read failed${source}: ${reason}`;
 }

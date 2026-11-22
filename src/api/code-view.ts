@@ -13,8 +13,6 @@ export {
   createDiagnosticViewContent,
   type DiagnosticSource,
   type DiagnosticViewOptions,
-  formatDiagnosticViewSource,
-  resolveDiagnosticViewPath,
 } from "#src/code-view/diagnostic-view.ts";
 
 export {

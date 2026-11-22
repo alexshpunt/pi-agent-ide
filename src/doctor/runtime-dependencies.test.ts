@@ -35,15 +35,13 @@ test("reports unavailable runtime executables with their feature severity", asyn
     );
 
     expect(findings.get("Local search")).toMatchObject({ status: "fail" });
-    expect(findings.get("Structural search")).toMatchObject({ status: "fail" });
+    // ast-grep ships with the package, so an empty PATH does not remove it.
+    expect(findings.get("Structural search")).toMatchObject({ status: "pass" });
     expect(findings.get("Git changes")).toMatchObject({ status: "warn" });
 
     expect(findings.get("Browser web reads")).toMatchObject({ status: "warn" });
 
-    expect(setup.actions.map((action) => action.id)).toEqual([
-      "ripgrep-unavailable",
-      "ast-grep-unavailable",
-    ]);
+    expect(setup.actions.map((action) => action.id)).toEqual(["ripgrep-unavailable"]);
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }

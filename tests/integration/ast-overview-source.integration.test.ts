@@ -25,7 +25,7 @@ test.each([
   { name: "lines", rows: 2100, padding: "  consume(value);" },
   { name: "bytes", rows: 1000, padding: `  consume("${"界".repeat(30)}");` },
 ])(
-  "Search uses the original Read overview window ($name)",
+  "Search uses the original Read window behind direct overviews and exact Codemode text ($name)",
   async ({ name, rows, padding }) => {
     await withTempWorkspace(async (cwd) => {
       const source = [
@@ -67,53 +67,55 @@ test.each([
           call("save", "codemode", {
             code: String.raw`
 const full = await tools.read({path:"large.ts"});
-if (!full.includes("Some source text is omitted.") || full.includes('consume("NEEDLE")')) throw Error("Body was not omitted: " + full);
-for (const input of [full, /<uuid>([^<]+)<\/uuid>/u.exec(full)[1]]) {
-  const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
-  if (!found.includes("3 matches in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
+if (full.text.includes("Some source text is omitted.") || !full.text.includes('consume("NEEDLE")')) throw Error("Expected the exact source text");
+for (const input of [full, full.id]) {
+  const found = await tools.search({path:input,query:"NEEDLE"});
+  if (found.matches.map(match => match.path + ":" + match.line + ":" + match.text).join() !== "large.ts:1:NEEDLE,large.ts:103:NEEDLE,large.ts:${rows + 5}:NEEDLE") throw Error(JSON.stringify(found));
 }
 const window = await tools.read({path:"large.ts",offset:2,limit:${rows + 3}});
-if (!window.includes("outsideBefore")) throw Error("Expected a whole-file overview of a window");
-store("overviewWindow",window);
-text("Overview sources saved");
+if (window.text.includes("outsideBefore") || !window.text.includes('consume("NEEDLE")')) throw Error("Expected the exact window text");
+store("largeWindow",window);
+text("Exact sources saved");
 `,
           }),
           call("reuse", "codemode", {
             code: String.raw`
-const window = load("overviewWindow");
-for (const input of [window, /<uuid>([^<]+)<\/uuid>/u.exec(window)[1]]) {
-  const found = await tools.search({path:input,query:"NEEDLE"}).then(value => value.result);
-  if (!found.includes("1 match in 1 file") || !found.includes("large.ts:103:12-18")) throw Error(found);
+const window = load("largeWindow");
+const onlyNeedle = (found) => found.matches.map(match => match.path + ":" + match.line + ":" + match.text).join() === "large.ts:103:NEEDLE";
+for (const input of [window, window.id]) {
+  const found = await tools.search({path:input,query:"NEEDLE"});
+  if (!onlyNeedle(found)) throw Error(JSON.stringify(found));
   for (const query of ["outsideBefore","outsideAfter","regex:Code overview|scope-begin|Some source text|requested text|…"]) {
-    const empty = await tools.search({path:input,query}).then(value => value.result);
-    if (!empty.includes("No matches found")) throw Error(empty);
+    const empty = await tools.search({path:input,query});
+    if (empty.matches.length !== 0) throw Error(JSON.stringify(empty));
     await tools.replace({path:empty,text:"BAD"});
   }
 }
 const bounded = await tools.read({path:window,offset:102,limit:1});
-if (!(await tools.search({path:bounded,query:"NEEDLE"}).then(value => value.result)).includes("large.ts:103:12-18")) throw Error("Bounded Read lost its exact source position");
+if (!onlyNeedle(await tools.search({path:bounded,query:"NEEDLE"}))) throw Error("Bounded Read lost its exact source position");
 const small = await tools.read({path:"large.ts",offset:103,limit:1});
-if (!(await tools.search({path:small,query:"NEEDLE"}).then(value => value.result)).includes("large.ts:103:12-18")) throw Error("Small Read composition regressed");
-const selected = await tools.search({path:window,query:"NEEDLE"}).then(value => value.result);
+if (!onlyNeedle(await tools.search({path:small,query:"NEEDLE"}))) throw Error("Small Read composition regressed");
+const selected = await tools.search({path:window,query:"NEEDLE"});
 await tools.replace({path:selected,text:"FOUND"});
 text("Only the original window was searched and edited");
 `,
           }),
           call("stale", "codemode", {
             code: String.raw`
-const window = load("overviewWindow");
-for (const input of [window, /<uuid>([^<]+)<\/uuid>/u.exec(window)[1]]) {
-  let rejected = false;
-  try { await tools.search({path:input,query:"NEEDLE"}); }
-  catch(error) { rejected = /expired|unknown/u.test(String(error)); }
-  if (!rejected) throw Error("The old overview survived a source edit");
+const window = load("largeWindow");
+for (const input of [window, window.id]) {
+  // An exact window follows its region into the edited file instead of its old text.
+  const found = await tools.search({path:input,query:"NEEDLE"});
+  if (found.matches.length !== 0) throw Error(JSON.stringify(found));
+  const current = await tools.search({path:input,query:"FOUND"});
+  if (current.matches.map(match => match.line + ":" + match.text).join() !== "103:FOUND") throw Error(JSON.stringify(current));
 }
-text("Old overview inputs rejected");
+text("Old window inputs searched the current region");
 `,
           }),
           assistantMessage([text("Done")]),
         ],
-      }).run("Search the source behind Read overviews without widening the original window");
+      }).run("Search the source behind Read results without widening the original window");
       for (const id of ["full", "direct-result", "window", "direct-uuid", "save", "reuse", "stale"])
         expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
       for (const id of ["full", "window"])
@@ -128,13 +130,11 @@ text("Old overview inputs rejected");
           ? [entry.event as RunEvent]
           : [],
       );
-      const caseIds = [
-        `read-overview-search-${name}`,
-        ...(name === "lines" ? ["read-overview-store"] : []),
-      ];
+      // Overview cases are direct-only; the Codemode route stores the exact large window.
+      const caseIds = name === "lines" ? ["read-large-store"] : [];
       for (const caseId of caseIds) {
         const task = capabilityCases.find((candidate) => candidate.id === caseId);
-        if (task === undefined) throw Error("Missing overview capability case");
+        if (task === undefined) throw Error("Missing large-read capability case");
         expect(validateRoute(task, events, "codemode")).toEqual({ passed: true, reasons: [] });
         const bypass = events.map((event) =>
           event.type === "tool_execution_start" && event.toolName === "search"

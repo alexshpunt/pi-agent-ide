@@ -60,8 +60,9 @@ describe("interactive text editor demos", () => {
                 name: "replace",
                 arguments: {
                   path: demoFileName,
-                  start: formatLineHashAnchor(line, marker),
-                  text: replacement,
+                  at: formatLineHashAnchor(baseline, line),
+                  // A line anchor selects the line with its line break; the text keeps it.
+                  text: `${replacement}\n`,
                 },
                 ...interactivePacing,
               }),

@@ -1,3 +1,4 @@
+import type { TextAnchorRejection } from "pi-agent-text";
 export interface TextAnchorContextRange {
   readonly offset: number;
   readonly limit: number;
@@ -18,7 +19,7 @@ export type TextAnchorInspectionOutcome =
       readonly anchorIndex: number;
       readonly reason: string;
       /** Resolver-owned failure semantics. Only `stale` denotes a stale snapshot anchor. */
-      readonly rejectionCode?: "invalid" | "stale" | "missing" | "ambiguous";
+      readonly rejectionCode?: TextAnchorRejection["code"];
       readonly contextRange?: TextAnchorContextRange;
     }
   | { readonly kind: "failed"; readonly reason: string; readonly cause?: unknown };

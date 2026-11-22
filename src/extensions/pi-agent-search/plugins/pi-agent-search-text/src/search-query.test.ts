@@ -57,6 +57,50 @@ describe("compileSearchQuery", () => {
     expect(expression.test("beta gamma ignored")).toBe(false);
   });
 
+  test.each([
+    ["alpha NOT skip", ["alpha AND NOT skip", "NOT skip AND alpha", "NOT skip alpha"]],
+    [
+      "alpha beta NOT skip",
+      [
+        "alpha AND beta AND NOT skip",
+        "NOT skip AND alpha AND beta",
+        "alpha NOT skip AND beta",
+        "alpha AND NOT skip beta",
+      ],
+    ],
+    [
+      "(alpha OR gamma) NOT (skip OR drop)",
+      ["NOT (skip OR drop) AND (alpha OR gamma)", "(alpha OR gamma) AND NOT (skip OR drop)"],
+    ],
+  ])("treats a NOT factor anywhere in %s's conjunction alike", (canonical, variants) => {
+    const lines = [
+      "alpha",
+      "alpha beta",
+      "gamma beta",
+      "alpha beta skip",
+      "gamma drop",
+      "skip beta",
+      "beta",
+    ];
+    const expected = expressionFor(canonical);
+    for (const variant of variants) {
+      const expression = expressionFor(variant);
+      expect(compileSearchQuery(variant), variant).toBe(compileSearchQuery(canonical));
+      expect(
+        lines.map((line) => expression.test(line)),
+        variant,
+      ).toEqual(lines.map((line) => expected.test(line)));
+    }
+  });
+
+  test("keeps AND NOT inside its OR branch", () => {
+    const expression = expressionFor("alpha OR beta AND NOT skip");
+
+    expect(expression.test("alpha skip")).toBe(true);
+    expect(expression.test("beta")).toBe(true);
+    expect(expression.test("beta skip")).toBe(false);
+  });
+
   test("uses implicit AND between adjacent terms in a Boolean query", () => {
     const expression = expressionFor("alpha beta OR gamma");
 
@@ -65,14 +109,39 @@ describe("compileSearchQuery", () => {
     expect(expression.test("gamma")).toBe(true);
   });
 
-  test("matches single- and double-quoted phrases without requiring an operator", () => {
-    const singleQuoted = expressionFor("'switch session'");
-    const doubleQuoted = expressionFor('"cross repo"');
+  test.each([
+    '        ("checkout-5", "legacy\u200BCheckout", 3),',
+    "'switch session'",
+    '"cross repo"',
+    'say "hi" twice',
+    'open "unterminated',
+    "it's 'here",
+    'empty ""',
+    "call(\"a\", 'b')",
+  ])("keeps quotes literal without an operator in %s", (query) => {
+    expect(compileSearchCondition(query)).toBeUndefined();
+    expect(compileSearchQuery(query, true)).toBe(query);
+    expect(new RegExp(compileSearchQuery(query), "u").exec(`x ${query} y`)?.[0]).toBe(query);
+  });
 
-    expect(singleQuoted.test("switch session now")).toBe(true);
-    expect(singleQuoted.test("switch another session")).toBe(false);
-    expect(doubleQuoted.test("cross repo move")).toBe(true);
-    expect(doubleQuoted.test("cross another repo")).toBe(false);
+  test("groups quoted phrases once an operator is present", () => {
+    const expression = expressionFor("\"cross repo\" OR 'switch session'");
+
+    expect(expression.test("cross repo move")).toBe(true);
+    expect(expression.test("switch session now")).toBe(true);
+    expect(expression.test("cross another repo")).toBe(false);
+  });
+
+  test.each([
+    ['"a || b"', "a || b"],
+    ['"flags | MASK"', "flags | MASK"],
+    ['"x AND y"', "x AND y"],
+  ])("keeps quoted operator text %s as one literal phrase", (query, text) => {
+    const expression = expressionFor(query);
+
+    expect(expression.test(`before ${text} after`)).toBe(true);
+    expect(expression.test(`before ${text.replaceAll(" ", "  ")} after`)).toBe(false);
+    expect(compileSearchCondition(query)).toMatchObject({ kind: "term" });
   });
 
   test("combines AND, OR, NOT, and parentheses", () => {
@@ -95,15 +164,20 @@ describe("compileSearchQuery", () => {
   });
 
   test.each([
-    ["foo OR", "Invalid Boolean search query at column 7: expected a term after OR."],
-    ["foo AND (bar OR baz", "Invalid Boolean search query at column 20: expected ')'."],
-    ["foo OR ()", "Invalid Boolean search query at column 9: expected a term after '('."],
-    ["foo NOT", "Invalid Boolean search query at column 8: expected a term after NOT."],
-    ["OR foo", "Invalid Boolean search query at column 1: expected a term before OR."],
-    ['foo OR "bar', "Invalid Boolean search query at column 8: unterminated double-quoted term."],
-    ["foo OR bar)", "Invalid Boolean search query at column 11: unexpected ')'."],
-  ])("reports an actionable error for %s", (query, message) => {
-    expect(() => compileSearchQuery(query)).toThrow(message);
+    "foo OR",
+    "foo AND (bar OR baz",
+    "foo OR ()",
+    "foo NOT",
+    "OR foo",
+    "foo AND NOT",
+    "foo NOT NOT bar",
+    "NOT foo",
+    "foo OR NOT bar",
+    'foo OR "bar',
+    'foo OR ""',
+    "foo OR bar)",
+  ])("rejects the invalid Boolean query %s", (query) => {
+    expect(() => compileSearchQuery(query)).toThrow(SyntaxError);
   });
 });
 
@@ -120,7 +194,14 @@ describe("compileSearchFallbackQuery", () => {
     expect(expression.test("unrelated documentation")).toBe(false);
   });
 
-  test.each(["single", "alpha OR beta", "alpha | beta"])(
+  test("splits a quoted query without operators at whitespace like any other text", () => {
+    const fallback = compileSearchFallbackQuery('"missing" package');
+    if (fallback === undefined) throw new Error("Expected a fallback expression");
+
+    expect(new RegExp(fallback, "u").exec("package alone")?.[0]).toBe("package");
+  });
+
+  test.each(["single", "alpha OR beta", "alpha | beta", '"a b" OR c', '"a || b"'])(
     "does not provide fallback for %s",
     (query) => {
       expect(compileSearchFallbackQuery(query)).toBeUndefined();

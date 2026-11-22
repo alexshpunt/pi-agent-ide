@@ -1,12 +1,9 @@
 import { requiredValue } from "pi-agent-invariant";
-import { connectResultTargets } from "pi-agent-resource";
-import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
-  READ_API_VERSION,
-  READ_PROTOCOL,
-  type ReadPlugin,
-  type ReadPluginApi,
-} from "pi-agent-read/api/plugin-protocol";
+  connectResultTargets,
+  normalizeStructuredArguments,
+  ResourceError,
+} from "pi-agent-resource";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
 import { getLastResolvedResource } from "pi-agent-text-editor/api/last-resolved-resource";
 import {
@@ -33,43 +30,29 @@ import {
   type TextMutationToolRegistration,
 } from "pi-agent-text-editor/api/mutation-tool";
 
+import { editingSelectorPairs } from "pi-agent-text-editor/api/text-selector-fields";
+
 const CACHE_KEY_PART_SEPARATOR = "\u{0}";
 const CACHE_KEY_LIST_SEPARATOR = "\u{1}";
 
 export default async function registerTextEditorStaleAnchor(pi: ExtensionAPI): Promise<void> {
-  let readApi: ReadPluginApi | undefined;
-  const readPlugin = {
-    protocol: READ_PROTOCOL,
-    apiVersion: READ_API_VERSION,
-    id: "text-editor-stale-anchor",
-    setup(api) {
-      readApi = api;
-    },
-  } satisfies ReadPlugin;
   const editorPlugin = {
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: "text-editor-stale-anchor",
     setup(api) {
-      const dynamic = createHandler(pi, api, () => {
-        if (readApi === undefined) {
-          throw new Error("pi-agent-read is unavailable");
-        }
-
-        return readApi;
-      });
+      const dynamic = createHandler(pi, api);
       registerToolCallInterceptor(pi, dynamic.handler);
       api.onMutationTool(dynamic.add);
     },
   } satisfies TextEditorPlugin;
 
-  await Promise.all([connectReadPlugin(pi, readPlugin), connectTextEditorPlugin(pi, editorPlugin)]);
+  await connectTextEditorPlugin(pi, editorPlugin);
 }
 
 function createHandler(
   pi: ExtensionAPI,
   api: TextEditorPluginApi,
-  getReadApi: () => ReadPluginApi,
 ): {
   readonly handler: ToolCallInterceptorHandler;
   readonly add: (registration: TextMutationToolRegistration) => void;
@@ -92,20 +75,49 @@ function createHandler(
         return;
       }
 
-      const arguments_ = context.partialArgs ?? context.args;
-      // Issued selections belong to the result-input pipeline, not filename anchor inspection.
-      // This also leaves unsupported selector combinations and expired IDs to their owner.
+      // Inspection may use a selection's owning resource, but must never replace the caller's
+      // selection with that whole resource in the arguments that eventually authorize the edit.
+      const arguments_ = {
+        ...normalizeStructuredArguments(context.partialArgs ?? context.args, schema.parameters, {
+          cwd: context.cwd,
+          sourceFields: [
+            schema.source.field,
+            ...(schema.source.targets ?? []).map((target) => target.field),
+          ],
+          resolveSource: (value) => resultTargets.source(value, context.cwd, true),
+        }),
+      };
       try {
         for (const field of [
           schema.source.field,
           ...(schema.source.targets ?? []).map((target) => target.field),
         ]) {
           const original = arguments_[field];
+          if (original === undefined) continue;
           const source = resultTargets.source(original, context.cwd);
-          if (source !== original || (typeof source === "string" && source.startsWith("RESULT#")))
-            return;
+          if (typeof source === "string" && !source.startsWith("RESULT#")) {
+            // Unregistered Search selectors still belong to their own resolver.
+            if (source.startsWith("SEARCH#")) return;
+            arguments_[field] = source;
+            continue;
+          }
+          const selected = resultTargets.resolve(source, context.cwd, {
+            forScope: true,
+            allowAdjusted: true,
+          });
+          if (!selected.complete || selected.targets.length !== 1) return;
+          arguments_[field] = selected.targets[0]?.source;
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ResourceError && error.code === "NO_EDITABLE_TEXT")
+          return makeResolverBlockResult(
+            context.toolCall.name,
+            schema.source.field,
+            error.source,
+            error.code,
+          );
+        // Unsupported values, expired IDs and selections without a unique owning source are
+        // refused by the result-input pipeline, not by filename anchor inspection.
         return;
       }
       const source = resolveSource(
@@ -120,28 +132,32 @@ function createHandler(
         return;
       }
 
-      const pairBlock = await inspectAnchorPair(
-        api,
-        getReadApi(),
-        context,
-        schema,
-        arguments_,
-        source,
-        checks,
-        blocks,
-      );
-
-      if (pairBlock !== undefined) {
-        return pairBlock;
+      let pairs: ReturnType<typeof editingSelectorPairs>;
+      try {
+        pairs = editingSelectorPairs(schema.name, arguments_);
+      } catch {
+        // Wait for valid boundaries; execution reports invalid combinations.
+        return;
       }
-
-      const paired =
-        schema.pair?.every((field) => {
-          const descriptor = schema.anchors?.find((anchor) => anchor.field === field);
-          return descriptor !== undefined && isMutationAnchorValue(descriptor, arguments_[field]);
-        }) === true
-          ? new Set(schema.pair)
-          : new Set<string>();
+      if (schema.pair !== undefined)
+        pairs.push({ sourceField: schema.source.field, fields: schema.pair });
+      const paired = new Set<string>();
+      for (const { sourceField, fields } of pairs) {
+        const candidateSource = arguments_[sourceField];
+        const pairBlock = await inspectAnchorPair(
+          api,
+          context,
+          schema,
+          arguments_,
+          typeof candidateSource === "string" ? candidateSource : source,
+          fields,
+          checks,
+          blocks,
+        );
+        if (pairBlock !== undefined) return pairBlock;
+        if (fields.every((field) => typeof arguments_[field] === "string"))
+          for (const field of fields) paired.add(field);
+      }
 
       for (const descriptor of schema.anchors ?? []) {
         if (paired.has(descriptor.field)) {
@@ -158,9 +174,8 @@ function createHandler(
         const anchorSource = typeof candidateSource === "string" ? candidateSource : source;
         const block = await inspectAnchors(
           api,
-          getReadApi(),
           context,
-          descriptor.field,
+          [descriptor.field],
           anchorSource,
           [anchor],
           [descriptor.kinds],
@@ -242,19 +257,14 @@ function resolveSource(
 
 async function inspectAnchorPair(
   api: TextEditorPluginApi,
-  readApi: ReadPluginApi,
   context: InterceptorContext,
   schema: TextMutationToolRegistration,
   arguments_: Record<string, unknown>,
   source: string,
+  [startField, endField]: readonly [string, string],
   checks: Map<number, Map<string, TextAnchorInspectionOutcome>>,
   blocks: Map<number, Map<string, InterceptResult>>,
 ): Promise<InterceptResult | undefined> {
-  if (schema.pair === undefined) {
-    return undefined;
-  }
-
-  const [startField, endField] = schema.pair;
   const start = arguments_[startField];
   const end = arguments_[endField];
 
@@ -278,9 +288,8 @@ async function inspectAnchorPair(
 
   return inspectAnchors(
     api,
-    readApi,
     context,
-    endField,
+    [startField, endField],
     source,
     [start, end],
     [startDescriptor.kinds, endDescriptor.kinds],
@@ -291,9 +300,8 @@ async function inspectAnchorPair(
 
 async function inspectAnchors(
   api: TextEditorPluginApi,
-  readApi: ReadPluginApi,
   context: InterceptorContext,
-  field: string,
+  fields: readonly [string] | readonly [string, string],
   source: string,
   anchors: readonly [string] | readonly [string, string],
   kinds: readonly [readonly string[]] | readonly [readonly string[], readonly string[]],
@@ -301,7 +309,7 @@ async function inspectAnchors(
   blocks: Map<number, Map<string, InterceptResult>>,
 ): Promise<InterceptResult | undefined> {
   const contentIndex = context.contentIndex ?? -1;
-  const key = `${source}${CACHE_KEY_PART_SEPARATOR}${anchors.join(
+  const key = `${source}${CACHE_KEY_PART_SEPARATOR}${fields.join(CACHE_KEY_LIST_SEPARATOR)}${CACHE_KEY_PART_SEPARATOR}${anchors.join(
     CACHE_KEY_PART_SEPARATOR,
   )}${CACHE_KEY_PART_SEPARATOR}${kinds
     .map((accepted) => accepted.join(CACHE_KEY_LIST_SEPARATOR))
@@ -330,7 +338,12 @@ async function inspectAnchors(
   }
 
   if (result.kind === "failed") {
-    return makeResolverBlockResult(context.toolCall.name, source, result.reason);
+    return makeResolverBlockResult(
+      context.toolCall.name,
+      source,
+      result.reason,
+      result.cause instanceof ResourceError ? result.cause.code : undefined,
+    );
   }
 
   // This interceptor owns stale snapshot failures only. Missing, ambiguous, and
@@ -340,29 +353,14 @@ async function inspectAnchors(
   }
 
   const anchorIndex = result.anchorIndex;
-  const readResult =
-    result.contextRange === undefined
-      ? undefined
-      : await readApi.read(
-          // The blocked message teaches a fresh anchor, so context must carry hashes.
-          { path: source, views: ["anchors"], ...result.contextRange },
-          {
-            cwd: context.cwd,
-            ...(context.signal !== undefined && { signal: context.signal }),
-          },
-        );
-  const readContext = readResult?.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
   const details: StaleAnchorMessageDetails = {
     guardId: "stale-anchor",
     effect: "not-applied",
     toolName: context.toolCall.name,
-    field,
+    field: requiredValue(fields[anchorIndex]),
     path: source,
     anchor: requiredValue(anchors[anchorIndex]),
-    ...(!(readContext === undefined || readContext.length === 0) && { context: readContext }),
+    ...(context.partialArgs !== undefined && { stoppedEarly: true }),
   };
 
   const block = makeBlockResult(details, result.reason);
@@ -376,6 +374,7 @@ function makeResolverBlockResult(
   toolName: string,
   source: string,
   reason: string,
+  code?: string,
 ): InterceptResult {
   return {
     annotation: { kind: "blocked", reason },
@@ -386,6 +385,7 @@ function makeResolverBlockResult(
       details: {
         guardId: "resolver",
         effect: "not-applied",
+        ...(code === undefined ? {} : { code }),
         toolName,
         source,
         reason,

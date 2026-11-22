@@ -8,7 +8,9 @@ import type {
 } from "#src/api/file-transfers.ts";
 import {
   assertUnprotectedTransferPath,
-  prepareDeletionGuard,
+  prepareDeletionGuards,
+  projectLookup,
+  settleInOrder,
   type DeletePolicyContext,
   type DeletionGuard,
 } from "./delete-policy.ts";
@@ -45,28 +47,31 @@ export async function prepareObjectTransfer(
 ): Promise<FileTransferGuard> {
   signal?.throwIfAborted();
   const before = await inspectTransfer(operation, source, target, signal);
-  const guards: DeletionGuard[] = [];
-  let sourceGuard: DeletionGuard | undefined;
-  if (operation === "move" && before.sourceKind !== "file") {
-    sourceGuard = await prepareDeletionGuard(
-      source.path,
-      source.cwd,
-      { ...context, files: source.files },
-      signal,
-    );
-    guards.push(sourceGuard);
-    if (before.target.entries.length > 0)
-      guards.push(
-        await prepareDeletionGuard(
-          target.path,
-          target.cwd,
-          { ...context, files: target.files },
+  // Removal approvals: the moved source first, then a replaced destination tree.
+  const guards: DeletionGuard[] =
+    operation === "move" && before.sourceKind !== "file"
+      ? await prepareDeletionGuards(
+          [
+            { source: source.path, cwd: source.cwd, context: { ...context, files: source.files } },
+            // A case-only rename's target is the source itself; it is never removed.
+            ...(before.target.entries.length > 0 && !before.caseRename
+              ? [
+                  {
+                    source: target.path,
+                    cwd: target.cwd,
+                    context: { ...context, files: target.files },
+                  },
+                ]
+              : []),
+          ],
           signal,
-        ),
-      );
-  }
-  for (const guard of guards) await guard.verify();
-  const after = await inspectTransfer(operation, source, target, signal);
+        )
+      : [];
+  const sourceGuard = guards[0];
+  // Rechecks only read, so they run together; a guard failure still comes first.
+  const recheck = inspectTransfer(operation, source, target, signal);
+  await settleInOrder([...guards.map((guard) => guard.verify()), recheck]);
+  const after = await recheck;
   if (JSON.stringify(before) !== JSON.stringify(after))
     fail(
       "TRANSFER_TARGET_CHANGED",
@@ -79,11 +84,9 @@ export async function prepareObjectTransfer(
     sourceKind: before.sourceKind,
     async verifySource() {
       signal?.throwIfAborted();
-      await sourceGuard?.verify();
-      if (
-        JSON.stringify(await source.files.snapshot(source.path, signal)) !==
-        JSON.stringify(before.source)
-      )
+      const snapshot = source.files.snapshot(source.path, signal);
+      await settleInOrder([sourceGuard?.verify() ?? Promise.resolve(), snapshot]);
+      if (JSON.stringify(await snapshot) !== JSON.stringify(before.source))
         fail(
           "TRANSFER_TARGET_CHANGED",
           "Transfer source changed before removal; inspect both endpoints before retrying.",
@@ -99,12 +102,18 @@ async function inspectTransfer(
   signal?: AbortSignal,
 ) {
   signal?.throwIfAborted();
-  // Reject protected roots before walking a potentially large tree.
-  const root = await source.files.inspect(source.path);
-  if (operation === "move")
-    await assertUnprotectedTransferPath(source.path, source.cwd, signal, source.files);
-  if (operation === "move" || root.kind !== "file")
-    await assertUnprotectedTransferPath(target.path, target.cwd, signal, target.files);
+  // One lookup per owner serves all four protection checks of this pass.
+  const projects = projectLookup(signal);
+  const protect = (endpoint: FileTransferEndpoint, file: string) =>
+    assertUnprotectedTransferPath(file, endpoint.cwd, signal, endpoint.files, projects);
+  // Reject protected roots before walking a potentially large tree. A Move checks both roots
+  // beside the source inspection; a Copy checks its target only when the source is a tree.
+  const inspection = source.files.inspect(source.path);
+  const roots =
+    operation === "move" ? [protect(source, source.path), protect(target, target.path)] : [];
+  await settleInOrder([inspection, ...roots]);
+  const root = await inspection;
+  if (operation === "copy" && root.kind !== "file") await protect(target, target.path);
   const nativePaths = source.files.pathStyle === "native" ? path : path.posix;
   if (
     source.files.owner === target.files.owner &&
@@ -123,8 +132,14 @@ async function inspectTransfer(
   if (sourceRoot === undefined) fail("ENOENT", "Transfer source does not exist.");
   const targetRoot = targetSnapshot.entries[0];
   const sameOwner = source.files.owner === target.files.owner;
-  validatePair(sourceRoot, targetRoot, sameOwner);
   const paths = source.files.pathStyle === "native" ? path : path.posix;
+  // On a case-insensitive volume, renaming to another spelling of the same name is a real move.
+  const caseRename =
+    operation === "move" &&
+    sameOwner &&
+    source.files.caseInsensitive === true &&
+    isCaseRename(sourceSnapshot.path, targetSnapshot.path, paths);
+  validatePair(sourceRoot, targetRoot, sameOwner, caseRename);
   if (sameOwner && sourceSnapshot.path === targetSnapshot.path)
     fail("SAME_FILE", "Source and target are the same filesystem object.");
   if (
@@ -134,10 +149,9 @@ async function inspectTransfer(
       contains(targetSnapshot.path, sourceSnapshot.path, paths))
   )
     fail("OVERLAPPING_PATHS", "Source and target directory trees overlap.");
-  if (operation === "move")
-    await assertUnprotectedTransferPath(sourceSnapshot.path, source.cwd, signal, source.files);
+  if (operation === "move") await protect(source, sourceSnapshot.path);
   if (operation === "move" || sourceRoot.kind !== "file")
-    await assertUnprotectedTransferPath(targetSnapshot.path, target.cwd, signal, target.files);
+    await protect(target, targetSnapshot.path);
   if (operation === "copy") {
     const destination = new Map(targetSnapshot.entries.map((entry) => [entry.relativePath, entry]));
     for (const entry of sourceSnapshot.entries)
@@ -145,7 +159,20 @@ async function inspectTransfer(
   }
   if (sourceRoot.kind === "other")
     fail("INVALID_FILE_TYPE", "Transfers support regular files, directories, and symlinks only.");
-  return { source: sourceSnapshot, target: targetSnapshot, sourceKind: sourceRoot.kind };
+  return {
+    source: sourceSnapshot,
+    target: targetSnapshot,
+    sourceKind: sourceRoot.kind,
+    caseRename,
+  };
+}
+
+function isCaseRename(from: string, to: string, paths: typeof path): boolean {
+  return (
+    from !== to &&
+    from.toLowerCase() === to.toLowerCase() &&
+    paths.basename(from) !== paths.basename(to)
+  );
 }
 
 function validateSnapshot(snapshot: FileObjectSnapshot, source: boolean): void {
@@ -178,10 +205,12 @@ function validatePair(
   source: FileObjectEntry,
   target: FileObjectEntry | undefined,
   sameOwner: boolean,
+  caseRename = false,
 ) {
   if (target === undefined) return;
   if (
     sameOwner &&
+    !caseRename &&
     source.identity.device === target.identity.device &&
     source.identity.inode === target.identity.inode
   )

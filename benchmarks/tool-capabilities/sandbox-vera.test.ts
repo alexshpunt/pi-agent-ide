@@ -20,6 +20,13 @@ void test("only the Vera case's own index is omitted from file validation", asyn
     assert.deepEqual(Object.keys(initial).sort(), ["nested/.vera/important", "task.ts"]);
     assert.ok((await fixtureFiles(root, "", "fixture"))[".vera/outside"]);
     await writeFile(path.join(fixture, ".vera", "index"), "updated");
+    // Vera 2.3.0 creates its lock file beside the index directory.
+    await writeFile(path.join(fixture, ".vera.lock"), "");
+    await writeFile(path.join(fixture, "nested", ".vera.lock"), "");
+    assert.deepEqual(await validateFiles(fixture, initial, {}, ""), [
+      "Unexpected final bytes: nested/.vera.lock",
+    ]);
+    await rm(path.join(fixture, "nested", ".vera.lock"));
     assert.deepEqual(await validateFiles(fixture, initial, {}, ""), []);
     await writeFile(path.join(fixture, "task.ts"), "changed");
     assert.equal((await validateFiles(fixture, initial, {}, "")).length, 1);

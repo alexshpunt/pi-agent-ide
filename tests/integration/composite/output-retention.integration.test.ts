@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import {
   assistantMessage,
   getToolResultMessage,
@@ -15,14 +16,6 @@ const root = path.resolve();
 const extension = path.join(root, "tests/integration/composite/support/output-retention-ide.ts");
 const toolCall = (input: Parameters<typeof nativeToolCall>[0]) =>
   nativeToolCall({ ...input, chunks: { kind: "fixed", size: 1000000 }, delayMs: 0 });
-const readSaved = `
-  const savedPath = (result) => {
-    const match = /Full output: ("(?:\\\\.|[^"\\\\])*")/.exec(result);
-    if (!match) throw new Error("Missing complete output reference");
-    return JSON.parse(match[1]);
-  };
-`;
-
 test("reads complete saved text through line and byte windows after direct and nested limits", async () => {
   const parent = path.join(root, ".tmp/output-retention");
   await mkdir(parent, { recursive: true });
@@ -60,24 +53,22 @@ test("reads complete saved text through line and byte windows after direct and n
               id: "nested-recovery",
               name: "codemode",
               arguments: {
-                code:
-                  readSaved +
-                  `
+                code: `
           const full = Array.from({length:6000}, (_,index)=>"RETAINED_ROW_"+index+": "+"value ".repeat(20)).join("\\n");
           const written = await tools.write({path:"written.txt",content:full});
           if (written.includes("RETAINED_ROW_")) throw new Error("Write leaked the file body");
-          const inspected = await tools.read({path:written,limit:1000000});
-          const file = savedPath(inspected);
-          const tail = await tools.read({path:file,offset:-1,limit:1});
-          if (!tail.includes("RETAINED_ROW_5999")) throw new Error("Saved nested Read tail was lost");
-          const bytes = await tools.read({path:"raw:"+file,offset:-200,limit:200});
-          if (!bytes.includes("Bytes")) throw new Error("Saved nested Read does not support byte reads");
-          try { await tools.replace({path:"missing/"+"😀".repeat(30000),start:"x",text:"y"}); }
-          catch (error) {
-            const source = savedPath(String(error));
-            const piece = await tools.read({path:"raw:"+source,offset:-100,limit:100});
-            if (!piece.includes("Bytes")) throw new Error("Saved blocked error is not readable");
-          }
+          const inspected = await tools.read({path:"written.txt"});
+          if (!inspected.text.startsWith("RETAINED_ROW_0:") || !inspected.text.includes("RETAINED_ROW_5999")) throw new Error("Nested Read did not return the whole text");
+          if (inspected.text !== full) throw new Error("Nested Read text differs from the file");
+          if (inspected.text.includes("Full output:")) throw new Error("Nested Read was saved to a file");
+          const tail = await tools.read({path:"written.txt",offset:-1,limit:1});
+          if (!tail.text.startsWith("RETAINED_ROW_5999")) throw new Error("Nested Read tail was lost");
+          const bytes = await tools.read({path:"raw:written.txt",offset:-200,limit:200});
+          // 200 bytes are 268 base64 characters.
+          if (bytes.bytes?.length !== 268) throw new Error("Nested Read does not support byte reads");
+          // The failed replace resolves to null; its bounded error and saved path end the result.
+          const refused = await tools.replace({path:"missing/"+"😀".repeat(30000),at:"x",text:"y"});
+          if (refused !== null) throw new Error("Replace of a missing file succeeded");
           text("Saved text, tail and bytes recovered.");
         `,
               },
@@ -102,7 +93,8 @@ test("reads complete saved text through line and byte windows after direct and n
             toolCall({
               id: "invalid-read",
               name: "read",
-              arguments: { path: ["😀".repeat(30000)] },
+              // An array path is valid; a nested one is not.
+              arguments: { path: [["😀".repeat(30000)]] },
             }),
           ],
           { stopReason: "toolUse" },
@@ -118,6 +110,11 @@ test("reads complete saved text through line and byte windows after direct and n
     expect(getToolResultText(result, "nested-recovery")).toContain(
       "Saved text, tail and bytes recovered",
     );
+    // The oversized replace error is bounded in the failure block and names its saved full text.
+    const failures = codemodeFailures(getToolResultText(result, "nested-recovery"));
+    expect(failures).toContain("1 of 5 IDE calls failed:\n- replace missing/");
+    expect(failures).toMatch(/Full output: "[^"]+"/u);
+    expect(failures.length).toBeLessThan(51200);
     expect(getToolResultMessage(result, "parent-output").isError).toBe(false);
     expect(getToolResultMessage(result, "invalid-read").isError).toBe(true);
     const audit: unknown = JSON.parse(

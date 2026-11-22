@@ -41,12 +41,21 @@ function executions(
       },
     );
   };
-  call("bash", { command: "read value; printf '%s\\n' \"$value\"", background: true }, shell);
+  call(
+    "bash",
+    {
+      command: "IFS= read -r line; printf '%s\\nSHELL-FINAL-LINE\\n' \"$line\"",
+      background: true,
+    },
+    shell,
+  );
   call("write", { path: shell, content: "hello" }, result(1));
   call("insert", { path: shell, text: "Enter" }, result(2));
-  call("read", { path: uuid(1) }, result(3));
-  call("read", { path: uuid(2) }, result(4));
-  call("read", { path: shell }, result(5));
+  if (mode === "direct") {
+    call("read", { path: uuid(1) }, result(3));
+    call("read", { path: uuid(2) }, result(4));
+  }
+  call("read", { path: shell }, `${result(5)}\nSHELL-FINAL-LINE`);
   call("replace", args, refusal, true);
   call("search", { path: shell, query: "hello" }, "hello");
   call("search", { query: "process:pi" }, "process:42");
@@ -67,7 +76,7 @@ for (const mode of ["direct", "codemode"]) {
   test.each([false, true])(
     `${mode} accepts the authority refusal with complete payload=%s`,
     (complete) => {
-      const args = { path: uuid(5), start: "hello", ...(complete ? { text: "BAD" } : {}) };
+      const args = { path: uuid(5), at: "hello", ...(complete ? { text: "BAD" } : {}) };
       expect(validateRoute(task, executions(mode, args), mode).passed).toBe(true);
     },
   );
@@ -78,25 +87,44 @@ for (const mode of ["direct", "codemode"]) {
     "Unable to read target: ENOENT",
   ])(`${mode} rejects a different failure: %s`, (refusal) => {
     expect(
-      validateRoute(task, executions(mode, { path: uuid(5), start: "hello" }, refusal), mode)
-        .passed,
+      validateRoute(task, executions(mode, { path: uuid(5), at: "hello" }, refusal), mode).passed,
     ).toBe(false);
   });
 
   test(`${mode} rejects a raw-shell shortcut even with the correct refusal`, () => {
     expect(
-      validateRoute(task, executions(mode, { path: shell, start: "hello", text: "BAD" }), mode)
-        .passed,
+      validateRoute(task, executions(mode, { path: shell, at: "hello", text: "BAD" }), mode).passed,
     ).toBe(false);
   });
 
-  test(`${mode} still requires reading the Insert result`, () => {
-    const events = executions(mode, { path: uuid(5), start: "hello" });
+  test(`${mode} still requires reading the original shell`, () => {
+    const events = executions(mode, { path: uuid(5), at: "hello" });
     const read = events.find(
-      (event) => event.type === "tool_execution_start" && event.args?.path === uuid(2),
+      (event) =>
+        event.type === "tool_execution_start" &&
+        event.toolName === "read" &&
+        event.args?.path === shell,
     );
-    if (!read) throw new Error("Missing Insert-result Read fixture");
-    read.args = { path: uuid(1) };
+    if (!read) throw new Error("Missing shell Read fixture");
+    read.args = { path: uuid(5) };
     expect(validateRoute(task, events, mode).passed).toBe(false);
   });
 }
+
+test.each([
+  ["Write", 1, 2],
+  ["Insert", 2, 1],
+] as const)("direct still requires reading the %s result", (_tool, index, other) => {
+  const events = executions("direct", { path: uuid(5), at: "hello" });
+  const read = events.find(
+    (event) => event.type === "tool_execution_start" && event.args?.path === uuid(index),
+  );
+  if (!read) throw new Error("Missing input-result Read fixture");
+  read.args = { path: uuid(other) };
+  expect(validateRoute(task, events, "direct").passed).toBe(false);
+});
+
+test("codemode accepts shell input without reading its null results", () => {
+  const events = executions("codemode", { path: uuid(5), at: "hello" });
+  expect(validateRoute(task, events, "codemode").passed).toBe(true);
+});

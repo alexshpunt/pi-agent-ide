@@ -29,6 +29,105 @@ afterAll(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
+test("editing an unformatted Rust file preserves unrelated formatting", async () => {
+  await withTempDirectory(async (directory) => {
+    const fileName = "src/main.rs";
+    const before =
+      'fn main(){\n    let value=1;\n    println!("a long line that deliberately keeps its non-rustfmt style: {}", value);\n}\n';
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(
+      path.join(directory, "Cargo.toml"),
+      '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2024"\n',
+    );
+    await writeFile(path.join(directory, fileName), before);
+    const scenario = await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-rust-unformatted",
+      tool: "replace",
+      arguments: {
+        path: fileName,
+        at: formatLineHashAnchor(before, 2),
+        text: "    let value=2;\n",
+      },
+    });
+    expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+    expect(await readFile(path.join(directory, fileName), "utf8")).toBe(
+      before.replace("let value=1;", "let value=2;"),
+    );
+    expect(
+      getToolExecutionDetails(getToolExecution(scenario.result, scenario.mutationCallId)),
+    ).toMatchObject({
+      results: [
+        {
+          data: {
+            formatting: { status: "skipped-style", formatter: "rustfmt" },
+            diffStatuses: [
+              expect.objectContaining({ formattingStatus: "skipped-style", formatter: "rustfmt" }),
+            ],
+          },
+        },
+      ],
+    });
+  });
+}, 60_000);
+test("formatting a Rust edit leaves child modules unchanged", async () => {
+  await withTempDirectory(async (directory) => {
+    const before = 'mod sub;\n\nfn main() {\n    println!("original");\n}\n';
+    const child = 'pub fn child(){println!("unchanged");}\n';
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(
+      path.join(directory, "Cargo.toml"),
+      '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n',
+    );
+    await writeFile(path.join(directory, "src/main.rs"), before);
+    await writeFile(path.join(directory, "src/sub.rs"), child);
+    const scenario = await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-rust-child-module",
+      tool: "replace",
+      arguments: {
+        path: "src/main.rs",
+        at: formatLineHashAnchor(before, 4),
+        text: '    println!( "changed" );\n',
+      },
+    });
+    expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+    expect(await readFile(path.join(directory, "src/main.rs"), "utf8")).toBe(
+      before.replace("original", "changed"),
+    );
+    expect(await readFile(path.join(directory, "src/sub.rs"), "utf8")).toBe(child);
+  });
+}, 60_000);
+test("editing a Rust 2024 let chain formats the saved file", async () => {
+  await withTempDirectory(async (directory) => {
+    const fileName = "src/main.rs";
+    const before =
+      'fn main() {\n    if let Some(x) = Some(1)\n        && x > 0\n    {\n        println!("{x}");\n    }\n}\n';
+    await mkdir(path.join(directory, "src"), { recursive: true });
+    await writeFile(
+      path.join(directory, "Cargo.toml"),
+      '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2024"\n',
+    );
+    await writeFile(path.join(directory, fileName), before);
+    const scenario = await runTextToolScenario({
+      extensions: generatedExtensions.paths,
+      cwd: directory,
+      testName: "post-edit-rust-2024",
+      tool: "replace",
+      arguments: {
+        path: fileName,
+        at: formatLineHashAnchor(before, 5),
+        text: '        println!( "value={x}" );\n',
+      },
+    });
+    expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+    expect(await readFile(path.join(directory, fileName), "utf8")).toContain(
+      'println!("value={x}");',
+    );
+  });
+}, 60_000);
 test("an installed built-in does not format without project evidence", async () => {
   await withTempDirectory(async (directory) => {
     const bin = path.join(directory, "bin");
@@ -47,8 +146,9 @@ test("an installed built-in does not format without project evidence", async () 
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(3, "var Value = 1"),
-        text: "var Value=2",
+        at: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
+        // A line anchor selects the line with its line break; the text keeps it.
+        text: "var Value=2\n",
       },
     });
 
@@ -79,8 +179,8 @@ test("an installed built-in formats when the project has matching evidence", asy
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(3, "var Value = 1"),
-        text: "var Value=2",
+        at: formatLineHashAnchor("package fixture\n\nvar Value = 1\n", 3),
+        text: "var Value=2\n",
       },
     });
 
@@ -153,8 +253,8 @@ test("an edit returns the formatter result instead of the requested intermediate
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(1, "export const value = 1;"),
-        text: requestedLine,
+        at: formatLineHashAnchor(before, 1),
+        text: `${requestedLine}\n`,
       },
     });
 
@@ -175,6 +275,47 @@ test("an edit returns the formatter result instead of the requested intermediate
   });
 }, 60_000);
 
+test.skipIf(process.platform !== "win32" || !process.env.PI_TEST_WSL_FORMATTER_PROJECT)(
+  "Windows edits a WSL project without selecting its POSIX-only formatter shim",
+  async () => {
+    const project = process.env.PI_TEST_WSL_FORMATTER_PROJECT;
+    if (!project) throw new Error("PI_TEST_WSL_FORMATTER_PROJECT is required");
+    const shim = path.join(project, "node_modules", ".bin", "oxfmt");
+    expect(await readFile(shim, "utf8")).toContain("#!/bin/sh");
+    await expect(readFile(`${shim}.cmd`)).rejects.toMatchObject({ code: "ENOENT" });
+    const directory = await mkdtemp(path.join(project, ".tmp", "lpt1450-edit-"));
+    const file = path.join(directory, "fixture.ts");
+    const before = "export const value = 1;\n";
+    try {
+      await writeFile(file, before);
+      const scenario = await runTextToolScenario({
+        extensions: generatedExtensions.paths,
+        cwd: project,
+        testName: "windows-wsl-posix-formatter",
+        environment: { PATH: path.dirname(process.execPath) },
+        tool: "replace",
+        arguments: {
+          path: file,
+          at: formatLineHashAnchor(before, 1),
+          text: "export const value = 2;\n",
+        },
+      });
+      expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
+      expect(await readFile(file, "utf8")).toBe("export const value = 2;\n");
+      expect(getToolResultText(scenario.result, scenario.mutationCallId)).toContain(
+        "No formatter is available for this file.",
+      );
+      expect(
+        getToolExecutionDetails(getToolExecution(scenario.result, scenario.mutationCallId)),
+      ).toMatchObject({
+        results: [{ data: { formatting: { status: "unavailable" } } }],
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+  60_000,
+);
 async function withTempDirectory(callback: (directory: string) => Promise<void>): Promise<void> {
   await mkdir(tempRoot, { recursive: true });
   const directory = await mkdtemp(path.join(tempRoot, "project-"));

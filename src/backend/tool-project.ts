@@ -3,7 +3,7 @@ import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
 import { recipeMatchesFile, type ToolConfigName } from "#src/api/tool-config.ts";
 import type { SshBackend } from "./ssh.ts";
 import { SshBackendError } from "./ssh.ts";
-import { remoteLocation } from "./identity.ts";
+import { remoteLocation, remoteParent } from "./identity.ts";
 import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
 
 /** Resolve an SSH file or directory's native project; an explicit current project keeps its context. */
@@ -54,8 +54,9 @@ export async function resolveSshToolProject(
         cwd: remoteLocation(backend.target.id, directory).source,
         external: currentRoot !== undefined,
       };
-    const parent = path.posix.dirname(directory);
-    if (parent === directory) return undefined;
+    // A Windows target has no directory above its drive root.
+    const parent = remoteParent(directory);
+    if (parent === undefined) return undefined;
     directory = parent;
   }
 }

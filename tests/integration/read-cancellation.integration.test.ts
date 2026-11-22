@@ -61,7 +61,7 @@ test("a cancelled HTTP Read reports no completed result and a fresh Read still w
                 id: "fresh",
                 name: "codemode",
                 arguments: {
-                  code: `if(load("unfinished") !== undefined) throw Error("Cancelled Read was stored as complete");\nconst result = await tools.read({path:${JSON.stringify(source.replace("/slow", "/ok"))}});\nif(typeof result !== "string" || !result.endsWith("complete source\\n")) throw Error(result);\ntext(result);`,
+                  code: `if(load("unfinished") !== undefined) throw Error("Cancelled Read was stored as complete");\nconst result = await tools.read({path:${JSON.stringify(source.replace("/slow", "/ok"))}});\nif(typeof result?.text !== "string" || !result.text.endsWith("complete source\\n")) throw Error(JSON.stringify(result));\ntext(result.text);`,
                 },
               }),
             ],

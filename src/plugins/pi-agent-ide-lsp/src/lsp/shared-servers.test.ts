@@ -2,11 +2,13 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from 
 import os from "node:os";
 import path from "node:path";
 import { URI } from "vscode-uri";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { LspClient } from "./client.ts";
+import { diagnosticErrors } from "./corrected-names.ts";
 import { requestDiagnostics } from "./diagnostics.ts";
 import { LspSharedServers } from "./shared-servers.ts";
+import { requestDocumentSymbols } from "./symbols.ts";
 
 const SERVER = path.resolve(
   "src/plugins/pi-agent-ide-lsp/src/lsp/test/fixtures/document-lifecycle-server.mjs",
@@ -25,6 +27,8 @@ const servers = new Set<number>();
 const directories: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await Promise.allSettled(clients.splice(0).map((client) => client.shutdown()));
   // Shared servers outlive their sessions for the linger time.
   await Promise.all([...servers].map((pid) => until(() => !alive(pid))));
@@ -100,6 +104,49 @@ test("sessions with the same configuration share one server; other settings get 
   expect(second.diagnosticMode).toBe("push");
 });
 
+test("sessions share one server when the user has no account entry", async () => {
+  const { cwd, sockets } = await workspace();
+  vi.spyOn(os, "userInfo").mockImplementation(() => {
+    throw new Error("A system error occurred: uv_os_get_passwd returned ENOENT");
+  });
+  // The default socket directory lives in the temporary directory and is named by the numeric uid.
+  vi.stubEnv("TMPDIR", sockets);
+  const first = await session(cwd, new LspSharedServers());
+  const second = await session(cwd, new LspSharedServers());
+
+  expect(first.shared).toBe(true);
+  expect(second.pid).toBe(first.pid);
+  expect(await readdir(sockets)).toContain(`pi-agent-ide-lsp-${process.getuid?.()}`);
+});
+
+test("a host started after its files change on disk runs the code the session loaded", async () => {
+  const { cwd, sockets } = await workspace();
+  // A copy of the host modules stands in for the checkout of a running Pi. It stays inside the
+  // plugin so that its imports resolve the plugin's packages.
+  const parent = path.resolve("src/plugins/pi-agent-ide-lsp/.tmp");
+  await mkdir(parent, { recursive: true });
+  const checkout = await mkdtemp(path.join(parent, "loaded-host-"));
+  directories.push(checkout);
+  const modules = ["shared-servers.ts", "shared-server-host.mjs", "server-request-handlers.mjs"];
+  for (const name of modules)
+    await writeFile(
+      path.join(checkout, name),
+      await readFile(path.join(import.meta.dirname, name)),
+    );
+  const loaded = (await import(path.join(checkout, "shared-servers.ts"))) as {
+    LspSharedServers: typeof LspSharedServers;
+  };
+  const sharing = new loaded.LspSharedServers({ directory: sockets });
+  // The update replaces the host after the session loaded it, before any host has started.
+  for (const name of modules.slice(1))
+    await writeFile(path.join(checkout, name), 'throw new Error("read after the update");\n');
+
+  const client = await session(cwd, sharing);
+
+  expect(client.shared).toBe(true);
+  expect((await status(client)).pid).toBe(client.pid);
+});
+
 test("each session gets diagnostics under its own document versions", async () => {
   const { cwd, sharing } = await workspace();
   const first = await session(cwd, sharing);
@@ -141,6 +188,59 @@ test("sessions with different text each get diagnostics for their own version", 
   );
 });
 
+test.each([
+  ["waiting", "edited\n"],
+  ["already superseded", "first\n"],
+])(
+  "push diagnostics reject when a peer syncs newer disk text (%s)",
+  async (when, recoveredText) => {
+    const { cwd, sharing } = await workspace();
+    const env = { LIFECYCLE_MANUAL_DIAGNOSTICS: "1" };
+    const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+    const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+    const file = path.join(cwd, "first.fx");
+    const uri = URI.file(file).toString();
+    const params = { textDocument: { uri } };
+    const errors = () =>
+      diagnosticErrors(
+        async () => ({ client: first, uri }),
+        AbortSignal.timeout(1500),
+      )(uri).catch((error: unknown) => error);
+    first.syncDocument(uri, "first\n", "fixture");
+    expect(await first.sendRequest("lifecycle/text", params)).toBe("first\n");
+    const pending = when === "waiting" ? Promise.all([errors(), errors()]) : undefined;
+
+    await writeFile(file, "edited\n");
+    const mtime = new Date(Date.now() + 1);
+    await utimes(file, mtime, mtime);
+    second.syncDocument(uri, "edited\n", "fixture");
+    expect(await second.sendRequest("lifecycle/text", params)).toBe("edited\n");
+
+    // Round-trip on the first connection so the late waiter starts after the notice arrived.
+    await status(first);
+    const failures = pending ? await pending : [await errors()];
+    for (const failure of failures) expect(failure).toMatchObject({ code: "SOURCE_CHANGED" });
+
+    if (when === "already superseded") {
+      await until(() => Date.now() > mtime.getTime());
+      first.syncDocument(uri, "first\n", "fixture");
+      await expect(
+        first.sendRequest("textDocument/references", {
+          ...params,
+          position: { line: 0, character: 0 },
+        }),
+      ).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
+    }
+
+    // The file can return to the exact text the first session already has cached.
+    await writeFile(file, recoveredText);
+    first.syncDocument(uri, recoveredText, "fixture");
+    const recovered = errors();
+    await first.sendRequest("lifecycle/publishDiagnostics", params);
+    expect(await recovered).toMatchObject({ starts: new Set(["0:0"]) });
+  },
+);
+
 test("a document reopened at once stays open on the server", async () => {
   const { cwd, sharing } = await workspace();
   const client = await session(cwd, sharing);
@@ -151,8 +251,10 @@ test("a document reopened at once stays open on the server", async () => {
   client.closeDocument(uri);
   client.openDocument(uri, "first\n", "fixture", 1);
 
-  // The report the server published for the same text answers the reopened document.
-  await until(() => client.diagnosticPublication(uri)?.version === 1);
+  // The cached server report answers the new session version without another didOpen.
+  const reopened = client.documentVersion(uri);
+  expect(reopened).toBeGreaterThan(1);
+  await until(() => client.diagnosticPublication(uri)?.version === reopened);
   expect((await status(client)).events).toEqual([["open", uri]]);
 });
 
@@ -234,6 +336,24 @@ test("an answer keeps the requesting session's version when another session's te
   expect(renamed.documentChanges[0]?.textDocument.version).toBe(second.documentVersion(uri));
 });
 
+test("unversioned rename edits are refused when another session changes the served document", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_DEFER_RENAME: "1" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  first.syncDocument(uri, "first\n", "fixture");
+  const pending = first.sendRequest("textDocument/rename", {
+    textDocument: { uri },
+    position: { line: 0, character: 0 },
+    newName: "renamed",
+  });
+  const checked = expect(pending).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
+  await until(() => second.sendRequest<boolean>("lifecycle/renamePending", null));
+  second.syncDocument(uri, "changed\n", "fixture");
+  await second.sendRequest("lifecycle/finishRename", null);
+  await checked;
+});
 test("a session with an older copy of a file does not take the file's text from the server", async () => {
   const { cwd, sharing } = await workspace();
   const first = await session(cwd, sharing);
@@ -255,9 +375,58 @@ test("a session with an older copy of a file does not take the file's text from 
   // The first session still holds the old copy; its request leaves the file's text in place.
   expect(await text(first)).toBe("edited\n");
   expect((await status(first)).events.filter(([event]) => event === "open")).toHaveLength(1);
+  // Unlike an unpositioned status query, symbol ranges must belong to the caller's text.
+  await expect(requestDocumentSymbols(first, uri)).rejects.toMatchObject({
+    code: "SOURCE_CHANGED",
+  });
+  expect(await text(second)).toBe("edited\n");
+  await expect(
+    first.sendRequest("textDocument/rename", {
+      textDocument: { uri },
+      position: { line: 0, character: 0 },
+      newName: "renamed",
+    }),
+  ).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
   // Once it syncs the file, it sees its own text again.
   first.syncDocument(uri, "edited\n", "fixture");
   expect(await text(first)).toBe("edited\n");
+  await expect(requestDocumentSymbols(first, uri)).resolves.toEqual([]);
+});
+
+test("references cannot return an empty answer for a position from an older copy", async () => {
+  const { cwd, sharing } = await workspace();
+  const first = await session(cwd, sharing);
+  const second = await session(cwd, sharing);
+  const file = path.join(cwd, "first.fx");
+  const uri = URI.file(file).toString();
+  const params = { textDocument: { uri }, position: { line: 0, character: 0 } };
+  first.syncDocument(uri, "first\n", "fixture");
+  expect(await first.sendRequest("textDocument/references", params)).toHaveLength(1);
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await writeFile(file, "// peer\nfirst\n");
+  second.syncDocument(uri, "// peer\nfirst\n", "fixture");
+  expect(await second.sendRequest("lifecycle/text", params)).toBe("// peer\nfirst\n");
+
+  await expect(first.sendRequest("textDocument/references", params)).rejects.toMatchObject({
+    code: "SOURCE_CHANGED",
+  });
+});
+
+test("a shared outline is rejected if the host changes its text during the request", async () => {
+  const { cwd, sharing } = await workspace();
+  const env = { LIFECYCLE_DEFER_OUTLINE: "1" };
+  const first = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const second = await session(cwd, sharing, undefined, LINGER_MS, env);
+  const uri = URI.file(path.join(cwd, "first.fx")).toString();
+  first.syncDocument(uri, "first\n", "fixture");
+
+  const result = requestDocumentSymbols(first, uri).catch((error: unknown) => error);
+  await until(() => second.sendRequest<boolean>("lifecycle/outlinePending", {}));
+  second.syncDocument(uri, "second\n", "fixture");
+  expect(await second.sendRequest("lifecycle/text", { textDocument: { uri } })).toBe("second\n");
+  await second.sendRequest("lifecycle/finishOutline", {});
+  expect(await result).toMatchObject({ code: "SOURCE_CHANGED" });
 });
 
 test("requests the server cancels as stale are retried through the shared host", async () => {
@@ -431,7 +600,8 @@ test(
     expect(returning.pid).toBe(pid);
     await returning.shutdown();
     await until(() => !alive(pid));
-    await until(async () => (await readdir(sockets)).length === 0);
+    // Only the copy of the host code stays for later starts.
+    await until(async () => (await readdir(sockets)).every((name) => name.startsWith("host-")));
 
     const next = await session(cwd, sharing);
     expect(next.shared).toBe(true);

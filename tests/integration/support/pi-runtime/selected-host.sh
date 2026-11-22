@@ -3,6 +3,7 @@
 set -euo pipefail
 args=()
 case "${PI_AGENT_IDE_TEST_SELECTION:-}" in
+  capability) args=(--exclude-tools "${PI_AGENT_IDE_TEST_EXCLUDED_TOOLS:?}") ;;
   exclude) args=(--exclude-tools debug,stage,unstage) ;;
   allow) args=(--tools read,diff,codemode,tool_search,ide_exposure_probe) ;;
   no-tools) args=(--no-tools) ;;

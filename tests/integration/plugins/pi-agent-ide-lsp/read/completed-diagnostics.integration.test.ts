@@ -22,7 +22,7 @@ for (const mode of ["focused", "view", "combined", "javascript"]) {
         ? '/** @type {number} */\nexport const value = "bad";\n'
         : 'export const value: number = "bad";\n';
     const request = {
-      path: mode === "focused" ? `diagnostics:${name}` : name,
+      path: name,
       ...(mode === "focused"
         ? {}
         : { views: mode === "combined" ? ["anchors", "ast", "diagnostics"] : ["diagnostics"] }),
@@ -49,11 +49,11 @@ for (const mode of ["focused", "view", "combined", "javascript"]) {
         cwd,
         isolateUserResources: true,
         extensions: [path.resolve("src/pi-agent-ide.ts")],
-        tools: ["read", "replace"],
+        tools: ["diagnostics", "read", "replace"],
         conversation: [
-          call("first", "read", request),
-          call("edit", "replace", { path: name, start: '"bad"', text: "0" }),
-          call("clean", "read", { path: `diagnostics:${name}` }),
+          call("first", mode === "focused" ? "diagnostics" : "read", request),
+          call("edit", "replace", { path: name, at: '"bad"', text: "0" }),
+          call("clean", "diagnostics", { path: name }),
           assistantMessage([text("Done")]),
         ],
       }).run("Read the first diagnostic report, fix the type error, and read the updated report.");
@@ -91,20 +91,20 @@ test("clangd push reports remain usable snapshots without TypeScript commands", 
       cwd,
       isolateUserResources: true,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["read"],
+      tools: ["diagnostics", "read"],
       conversation: [
         assistantMessage(
           [
             toolCall({
               id: "start-cpp",
-              name: "read",
-              arguments: { path: "diagnostics:example.cpp" },
+              name: "diagnostics",
+              arguments: { path: "example.cpp" },
             }),
           ],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "cpp", name: "read", arguments: { path: "diagnostics:example.cpp" } })],
+          [toolCall({ id: "cpp", name: "diagnostics", arguments: { path: "example.cpp" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage([text("Done")]),

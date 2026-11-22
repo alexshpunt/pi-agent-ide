@@ -12,6 +12,14 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+
+/** Each failed IDE call of a Codemode result: its tool and source line, then its reason. */
+function failedCalls(output: string): string[] {
+  // Guides that a call delivers on first use follow the block; they are not failures.
+  const [block = ""] = codemodeFailures(output).split("\n\n---\n\n# Guide:");
+  return block.split("\n- ").slice(1);
+}
 
 async function runText(cwd: string, name: string, scripts: string[]) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -62,25 +70,26 @@ test("view warnings stay outside source selections and remain visible in native 
     const run = await runText(cwd, "requested-view-warnings", [
       String.raw`
 const warning = await tools.read({path:"note.txt",views:["anchors","ghost"]});
-if(typeof warning !== "string" || !warning.includes("ghost") || !warning.includes("|beta")) throw new Error(warning);
-const outside = await tools.search({path:warning,query:"ghost"}).then(value => value.result);
-if(!outside.includes("No matches found")) throw new Error(outside);
+// The warning reaches the model through the Codemode result and the panel, not the value.
+if(typeof warning?.text !== "string" || warning.text.includes("ghost") || !warning.text.includes("|beta")) throw new Error(JSON.stringify(warning));
+const outside = await tools.search({path:warning,query:"ghost"});
+if(outside.matches.length !== 0) throw new Error(JSON.stringify(outside));
 store("readViewWarning",warning);
 const image = await tools.read({path:"pixel.png",views:["anchors"]});
-if(image.type !== "image" || !image.note.includes("anchors")) throw new Error(JSON.stringify(image).slice(0, 300));
+if(image?.type !== "image" || "note" in image) throw new Error(JSON.stringify(image).slice(0, 300));
 text("View warnings verified");
 `,
       String.raw`
 const saved = load("readViewWarning");
-const beta = await tools.search({path:saved,query:"beta"}).then(value => value.result);
+const beta = await tools.search({path:saved,query:"beta"});
 await tools.replace({path:beta,text:"BETA"});
 const unknown = await tools.read({path:"pixel.png",views:["ghost"]});
-if(unknown.type !== "image" || !unknown.note.includes("ghost")) throw new Error(JSON.stringify(unknown).slice(0, 300));
+if(unknown?.type !== "image" || "note" in unknown) throw new Error(JSON.stringify(unknown).slice(0, 300));
 text("Unknown image view preserved");
 `,
       String.raw`
 const valid = await tools.read({path:"pixel.png"});
-if(valid.type !== "image" || valid.note.includes("View not applied") || valid.note.includes("Unknown view")) throw new Error(JSON.stringify(valid).slice(0, 300));
+if(valid?.type !== "image" || "note" in valid) throw new Error(JSON.stringify(valid).slice(0, 300));
 text("Native image read stays free of view warnings");
 `,
       `await tools.read({path:"note.txt",views:["ghost"]});
@@ -99,11 +108,39 @@ await tools.read({path:"pixel.png",views:["anchors"]});`,
       ]);
     }
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\ngamma\n");
-    expect(run.tuiRenderedOutput).toContain("ghost");
-    expect(run.tuiRenderedOutput).toContain("anchors");
   });
 });
-test("oversized Read lines offer recovery for original bytes and transformed jq values", async () => {
+
+test("requested-view warnings are shown in the native read panels", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
+    await writeFile(
+      path.join(cwd, "pixel.png"),
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64",
+      ),
+    );
+    // An image result fills most of the 50-row test screen, so each panel gets its own run.
+    const textRun = await runText(cwd, "requested-view-warning-text-panel", [
+      `await tools.read({path:"note.txt",views:["ghost"]});`,
+    ]);
+    expect(
+      getToolExecution(textRun, "script-0").isError,
+      getToolResultText(textRun, "script-0"),
+    ).toBe(false);
+    expect(textRun.tuiRenderedOutput).toContain("ghost");
+    const imageRun = await runText(cwd, "requested-view-warning-image-panel", [
+      `await tools.read({path:"pixel.png",views:["anchors"]});`,
+    ]);
+    expect(
+      getToolExecution(imageRun, "script-0").isError,
+      getToolResultText(imageRun, "script-0"),
+    ).toBe(false);
+    expect(imageRun.tuiRenderedOutput).toContain("anchors");
+  });
+});
+test("scripts read oversized lines and jq values whole while raw bytes stay bounded", async () => {
   await withTempWorkspace(async (cwd) => {
     const source = "é".repeat(30000) + "\nlast\n";
     const json = JSON.stringify({ payload: "y".repeat(60000) }) + "\n";
@@ -111,40 +148,24 @@ test("oversized Read lines offer recovery for original bytes and transformed jq 
     await writeFile(path.join(cwd, "values.txt"), json);
     const run = await runText(cwd, "oversized-line-recovery", [
       String.raw`
-const capped = await tools.read({path:"long.txt",views:["anchors"]});
-if(typeof capped !== "string" || capped.includes("é".repeat(30000))) throw new Error(capped);
-const action = /("(?:[^"\\\r\n]|\\.)*")[^\n]*?offset=(\d+)[^\n]*?limit=(\d+)/u.exec(capped);
-if(action === null) throw new Error("No bounded raw recovery: " + capped);
-const raw = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),limit:Number(action[3])});
-if(!raw.includes("Bytes 0..4096 (end exclusive), 60006 bytes total") || raw.includes("Output limited")) throw new Error(raw);
+const strip = (value) => value.text;
+const whole = strip(await tools.read({path:"long.txt"}));
+if(whole !== "é".repeat(30000) + "\nlast\n") throw new Error("Expected the whole oversized line: " + whole.slice(-200));
+// Every requested byte reaches the script: 4096 bytes are 5464 base64 characters.
+const raw = await tools.read({path:"raw:long.txt",offset:0,limit:4096});
+if(raw?.bytes.length !== 5464) throw new Error(JSON.stringify(raw).slice(0, 200));
 const nextLine = await tools.read({path:"long.txt",offset:2});
-if(!nextLine.endsWith("last\n")) throw new Error(nextLine);
-const transformed = await tools.read({path:"values.txt",views:["jq:.payload"]});
-if(!transformed.includes("Output line 1") || !transformed.includes("jq") || transformed.includes("y".repeat(60000)) || transformed.includes("raw:")) throw new Error(transformed);
-const saved = /Full output: ("(?:[^"\\]|\\.)*"|temp:[^. ]+)/u.exec(transformed);
-if(saved === null) throw new Error("Full jq output reference lost: " + transformed);
-store("oversizedJqOutput",saved[1].startsWith('"') ? JSON.parse(saved[1]) : saved[1]);
-store("oversizedJqSource","values.txt");
+if(nextLine.text !== "last\n") throw new Error(nextLine.text);
+const transformed = strip(await tools.read({path:"values.txt",views:["jq:.payload"]}));
+if(transformed !== JSON.stringify("y".repeat(60000)) + "\n") throw new Error("Expected the whole jq value: " + transformed.slice(-200));
 const smaller = await tools.read({path:"values.txt",views:["jq:.payload[0:64]"]});
-if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
-text(capped); text(transformed); text(smaller);
-`,
-      String.raw`
-const saved = await tools.read({path:load("oversizedJqOutput")});
-if(!saved.includes("58.6KB") || !saved.includes("original bytes")) throw new Error("Full saved output was not retained: " + saved);
-const action = /Read ("(?:[^"\\]|\\.)*") with offset=(\d+) and limit=(\d+) to inspect the original bytes/u.exec(saved);
-if(action === null) throw new Error("Saved output lost bounded byte recovery: " + saved);
-const bytes = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),limit:Number(action[3])});
-if(!bytes.includes("60003 bytes total") || !bytes.includes("Bytes 0..4096")) throw new Error(bytes);
-const tail = await tools.read({path:JSON.parse(action[1]),offset:-16,limit:16});
-if(!tail.includes("60003 bytes total") || !tail.includes("79 79 79 79") || !tail.includes("22 0a")) throw new Error("Saved jq tail was lost: " + tail);
-const smaller = await tools.read({path:load("oversizedJqSource"),views:["jq:.payload[0:64]"]});
-if(!smaller.endsWith(JSON.stringify("y".repeat(64)) + "\n")) throw new Error(smaller);
-text(smaller);
+if(smaller.text !== JSON.stringify("y".repeat(64)) + "\n") throw new Error(smaller.text);
+text(JSON.stringify({ line: whole.length, value: transformed.length }));
 `,
     ]);
-    for (const id of ["script-0", "script-1"])
-      expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
+      false,
+    );
     expect(await readFile(path.join(cwd, "long.txt"), "utf8")).toBe(source);
     expect(await readFile(path.join(cwd, "values.txt"), "utf8")).toBe(json);
   });
@@ -159,20 +180,20 @@ test("whole-file Copy and Move replace existing destinations and retire their ol
 const oldCopy = await tools.read({path:"copied.txt"});
 const oldMove = await tools.read({path:"moved.txt"});
 const copied = await tools.copy({path:"source.txt",target:"copied.txt"});
-if (!(await tools.read({path:copied})).endsWith("fresh\\n")) throw Error("Copy did not replace the destination");
+if ((await tools.read({path:copied})).text !== "fresh\\n") throw Error("Copy did not replace the destination");
 const moved = await tools.move({path:copied,target:"moved.txt"});
-text(await tools.read({path:moved}));
-for (const old of [oldCopy,oldMove]) {
-  let rejected = false;
-  try { await tools.read({path:old}); }
-  catch (error) { rejected = /expired|unknown/.test(String(error)); }
-  if (!rejected) throw Error("Old destination result survived replacement");
-}
+text((await tools.read({path:moved})).text);
+// A retired result is refused; the Codemode result lists the reason of each refusal.
+for (const old of [oldCopy,oldMove])
+  if ((await tools.read({path:old})) !== null) throw Error("Old destination result survived replacement");
 `,
     ]);
-    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
-      false,
-    );
+    const output = getToolResultText(run, "script-0");
+    expect(getToolExecution(run, "script-0").isError, output).toBe(false);
+    const refusals = failedCalls(output);
+    expect(refusals, output).toHaveLength(2);
+    for (const refusal of refusals)
+      expect(refusal).toMatch(/^read RESULT#[\s\S]*(?:expired|unknown)/u);
     expect(await readFile(path.join(cwd, "source.txt"), "utf8")).toBe("fresh\n");
     expect(await readFile(path.join(cwd, "moved.txt"), "utf8")).toBe("fresh\n");
     await expect(readFile(path.join(cwd, "copied.txt"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -184,13 +205,13 @@ test("Codemode prints file text and composes Read, Search and pending mutations"
     const run = await runText(cwd, "text-result-chain", [
       `
 const shown = await tools.read({path:"note.txt"});
-if (typeof shown !== "string" || !shown.endsWith("alpha\\nbeta\\ngamma\\n")) throw Error("Read did not return file text");
-text(shown);
-const found = await tools.search({path:shown, query:"beta"}).then(value => value.result);
+if (shown?.text !== "alpha\\nbeta\\ngamma\\n") throw Error("Read did not return file text");
+text(shown.text);
+const found = await tools.search({path:shown, query:"beta"});
 const accepted = await tools.replace({path:found, text:"BETA"});
 const after = await tools.read({path:accepted});
-if (!after.includes("BETA")) throw Error("Pending mutation did not compose");
-return after;
+if (!after.text.includes("BETA")) throw Error("Pending mutation did not compose");
+return after.text;
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -210,35 +231,32 @@ test("empty Read notices stay outside composable source selections", async () =>
 const empty = await tools.read({path:"empty.txt"});
 const zero = await tools.read({path:"note.txt",limit:0});
 const pastEnd = await tools.read({path:"note.txt",offset:10});
-for (const [result, notice] of [
-  [empty, "[Empty source.]"],
-  [zero, "[No lines selected: limit=0.]"],
-  [pastEnd, undefined],
-]) {
-  if (typeof result !== "string") throw Error("Missing empty-read result");
-  const shown = result.split("\n").at(-1) ?? "";
-  if (notice !== undefined ? shown !== notice : !/\b10\b/u.test(shown) || !/\b3\b/u.test(shown))
-    throw Error("Missing empty-read data: "+result);
-  text(result);
-  const found = await tools.search({path:result,query:"regex:Empty|No lines|Offset|alpha"}).then(value => value.result);
-  if (!found.includes("No matches found")) throw Error("Empty selection searched a notice or neighboring text: "+found);
+// The empty-read notices reach the model through the Codemode result, not the values.
+for (const result of [empty, zero, pastEnd]) {
+  if (result?.text !== "") throw Error("Empty read returned text: "+JSON.stringify(result));
+  const found = await tools.search({path:result,query:"regex:Empty|No lines|Offset|alpha"});
+  if (found.matches.length !== 0) throw Error("Empty selection searched a notice or neighboring text: "+JSON.stringify(found));
 }
 await tools.replace({path:zero,text:"BAD"});
 store("emptyWindow",pastEnd);
 `,
       String.raw`
 const saved = load("emptyWindow");
-const found = await tools.search({path:saved,query:"alpha"}).then(value => value.result);
-if (!found.includes("No matches found")) throw Error("Stored empty selection widened to the source");
+const found = await tools.search({path:saved,query:"alpha"});
+if (found.matches.length !== 0) throw Error("Stored empty selection widened to the source");
 const emptyRead = await tools.read({path:saved});
-if (emptyRead.status !== "error" || !emptyRead.errors.length) throw Error("Read widened an empty target set");
+if (emptyRead !== null) throw Error("Read widened an empty target set");
 const failed = await tools.read({path:"missing.txt"});
-if (failed.status !== "error" || !failed.errors.length) throw Error("Missing source became an empty success");
+if (failed !== null) throw Error("Missing source became an empty success");
 text(found);
 `,
     ]);
     for (const id of ["script-0", "script-1"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    const [emptyRead, missing, ...others] = failedCalls(getToolResultText(run, "script-1"));
+    expect(others).toEqual([]);
+    expect(emptyRead).toMatch(/^read RESULT#/u);
+    expect(missing).toMatch(/^read missing\.txt\n/u);
     expect(await readFile(path.join(cwd, "empty.txt"), "utf8")).toBe("");
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\ngamma\n");
   });
@@ -252,38 +270,38 @@ test("Read continuation names an executable source without widening result selec
     );
     const run = await runText(cwd, "read-window-continuation", [
       String.raw`
-async function follow(result, remaining, expected) {
-  const action = /\[(\d+) more (?:line|lines) in source\. Read ("(?:[^"\\]|\\.)*") with offset=(\d+)(?: and views=(\[[^\n]*\]))? to continue\.\]$/.exec(result);
-  if (!action || Number(action[1]) !== remaining) throw Error("Missing executable continuation: "+result);
-  const next = await tools.read({path:JSON.parse(action[2]),offset:Number(action[3]),...(action[4] ? {views:JSON.parse(action[4])} : {})});
-  if (!next.endsWith(expected)) throw Error("Continuation used the wrong coordinate frame: "+next);
-  text(result); text(next);
+// A value holds exactly its window; a script continues with its own offset.
+function exact(result, expected) {
+  if (result?.text !== expected) throw Error("Expected " + JSON.stringify(expected) + ", got " + JSON.stringify(result));
+  text(result.text);
 }
 const transformed = await tools.read({path:"items.json",views:["jq:.items[]"],limit:1});
-await follow(transformed,2,'"beta"\n"gamma"\n');
+exact(transformed,'"alpha"\n');
+exact(await tools.read({path:"items.json",views:["jq:.items[]"],offset:2}),'"beta"\n"gamma"\n');
 const window = await tools.read({path:"note.txt",limit:2});
-await follow(window,1,"gamma\n");
+exact(window,"alpha\nbeta\n");
+exact(await tools.read({path:"note.txt",offset:3}),"gamma\n");
 const narrower = await tools.read({path:window,limit:1});
-await follow(narrower,2,"beta\ngamma\n");
+exact(narrower,"alpha\n");
 const ordinary = await tools.read({path:window});
-if (!ordinary.endsWith("alpha\nbeta")) throw Error("Default selection read gained an unsolicited notice: "+ordinary);
+exact(ordinary,"alpha\nbeta\n");
 const anchored = await tools.read({path:"note.txt#beta",limit:1});
-await follow(anchored,1,"gamma\n");
+exact(anchored,"beta\n");
 for (const [result, query] of [
   [window,"regex:gamma|more line|offset="],
   [narrower,"regex:beta|gamma|more line|offset="],
   [await tools.read({path:window,offset:3}),"gamma"],
 ]) {
-  const found = await tools.search({path:result,query}).then(value => value.result);
-  if (!found.includes("No matches found")) throw Error("Context or notice widened source authority: "+found);
+  const found = await tools.search({path:result,query});
+  if (found.matches.length !== 0) throw Error("Context or notice widened source authority: "+JSON.stringify(found));
 }
 const zero = await tools.read({path:window,limit:0});
-if (!zero.endsWith("[No lines selected: limit=0.]")) throw Error("Empty result received continuation instead of its reason: "+zero);
+exact(zero,"");
 store("window",narrower);
 `,
       String.raw`
-const found = await tools.search({path:load("window"),query:"beta"}).then(value => value.result);
-if (!found.includes("No matches found")) throw Error("Stored narrowed result widened");
+const found = await tools.search({path:load("window"),query:"beta"});
+if (found.matches.length !== 0) throw Error("Stored narrowed result widened");
 text(found);
 `,
     ]);
@@ -293,7 +311,7 @@ text(found);
   });
 });
 
-test("automatic Read caps give executable text, view and byte continuations", async () => {
+test("scripts read whole windows with explicit-limit continuations and bounded raw bytes", async () => {
   await withTempWorkspace(async (cwd) => {
     const lines = Array.from({ length: 2105 }, (_, i) => `row ${i + 1}`).join("\n") + "\n";
     await writeFile(path.join(cwd, "lines.txt"), lines);
@@ -304,40 +322,38 @@ test("automatic Read caps give executable text, view and byte continuations", as
     );
     const run = await runText(cwd, "automatic-read-continuation", [
       String.raw`
-async function followText(result, nextLine, expectedPrefix, views) {
-  const action = /\[Showing lines \d+-\d+ of \d+ \((?:\d+-line|[\d.]+KB) limit\)\. Read ("(?:[^"\\]|\\.)*") with offset=(\d+)(?: and views=(\[[^\n]*\]))? to continue\./.exec(result);
-  if (!action || Number(action[2]) !== nextLine) throw Error("Missing automatic-cap action: "+result.slice(-600));
-  const requestedViews = action[3] ? JSON.parse(action[3]) : undefined;
-  if (JSON.stringify(requestedViews) !== JSON.stringify(views)) throw Error("Continuation lost views");
-  const next = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),...(requestedViews ? {views:requestedViews} : {})});
-  if (!next.split("\n").slice(1).join("\n").startsWith(expectedPrefix)) throw Error("Wrong continuation: "+next.slice(0,600));
-  text(result.split("\n").find(line=>line.startsWith("[Showing lines")));
-}
+const strip = (value) => value.text;
+const rows = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => "row " + (from + i)).join("\n");
+// The value holds the whole requested window and no continuation notice.
 const limited = await tools.read({path:"lines.txt",limit:2010});
-await followText(limited,2001,"row 2001\n");
+if (strip(limited) !== rows(1, 2010) + "\n") throw Error("Expected the whole requested window: " + strip(limited).slice(-600));
+const next = strip(await tools.read({path:"lines.txt",offset:2011}));
+if (next !== rows(2011, 2105) + "\n") throw Error("Wrong continuation: " + next.slice(0, 600));
 const anchors = await tools.read({path:"lines.txt",limit:5,views:["anchors"]});
-const anchor = /\b(5#[A-Fa-f0-9]+)\|row 5/.exec(anchors)?.[1];
+const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|row 5$/m.exec(strip(anchors))?.[1];
 if (!anchor) throw Error("No current line-5 anchor");
-await followText(await tools.read({path:"lines.txt#"+anchor}),2005,"row 2005\n");
-await followText(await tools.read({path:"bytes.txt"}),51,"row 51 ");
-await followText(await tools.read({path:"counts.txt",views:["jq:range(1; .count + 1)"]}),2001,"2001\n",["jq:range(1; .count + 1)"]);
+const anchored = strip(await tools.read({path:"lines.txt#"+anchor}));
+if (anchored !== rows(5, 2105) + "\n") throw Error("Expected the whole anchored remainder");
+const heavy = Array.from({ length: 60 }, (_, i) => "row " + (i + 1) + " " + "x".repeat(1000)).join("\n") + "\n";
+if (strip(await tools.read({path:"bytes.txt"})) !== heavy) throw Error("Expected every byte-heavy row");
+const counted = strip(await tools.read({path:"counts.txt",views:["jq:range(1; .count + 1)"]}));
+if (counted !== Array.from({ length: 2105 }, (_, i) => String(i + 1)).join("\n") + "\n") throw Error("Expected every jq output line");
 const context = await tools.read({path:limited,offset:2001});
-const outside = await tools.search({path:context,query:"regex:row 2011|Showing lines|offset="}).then(value => value.result);
-if (!outside.includes("No matches found")) throw Error("Cap or continuation widened the requested selection");
-const inside = await tools.search({path:context,query:"regex:row 2010$"}).then(value => value.result);
-if (!inside.includes("row 2010")) throw Error("Valid continuation selection was lost");
+const outside = await tools.search({path:context,query:"regex:row 2011|Showing lines|offset="});
+if (outside.matches.length !== 0) throw Error("Cap or continuation widened the requested selection");
+const inside = await tools.search({path:context,query:"regex:row 2010$"});
+if (inside.matches.length !== 1 || inside.matches[0].text !== "row 2010" || inside.matches[0].line !== 2010) throw Error("Valid continuation selection was lost");
+// A script gets every requested byte; only the readable hex view is bounded.
 const raw = await tools.read({path:"raw:bytes.txt"});
-const action = /\[Output limited\. Read ("(?:[^"\\]|\\.)*") with offset=(\d+) to continue\.\]$/.exec(raw);
-if (!action) throw Error("Missing raw output-limit explanation");
-const after = await tools.read({path:JSON.parse(action[1]),offset:Number(action[2]),limit:16});
-const range = /Bytes (\d+)[.][.](\d+)/.exec(after);
-if (!range || Number(range[1]) !== Number(action[2]) || Number(range[2]) !== Number(action[2])+16 || after.includes("Output limited")) throw Error("Raw continuation or explicit-window behavior changed");
-text(raw.split("\n").at(-1));
+if (raw?.bytes.length !== 4 * Math.ceil(heavy.length / 3)) throw Error("Raw bytes were cut: " + raw?.bytes.length);
+const after = await tools.read({path:"raw:bytes.txt",offset:51200,limit:16});
+if (after?.bytes.length !== 24) throw Error("Raw explicit-window behavior changed");
+text("raw:" + raw.bytes.length);
 store("limited",limited);
 `,
       String.raw`
-const found = await tools.search({path:load("limited"),query:"regex:row 2011$"}).then(value => value.result);
-if (!found.includes("No matches found")) throw Error("Stored cap widened the requested range");
+const found = await tools.search({path:load("limited"),query:"regex:row 2011$"});
+if (found.matches.length !== 0) throw Error("Stored cap widened the requested range");
 text(found);
 `,
     ]);
@@ -351,12 +367,12 @@ test("pending result strings confirm at dependent boundaries without invalidatin
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "pending-text-result-peers", [
       `
-const first=await tools.replace({path:"note.txt",start:"alpha",text:"ALPHA"});
-const second=await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+const first=await tools.replace({path:"note.txt",at:"alpha",text:"ALPHA"});
+const second=await tools.replace({path:"note.txt",at:"beta",text:"BETA"});
 const shown=await tools.read({path:first});
-const found=await tools.search({path:second,query:"BETA"}).then(value => value.result);
-if(!shown.includes("ALPHA")||!found.includes("BETA")) throw Error("A peer result expired at the common commit");
-text(shown); text(found);
+const found=await tools.search({path:second,query:"BETA"});
+if(!shown.text.includes("ALPHA")||found.matches.map(match=>match.text).join()!=="BETA") throw Error("A peer result expired at the common commit");
+text(shown.text); text(found);
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -365,50 +381,55 @@ text(shown); text(found);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\n");
   });
 });
-test("store/load retains text and UUID composition until the file snapshot changes", async () => {
+test("store/load retains text and UUID composition; Search reads a changed file's current text but edits expire", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\n");
     const run = await runText(cwd, "text-result-store", [
       `store("source", await tools.read({path:"note.txt"}));`,
-      `const source=load("source"); const uuid=/<uuid>([^<]+)<\\/uuid>/.exec(source)[1]; const found=await tools.search({path:uuid,query:"beta"}).then(value => value.result); text(await tools.replace({path:found,text:"BETA"}));`,
-      `let rejected=false; try { await tools.search({path:load("source"),query:"alpha"}); } catch(error) { rejected=String(error).includes("expired"); } if(!rejected) throw Error("Stored old result survived a write"); text("Old result rejected");`,
+      `const source=load("source"); const uuid=source.id.slice("RESULT#".length); const found=await tools.search({path:uuid,query:"beta"}); text(await tools.replace({path:found,text:"BETA"}));`,
+      `const current=await tools.search({path:load("source"),query:"alpha"}); if(current.matches.map(match=>match.line+":"+match.text).join()!=="1:alpha") throw Error("Search did not read the changed result's current text: "+JSON.stringify(current)); if((await tools.replace({path:load("source"),text:"ALPHA\\nBETA\\n"}))!==null) throw Error("An edit on the stored old result survived a write"); text("Old result searched, edit rejected");`,
     ]);
     for (let i = 0; i < 3; i++)
       expect(
         getToolExecution(run, `script-${i}`).isError,
         getToolResultText(run, `script-${i}`),
       ).toBe(false);
+    expect(codemodeFailures(getToolResultText(run, "script-2"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace RESULT#[\s\S]*expired/u,
+    );
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\n");
   });
 });
 
-test("explicit-text errors require a current anchor, then allow explicit text again", async () => {
-  await withTempWorkspace(async (cwd) => {
-    await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
-    const run = await runText(cwd, "text-result-anchor-recovery", [
-      `
-let failed=""; try { await tools.replace({path:"note.txt",start:"betx",text:"BETA"}); } catch(error) { failed=String(error); }
-if(!failed.includes("anchor")) throw Error("Missing recovery anchors");
-let blocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { blocked=String(error); }
-if(!blocked.includes("blocked")) throw Error("Explicit text retried without an anchor");
-await tools.write({path:"note.txt",content:"ALPHA\\nbeta\\ngamma\\n"});
-let stillBlocked=""; try { await tools.replace({path:"note.txt",start:"beta",text:"BETA"}); } catch(error) { stillBlocked=String(error); }
-if(!stillBlocked.includes("blocked")) throw Error("An unanchored write bypassed recovery");
-const current=await tools.read({path:"note.txt",views:["anchors"]});
-const anchor=/(\\d+#[A-Fa-f0-9]+)[^\\n]*beta/.exec(current)?.[1];
-if(!anchor) throw Error("Read did not show beta's anchor: "+current);
-await tools.replace({path:"note.txt",start:anchor,text:"BETA"});
-const recovered=await tools.read({path:"note.txt"});
-if(!recovered.includes("BETA")) throw Error("Anchored recovery was not applied");
-await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
-`,
-    ]);
-    expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
-      false,
-    );
-    expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("ALPHA\nBETA\nGAMMA\n");
-  });
-});
+test.each(["missing", "ambiguous"] as const)(
+  "Move retries after a %s destination without changing its exact-text source",
+  async (state) => {
+    await withTempWorkspace(async (cwd) => {
+      const initial = "header\nmove this\nkeep this\nfirst marker\nsecond marker\ntail\n";
+      await writeFile(path.join(cwd, "note.txt"), initial);
+      const destination = state === "missing" ? "second makrer" : "marker";
+      const run = await runText(cwd, `move-retry-${state}`, [
+        `const failed = await tools.move({path:"note.txt",at:"move this\\n",targetAfter:${JSON.stringify(destination)}});
+if (failed !== null) throw Error("The invalid destination was accepted");
+const current = await tools.read({path:"note.txt"});
+if (current.text !== ${JSON.stringify(initial)}) throw Error("Failed Move changed the file");`,
+        state === "missing"
+          ? String.raw`const current = await tools.read({path:"note.txt",views:["anchors"]});
+const anchor = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|second marker/m.exec(current.text)?.[1];
+if (!anchor) throw Error("Read did not issue an anchor for the intended destination");
+await tools.move({path:"note.txt",at:"move this\n",targetAfter:anchor});`
+          : `await tools.move({path:"note.txt",at:"move this\\n",targetAfter:"second marker\\n"});`,
+        `await tools.replace({path:"note.txt",at:"keep this",text:"kept"});`,
+      ]);
+      for (const id of ["script-0", "script-1", "script-2"]) {
+        expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+      }
+      expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
+        "header\nkept\nfirst marker\nsecond marker\nmove this\ntail\n",
+      );
+    });
+  },
+);
 
 test("direct tools accept unchanged results and UUIDs without Codemode", async () => {
   await withTempWorkspace(async (cwd) => {
@@ -458,16 +479,16 @@ test("direct tools accept unchanged results and UUIDs without Codemode", async (
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nBETA\n");
   });
 });
-test("a registered Search selection restores exact-text editing after a selector failure", async () => {
+test("a registered Search selection can recover an edit after an exact-text miss", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
     const run = await runText(cwd, "text-result-search-recovery", [
       String.raw`
-let failed=false; try { await tools.replace({path:"note.txt",start:"missing",text:"BAD"}); } catch { failed=true; }
+const failed=(await tools.replace({path:"note.txt",at:"missing",text:"BAD"}))===null;
 if(!failed) throw Error("Expected exact-text failure");
-const found=await tools.search({path:"note.txt",query:"beta"}).then(value => value.result);
+const found=await tools.search({path:"note.txt",query:"beta"});
 await tools.replace({path:found,text:"BETA"});
-await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
+await tools.replace({path:"note.txt",at:"gamma",text:"GAMMA"});
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
@@ -478,29 +499,32 @@ await tools.replace({path:"note.txt",start:"gamma",text:"GAMMA"});
 });
 
 test.runIf(process.platform !== "win32")(
-  "live terminal results compose through IDs without granting filesystem authority",
+  "live terminal sessions compose through their source without granting filesystem authority",
   async () => {
     await withTempWorkspace(async (cwd) => {
       const run = await runText(cwd, "text-result-live-shell", [
         String.raw`
 const started=await tools.bash({command:"IFS= read -r answer; printf 'resource:%s' \"$answer\"",background:true});
-const uuid=/<uuid>([^<]+)<\/uuid>/.exec(started)?.[1];
-if(!uuid) throw Error("Missing shell result ID");
-const written=await tools.write({path:uuid,content:"hello"});
-if(!written.includes('Sent text "hello"') || written.includes("no verified text selection") || written.includes("ENOENT")) throw Error("Terminal Write was treated as a file: "+written);
-const entered=await tools.insert({path:started,text:"Enter"});
-if(!entered.includes("Sent keys Enter") || entered.includes("no verified text selection")) throw Error("Terminal Insert was treated as a file: "+entered);
-const shown=await tools.read({path:started});
-if(!shown.includes("resource:hello")) throw Error("Shell output lost: "+shown);
-let rejected=false; try { await tools.replace({path:shown,start:"hello",text:"BAD"}); } catch { rejected=true; }
+if(!started.session) throw Error("Missing shell session");
+// Terminal input selects no text; a failure would be listed at the end of the result.
+const written=await tools.write({path:started.session,content:"hello"});
+if(written!==null) throw Error("Terminal Write was treated as a file: "+written);
+const entered=await tools.insert({path:started.session,text:"Enter"});
+if(entered!==null) throw Error("Terminal Insert was treated as a file: "+entered);
+const shown=await tools.read({path:started.session});
+if(!shown.text.includes("resource:hello")) throw Error("Shell output lost: "+shown.text);
+const rejected=(await tools.replace({path:shown,at:"hello",text:"BAD"}))===null;
 if(!rejected) throw Error("Shell output granted text-edit authority");
-text(await tools.delete({path:shown}));
+if((await tools.delete({path:shown}))!==null) throw Error("Terminal Delete selected text");
 `,
       ]);
       expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
         false,
       );
-      expect(getToolResultText(run, "script-0")).toContain("Deleted terminal session");
+      // Only the deliberately refused Replace of shell output fails.
+      expect(codemodeFailures(getToolResultText(run, "script-0"))).toMatch(
+        /^1 of \d+ IDE calls failed:\n- replace /u,
+      );
       expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-write");
       expect(getToolResultText(run, "script-0")).not.toContain("pi-terminal-keys");
       expect(getToolResultText(run, "script-0")).not.toContain("Saved file.");
@@ -512,14 +536,19 @@ test("system envelopes cannot be inserted into file contents", async () => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\n");
     const run = await runText(cwd, "text-result-payload-guard", [
       `
-const shown=await tools.read({path:"note.txt"});
-let rejected=false; try { await tools.write({path:"copy.txt",content:shown}); } catch(error) { rejected=String(error).includes("system result"); }
-if(!rejected) throw Error("A system envelope was written to a file");
+// Read and Search values carry no envelope; a readable result string, such as lsp_search's, still
+// starts with one. Rebuild it around an issued id.
+const found=await tools.search({path:"note.txt",query:"alpha"});
+const shown='<system-result note="Internal reference; not part of the file. Do not edit."><uuid>'+found.id.slice("RESULT#".length)+'</uuid></system-result>\\nalpha\\n';
+if((await tools.write({path:"copy.txt",content:shown}))!==null) throw Error("A system envelope was written to a file");
 text("System marker rejected");
 `,
     ]);
     expect(getToolExecution(run, "script-0").isError, getToolResultText(run, "script-0")).toBe(
       false,
+    );
+    expect(codemodeFailures(getToolResultText(run, "script-0"))).toMatch(
+      /^1 of 2 IDE calls failed:\n- write copy\.txt\n {2}A system result reference is not file content\./u,
     );
     await expect(readFile(path.join(cwd, "copy.txt"), "utf8")).rejects.toThrow("ENOENT");
   });

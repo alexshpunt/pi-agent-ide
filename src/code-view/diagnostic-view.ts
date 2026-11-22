@@ -1,10 +1,8 @@
-import { resolveCodeViewPath } from "./reference.ts";
-
 import { formatDiagnostic } from "#src/toolchain/diagnostic.ts";
 
 import type { Diagnostic } from "#src/toolchain/types.ts";
 import type { SourceMappedTextContent } from "./source-view.ts";
-import type { TextDocument, TextSourceLine } from "pi-agent-text";
+import { textLineAnchors, type TextDocument, type TextSourceLine } from "pi-agent-text";
 
 /** Diagnostics produced by one named source such as `lsp` or `lint`. */
 export interface DiagnosticSource {
@@ -27,30 +25,6 @@ export interface DiagnosticViewOptions {
   readonly contextLines?: number;
 }
 
-export function resolveDiagnosticViewPath(
-  source: string,
-  scheme: string,
-  cwd: string,
-): string | undefined {
-  const prefix = `${scheme}:`;
-
-  if (!source.startsWith(prefix)) {
-    return undefined;
-  }
-
-  const requestedPath = source.slice(prefix.length);
-
-  if (requestedPath.length === 0) {
-    throw new Error(`${scheme}: requires a file path.`);
-  }
-
-  return resolveCodeViewPath(requestedPath, cwd);
-}
-
-export function formatDiagnosticViewSource(scheme: string, filePath: string): string {
-  return `${scheme}:${filePath}`;
-}
-
 /** Builds a source-mapped diagnostic read with merged context around every diagnostic line. */
 export function createDiagnosticViewContent(
   filePath: string,
@@ -63,7 +37,9 @@ export function createDiagnosticViewContent(
     count: sources.reduce((count, source) => count + source.diagnostics.length, 0),
     sources: sources.map((source) => source.source),
   };
-  const fileLines = text.split(/\r\n|\r|\n/u);
+  // Only LF ends a line, as in Read; a CRLF line keeps its CR.
+  const fileLines = text.split("\n");
+  const anchors = textLineAnchors(filePath, text);
   const diagnosticsByLine = diagnosticsByValidLine(sources, fileLines.length);
 
   if (diagnosticsByLine.size === 0) {
@@ -103,7 +79,13 @@ export function createDiagnosticViewContent(
       )
       .join(" ");
     renderedLines.push(annotations.length === 0 ? content : `${content}  ${annotations}`);
-    sourceLines[String(renderedLines.length)] = { source: filePath, lineNumber, content };
+    const anchor = anchors[lineNumber - 1];
+    sourceLines[String(renderedLines.length)] = {
+      source: filePath,
+      lineNumber,
+      content,
+      ...(anchor !== undefined && { anchor }),
+    };
   }
 
   return {
@@ -122,7 +104,7 @@ export function addDiagnosticAnnotations(
   const diagnostics = diagnosticsByValidLine(
     sources,
     document.lines.length,
-    /[\r\n]$/u.test(document.content),
+    document.content.endsWith("\n"),
   );
 
   const lines = document.lines.map((line) => {

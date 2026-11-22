@@ -81,6 +81,24 @@ test("saves the complete useful text before truncation and leaves metadata outsi
   expect(result.notices.join("\n")).toContain("/tmp/full-output.txt");
 });
 
+test("keeps text whole for a program without saving it", async () => {
+  const full = "row\n".repeat(2200) + "😀".repeat(30000);
+  const saved: string[] = [];
+  const result = await limitIdeOutput(
+    [{ type: "text", text: full }],
+    "",
+    async (text) => {
+      saved.push(text);
+      return "/tmp/unused.txt";
+    },
+    { limitText: false },
+  );
+  expect(result.text === full).toBe(true);
+  expect(result.textTruncated).toBe(false);
+  expect(result.notices).toEqual([]);
+  expect(saved).toEqual([]);
+});
+
 test("does not save output that fits the useful budget", async () => {
   const saved: string[] = [];
   const result = await limitIdeOutput([{ type: "text", text: "small" }], "", async (text) => {

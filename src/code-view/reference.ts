@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-export type CodeViewScheme = "ast" | "symbol" | "graph";
+export type CodeViewScheme = "graph";
 
 export interface CodeViewReference {
   readonly scheme: CodeViewScheme;
@@ -29,18 +29,6 @@ export function parseCodeViewReference(
 
   const filePath = decodePart(encodedPath, `${scheme}: path`);
   const encodedSelector = fragmentAt === -1 ? undefined : value.slice(fragmentAt + 1);
-
-  if (scheme === "ast") {
-    if (encodedSelector !== undefined) {
-      throw new TypeError("ast: accepts only a file path and does not accept a symbol selector.");
-    }
-
-    return { scheme, path: filePath };
-  }
-
-  if (scheme === "symbol" && encodedSelector === undefined) {
-    throw new TypeError("symbol: requires #<symbol-selector> after the file path.");
-  }
 
   if (encodedSelector === undefined) {
     return { scheme, path: filePath };
@@ -84,15 +72,18 @@ export function formatCodeViewReference(
   selector?: readonly string[],
 ): string {
   const encodedPath = filePath.replaceAll("%", "%25").replaceAll("#", "%23");
-  const fragment =
-    selector === undefined
-      ? ""
-      : `#${selector.map((segment) => encodeURIComponent(segment)).join("/")}`;
+  const fragment = selector === undefined ? "" : `#${formatSymbolSelector(selector)}`;
   return `${scheme}:${encodedPath}${fragment}`;
 }
 
+/**
+ * A selector as it is written in a reference. Only the characters that would end or split a
+ * segment are encoded, so signatures stay readable: `clamp(const Vec&, float)`.
+ */
 export function formatSymbolSelector(selector: readonly string[]): string {
-  return selector.map((segment) => encodeURIComponent(segment)).join("/");
+  return selector
+    .map((segment) => segment.replaceAll("%", "%25").replaceAll("/", "%2F").replaceAll("#", "%23"))
+    .join("/");
 }
 
 function decodePart(value: string, label: string): string {

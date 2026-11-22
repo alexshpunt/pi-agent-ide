@@ -12,6 +12,7 @@ import spawnProcess from "cross-spawn";
 import {
   CancellationTokenSource,
   createMessageConnection,
+  ResponseError,
   StreamMessageReader,
   StreamMessageWriter,
 } from "vscode-jsonrpc/node";
@@ -19,7 +20,9 @@ import {
 import {
   configurationItems,
   LspFileWatchers,
+  SHARED_DIAGNOSTICS_SUPERSEDED,
   SHARED_SERVER_PROTOCOL,
+  SHARED_SOURCE_CHANGED,
 } from "./server-request-handlers.mjs";
 
 /**
@@ -39,7 +42,7 @@ import {
  * @typedef {object} SessionDocument
  * @property {number} version Version the session uses for this document.
  * @property {string} text Text the session last synchronized.
- * @property {boolean} published Whether the session received diagnostics for this version.
+ * @property {boolean} waitingForDiagnostics Whether this version still needs a report or rejection.
  * @property {number} syncedAt When the session sent this text, to tell it from later writes to the file.
  */
 
@@ -155,6 +158,10 @@ async function sweep() {
       () => now,
     );
     if (name.endsWith(".log") && now - changed > FAILURE_LOG_MS) await rm(file, { force: true });
+    // Host copies that no start used for a day, and staging left by an interrupted copy.
+    // A running host has already loaded its copy, and a start writes a removed copy again.
+    if (/^(?:host|staging)-/u.test(name) && now - changed > FAILURE_LOG_MS)
+      await rm(file, { recursive: true, force: true });
     if (name.endsWith(".sock") && now - changed > STALE_SOCKET_MS && !(await reachable(file)))
       await rm(file, { force: true });
   }
@@ -480,7 +487,7 @@ function openSession(socket, started) {
       session.documents.set(textDocument.uri, {
         version: textDocument.version,
         text: textDocument.text,
-        published: false,
+        waitingForDiagnostics: true,
         syncedAt: Date.now(),
       });
       documents.get(textDocument.uri)?.holders.add(session);
@@ -500,9 +507,10 @@ function openSession(socket, started) {
       // LspClient always sends full text; ranges would make the shared text unknown.
       if (!owned || text === undefined || contentChanges.some((change) => change.range)) return;
       owned.version = textDocument.version;
+      // Retrying diagnostics for the same bytes does not make an old copy newer than disk.
+      if (owned.text !== text) owned.syncedAt = Date.now();
       owned.text = text;
-      owned.published = false;
-      owned.syncedAt = Date.now();
+      owned.waitingForDiagnostics = true;
       align(session, textDocument.uri);
     },
   );
@@ -513,15 +521,45 @@ function openSession(socket, started) {
   );
   connection.onNotification((method, parameters) => notifyServer(method, parameters));
   connection.onRequest(async (method, parameters, token) => {
-    const uri = documentUriOf(parameters);
-    if (uri) align(session, uri);
+    const callContinuation =
+      method === "callHierarchy/incomingCalls" || method === "callHierarchy/outgoingCalls";
+    const requestUri = documentUriOf(parameters);
+    const itemUri = /** @type {{ item?: { uri?: unknown } } | undefined} */ (parameters)?.item?.uri;
+    const uri = callContinuation && typeof itemUri === "string" ? itemUri : requestUri;
+    // A hierarchy item already belongs to a server snapshot. Do not change that snapshot to
+    // serve the continuation.
+    if (uri && !callContinuation) align(session, uri);
+    const unversionedNavigation =
+      method === "textDocument/documentSymbol" ||
+      method === "textDocument/references" ||
+      method === "textDocument/prepareCallHierarchy" ||
+      callContinuation;
     // The server answers for the text it has now. Another session's text may replace it before
     // the answer arrives, so the versions are mapped as they were when the request was sent.
     const owned = uri === undefined ? undefined : session.documents.get(uri);
     const document = uri === undefined ? undefined : documents.get(uri);
+    // If align kept newer on-disk text, these ranges cannot be interpreted in the caller's
+    // copy. In particular, a rename's position might now name a different overload.
+    if (
+      owned &&
+      document &&
+      document.text !== owned.text &&
+      (unversionedNavigation || method === "textDocument/rename")
+    )
+      throw new ResponseError(SHARED_SOURCE_CHANGED, "The language server has newer file text.");
     const sent =
       uri !== undefined && owned && document && document.text === owned.text
         ? { uri, server: document.version, session: owned.version }
+        : undefined;
+    const documentVersion = document?.version;
+    const renameVersions =
+      method === "textDocument/rename"
+        ? new Map(
+            [...session.documents].map(([uri, copy]) => {
+              const active = documents.get(uri);
+              return [uri, active?.text === copy.text ? active.version : undefined];
+            }),
+          )
         : undefined;
     const cancellation = new CancellationTokenSource();
     const forward = token.onCancellationRequested(() => cancellation.cancel());
@@ -529,6 +567,21 @@ function openSession(socket, started) {
     try {
       /** @type {unknown} */
       const result = await started.connection.sendRequest(method, parameters, cancellation.token);
+      // Navigation replies carry ranges but no version to tie them to the request's text.
+      if (
+        unversionedNavigation &&
+        uri !== undefined &&
+        documents.get(uri)?.version !== documentVersion
+      )
+        throw new ResponseError(
+          SHARED_SOURCE_CHANGED,
+          "The language server could not answer from one document version because the file changed.",
+        );
+      if (renameVersions && !unversionedRenameMatches(result, renameVersions))
+        throw new ResponseError(
+          SHARED_SOURCE_CHANGED,
+          "The language server text changed during rename.",
+        );
       return sessionVersions(session, result, sent);
     } finally {
       forward.dispose();
@@ -554,7 +607,10 @@ function align(session, uri) {
     // the file. Putting it back would make the server reparse and cancel the other sessions'
     // requests; that session catches up with its next request or edit. A copy sent after the
     // file's last write, such as an unsaved proposal, still reaches the server.
-    if (olderThanFile(uri, document.text, owned)) return;
+    if (newerFileTime(uri, document.text, owned.syncedAt) !== undefined) {
+      discardDiagnostics(session, uri, owned);
+      return;
+    }
     document.text = owned.text;
     document.version = ++nextVersion;
     document.publication = undefined;
@@ -562,11 +618,12 @@ function align(session, uri) {
       textDocument: { uri, version: document.version },
       contentChanges: [{ text: owned.text }],
     });
+    nextDiagnosticSession(uri, document);
     return;
   }
   const publication = document.publication;
   if (publication?.current !== document.version) return;
-  owned.published = true;
+  owned.waitingForDiagnostics = false;
   notifySession(session, DIAGNOSTICS, {
     uri,
     ...(publication.version !== undefined && { version: owned.version }),
@@ -575,48 +632,58 @@ function align(session, uri) {
 }
 
 /**
- * Whether the server has the text of the document's file and a session's copy predates the
- * file's last write. Documents that are not readable local files are never older.
+ * Return the file's modification time only when it is newer and matches the server text.
  * @param {string} uri
  * @param {string} serverText
- * @param {{ text: string; syncedAt: number }} owned
+ * @param {number} since
  */
-function olderThanFile(uri, serverText, owned) {
-  if (!uri.startsWith("file:")) return false;
+function newerFileTime(uri, serverText, since) {
+  if (!uri.startsWith("file:")) return undefined;
   try {
     const file = fileURLToPath(uri);
-    return (
-      statSync(file).mtimeMs > owned.syncedAt &&
-      owned.text !== serverText &&
-      readFileSync(file, "utf8") === serverText
-    );
+    const { mtimeMs } = statSync(file);
+    if (mtimeMs > since && readFileSync(file, "utf8") === serverText) return mtimeMs;
   } catch {
-    return false;
+    // Documents that are not readable local files are never superseded by a disk write.
   }
+  return undefined;
 }
 
 /**
- * After the server published for its current text, give it the text of another session that
- * still waits for diagnostics. Servers such as clangd publish nothing for a text that a newer
- * one replaced, so without this an earlier session would wait in vain.
+ * @param {Session} session
  * @param {string} uri
+ * @param {SessionDocument} owned
  */
-function serveWaitingSession(uri) {
-  const document = documents.get(uri);
-  if (!document) return;
+function discardDiagnostics(session, uri, owned) {
+  if (!owned.waitingForDiagnostics) return;
+  owned.waitingForDiagnostics = false;
+  notifySession(session, SHARED_DIAGNOSTICS_SUPERSEDED, { uri, version: owned.version });
+}
+
+/**
+ * Reject pending copies that won't be served because the active text is newer disk text.
+ * Return the first remaining waiter whose text still needs to be sent to the server.
+ * @param {string} uri
+ * @param {ServerDocument} document
+ */
+function nextDiagnosticSession(uri, document) {
+  const waiting = [];
+  let oldest = Infinity;
   for (const session of document.holders) {
     const owned = session.documents.get(uri);
-    // A copy older than the file is not served; see align.
-    if (
-      owned &&
-      !owned.published &&
-      owned.text !== document.text &&
-      !olderThanFile(uri, document.text, owned)
-    ) {
-      align(session, uri);
-      return;
-    }
+    if (!owned?.waitingForDiagnostics || owned.text === document.text) continue;
+    waiting.push({ session, owned });
+    oldest = Math.min(oldest, owned.syncedAt);
   }
+  if (!waiting.length) return undefined;
+  const modified = newerFileTime(uri, document.text, oldest);
+  let next;
+  for (const { session, owned } of waiting) {
+    if (modified !== undefined && modified > owned.syncedAt)
+      discardDiagnostics(session, uri, owned);
+    else next ??= session;
+  }
+  return next;
 }
 
 /**
@@ -653,13 +720,17 @@ function publishToSessions(method, parameters) {
   for (const session of document.holders) {
     const owned = session.documents.get(/** @type {string} */ (publication.uri));
     if (owned?.text !== document.text) continue;
-    owned.published = true;
+    owned.waitingForDiagnostics = false;
     notifySession(session, DIAGNOSTICS, {
       ...publication,
       ...(version !== undefined && { version: owned.version }),
     });
   }
-  serveWaitingSession(/** @type {string} */ (publication.uri));
+  // The server may never publish for a version it did not finish analyzing. Give it
+  // the next pending copy, unless that copy was superseded by a disk write.
+  const uri = /** @type {string} */ (publication.uri);
+  const next = nextDiagnosticSession(uri, document);
+  if (next) align(next, uri);
 }
 
 /**
@@ -689,6 +760,31 @@ function sessionVersions(session, value, sent) {
     mapped.textDocument = { ...identifier, version: current ? owned.version : -1 };
   }
   return mapped;
+}
+
+/**
+ * Unversioned edits for an already-open participant are usable only if the session's text
+ * was active when the request started and that server revision stayed active. Unopened
+ * participants are only discovered here; the planner synchronizes them before using edits.
+ * @param {unknown} result
+ * @param {Map<string, number | undefined>} versions
+ */
+function unversionedRenameMatches(result, versions) {
+  const edit = /** @type {{
+    changes?: Record<string, unknown>;
+    documentChanges?: { textDocument?: { uri: string; version?: number | null } }[];
+  } | null} */ (result);
+  const uris = [
+    ...Object.keys(edit?.changes ?? {}),
+    ...(edit?.documentChanges ?? []).flatMap(({ textDocument }) =>
+      textDocument && textDocument.version == null ? [textDocument.uri] : [],
+    ),
+  ];
+  return uris.every((uri) => {
+    if (!versions.has(uri)) return true;
+    const version = versions.get(uri);
+    return version !== undefined && documents.get(uri)?.version === version;
+  });
 }
 
 /** @param {unknown} parameters */

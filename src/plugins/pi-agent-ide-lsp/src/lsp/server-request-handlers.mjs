@@ -7,7 +7,13 @@ import path from "node:path";
 import { URI } from "vscode-uri";
 
 /** Version of the shared server host protocol; part of every shared server key. */
-export const SHARED_SERVER_PROTOCOL = 3;
+export const SHARED_SERVER_PROTOCOL = 4;
+
+/** Private host response: resync from disk before asking again, not a server-side retry. */
+export const SHARED_SOURCE_CHANGED = -32090;
+
+/** Private host notification: an unpublished document version was superseded by a disk write. */
+export const SHARED_DIAGNOSTICS_SUPERSEDED = "pi/sharedDiagnosticsSuperseded";
 
 /** @typedef {import("./file-watchers.js").WatchPattern} WatchPattern */
 /** @typedef {import("./file-watchers.js").WatchedFileChange} WatchedFileChange */

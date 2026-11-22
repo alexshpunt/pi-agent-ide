@@ -17,13 +17,13 @@ export {
   type MutationOperationReceipt,
   type MutationSnapshot,
   type MutationResultPresentation,
-  type StaleAnchorDiagnostic,
   type StaleEditInfo,
   type StrictEditErrorCode,
   type SyntaxErrorSummary,
   type Warning,
 } from "#src/core/mutation-result/file-mutation-result.ts";
 
+export { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 export { type ChangedRange, computeChangedRanges } from "#src/core/mutation-result/diff.ts";
 export {
   mutationDataSchema,
@@ -32,3 +32,8 @@ export {
   structuredMutation,
   type MutationData,
 } from "#src/core/structured-result.ts";
+export {
+  compactMutationReceipt,
+  type CompactMutationReceipt,
+} from "#src/core/mutation-result/compact-receipt.ts";
+export { NO_TEXT_TARGET } from "#src/core/file-result-targets.ts";

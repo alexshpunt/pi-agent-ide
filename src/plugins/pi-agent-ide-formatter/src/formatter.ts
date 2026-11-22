@@ -4,9 +4,11 @@ import {
   runConfiguredFormatter,
 } from "pi-agent-ide/api/tool-config";
 import path from "node:path";
+import { realpath } from "node:fs/promises";
 
 import { FORMATTER_RECIPES } from "./catalog.ts";
 import { FormatterCommandRegistry } from "./registry.ts";
+import { localRustfmtAccess, rustfmtWithEdition, type RustfmtAccess } from "./rustfmt.ts";
 
 import type { Formatter } from "pi-agent-ide/api/toolchain";
 import type { FormatterCommandConfig } from "pi-agent-ide/api/tool-config";
@@ -18,10 +20,15 @@ export interface FormatterRuntime {
     cwd: string,
   ): Promise<{ cwd: string; external: boolean } | undefined>;
   loadRegistry(cwd: string, external: boolean): Promise<FormatterCommandRegistry>;
+  rustfmtAccess?(
+    projectRoot: string,
+    source: string,
+  ): Promise<{ file: string; access: RustfmtAccess }>;
   run(
     config: FormatterCommandConfig,
     projectRoot: string,
     source: string,
+    stdin?: boolean,
   ): Promise<{ ok: boolean; changed: boolean }>;
 }
 
@@ -41,7 +48,7 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
       else await loadRegistry(context.cwd);
       return true;
     },
-    async format({ filePath }, context) {
+    async format({ filePath, before }, context) {
       if (!runtime && (filePath.includes("://") || context.cwd.includes("://")))
         throw Object.assign(new Error("Formatter requires its resource owner"), {
           code: "UNSUPPORTED_SOURCE",
@@ -61,21 +68,50 @@ export function createFormatter(runtime?: FormatterRuntime): Formatter {
       const registry = runtime
         ? await runtime.loadRegistry(projectRoot, project.external)
         : await loadRegistry(projectRoot, project.external);
-      const formatter = registry.resolve(filePath, projectRoot);
+      const entry = registry.resolveEntry(filePath, projectRoot);
+      let formatter = entry?.config;
 
       if (formatter === undefined) {
         return { ok: true, edits: 0, formatter: null };
       }
 
+      let stdin = false;
+      if (entry?.layer === "built-in" && entry.id === "rustfmt") {
+        try {
+          const selected = runtime?.rustfmtAccess
+            ? await runtime.rustfmtAccess(projectRoot, filePath)
+            : {
+                file: path.join(await realpath(path.dirname(filePath)), path.basename(filePath)),
+                access: localRustfmtAccess(projectRoot, filePath),
+              };
+          formatter = await rustfmtWithEdition(formatter, selected.file, selected.access);
+          const command = formatter.run.command.filter((part) => part !== "{file}");
+          formatter = {
+            ...formatter,
+            output: "stdout",
+            run: { ...formatter.run, command: [...command, "--emit", "stdout"], cwd: "file" },
+          };
+          stdin = true;
+          if (before !== undefined && before.length > 0) {
+            const baseline = await selected.access.run(formatter.run, before);
+            if (!baseline.ok) return { ok: false, edits: 0, formatter: "rustfmt" };
+            if (baseline.stdout !== before)
+              return { ok: true, edits: 0, formatter: "rustfmt", skipped: "style" };
+          }
+        } catch {
+          return { ok: false, edits: 0, formatter: "rustfmt" };
+        }
+      }
       const name = configuredExecutableName(formatter.run.command);
       if (runtime) {
-        const result = await runtime.run(formatter, projectRoot, filePath);
+        const result = await runtime.run(formatter, projectRoot, filePath, stdin);
         return { ok: result.ok, edits: result.changed ? 1 : 0, formatter: name };
       }
       try {
         const result = await runConfiguredFormatter(formatter, {
           projectRoot,
           filePath,
+          stdin,
         });
         return { ok: result.ok, edits: result.changed ? 1 : 0, formatter: name };
       } catch {

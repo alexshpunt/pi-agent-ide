@@ -1,3 +1,35 @@
+/**
+ * The tools a capability attempt starts with. Deferred IDE tools, such as diff, undo, ast_search
+ * and lsp_search, stay inactive as in an ordinary session, so routes reach them through
+ * tool_search or Codemode. tool_search only searches inactive tools.
+ */
+export const CAPABILITY_DEFAULT_TOOLS = [
+  "read",
+  "diagnostics",
+  "write",
+  "bash",
+  "search",
+  "replace",
+  "insert",
+  "delete",
+  "copy",
+  "move",
+  "codemode",
+  "tool_search",
+] as const;
+
+/** Prevent direct discovery from reopening IDE declarations in Codemode-only attempts. */
+export function capabilityExcludedTools(mode: string): string[] {
+  return ["edit", "grep", "find", "ls", mode === "direct" ? "codemode" : "tool_search"];
+}
+/** Native Pi settings shared by paid attempts and declaration regression tests. */
+export function capabilitySettings(mode: string, additionalTools: string[] = []) {
+  return {
+    codemode: { mode: mode === "codemode" ? "only" : "on" },
+    defaultTools: [...CAPABILITY_DEFAULT_TOOLS, ...additionalTools],
+    retry: { enabled: false, maxRetries: 0 },
+  };
+}
 /** Stop a paid batch after an account failure without reclassifying the failed attempt. */
 export function accountStopReason(attempt: {
   status: string;

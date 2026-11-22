@@ -9,6 +9,7 @@ import { type Component, Text } from "@earendil-works/pi-tui";
 import { ResultPanel, type ResultPanelRow } from "pi-agent-tool-ui";
 import { isSearchToolDetails } from "#src/search-result.ts";
 import { restoreSearchDetails } from "#src/persisted-result.ts";
+import { searchCompactionHint } from "#src/search-presentation.ts";
 const restoredDetails = new WeakMap<object, SearchToolDetails>();
 
 import type { SearchResultFile, SearchResultLine, SearchToolDetails } from "#src/search-result.ts";
@@ -103,7 +104,7 @@ function searchViewport(details: SearchToolDetails, expanded: boolean): readonly
             : [
                 {
                   kind: "summary",
-                  text: `${String(file.uniqueLineCount)} unique line texts · search this path with a narrower query`,
+                  text: `${String(file.uniqueLineCount)} unique line texts · ${searchCompactionHint(file.matchCount)}`,
                 } satisfies SearchPanelRow,
                 ...(file.groups ?? []).map((group): SearchPanelRow => ({
                   kind: "summary",

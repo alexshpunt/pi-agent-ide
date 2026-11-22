@@ -1,5 +1,24 @@
 import path from "node:path";
+import {
+  executionArguments,
+  sourceValues as values,
+  toolSemantics,
+} from "./argument-equivalence.ts";
+import { searchCallPolicy } from "#src/extensions/pi-agent-search/src/api/search-call-policy.ts";
+import {
+  exactSelection,
+  issuedAnchor,
+  issuedSelection,
+  issuedSearchFragment,
+  readSourceIssuers,
+  searchSources,
+  searchValue,
+  searchMatchReference,
+  wholeSearchSelection,
+  type SelectionIssuer,
+} from "./selection-evidence.ts";
 import { isDeepStrictEqual } from "node:util";
+import { equivalentLineArguments, type LineSelection } from "./edit-equivalence.ts";
 
 /** A retained JSON-mode event; unknown records remain in the evidence. */
 export interface RunEvent {
@@ -9,13 +28,18 @@ export interface RunEvent {
   toolName?: string;
   args?: Record<string, unknown>;
   isError?: boolean;
-  result?: { content?: { type: string; text?: string }[]; structuredContent?: unknown };
+  result?: {
+    content?: { type: string; text?: string }[];
+    structuredContent?: unknown;
+    details?: unknown;
+  };
   message?: {
     role?: string;
     toolCallId?: string;
     isError?: boolean;
     stopReason?: string;
     errorMessage?: string;
+    details?: unknown;
     content?: { type: string; text?: string; id?: string }[];
     model?: string;
     responseModel?: string;
@@ -89,12 +113,50 @@ export function servedIdentity(
     reasons.push("Reported response model differs from the expected served model");
   return { identities, reasons, ...(responseModels.length ? { responseModels } : {}) };
 }
-/** A source argument must carry a reference returned by an earlier real execution. */
+/** An argument must reuse a reference or copy text returned by an earlier real execution. */
 export interface ResultReuse {
   from: number;
   field: string | string[];
+  /**
+   * Reference kind. Use `text` for a literal fragment of the earlier tool's text output.
+   */
   kind?: string;
   newParent?: boolean;
+  /** An explicit argument accepted instead of the reference, such as the path it was read from. */
+  explicit?: unknown;
+}
+
+const RANGE_FIELDS = ["at", "from", "after", "through", "before"] as const;
+const TARGET_FIELDS = [
+  "targetAt",
+  "targetFrom",
+  "targetAfter",
+  "targetThrough",
+  "targetBefore",
+] as const;
+
+function editOpening(tool: string, args: Record<string, unknown>): unknown {
+  return tool === "insert" ? (args.after ?? args.before) : (args.at ?? args.from ?? args.after);
+}
+
+function targetSelection(args: Record<string, unknown>): unknown {
+  return args.targetAt ?? args.targetFrom ?? args.targetAfter ?? args.targetBefore;
+}
+
+function excludesSourceBoundary(tool: string, args: Record<string, unknown>): boolean {
+  return (tool !== "insert" && args.after !== undefined) || args.before !== undefined;
+}
+
+function implicitSelection(tool: string, field: string, args: Record<string, unknown>): unknown {
+  if (field === "targetAt" && TARGET_FIELDS.every((key) => args[key] === undefined))
+    return args.target;
+  if (tool === "insert")
+    return field === "after" && args.after === undefined && args.before === undefined
+      ? args.path
+      : undefined;
+  return field === "at" && RANGE_FIELDS.every((key) => args[key] === undefined)
+    ? args.path
+    : undefined;
 }
 
 function fieldValue(value: unknown, field: string): unknown {
@@ -111,49 +173,83 @@ function fieldValue(value: unknown, field: string): unknown {
 /** One actual execution required to establish a capability. */
 export interface RouteStep {
   tool: string;
+  /** Require completion of these earlier declared steps before this call starts. */
+  after?: readonly number[];
   /** Require overlap with an earlier step's execution in the same native Codemode script. */
   parallelWith?: number;
-  /** Require two direct tool calls in the same completed assistant message, not a retry. */
+  /** Require one direct assistant message or overlapping children of one native script. */
   sameAssistantWith?: number;
-  /** At least one reviewed argument variant must match, in addition to args. */
-  argsAny?: Record<string, unknown>[];
+  /** Only capability-defining arguments and call discriminators, not an example call. */
   args?: Record<string, unknown>;
+  /** Exercise literal text selection without pinning a boundary spelling; outcomes check bytes. */
+  exactText?: readonly string[];
   contains?: string;
-  /** Match the public value delivered to a Codemode script, not human-facing text. */
-  scriptResult?: Record<string, unknown>;
+  /** Complete Search/AST match set, independent of request scope and readable rendering. */
+  issuedMatches?: readonly { path: string; text: string }[];
+  /**
+   * Match the public value delivered to a Codemode script, not human-facing text: an object's
+   * fields, a string, or a RegExp that a string value must match.
+   */
+  scriptResult?: Record<string, unknown> | string | RegExp;
   /** Reject copied file text in this tool's own agent-facing result. */
   excludes?: string;
   /** A nested call must not copy this text into its completed Codemode parent's output. */
   parentExcludes?: string;
-  /** Require actual summary text in the completed Codemode parent. */
-  parentContains?: string;
+  /** Require a committed native batch of this size; share it with a batched sameAssistantWith step. */
+  editorBatchSize?: number;
+  /** Require each fragment in the completed Codemode parent. */
+  parentContains?: string | readonly string[];
   /** Require the source object, unchanged by text(receipt), in a completed native Codemode parent. */
   parentStructuredValue?: boolean;
-  /** Require a registered transparent local alias to forward the source execution. */
-  viaLocalAlias?: boolean;
-  /** Check finalized transcript feedback when validation skipped the tool-result hook. */
-  finalContains?: string;
+  /** Match saved guard metadata and require unchanged refusal content in execution and transcript. */
+  finalRefusal?: Record<string, unknown>;
   /** Maximum UTF-8 bytes across all text blocks in the finalized tool message, including notices. */
   finalMaxBytes?: number;
-  image?: boolean;
-  /** Native text calls can be accepted before their parent reports a write failure. */
+  /** Require image blocks in the completed result; a number sets the minimum frame count. */
+  image?: boolean | number;
+  /**
+   * Require successful native discovery of these tools, each before its first execution. Searches
+   * may load tools incrementally or together. Only direct routes require model-only discovery.
+   */
+  discovers?: readonly string[];
+  /** Routes that need this step, such as one only a direct call can take; others skip it. */
+  modes?: string[];
+  /**
+   * `"direct"`: a direct call fails; in Codemode the call fails itself or is accepted and its
+   * parent reports the write failure.
+   */
   error?: boolean | "direct";
   reuse?: ResultReuse | ResultReuse[];
 }
 
+/** Native Codemode tools do not depend on model-only discovery, even in mixed routes. */
+export function routeStepApplies(step: RouteStep, mode: string): boolean {
+  return (
+    !(mode === "codemode" && step.tool === "tool_search") &&
+    (!step.modes || step.modes.includes(mode))
+  );
+}
 /** An executable task may protect several related capabilities. */
 export interface CapabilityCase {
   id: string;
   capabilities: string[];
   modes: string[];
   steps: RouteStep[];
+  /** Reject these tool executions anywhere in the attempt, including registered aliases. */
+  forbiddenTools?: readonly string[];
   prompt?: string;
+  /** Override the neutral prompt after Pi selects the profile's actual model API. */
+  promptForApi?: (api?: string) => string;
   files?: Record<string, string>;
   expected?: Record<string, string | Buffer | null>;
   answer?: string;
   prerequisite?: string;
+  /** Exclusive resource within an invocation, held through setup, execution and cleanup. */
+  resource?: string;
   setup?: string;
   git?: boolean;
+  /** Keep IDE post-processing, such as formatting, which the runner otherwise disables. */
+  postProcessing?: boolean;
 }
 
 /** A durable capability and its executable checks. */
@@ -178,22 +274,51 @@ export function resultText(event: RunEvent): string {
     .join("\n");
 }
 
-function fixturePath(value: string): string {
+function fixturePath(value: string, cwd = "."): string {
   if (/^https?:/.test(value)) return new URL(value).href;
   const prefix = value.startsWith("raw:") ? "raw:" : "";
   const source = value.slice(prefix.length);
   if (/^[a-z][a-z0-9+.-]*:/i.test(source) && !source.startsWith("file://")) return value;
   const absolute = source.startsWith("file://") ? new URL(source).pathname : source;
-  const resolved = path.posix.resolve("/workspace/fixture", absolute);
+  const resolved = path.posix.resolve("/workspace/fixture", cwd, absolute);
   return prefix + path.posix.relative("/workspace/fixture", resolved);
 }
 
+/** Normalize only the file part: overload signatures and symbol fragments remain exact. */
+function fixtureSelector(value: string): string {
+  const fragment = value.indexOf("#");
+  return fragment < 0
+    ? fixturePath(value)
+    : fixturePath(value.slice(0, fragment)) + value.slice(fragment);
+}
+function debugProgram(args: Record<string, unknown>): unknown {
+  return typeof args.program === "string"
+    ? fixturePath(args.program, typeof args.cwd === "string" ? fixturePath(args.cwd) : ".")
+    : args.program;
+}
+function diffSource(value: unknown): unknown {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    Object.entries(value).every(([field, item]) => field === "path" || item === undefined) &&
+    "path" in value &&
+    typeof value.path === "string"
+  )
+    return value.path;
+  return value;
+}
+
 function matches(expected: unknown, actual: unknown, field = ""): boolean {
-  if (expected instanceof RegExp) return typeof actual === "string" && expected.test(actual);
+  if (expected instanceof RegExp)
+    // A Codemode value passed as a source, such as a Search match, counts by its id.
+    return typeof actual === "string"
+      ? expected.test(actual)
+      : values(actual).length === 1 && expected.test(values(actual)[0] ?? "");
   if (Array.isArray(expected))
     return (
       Array.isArray(actual) &&
-      (expected as unknown[]).every((value, i) => matches(value, (actual as unknown[])[i]))
+      // Items of a list field, such as several paths, compare like the field itself.
+      (expected as unknown[]).every((value, i) => matches(value, (actual as unknown[])[i], field))
     );
   if (expected !== null && typeof expected === "object")
     return (
@@ -204,11 +329,16 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
       )
     );
   if (
-    ["path", "file", "target"].includes(field) &&
-    typeof expected === "string" &&
-    typeof actual === "string"
-  )
-    return fixturePath(expected) === fixturePath(actual);
+    ["path", "file", "target", "program", "cwd"].includes(field) &&
+    typeof expected === "string"
+  ) {
+    // A list of one source, such as a file_search value, names the same source.
+    const source =
+      !["program", "cwd"].includes(field) && Array.isArray(actual) && actual.length === 1
+        ? (actual[0] as unknown)
+        : actual;
+    return typeof source === "string" && fixturePath(expected) === fixturePath(source);
+  }
   if (
     field === "query" &&
     typeof expected === "string" &&
@@ -219,16 +349,80 @@ function matches(expected: unknown, actual: unknown, field = ""): boolean {
   return expected === actual;
 }
 
-function values(value: unknown): string[] {
-  if (Array.isArray(value)) return (value as unknown[]).flatMap(values);
-  return typeof value === "string" ? [value] : [];
+/** Compare complete match multisets; request roots and result order do not define composition. */
+function issuedMatches(expected: NonNullable<RouteStep["issuedMatches"]>, end: RunEvent): boolean {
+  const data = searchValue(end);
+  if (
+    data.complete !== true ||
+    data.truncated === true ||
+    !Array.isArray(data.matches) ||
+    data.matches.length !== expected.length
+  )
+    return false;
+  const remaining = [...(data.matches as unknown[])];
+  return expected.every((wanted) => {
+    const index = remaining.findIndex((entry) => {
+      if (entry === null || typeof entry !== "object") return false;
+      const match = entry as Record<string, unknown>;
+      return (
+        match.textTruncated !== true &&
+        matches(wanted, { path: match.path ?? match.source, text: match.text ?? match.matchedText })
+      );
+    });
+    if (index < 0) return false;
+    remaining.splice(index, 1);
+    return true;
+  });
+}
+function isResultSource(value: unknown): boolean {
+  const sources = values(value);
+  return (
+    sources.length === 1 &&
+    /^(?:RESULT|SEARCH)#|^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u.test(
+      sources[0] ?? "",
+    )
+  );
+}
+/** The `id` of a Codemode value and of every value inside it, such as each Search match. */
+function valueIds(value: unknown): string[] {
+  if (Array.isArray(value)) return (value as unknown[]).flatMap(valueIds);
+  if (value === null || typeof value !== "object") return [];
+  const own = Object.entries(value).flatMap(([key, item]) =>
+    typeof item === "string" &&
+    (key === "id" ||
+      (["target", "line", "match"].includes(key) && /^(?:RESULT|SEARCH)#/u.test(item)))
+      ? [item]
+      : [],
+  );
+  return [...own, ...Object.values(value).flatMap(valueIds)];
 }
 
-function reuses(value: unknown, output: string, kind = "result"): boolean {
+/** A Codemode value passed on unchanged, such as a Read image block, reuses the result it came from. */
+function passesValue(value: unknown, prior: RunEvent): boolean {
+  const own = prior.result?.structuredContent;
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    own !== null &&
+    typeof own === "object" &&
+    isDeepStrictEqual(value, own)
+  );
+}
+
+function reuses(
+  value: unknown,
+  output: string,
+  kind = "result",
+  issued: readonly string[] = [],
+): boolean {
   const ids =
     kind === "result"
       ? [
-          ...[...output.matchAll(/<uuid>([a-f0-9-]+)<\/uuid>/gi)].map((match) => match[1] ?? ""),
+          // A Codemode value names an enveloped result by its `RESULT#<uuid>` id.
+          ...[...output.matchAll(/<uuid>([a-f0-9-]+)<\/uuid>/gi)].flatMap((match) => [
+            match[1] ?? "",
+            `RESULT#${match[1] ?? ""}`,
+          ]),
           ...[
             ...output.matchAll(/SEARCH#[A-F0-9]+:(?:all|\d+):(?:line|match)|RESULT#[a-f0-9-]+/g),
           ].map((match) => match[0]),
@@ -243,21 +437,50 @@ function reuses(value: unknown, output: string, kind = "result"): boolean {
                   ? /debug:[a-z0-9-]+/gi
                   : kind === "change"
                     ? /CHANGE#[A-F0-9]+/g
-                    : /(?:SEARCH|RESULT)#[A-F0-9]+(?::[a-z0-9:]+)?|\b\d+#[A-F0-9]+|scope-(?:begin|end)-[A-F0-9]+/g,
+                    : /(?:SEARCH|RESULT)#[A-F0-9]+(?::[a-z0-9:]+)?|[0-9A-HJKMNP-TV-Z]{7}(?=\|)|scope-(?:begin|end)-[0-9A-HJKMNP-TV-Z]{7}/g,
           ),
         ].map((match) => match[0]);
-  return values(value).some((candidate) => candidate === output || ids.includes(candidate));
+  return values(value).some((raw) => {
+    const candidate = kind === "anchor" ? (issuedAnchor(raw, output) ?? raw) : raw;
+    // A bare selection UUID names the same issued target, not a different source.
+    const references = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u.test(candidate)
+      ? [candidate, `RESULT#${candidate}`]
+      : [candidate];
+    return (
+      candidate === output ||
+      references.some(
+        (reference) =>
+          ids.includes(reference) ||
+          // A Codemode value issues its own ids, such as the id of each Search match.
+          (["result", "anchor"].includes(kind) && issued.includes(reference)) ||
+          // `RESULT#<uuid>` names the result whose envelope carries that UUID.
+          (kind === "result" && ids.includes(reference.replace(/^RESULT#/u, ""))),
+      )
+    );
+  });
 }
 
-/** Require successful real executions in order, including result provenance and nesting. */
+/** Assign distinct real executions, respecting declared dependencies, provenance and nesting. */
 export function validateRoute(
-  task: Pick<CapabilityCase, "steps">,
+  task: Pick<CapabilityCase, "steps" | "forbiddenTools" | "files">,
   events: RunEvent[],
   mode: string,
   aliases: Readonly<Record<string, string>> = {},
 ): { passed: boolean; reasons: string[] } {
   const starts = events
-    .map((event, index) => ({ event, index }))
+    .map((event, index) => ({
+      event:
+        event.type === "tool_execution_start"
+          ? {
+              ...event,
+              args: executionArguments(
+                aliases[event.toolName ?? ""] ?? event.toolName ?? "",
+                event.args,
+              ),
+            }
+          : event,
+      index,
+    }))
     .filter(({ event }) => event.type === "tool_execution_start");
   const ends = new Map(
     events.flatMap((event, index) =>
@@ -267,6 +490,11 @@ export function validateRoute(
     ),
   );
   const reasons: string[] = [];
+  for (const { event } of starts) {
+    const name = aliases[event.toolName ?? ""] ?? event.toolName;
+    if (name !== undefined && task.forbiddenTools?.includes(name))
+      return { passed: false, reasons: [`Forbidden tool executed: ${name}`] };
+  }
   const codemodeParents = new Set(
     starts
       .filter(({ event }) => event.toolName === "codemode")
@@ -311,33 +539,734 @@ export function validateRoute(
     }
     return { call: current.event.toolCallId };
   }
+  /** Tools reported as loaded by successful native searches completed before `index`. */
+  function discovered(index: number): Set<string> {
+    return new Set(
+      starts.flatMap(({ event }) => {
+        const end = ends.get(event.toolCallId ?? "");
+        const loaded = (end?.event.result?.details as { loaded?: unknown } | undefined)?.loaded;
+        return end &&
+          end.index < index &&
+          event.toolName === "tool_search" &&
+          !event.parentToolCallId &&
+          end.event.isError === false &&
+          Array.isArray(loaded)
+          ? loaded.filter((name): name is string => typeof name === "string")
+          : [];
+      }),
+    );
+  }
+  const requiredDiscovery =
+    mode === "direct"
+      ? task.steps.flatMap((step) =>
+          routeStepApplies(step, mode) ? [...(step.discovers ?? [])] : [],
+        )
+      : [];
+  if (
+    requiredDiscovery.some(
+      (tool) =>
+        !discovered(events.length).has(tool) ||
+        starts.some((start) => start.event.toolName === tool && !discovered(start.index).has(tool)),
+    )
+  )
+    reasons.push("Required tools were not discovered before use");
+  function sourcePaths(source: unknown, before: number): string[] {
+    return typeof source === "string" && !isResultSource(source)
+      ? [source]
+      : reusedPaths(source, before);
+  }
+  /**
+   * The paths an earlier completed call read or searched to issue the result that a source value
+   * reuses: passing that result names the same file as passing its path.
+   */
+  function reusedPaths(value: unknown, before: number): string[] {
+    for (const prior of starts) {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      const tool = aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "";
+      if (toolSemantics(tool) === "read" && Array.isArray(prior.event.args?.path)) {
+        const sources = readSourceIssuers(
+          { tool, args: prior.event.args, end: end.event },
+          (source, header) => source === header || sameSource(header, source, prior.index),
+        );
+        const paths = sources.flatMap((issuer) => {
+          // Text can quote a foreign RESULT id. Only this item's own id or line anchors count.
+          const output = "";
+          if (
+            !reuses(value, output, "result", valueIds(issuer.end.result?.structuredContent)) &&
+            !(
+              Array.isArray(issuer.args.views) &&
+              issuer.args.views.includes("changes") &&
+              reuses(value, resultText(issuer.end), "change")
+            ) &&
+            !issuedAnchor(value, resultText(issuer.end))
+          )
+            return [];
+          const source = issuer.args.path;
+          return sourcePaths(source, prior.index);
+        });
+        if (paths.length) return paths;
+        continue;
+      }
+      if (
+        !["result", "anchor", "change"].some((kind) =>
+          reuses(value, resultText(end.event), kind, valueIds(end.event.result?.structuredContent)),
+        )
+      )
+        continue;
+      if ((aliases[prior.event.toolName ?? ""] ?? prior.event.toolName) === "search") {
+        const sources = searchSources(value, end.event);
+        if (sources !== undefined) return sources;
+        if (Array.isArray(prior.event.args?.path) && prior.event.args.path.length !== 1) return [];
+      }
+      // A Codemode parent can print a child's id; only a call with a path issued it.
+      const source = prior.event.args?.path ?? prior.event.args?.file;
+      if (source === undefined) continue;
+      const sources = Array.isArray(source) ? (source as unknown[]) : [source];
+      const paths = sources.flatMap((item) => sourcePaths(item, prior.index));
+      if (paths.length > 0) return paths;
+    }
+    return [];
+  }
+  /** Only successful, completed issuers of this same source may justify selector equivalence. */
+  function selectionIssuers(
+    file: unknown,
+    before: number,
+  ): (SelectionIssuer & { start: number })[] {
+    return starts.flatMap((prior) => {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (prior.index >= before || !end || end.index >= before || end.event.isError) return [];
+      return readSourceIssuers(
+        {
+          tool: aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
+          args: prior.event.args ?? {},
+          end: end.event,
+        },
+        (source, header) => source === header || sameSource(header, source, prior.index),
+      ).flatMap((issuer) => {
+        const source = issuer.args.path;
+        const paths = [...values(source), ...reusedPaths(source, prior.index)];
+        if (file !== undefined && !paths.some((path) => matches({ path: file }, { path })))
+          return [];
+        return [{ ...issuer, start: prior.index }];
+      });
+    });
+  }
+  /** Write through a result needs the whole source, not merely a selection in the same file. */
+  function wholeReadPaths(value: unknown, before: number): string[] {
+    const references = values(value);
+    if (references.length !== 1) {
+      const paths = references.map((reference) => wholeReadPaths(reference, before));
+      return paths.every((sources) => sources.length > 0) ? paths.flat() : [];
+    }
+    return selectionIssuers(undefined, before).flatMap((issuer) => {
+      if (
+        toolSemantics(issuer.tool) !== "read" ||
+        !reuses(
+          value,
+          /<uuid>[a-f0-9-]+<\/uuid>/iu.exec(resultText(issuer.end))?.[0] ?? "",
+          "result",
+          valueIds(issuer.end.result?.structuredContent),
+        )
+      )
+        return [];
+      const { path: source, views, offset = 1, limit } = issuer.args;
+      if (Array.isArray(views) && views.some((view) => view !== "anchors")) return [];
+      const details = issuer.end.result?.details as
+        | { startLine?: number; endLine?: number; totalLines?: number }
+        | undefined;
+      const wholeWindow =
+        details?.startLine === 1 &&
+        typeof details.totalLines === "number" &&
+        details.totalLines > 0 &&
+        details.endLine === details.totalLines;
+      if (!wholeWindow && (offset !== 1 || limit !== undefined)) return [];
+      // An unbounded reread of a bounded result retains the original scope.
+      return typeof source === "string" && !isResultSource(source)
+        ? [source]
+        : wholeReadPaths(source, issuer.start);
+    });
+  }
+  /** A literal file beside a reference must be the reference issuer's source, not a different file. */
+  function sameSource(file: unknown, reference: unknown, before: number): boolean {
+    return (
+      typeof file === "string" &&
+      reusedPaths(reference, before).some((path) => fixturePath(path) === fixturePath(file))
+    );
+  }
+  /** Direct editor receipts identify calls planned against one shared snapshot. */
+  function sharesDirectSnapshot(prior: RunEvent, current: RunEvent | undefined): boolean {
+    if (
+      mode !== "direct" ||
+      !current ||
+      !["replace", "insert", "delete", "copy", "move"].includes(prior.toolName ?? "")
+    )
+      return false;
+    const first = ends.get(prior.toolCallId ?? "")?.event;
+    const second = ends.get(current.toolCallId ?? "")?.event;
+    if (first?.isError !== false || second?.isError !== false) return false;
+    type Receipt = { agenticIdeBatch?: { batchId?: string; calls?: ({ id?: string } | null)[] } };
+    const batch = (first.result?.details as Receipt | undefined)?.agenticIdeBatch;
+    const peer = (second.result?.details as Receipt | undefined)?.agenticIdeBatch;
+    const calls = batch?.calls;
+    return (
+      typeof batch?.batchId === "string" &&
+      batch.batchId.length > 0 &&
+      isDeepStrictEqual(batch, peer) &&
+      Array.isArray(calls) &&
+      [prior.toolCallId, current.toolCallId].every(
+        (id) => typeof id === "string" && calls.some((call) => call?.id === id),
+      )
+    );
+  }
+  /** An edit overlapping or following the witness makes its source snapshot unsafe. */
+  function sourceChanged(file: string, before: number, after = -1): boolean {
+    for (const prior of starts) {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (
+        prior.index >= before ||
+        (end && (end.index <= after || end.event.isError)) ||
+        sharesDirectSnapshot(prior.event, events[before])
+      )
+        continue;
+      if (
+        !["write", "replace", "insert", "delete", "copy", "move", "undo"].includes(
+          aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "",
+        )
+      )
+        continue;
+      const args = prior.event.args ?? {};
+      const tool = toolSemantics(aliases[prior.event.toolName ?? ""] ?? prior.event.toolName ?? "");
+      const affected =
+        tool === "copy"
+          ? [args.target ?? targetSelection(args) ?? args.path ?? editOpening(tool, args)]
+          : [args.path ?? editOpening(tool, args), args.target ?? targetSelection(args), args.file];
+      if (
+        affected.some((value) =>
+          [...values(value), ...reusedPaths(value, prior.index)].some(
+            (candidate) => fixturePath(candidate) === fixturePath(file),
+          ),
+        )
+      )
+        return true;
+    }
+    return false;
+  }
+  /** Recover fixture bytes only while earlier successful edits have not invalidated them. */
+  function editContext(
+    tool: string,
+    actual: Record<string, unknown>,
+    before: number,
+  ): {
+    content?: string;
+    selection?: LineSelection;
+  } {
+    const selector = editOpening(tool, actual);
+    const closing = tool === "insert" ? undefined : actual.through;
+    const source = actual.path ?? selector;
+    const paths = [...values(source), ...reusedPaths(source, before)];
+    const file = Object.keys(task.files ?? {}).find((file) =>
+      paths.some((candidate) => fixturePath(candidate) === fixturePath(file)),
+    );
+    if (file === undefined) return {};
+    if (sourceChanged(file, before)) return {};
+    const content = task.files?.[file];
+    if (content === undefined) return {};
+    if (tool !== "insert" && excludesSourceBoundary(tool, actual)) return { content };
+    if (selector !== undefined) {
+      const issuers = selectionIssuers(file, before);
+      // Only issued line selections count: a literal selects just its characters.
+      const whole = (value: unknown): LineSelection | undefined => {
+        const selected = issuedSelection(content, value, issuers, (source) =>
+          matches({ path: file }, { path: source }),
+        );
+        // Issued inline matches cannot supply a whole line's terminal separator.
+        return selected &&
+          (selected.from === 0 || content[selected.from - 1] === "\n") &&
+          (selected.to === content.length || content[selected.to - 1] === "\n")
+          ? selected
+          : undefined;
+      };
+      const first = whole(selector);
+      const last = closing === undefined ? first : whole(closing);
+      if (first && last && first.from <= last.from)
+        return { content, selection: { content, from: first.from, to: last.to } };
+    }
+    const reference = selector ?? actual.path;
+    for (const prior of starts) {
+      const end = ends.get(prior.event.toolCallId ?? "");
+      if (prior.index >= before || !end || end.index >= before || end.event.isError) continue;
+      if (
+        !reuses(
+          reference,
+          resultText(end.event),
+          "result",
+          valueIds(end.event.result?.structuredContent),
+        )
+      )
+        continue;
+      // A :line reference always owns its line separator when every fixture line is terminated.
+      // Its exact position is not inferred, so this witness is used only for replacement.
+      if (
+        tool === "replace" &&
+        typeof reference === "string" &&
+        /^SEARCH#[A-F0-9]+:(?:all|\d+):line$/u.test(reference) &&
+        prior.event.toolName === "search" &&
+        content.endsWith("\n") &&
+        closing === undefined
+      )
+        return { content, selection: { content, from: 0, to: content.length } };
+      // Plain Read windows select whole lines; transformed views and Search matches do not.
+      if (selector !== undefined || prior.event.toolName !== "read") continue;
+      const args = prior.event.args ?? {};
+      if (Array.isArray(args.views) && args.views.some((view) => view !== "anchors")) continue;
+      const offset = args.offset ?? 1;
+      const limit = args.limit;
+      const lines = [0, ...[...content.matchAll(/\n/gu)].map((match) => match.index + 1)].filter(
+        (index) => index < content.length,
+      );
+      if (
+        typeof offset !== "number" ||
+        !Number.isInteger(offset) ||
+        offset < 1 ||
+        (limit !== undefined &&
+          (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1))
+      )
+        continue;
+      const from = lines[offset - 1];
+      if (from === undefined) continue;
+      const to =
+        limit === undefined ? content.length : (lines[offset - 1 + limit] ?? content.length);
+      return { content, selection: { content, from, to } };
+    }
+    return { content };
+  }
+  /**
+   * Arguments match. For an edit, a reused result of the expected file also stands for its path:
+   * the edit's selectors resolve inside that result. A search with a result is narrower, so it
+   * keeps the exact path.
+   */
+  function argsMatch(
+    tool: string,
+    expected: Record<string, unknown>,
+    actual: Record<string, unknown> | undefined,
+    before: number,
+    sourceListItem = false,
+  ): boolean {
+    if (!actual) return false;
+    tool = toolSemantics(tool);
+    // Defaults describe execution semantics; they never rewrite retained call evidence.
+    const normalized = { ...actual };
+    if (tool === "lsp_search") {
+      expected = { ...expected };
+      for (const field of ["declaration", "calls"]) {
+        if (typeof expected[field] === "string") expected[field] = fixtureSelector(expected[field]);
+        if (typeof normalized[field] === "string")
+          normalized[field] = fixtureSelector(normalized[field]);
+      }
+    }
+    if (tool === "debug" && typeof expected.program === "string") {
+      // A relative program is launched from this call's cwd, not necessarily the fixture root.
+      expected = { ...expected, program: debugProgram(expected) };
+      normalized.program = debugProgram(normalized);
+    }
+    if (tool === "read" && normalized.offset === undefined)
+      normalized.offset = typeof actual.path === "string" && actual.path.startsWith("raw:") ? 0 : 1;
+    if (tool === "insert") {
+      if (normalized.separation === undefined) normalized.separation = "line";
+    }
+    if (tool === "search") {
+      for (const flag of ["caseSensitive", "wholeWord", "multiline"])
+        if (normalized[flag] === undefined) normalized[flag] = false;
+      // A result reference or extension URI does not reveal its resolver or limit policy.
+      const source = normalized.path;
+      if (normalized.limit === undefined && typeof source === "string") {
+        if (/^(?:docs:|https?:)/u.test(source)) normalized.limit = 50;
+        else if (source.startsWith("shell:")) normalized.limit = 100;
+        else if (!/^[a-z][a-z0-9+.-]*:|^(?:RESULT|SEARCH)#/iu.test(source))
+          normalized.limit =
+            searchCallPolicy(undefined, mode === "codemode", "matches").limit ?? 50;
+      }
+    }
+    // Search roots form an unordered collection. Transfer source/target arrays remain paired.
+    if (
+      ["search", "file_search", "ast_search", "lsp_search"].includes(tool) &&
+      Array.isArray(expected.path) &&
+      Array.isArray(normalized.path)
+    ) {
+      const remaining = [...(normalized.path as unknown[])];
+      for (const required of expected.path) {
+        const index = remaining.findIndex((root) => matches(required, root, "path"));
+        if (index < 0) return false;
+        remaining.splice(index, 1);
+      }
+      if (remaining.length) return false;
+      normalized.path = expected.path;
+    }
+    // Read views are requirements, not positional output fields; other arrays stay ordered.
+    const views = normalized.views;
+    if (
+      tool === "read" &&
+      Array.isArray(expected.views) &&
+      Array.isArray(views) &&
+      expected.views.every((required) => views.some((view) => matches(required, view)))
+    )
+      normalized.views = expected.views.map((required) =>
+        (views as unknown[]).find((view) => matches(required, view)),
+      );
+    // The changes view resolves an issued selection back to its one source file.
+    // Ordinary Read windows and searches remain bounded by their original selection.
+    if (
+      tool === "read" &&
+      Array.isArray(expected.views) &&
+      expected.views.includes("changes") &&
+      Array.isArray(views) &&
+      views.includes("changes")
+    ) {
+      const changesSource = (source: unknown): unknown => {
+        if (!isResultSource(source)) return source;
+        const paths = [...new Set(reusedPaths(source, before).map((path) => fixturePath(path)))];
+        return paths.length === 1 ? paths[0] : source;
+      };
+      normalized.path = Array.isArray(normalized.path)
+        ? normalized.path.map(changesSource)
+        : changesSource(normalized.path);
+    }
+    if (tool === "diff")
+      return Object.entries(expected).every(([field, value]) => {
+        if (!["before", "after"].includes(field)) return matches(value, normalized[field], field);
+        const source = diffSource(value);
+        const other = diffSource(normalized[field]);
+        return typeof source === "string" && typeof other === "string"
+          ? fixturePath(source) === fixturePath(other)
+          : matches(source, other);
+      });
+    if (matches(expected, normalized)) return true;
+    // One Read may include other sources, but must satisfy every required argument on that call.
+    if (
+      tool === "read" &&
+      Array.isArray(normalized.path) &&
+      (typeof expected.path === "string" || expected.path instanceof RegExp)
+    )
+      return normalized.path.some((path: unknown) => matches(expected, { ...normalized, path }));
+    // A debugger source and its launched program name the same file, with the same requested views.
+    if (tool === "read" && !sourceListItem) {
+      for (const prior of selectionIssuers(undefined, before)) {
+        if (
+          prior.tool !== "debug" ||
+          !matches({ path: debugProgram(prior.args) }, { path: actual.path })
+        )
+          continue;
+        const resources = resultText(prior.end).match(/debug:[a-z0-9-]+/giu) ?? [];
+        if (
+          resources.some((resource) =>
+            matches(expected, { ...normalized, path: `${resource}/source` }),
+          )
+        )
+          return true;
+      }
+    }
+    if (["undo", "stage", "unstage"].includes(tool)) {
+      if (actual.file === undefined) {
+        const files = [
+          ...new Set(reusedPaths(actual.change, before).map((source) => fixturePath(source))),
+        ];
+        if (files.length === 1) normalized.file = files[0];
+      }
+      return matches(expected, normalized);
+    }
+    if (tool === "write") {
+      const paths = [
+        ...new Set(wholeReadPaths(actual.path, before).map((path) => fixturePath(path))),
+      ];
+      if (paths.length === 1) normalized.path = paths[0];
+      return matches(expected, normalized);
+    }
+    if (!["replace", "delete", "insert", "copy", "move"].includes(tool)) return false;
+    const file = expected.path;
+    const location = editOpening(tool, actual);
+    const closing = tool === "insert" ? undefined : actual.through;
+    const excludesBoundary = excludesSourceBoundary(tool, actual);
+    // Infer sources only from issued references; an explicit different file is never rescued.
+    for (const [sourceField, selector] of [
+      ["path", location],
+      ["target", targetSelection(actual)],
+    ] as const) {
+      const source = actual[sourceField] ?? selector;
+      const paths = [...new Set(reusedPaths(source, before).map((source) => fixturePath(source)))];
+      if (
+        (typeof expected[sourceField] === "string" || expected[sourceField] instanceof RegExp) &&
+        paths.length === 1 &&
+        matches(expected[sourceField], paths[0], sourceField)
+      )
+        normalized[sourceField] = paths[0];
+    }
+    // A Search result used as a scope adds no selected text. Only its own issued match
+    // (and an omitted or equivalent endpoint) can stand in for that match as path.
+    if (file instanceof RegExp && location !== undefined && !excludesBoundary) {
+      for (const issuer of selectionIssuers(undefined, before)) {
+        if (issuer.tool !== "search" || !wholeSearchSelection(actual.path, issuer.end)) continue;
+        const selected = searchMatchReference(location, issuer.end);
+        if (
+          selected !== undefined &&
+          (closing === undefined || searchMatchReference(closing, issuer.end) === selected) &&
+          matches(file, selected)
+        )
+          normalized.path = selected;
+      }
+    }
+    // A complete single-match Search's match and whole-result reference name the same selection.
+    const selection = location ?? actual.path;
+    if (
+      file instanceof RegExp &&
+      selection !== undefined &&
+      closing === undefined &&
+      !excludesBoundary &&
+      (location === undefined ||
+        actual.path === undefined ||
+        sameSource(actual.path, location, before))
+    ) {
+      if (matches(file, selection)) normalized.path = selection;
+      else
+        for (const issuer of selectionIssuers(undefined, before)) {
+          if (issuer.tool !== "search" || !wholeSearchSelection(selection, issuer.end)) continue;
+          const references = valueIds(issuer.end.result?.structuredContent);
+          const envelope = /<uuid>([a-f0-9-]+)<\/uuid>/iu.exec(resultText(issuer.end))?.[1];
+          if (envelope) references.push(`RESULT#${envelope}`);
+          const equivalent = references.find(
+            (reference) => matches(file, reference) && wholeSearchSelection(reference, issuer.end),
+          );
+          if (equivalent) normalized.path = equivalent;
+        }
+    }
+    const sourceFields = tool === "insert" ? ["after", "before"] : RANGE_FIELDS;
+    const fields =
+      tool === "copy" || tool === "move" ? [...sourceFields, ...TARGET_FIELDS] : sourceFields;
+    for (const field of fields) {
+      const target = field.startsWith("target");
+      const source = target ? expected.target : file;
+      const actualSource = target ? actual.target : actual.path;
+      if (
+        source !== undefined &&
+        actualSource !== undefined &&
+        !matches({ path: source }, { path: actualSource }) &&
+        !sameSource(source, actualSource, before)
+      )
+        continue;
+      const issuers = selectionIssuers(source, before);
+      const implicit = implicitSelection(tool, field, actual);
+      const selector = normalized[field] ?? implicit;
+      const exact = expected[field];
+      // A source or target result can itself provide a complete selection.
+      if (
+        exact instanceof RegExp &&
+        implicit !== undefined &&
+        normalized[field] === undefined &&
+        sameSource(source, selector, before) &&
+        matches(exact, selector)
+      )
+        normalized[field] = selector;
+      const hash = issuers
+        .map((issuer) => issuedAnchor(selector, resultText(issuer.end)))
+        .find(Boolean);
+      if (hash && exact instanceof RegExp && matches(exact, hash)) normalized[field] = hash;
+      if (typeof source !== "string" || typeof exact !== "string") continue;
+      const content = editContext(tool, { path: source }, before).content;
+      if (content === undefined) {
+        if (
+          issuedSearchFragment(
+            exact,
+            selector,
+            issuers.filter((issuer) => !sourceChanged(source, before, issuer.start)),
+            (candidate) => matches({ path: source }, { path: candidate }),
+          )
+        )
+          normalized[field] = exact;
+        continue;
+      }
+      const required = exactSelection(content, exact);
+      const selected = issuedSelection(content, selector, issuers, (candidate) =>
+        matches({ path: source }, { path: candidate }),
+      );
+      if (required && selected && required.from === selected.from && required.to === selected.to)
+        normalized[field] = exact;
+    }
+    const context = editContext(tool, normalized, before);
+    return matches(
+      expected,
+      equivalentLineArguments(tool, expected, normalized, context.selection),
+    );
+  }
+  function argumentReuses(
+    tool: string,
+    field: string,
+    args: Record<string, unknown> | undefined,
+    reference: ResultReuse,
+    prior: RunEvent,
+    before: number,
+    readItem = false,
+    receipt = "",
+  ): boolean {
+    const value = fieldValue(args, field);
+    const alternatives = [value];
+    if (field === "path" && args) {
+      const selector = editOpening(tool, args);
+      if (args.path === undefined || sameSource(args.path, selector, before))
+        alternatives.push(selector);
+    }
+    if (args && value === undefined) alternatives.push(implicitSelection(tool, field, args));
+    if (reference.kind === "text") {
+      return typeof value === "string" && value.length > 0 && resultText(prior).includes(value);
+    }
+    return alternatives.some((candidate) => {
+      if (reference.kind?.startsWith("capture:")) {
+        const name = reference.kind.slice("capture:".length);
+        const captures: unknown[] = [];
+        const visit = (value: unknown): void => {
+          if (Array.isArray(value)) {
+            for (const item of value) visit(item);
+            return;
+          }
+          if (value === null || typeof value !== "object") return;
+          const record = value as Record<string, unknown>;
+          if (record.captures && typeof record.captures === "object")
+            captures.push((record.captures as Record<string, unknown>)[name]);
+          for (const child of Object.values(record)) visit(child);
+        };
+        visit(prior.result?.structuredContent);
+        const lines = resultText(prior)
+          .split("\n")
+          .map((line) => line.trimStart())
+          .filter((line) => line.startsWith("capture " + name + ": "));
+        return reuses(candidate, lines.join("\n"), "result", captures.flatMap(valueIds));
+      }
+      if (reference.kind === "whole-result") {
+        if (
+          args?.path !== undefined &&
+          candidate !== args.path &&
+          !sameSource(args.path, candidate, before)
+        )
+          return false;
+        return wholeSearchSelection(candidate, prior);
+      }
+      if (readItem)
+        return (
+          (reference.kind === "anchor" &&
+            issuedAnchor(candidate, resultText(prior)) !== undefined) ||
+          (reference.kind === "change" && reuses(candidate, resultText(prior), "change")) ||
+          reuses(
+            candidate,
+            reference.kind === undefined || reference.kind === "result" ? receipt : "",
+            reference.kind,
+            valueIds(prior.result?.structuredContent),
+          )
+        );
+      return reuses(
+        candidate,
+        resultText(prior),
+        reference.kind,
+        valueIds(prior.result?.structuredContent),
+      );
+    });
+  }
   let furthest = 0;
+  const imageFailures = new Map<number, Set<string>>();
   function walk(
     stepIndex: number,
-    previousStart: number,
-    selected: { event: RunEvent; end: number; parent?: string; call?: string }[],
+    // A step that another route skips leaves its slot empty; steps reusing it cannot match.
+    selected: (
+      | {
+          event: RunEvent;
+          start: number;
+          end: number;
+          parent?: string;
+          call?: string;
+          readIndex?: number;
+          receipt?: string;
+          editorBatch?: { applied: boolean; calls: { id: string }[] };
+        }
+      | undefined
+    )[],
   ): boolean {
     furthest = Math.max(furthest, stepIndex);
     const step = task.steps[stepIndex];
     if (!step) return true;
-    for (const start of starts) {
+    if (!routeStepApplies(step, mode)) return walk(stepIndex + 1, [...selected, undefined]);
+    // In Codemode, a native text call either fails at once, such as one with a result-bound
+    // selector, or is accepted into a batch whose commit fails its parent.
+    const acceptedOrFailed = step.error === "direct" && mode === "codemode";
+    const dependencies = [
+      ...(step.after ?? []),
+      ...task.steps
+        .slice(0, stepIndex)
+        .flatMap((prior, index) =>
+          mode === "direct" && prior.tool === "tool_search" && !prior.discovers ? [index] : [],
+        ),
+    ];
+    // Read executes each array source independently. Match each required source against one
+    // item, never against the combined array, so separate reuse witnesses stay mandatory.
+    const candidates: ((typeof starts)[number] & { readIndex?: number })[] = starts.flatMap(
+      (start) => {
+        const args = start.event.args;
+        return toolSemantics(step.tool) === "read" &&
+          start.event.toolName === step.tool &&
+          Array.isArray(args?.path) &&
+          !Array.isArray(step.args?.path)
+          ? args.path.map((path: unknown, readIndex) => ({
+              ...start,
+              readIndex,
+              event: { ...start.event, args: { ...args, path } },
+            }))
+          : [start];
+      },
+    );
+    for (const start of candidates) {
       const event = start.event;
-      const end = ends.get(event.toolCallId ?? "");
+      const completed = ends.get(event.toolCallId ?? "");
+      const item =
+        start.readIndex === undefined || !completed
+          ? undefined
+          : readSourceIssuers(
+              {
+                tool: step.tool,
+                args: startsById.get(event.toolCallId)?.event.args ?? {},
+                end: completed.event,
+              },
+              (source, header) => source === header || sameSource(header, source, start.index),
+            )[start.readIndex];
+      const end = completed && {
+        ...completed,
+        event:
+          item?.end ??
+          (start.readIndex === undefined ? completed.event : { ...completed.event, result: {} }),
+      };
       if (
-        start.index <= previousStart ||
+        selected.some(
+          (prior) =>
+            prior?.start === start.index &&
+            (prior.readIndex === undefined ||
+              start.readIndex === undefined ||
+              prior.readIndex === start.readIndex),
+        ) ||
         event.toolName !== step.tool ||
         !end ||
         end.index <= start.index ||
-        end.event.isError !== (step.error === "direct" ? mode === "direct" : Boolean(step.error))
+        (!acceptedOrFailed && end.event.isError !== Boolean(step.error))
       )
+        continue;
+      if (dependencies.some((index) => !selected[index] || selected[index].end >= start.index))
         continue;
       const execution = executionParent(start);
       if (!execution) continue;
-      if (step.viaLocalAlias && (!execution.call || execution.call === event.toolCallId)) continue;
-      if (mode === "codemode" && !codemodeParents.has(execution.parent)) continue;
+      if (step.discovers) {
+        const loaded = (end.event.result?.details as { loaded?: string[] } | undefined)?.loaded;
+        if (execution.parent || !step.discovers.some((name) => loaded?.includes(name))) continue;
+      } else if (mode === "codemode" && !codemodeParents.has(execution.parent)) continue;
+      // An accepted native text call fails when its parent commits the batch.
       if (
-        step.scriptResult !== undefined &&
-        !matches(step.scriptResult, end.event.result?.structuredContent)
+        acceptedOrFailed &&
+        !end.event.isError &&
+        ends.get(execution.parent ?? "")?.event.isError !== true
       )
         continue;
       if (mode === "direct" && execution.parent) continue;
@@ -347,6 +1276,7 @@ export function validateRoute(
           mode !== "codemode" ||
           prior === undefined ||
           start.index >= prior.end ||
+          end.index <= prior.start ||
           prior.parent !== execution.parent
         )
           continue;
@@ -354,27 +1284,55 @@ export function validateRoute(
       if (step.sameAssistantWith !== undefined) {
         const prior = selected[step.sameAssistantWith];
         if (
-          mode !== "direct" ||
           prior === undefined ||
-          !events.some(
-            (entry) =>
-              entry.type === "message_end" &&
-              entry.message?.role === "assistant" &&
-              entry.message.content?.some(
-                (block) => block.type === "toolCall" && block.id === execution.call,
-              ) &&
-              entry.message.content.some(
-                (block) => block.type === "toolCall" && block.id === prior.call,
-              ),
-          )
+          (mode === "codemode"
+            ? start.index >= prior.end ||
+              end.index <= prior.start ||
+              prior.parent !== execution.parent
+            : !events.some(
+                (entry) =>
+                  entry.type === "message_end" &&
+                  entry.message?.role === "assistant" &&
+                  entry.message.content?.some(
+                    (block) => block.type === "toolCall" && block.id === execution.call,
+                  ) &&
+                  entry.message.content.some(
+                    (block) => block.type === "toolCall" && block.id === prior.call,
+                  ),
+              ))
         )
           continue;
       }
-      if (step.args && !matches(step.args, event.args)) continue;
-      if (step.argsAny && !step.argsAny.some((args) => matches(args, event.args))) continue;
+      if (
+        step.args &&
+        !argsMatch(step.tool, step.args, event.args, start.index, start.readIndex !== undefined)
+      )
+        continue;
+      if (
+        step.exactText?.some((field) => {
+          const value = fieldValue(event.args, field);
+          if (typeof value !== "string" || value.length === 0) return true;
+          if (
+            /^(?:regex:|RESULT#|SEARCH#|CHANGE#|scope-(?:begin|end)-|begin$|end$|<system-result)/u.test(
+              value,
+            )
+          )
+            return true;
+          if (!/^[0-9A-HJKMNP-TV-Z]{7}(?:\||$)/u.test(value.trim())) return false;
+          const source = field.startsWith("target") ? event.args?.target : event.args?.path;
+          // Anchor-shaped fixture text is literal unless a completed issuer identifies it as an anchor.
+          return (
+            selectionIssuers(source, start.index).some((issuer) =>
+              issuedAnchor(value.trim(), resultText(issuer.end)),
+            ) || !editContext(step.tool, { path: source }, start.index).content?.includes(value)
+          );
+        })
+      )
+        continue;
+      if (step.issuedMatches && !issuedMatches(step.issuedMatches, end.event)) continue;
       const output = resultText(end.event);
       if (step.contains && !output.includes(step.contains)) continue;
-      if (step.finalContains !== undefined || step.finalMaxBytes !== undefined) {
+      if (step.finalRefusal !== undefined || step.finalMaxBytes !== undefined) {
         const finalized = events.findLast(
           (entry) =>
             entry.type === "message_end" &&
@@ -385,10 +1343,9 @@ export function validateRoute(
           !finalized ||
           !Array.isArray(finalized.content) ||
           finalized.isError !== end.event.isError ||
-          (step.finalContains !== undefined &&
-            !finalized.content.some(
-              (block) => block.type === "text" && block.text?.includes(step.finalContains ?? ""),
-            )) ||
+          (step.finalRefusal !== undefined &&
+            (!matches(step.finalRefusal, finalized.details) ||
+              !isDeepStrictEqual(finalized.content, end.event.result?.content))) ||
           (step.finalMaxBytes !== undefined &&
             Buffer.byteLength(
               finalized.content
@@ -399,6 +1356,28 @@ export function validateRoute(
           continue;
       }
       if (step.excludes && output.includes(step.excludes)) continue;
+      let editorBatch: { applied: boolean; calls: { id: string }[] } | undefined;
+      if (step.editorBatchSize !== undefined) {
+        const parent = ends.get(execution.parent ?? "");
+        const details = parent?.event.result?.details as
+          | {
+              editorBatches?: { applied: boolean; calls: { id: string }[] }[];
+            }
+          | undefined;
+        const peerBatch =
+          step.sameAssistantWith === undefined
+            ? undefined
+            : selected[step.sameAssistantWith]?.editorBatch;
+        editorBatch = details?.editorBatches?.find(
+          (batch) =>
+            batch.applied &&
+            batch.calls.length === step.editorBatchSize &&
+            batch.calls.some((call) => call.id === execution.call) &&
+            (peerBatch === undefined || batch === peerBatch),
+        );
+        if (!parent || parent.index <= end.index || parent.event.isError !== false || !editorBatch)
+          continue;
+      }
       if (step.parentExcludes || step.parentContains || step.parentStructuredValue) {
         const parent = ends.get(execution.parent ?? "");
         const parentStart = startsById.get(execution.parent);
@@ -418,41 +1397,95 @@ export function validateRoute(
           (step.parentExcludes !== undefined &&
             resultText(parent.event).includes(step.parentExcludes)) ||
           (step.parentContains !== undefined &&
-            !resultText(parent.event).includes(step.parentContains))
+            (typeof step.parentContains === "string"
+              ? [step.parentContains]
+              : step.parentContains
+            ).some((fragment) => !resultText(parent.event).includes(fragment)))
         )
           continue;
       }
-      if (step.image && !end.event.result?.content?.some((block) => block.type === "image"))
-        continue;
       const references = step.reuse ? (Array.isArray(step.reuse) ? step.reuse : [step.reuse]) : [];
       if (
         references.some((reference) => {
           const prior = selected[reference.from];
+          if (!prior || (reference.newParent && prior.parent === execution.parent)) return true;
+          // An explicit source is independent of the earlier result, but both calls remain required.
+          if (
+            reference.explicit !== undefined &&
+            (Array.isArray(reference.field) ? reference.field : [reference.field]).some((field) =>
+              matches(reference.explicit, fieldValue(event.args, field), field.split(".").at(-1)),
+            )
+          )
+            return false;
           return (
-            !prior ||
             prior.end >= start.index ||
-            !(Array.isArray(reference.field) ? reference.field : [reference.field]).some((field) =>
-              reuses(fieldValue(event.args, field), resultText(prior.event), reference.kind),
-            ) ||
-            (reference.newParent && prior.parent === execution.parent)
+            !(Array.isArray(reference.field) ? reference.field : [reference.field]).some(
+              (field) =>
+                argumentReuses(
+                  toolSemantics(step.tool),
+                  field,
+                  event.args,
+                  reference,
+                  prior.event,
+                  start.index,
+                  prior.readIndex !== undefined,
+                  prior.receipt,
+                ) || passesValue(fieldValue(event.args, field), prior.event),
+            )
           );
         })
       )
         continue;
+      if (step.image) {
+        const minimum = typeof step.image === "number" ? step.image : 1;
+        const frames =
+          end.event.result?.content?.filter((block) => block.type === "image").length ?? 0;
+        if (frames < minimum) {
+          const failures = imageFailures.get(stepIndex) ?? new Set<string>();
+          failures.add(
+            `Step ${stepIndex + 1} (${step.tool}), call ${event.toolCallId}: received ${frames} image frame(s); required at least ${minimum}`,
+          );
+          imageFailures.set(stepIndex, failures);
+          continue;
+        }
+      }
       if (
-        walk(stepIndex + 1, start.index, [
+        step.scriptResult !== undefined &&
+        !matches(step.scriptResult, end.event.result?.structuredContent)
+      )
+        continue;
+      if (
+        walk(stepIndex + 1, [
           ...selected,
-          { event: end.event, end: end.index, parent: execution.parent, call: execution.call },
+          {
+            event: end.event,
+            start: start.index,
+            end: end.index,
+            readIndex: start.readIndex,
+            receipt:
+              start.readIndex === undefined
+                ? undefined
+                : /^((?:<system-result\b[^>]*>)?<uuid>[a-f0-9-]+<\/uuid>(?:<\/system-result>)?)/iu.exec(
+                    resultText(completed.event),
+                  )?.[1],
+            parent: execution.parent,
+            call: execution.call,
+            editorBatch,
+          },
         ])
       )
         return true;
     }
     return false;
   }
-  if (!walk(0, -1, []))
-    reasons.push(
-      `Required step ${furthest + 1} (${task.steps[furthest]?.tool}) was not observed with the required arguments, completed result, reuse, and route`,
-    );
+  if (!walk(0, [])) {
+    const frameFailures = imageFailures.get(furthest);
+    if (frameFailures?.size) reasons.push(...frameFailures);
+    else
+      reasons.push(
+        `Required step ${furthest + 1} (${task.steps[furthest]?.tool}) was not observed with the required arguments, completed result, reuse, and route`,
+      );
+  }
   return { passed: reasons.length === 0, reasons };
 }
 
@@ -476,6 +1509,10 @@ export function checkCoverage(
   }
   for (const task of cases) {
     if (!task.steps.length || !task.modes.length) problems.push(`${task.id}: no route or mode`);
+    task.steps.forEach((step, index) => {
+      if (step.after?.some((prior) => !Number.isInteger(prior) || prior < 0 || prior >= index))
+        problems.push(`${task.id}: step ${index + 1} has an invalid dependency`);
+    });
     for (const id of task.capabilities)
       if (!ids.has(id)) problems.push(`${task.id}: unknown capability ${id}`);
       else if (!matrix.find((capability) => capability.id === id)?.cases.includes(task.id))

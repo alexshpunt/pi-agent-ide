@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { requiredValue } from "pi-agent-invariant";
 
 import { AstScopeManager } from "#src/plugins/pi-agent-ide-ast/src/api/scope.ts";
 import { getToolExecution, getToolResultText } from "pi-coding-agent-test";
@@ -39,7 +40,7 @@ describe("AST scope anchors through text editor tools", () => {
     await runAstScenario(
       "ast-anchor-insert",
       "insert",
-      ([first]) => ({ anchor: first.endScopeAnchor.value, text: "inserted();" }),
+      ([first]) => ({ after: first.endScopeAnchor.value, text: "inserted();\n" }),
       [...firstFunction, "inserted();", "", ...secondFunction].join("\n"),
     );
   });
@@ -49,8 +50,8 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-replace",
       "replace",
       ([first]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
         text: "function replaced() {\n    return 0;\n}",
       }),
       ["function replaced() {", "    return 0;", "}", "", ...secondFunction].join("\n"),
@@ -62,10 +63,11 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-delete",
       "delete",
       ([, second]) => ({
-        start: second.beginAnchor.value,
-        end: second.endScopeAnchor.value,
+        from: second.beginAnchor.value,
+        through: second.endScopeAnchor.value,
       }),
-      [...firstFunction, "", ""].join("\n"),
+      // Removing an unterminated final scope also removes its preceding separator.
+      [...firstFunction, ""].join("\n"),
     );
   });
 
@@ -74,11 +76,11 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-copy",
       "copy",
       ([first, second]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
-        targetStart: second.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
+        targetAfter: second.endScopeAnchor.value,
       }),
-      [...lines, ...firstFunction, ""].join("\n"),
+      [...lines, ...firstFunction].join("\n"),
     );
   });
 
@@ -87,11 +89,11 @@ describe("AST scope anchors through text editor tools", () => {
       "ast-anchor-move",
       "move",
       ([first, second]) => ({
-        start: first.beginAnchor.value,
-        end: first.endScopeAnchor.value,
-        targetStart: second.endScopeAnchor.value,
+        from: first.beginAnchor.value,
+        through: first.endScopeAnchor.value,
+        targetAfter: second.endScopeAnchor.value,
       }),
-      ["", ...secondFunction, ...firstFunction, ""].join("\n"),
+      ["", ...secondFunction, ...firstFunction].join("\n"),
     );
   });
 });
@@ -99,7 +101,7 @@ describe("AST scope anchors through text editor tools", () => {
 async function runAstScenario(
   testName: string,
   tool: "insert" | "replace" | "delete" | "copy" | "move",
-  buildArguments: (scopes: readonly AstScope[]) => Record<string, unknown>,
+  buildArguments: (scopes: readonly [AstScope, AstScope]) => Record<string, unknown>,
   expectedContent: string,
 ): Promise<void> {
   await withTempWorkspace(async (directory) => {
@@ -108,11 +110,12 @@ async function runAstScenario(
     const scopes = await new AstScopeManager().getDocumentScopes(relativeFile, directory, lines);
     expect(scopes).toHaveLength(2);
 
-    const anchorArguments = buildArguments(scopes);
+    const anchorArguments = buildArguments([requiredValue(scopes[0]), requiredValue(scopes[1])]);
     const expectedAnchors = Object.entries(anchorArguments)
       .filter(
         ([key, value]) =>
-          ["targetStart", "start", "end"].includes(key) && typeof value === "string",
+          ["after", "targetAfter", "at", "from", "through"].includes(key) &&
+          typeof value === "string",
       )
       .map(([, value]) => value as string);
     const toolArguments =

@@ -4,6 +4,7 @@ import { searchFuzzy } from "#src/fuzzy-search.ts";
 import { SearchSessionStore } from "#src/search-session.ts";
 import { createTextResolver } from "#src/resolvers.ts";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
+import { TextSelectionAnchor } from "pi-agent-text-editor/api/text-selection-anchor";
 
 test("fuzzy alternatives collect names and verify exact matches on their original owner", async () => {
   const { environment, calls } = fixture();
@@ -41,23 +42,6 @@ test("fuzzy alternatives collect names and verify exact matches on their origina
   expect(calls[1]).toContain("needle");
   expect(probes.length).toBeGreaterThan(0);
   expect(probes.every((source) => source === "memory://owner/work/note.txt")).toBe(true);
-});
-
-test("fuzzy search refuses an owner that cannot bound its source snapshots before scanning", async () => {
-  const { environment, calls } = fixture();
-  expect(
-    await searchFuzzy(
-      { query: "nedle", path: "memory://owner/work" },
-      "/local",
-      undefined,
-      environment,
-    ),
-  ).toMatchObject({
-    status: "skipped",
-    candidates: [],
-    message: "source owner cannot bound candidate snapshots",
-  });
-  expect(calls).toEqual([]);
 });
 
 // A non-filesystem owner proves no source is normalized or read through local fs.
@@ -124,6 +108,52 @@ test("text search uses the owner executor and canonical Unicode ranges", async (
   });
 });
 
+test.each([
+  ["not ignored", 1, []],
+  ["ignored", 0, ["--no-ignore-parent"]],
+  ["no repository", 128, ["--no-ignore-parent"]],
+] as const)(
+  "Git's answer on the owner (%s) decides whether a scope follows its parents' ignore files",
+  async (_case, gitCode, expected) => {
+    const { environment, calls } = fixture();
+    const git: unknown[][] = [];
+    environment.execute = async (command, arguments_, cwd) => {
+      git.push([command, [...arguments_], cwd]);
+      return { code: gitCode, stdout: "", stderr: "" };
+    };
+    await searchText(
+      { query: "needle", path: "memory://owner/work" },
+      "/local",
+      undefined,
+      undefined,
+      environment,
+    );
+    expect(git).toEqual([["git", ["check-ignore", "-q", "."], "memory://owner/work"]]);
+    expect(calls[0]?.filter((argument) => argument === "--no-ignore-parent")).toEqual(expected);
+  },
+);
+
+test("an owner search keeps its matches when ripgrep could not read some paths", async () => {
+  const { environment } = fixture();
+  const originalRun = environment.runLines;
+  environment.runLines = async (args, cwd, onLine, signal) => {
+    await originalRun(args, cwd, onLine, signal);
+    return { code: 2, stderr: "rg: ./locked: Permission denied (os error 13)\n" };
+  };
+  const result = await searchText(
+    { query: "needle", path: "memory://owner/work" },
+    "/local",
+    undefined,
+    undefined,
+    environment,
+  );
+  expect(result.matches.map((match) => match.source)).toEqual(["memory://owner/work/note.txt"]);
+  expect(result.unreadable).toEqual({
+    count: 1,
+    first: { path: "memory://owner/work/locked", error: "Permission denied (os error 13)" },
+  });
+});
+
 test("SEARCH selections retain their owner for snapshots and stale checks", async () => {
   const { environment, setText } = fixture();
   const store = new SearchSessionStore();
@@ -144,12 +174,13 @@ test("SEARCH selections retain their owner for snapshots and stale checks", asyn
       cwd: context.cwd,
     }),
   ).toMatchObject({ kind: "resolved" });
+  // The caller reads the owner's changed text; the numbered match is no longer there.
   setText("external\n");
   expect(
     await store.anchorResolver().tryResolve(anchor, {
       source: "memory://owner/work/note.txt",
-      content: "café needle\n",
-      lines: ["café needle"],
+      content: "external\n",
+      lines: ["external"],
       cwd: context.cwd,
     }),
   ).toMatchObject({ kind: "rejected" });
@@ -165,13 +196,16 @@ test("a complete SEARCH selection refreshes through its original owner", async (
   const result = await resolver.format(attempt.payload, context);
   const id = (result.details as { sessionId: string }).sessionId;
   setText("prefix café needle\n");
-  expect(
-    await store.anchorResolver().tryResolve(`SEARCH#${id}:all:match`, {
-      source: "memory://owner/work/note.txt",
-      content: "café needle\n",
-      lines: ["café needle"],
-      cwd: context.cwd,
-    }),
-  ).toMatchObject({ kind: "resolved" });
+  const resolved = await store.anchorResolver().tryResolve(`SEARCH#${id}:all:match`, {
+    source: "memory://owner/work/note.txt",
+    content: "prefix café needle\n",
+    lines: ["prefix café needle"],
+    cwd: context.cwd,
+  });
+  expect(resolved).toMatchObject({ kind: "resolved" });
   expect(calls.length).toBeGreaterThan(1);
+  if (resolved.kind !== "resolved" || !(resolved.anchor instanceof TextSelectionAnchor))
+    throw new Error("Expected a selection anchor");
+  // The match is found again in the changed text, after "prefix café ".
+  expect(resolved.anchor.ranges).toMatchObject([{ start: { lineNumber: 1, column: 12 } }]);
 });

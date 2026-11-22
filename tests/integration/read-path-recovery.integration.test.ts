@@ -65,11 +65,11 @@ test("missing Read paths suggest real files without reading them", async () => {
       expect(getToolResultText(run, id)).toContain("Possible matches:");
       expect(getToolResultText(run, id)).toContain("src/read-renderer.ts");
       expect(getToolResultText(run, id)).not.toContain("ignored/read-render.ts");
-      // Only the public failure value is structured; private recovery data stays hidden.
-      expect(execution.result).toMatchObject({
-        structuredContent: { status: "error", errors: [{ code: expect.any(String) as unknown }] },
-      });
-      expect(execution.result).not.toHaveProperty("structuredContent.data");
+      // A failed call has no structured value; private recovery data stays hidden.
+      expect(
+        (execution.result as { structuredContent?: unknown } | undefined)?.structuredContent,
+      ).toBeUndefined();
+      expect(getToolResultText(run, id)).not.toContain("<system-result");
       expect(JSON.stringify(execution.result)).not.toContain("DO_NOT_READ_CANDIDATE");
       expect(getToolResultText(run, id)).not.toContain("DO_NOT_READ_CANDIDATE");
     }

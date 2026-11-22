@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Read plugins document their source and view syntax beside the matching tool parameter. This metadata describes installed capabilities. It does not register a resolver, enable a view, grant permission or change argument validation.
+Read plugins document view syntax and source-specific coordinates beside the matching tool parameter. The `path` description accepts file or resource addresses and result references without listing every source format. Document source addresses in provider guides and returned resource links. Metadata does not register a resolver, enable a view, grant permission or change argument validation.
 
 System-prompt rules use `api.addPromptGuideline()`. Complex workflows and worked examples belong in packaged guides.
 
@@ -12,7 +12,6 @@ A plugin calls `api.describe()` once with a non-empty map:
 
 ```ts
 api.describe({
-  path: () => describeCurrentSourceFormats(),
   views: "outline — declarations alongside source text.",
   offset: "For this source, offset counts from the selected declaration.",
   limit: "For this source, limit is the maximum number of source lines.",
@@ -21,7 +20,7 @@ api.describe({
 
 The keys are `path`, `views`, `offset` and `limit`. Each value is a non-empty string or a synchronous callback returning a string or `undefined`.
 
-Describe every parameter whose meaning the plugin changes. Put protocol syntax on `path`, view syntax and settings on `views`, and source-specific coordinates and units on `offset` and `limit`. Include defaults, restrictions, permissions and dependencies where they affect a call. Parameterized views remain strings, not a closed enum of names.
+Describe every parameter whose meaning the plugin changes. Put view syntax and settings on `views`, and source-specific coordinates and units on `offset` and `limit`. Include defaults, restrictions, permissions and dependencies where they affect a call. Parameterized views remain strings, not a closed enum of names. A `path` contribution is still accepted and validated for compatibility, but Read keeps its displayed source description generic.
 
 ## Registration and snapshots
 
@@ -29,7 +28,7 @@ Metadata registered during setup is committed only after setup succeeds. Pending
 
 Core evaluates callbacks when a schema snapshot is requested. Returning `undefined` omits that parameter's contribution. Callbacks can inspect the current content-provider graph or configured defaults. Earlier snapshots do not change.
 
-Accepted registration order determines description order. Exact duplicate descriptions are omitted per parameter. The base schema stays unchanged; each snapshot appends plugin text to the matching base description.
+Accepted registration order determines description order. Exact duplicate descriptions are omitted per parameter. The base schema stays unchanged; each snapshot appends plugin text to the matching base description except for `path`.
 
 Pi wraps tool definitions into schema snapshots. The Read adapter waits for pending plugins and refreshes the registered definition before an active Read agent run starts. It does not replace metadata in an in-flight request. Other callers that inspect the definition also request fresh snapshots.
 

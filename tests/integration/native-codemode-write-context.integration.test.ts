@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import {
   assistantMessage,
   getToolExecution,
@@ -160,7 +161,7 @@ test("direct failed Write returns a short reason without the proposed file body"
 
 test("explicit Read after compact Write recovers the content and respects Codemode truncation", async () => {
   await withTempWorkspace(async (cwd) => {
-    const code = `// @options: {"max_output_tokens":1000}\nconst written = await tools.write(${writeArgs}); text(await tools.read({path:written,limit:400}));`;
+    const code = `// @options: {"max_output_tokens":1000}\nconst written = await tools.write(${writeArgs}); text((await tools.read({path:written,limit:400})).text);`;
     const run = await runScript(cwd, "write-context-read-truncated", code);
     expect(getToolExecution(run, "parent").isError).toBe(false);
     assertScriptArguments(run, code);
@@ -215,12 +216,14 @@ test("silent Write keeps large file content out of the following provider result
     expect(panels).toHaveLength(1);
     expect(panels?.[0]?.name).toBe("write");
     expect(JSON.stringify(panels)).toContain(marker);
-    expect(run.tuiRenderedOutput).toContain("write");
-    expect(run.tuiRenderedOutput).toContain("+400 ~0 -0");
+    // The large panel can scroll out of the final screen; inspect the rendered stream.
+    const terminal = stripVTControlCharacters(run.terminalOutput);
+    expect(terminal).toMatch(/\bwrite\s+\{"path":"large\.txt"/u);
+    expect(terminal).toContain("+400 ~0 -0");
   });
 });
 
-test("explicit Write output is a compact receipt even for a large file", async () => {
+test("explicit Write output is only the id of the written file, even for a large file", async () => {
   await withTempWorkspace(async (cwd) => {
     const code = `// @options: {"max_output_tokens":1000}\ntext(await tools.write(${writeArgs}));`;
     const run = await runScript(cwd, "write-context-explicit-large", code);
@@ -229,7 +232,7 @@ test("explicit Write output is a compact receipt even for a large file", async (
     const output = followingResultText(run, false);
     expect(output).not.toContain(marker);
     expect(output).not.toMatch(/truncated/iu);
-    expect(output).toMatch(/read.*file/iu);
+    expect(output).toMatch(/RESULT#[a-f0-9-]{36}/u);
     expect(output.length).toBeLessThan(1000);
     expect(await readFile(path.join(cwd, "large.txt"), "utf8")).toBe(largeContent);
     expect(await savedPanels(run)).toHaveLength(1);
@@ -237,7 +240,7 @@ test("explicit Write output is a compact receipt even for a large file", async (
 });
 
 test.each(["text", "return"])(
-  "explicit %s delivers only the compact Write receipt once",
+  "explicit %s delivers only the id of the written file",
   async (delivery) => {
     await withTempWorkspace(async (cwd) => {
       const content = marker + "positive_control\n";
@@ -247,9 +250,7 @@ test.each(["text", "return"])(
       expect(getToolExecution(run, "parent").isError).toBe(false);
       const output = followingResultText(run, false);
       expect(output).not.toContain(content);
-      expect(output.split("Saved file.")).toHaveLength(2);
-      expect(output).toContain("small.txt");
-      expect(output).toMatch(/read.*file/iu);
+      expect(output.match(/RESULT#[a-f0-9-]{36}/gu)).toHaveLength(1);
       expect(output.length).toBeLessThan(1000);
       expect(await readFile(path.join(cwd, "small.txt"), "utf8")).toBe(content);
       expect(await savedPanels(run)).toHaveLength(1);
@@ -291,7 +292,8 @@ test("a failed Write keeps recovery output without copying earlier successful fi
     await mkdir(path.join(cwd, "directory"));
     const code = `await tools.write(${writeArgs}); await tools.write({path:"directory",content:"blocked"});`;
     const run = await runScript(cwd, "write-context-error", code);
-    expect(getToolExecution(run, "parent").isError).toBe(true);
+    expect(getToolExecution(run, "parent").isError).toBe(false);
+    expect(getToolExecution(run, "parent/2").isError).toBe(true);
     assertScriptArguments(run, code);
     expect(followingResultText(run)).toContain("directory");
     expect(followingResultText(run)).toMatch(/failed|error/iu);

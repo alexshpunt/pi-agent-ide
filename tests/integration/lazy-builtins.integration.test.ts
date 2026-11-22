@@ -102,15 +102,14 @@ test("the reduced text configuration keeps AST, anchors and edits working", asyn
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["read", "insert"],
+      tools: ["read", "outline", "insert"],
       conversation: [
-        call("ast", "read", { path: "ast:example.ts" }),
+        call("ast", "outline", { path: "example.ts" }),
         call("anchors", "read", { path: "example.ts", views: ["anchors"] }),
         call("insert", "insert", {
           path: "example.ts",
-          anchor: "  return value + 1;",
+          before: "  return value + 1;",
           text: "  // Keep the increment.\n",
-          before: true,
         }),
         assistantMessage([text("Done")]),
       ],
@@ -118,7 +117,7 @@ test("the reduced text configuration keeps AST, anchors and edits working", asyn
     for (const id of ["ast", "anchors", "insert"])
       expect(getToolExecution(result, id).isError).toBe(false);
     expect(getToolResultText(result, "ast")).toContain("total");
-    expect(getToolResultText(result, "anchors")).toMatch(/1#[A-Z0-9]+\|/u);
+    expect(getToolResultText(result, "anchors")).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|/u);
     expect(await readFile(path.join(cwd, "example.ts"), "utf8")).toBe(
       source.replace("  return", "  // Keep the increment.\n  return"),
     );

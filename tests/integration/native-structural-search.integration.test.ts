@@ -9,9 +9,11 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
+import { nestedResultTexts } from "#integration/support/nested-results.ts";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { textResultChecks } from "#integration/support/text-result-checks.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 async function runAstComposition(
   cwd: string,
@@ -73,18 +75,45 @@ test("searches AST inside a Read window and edits a named capture with exact CRL
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runAstComposition(cwd, "ast-window-capture-edit", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:1});
-const found=await tools.ast_search({path:window,pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
-check(matches(found).length===1 && found.includes("calls.ts:2:7"),"AST escaped Read or lost UTF16 coordinates");
-const options=capture(found,"OPTIONS");
-check(options.length===1,"Capture lost association");
-const timeout=await tools.search({path:options,query:"20"}).then(value => value.result);
-check(matches(timeout).length===1,"Capture cannot be searched");
+const found=await tools.ast_search({path:window,pattern:"legacyRequest($OPTIONS)"});
+check(found.matches.length===1 && found.matches[0].path==="calls.ts" && found.matches[0].line===2 && found.matches[0].text==="legacyRequest({ timeout: 20 })","AST escaped Read or lost UTF16 coordinates");
+const options=found.matches[0].captures.OPTIONS;
+check(options.length===1 && options[0].text==="{ timeout: 20 }","Capture lost association");
+const timeout=await tools.search({path:options,query:"20"});
+check(timeout.matches.length===1,"Capture cannot be searched");
 text(await tools.replace({path:timeout,text:"99"}));`,
     ]);
     expectScriptsPassed(run, 1);
     expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(source.replace("20", "99"));
     expect(run.tuiRenderedOutput).toContain("legacyRequest");
     expect(run.tuiRenderedOutput).toContain("99");
+  });
+});
+
+test("searches the current text of a Read window whose lines other sessions changed", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await writeFile(
+      path.join(cwd, "calls.ts"),
+      "legacyRequest(a);\nlegacyRequest(b);\nother();\nlegacyRequest(c);\nlegacyRequest(d);\n",
+    );
+    const run = await runAstComposition(cwd, "ast-changed-window", [
+      `const window=await tools.read({path:"calls.ts",offset:2,limit:3});
+await tools.replace({path:"calls.ts",at:"other();",text:"changed();"});
+await tools.replace({path:"calls.ts",at:"legacyRequest(a);",text:"legacyRequest(top);\\nlegacyRequest(a);"});
+const found=await tools.ast_search({path:window,pattern:"legacyRequest($ARG)"});
+check(found.matches.map(match=>match.line+":"+match.text).join()==="3:legacyRequest(b),5:legacyRequest(c)","Wrong matches for the current region");
+const stale=await tools.search({path:window,query:"changed"});
+check(stale.matches.length===1 && stale.matches[0].line===4,"Search lost the changed region");
+await rejects(()=>tools.replace({path:window,text:"BAD"}));
+text(await tools.replace({path:found.matches[1],text:"legacyRequest(z)"}));`,
+    ]);
+    expectScriptsPassed(run, 1);
+    expect(codemodeFailures(getToolResultText(run, "ast-0"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace RESULT#[a-f\d-]{36}\n[\s\S]*expired/u,
+    );
+    expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(
+      "legacyRequest(top);\nlegacyRequest(a);\nlegacyRequest(b);\nchanged();\nlegacyRequest(z);\nlegacyRequest(d);\n",
+    );
   });
 });
 
@@ -96,19 +125,23 @@ test("keeps sparse multi-file AST scopes and capture groups without matching acr
     );
     await writeFile(path.join(cwd, "b.ts"), "legacyRequest(e, f);\n");
     const run = await runAstComposition(cwd, "ast-sparse-multi-captures", [
-      `const seed=await tools.search({path:".",include:"*.ts",query:"regex:legacyRequest[(](a, b|c, d|e, f)[)]"}).then(value => value.result);
-check(matches(seed).length===3,"Fixture scopes missing");
-const found=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)"}).then(value => value.result);
-check(matches(found).length===3,"Sparse AST scope widened");
-const groups=capture(found,"ARGS");
-check(groups.length===3 && found.split("3 node(s)").length-1===3,"Multi-capture association lost");
-for(const group of groups) check(matches(await tools.search({path:group,query:"ignored"}).then(value => value.result)).length===0,"Capture escaped");
-const partial=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)",limit:1}).then(value => value.result);
-check(matches(partial).length===1 && /[Ii]ncomplete/.test(partial),"Limited Search must report one match and incomplete coverage");
-await rejects(()=>tools.replace({path:partial,text:"BAD"}),/[Ii]ncomplete/);
+      `const seed=await tools.search({path:".",include:"*.ts",query:"regex:legacyRequest[(](a, b|c, d|e, f)[)]"});
+check(seed.matches.length===3,"Fixture scopes missing");
+const found=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)"});
+check(found.matches.length===3,"Sparse AST scope widened");
+const groups=found.matches.map(match=>match.captures.ARGS);
+check(groups.length===3 && groups.every(group=>group.length===3),"Multi-capture association lost");
+check(groups.map(group=>group.map(node=>node.text).join("")).join()==="a,b,c,d,e,f","Capture nodes changed");
+for(const group of groups) check((await tools.search({path:group,query:"ignored"})).matches.length===0,"Capture escaped");
+const partial=await tools.ast_search({path:seed,pattern:"legacyRequest($$$ARGS)",limit:1});
+check(partial.matches.length===1 && partial.complete===false,"Limited Search must report one match and incomplete coverage");
+await rejects(()=>tools.replace({path:partial,text:"BAD"}));
 text({groups:3,complete:true});`,
     ]);
     expectScriptsPassed(run, 1);
+    expect(codemodeFailures(getToolResultText(run, "ast-0"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace RESULT#[a-f\d-]{36}\n[\s\S]*[Ii]ncomplete/u,
+    );
     expect(await readFile(path.join(cwd, "a.ts"), "utf8")).toContain("legacyRequest(ignored)");
   });
 });
@@ -147,19 +180,19 @@ test("composes real LSP discovery and explicit external references without mixin
       "lsp-scope-navigation-composition",
       [
         `const window=await tools.read({path:"service.ts",offset:1,limit:1});
-const strict=await tools.lsp_search({path:window,query:"ping"}).then(value => value.result);
-check(matches(strict).length===1 && strict.includes("service.ts:1:17 definition ping"),"LSP escaped Read or lost exact coordinates");
-const nav=await tools.lsp_search({path:window,query:"ping",references:true}).then(value => value.result);
-text(nav);
-check(!nav.includes("other.ts"),"LSP mixed same-name declarations");
-const rows=nav.split(String.fromCharCode(10)).filter(row=>/SEARCH#.*:match .*reference ping/.test(row));
-check(rows.length>0 && rows.every(row=>row.includes("declared at service.ts:1:17")),"Reference association missing");
-check(nav.includes("consumer.ts:2:7 reference ping"),"Reference UTF16 mapping lost");
-const external=rows.find(row=>row.includes("consumer.ts:3:1"));
+const strict=await tools.lsp_search({path:window,query:"ping"});
+check(strict.matches.length===1 && strict.matches[0].path==="service.ts" && strict.matches[0].line===1 && strict.matches[0].text==="ping","LSP escaped Read or lost exact coordinates");
+const nav=await tools.lsp_search({path:window,query:"ping",references:true});
+const places=nav.matches.map(match=>match.path+":"+match.line+" "+match.text);
+text(places.join(String.fromCharCode(10)));
+check(!places.some(place=>place.startsWith("other.ts")),"LSP mixed same-name declarations");
+// The exact text "ping" at line 2, after a surrogate pair, proves the UTF-16 mapping.
+check(places.includes("consumer.ts:2 ping"),"Reference UTF16 mapping lost");
+const external=nav.matches.find(match=>match.path==="consumer.ts" && match.line===3);
 check(external,"External reference missing");
-const selected=await tools.read({path:matches(external)[0]});
-const textHit=await tools.search({path:selected,query:"ping"}).then(value => value.result);
-check(matches(textHit).length===1,"LSP target cannot be searched");
+const selected=await tools.read({path:external});
+const textHit=await tools.search({path:selected,query:"ping"});
+check(textHit.matches.length===1 && textHit.matches[0].path==="consumer.ts" && textHit.matches[0].line===3,"LSP target cannot be searched");
 text(await tools.replace({path:textHit,text:"PING"}));`,
       ],
       true,
@@ -168,8 +201,10 @@ text(await tools.replace({path:textHit,text:"PING"}));`,
     expect(await readFile(path.join(cwd, "consumer.ts"), "utf8")).toBe(
       consumer.replace('ping("outside")', 'PING("outside")'),
     );
-    expect(getToolResultText(run, "ast-0")).toContain("LSP reference navigation");
-    expect(getToolResultText(run, "ast-0")).toContain("reference ping");
+    // A direct call's readable result, as the nested call shows it, keeps roles and declarations.
+    const navigation = nestedResultTexts(run, "lsp_search").at(-1);
+    expect(navigation).toContain("LSP reference navigation");
+    expect(navigation).toContain("consumer.ts:2:7 reference ping · declared at service.ts:1:17");
   });
 }, 120_000);
 test("retains every node of a capture larger than the ordinary match preview", async () => {
@@ -177,11 +212,12 @@ test("retains every node of a capture larger than the ordinary match preview", a
     const arguments_ = Array.from({ length: 120 }, (_, index) => `arg${String(index)}`);
     await writeFile(path.join(cwd, "large.ts"), `legacyRequest(${arguments_.join(", ")});\n`);
     const run = await runAstComposition(cwd, "ast-large-capture", [
-      `const found=await tools.ast_search({path:"large.ts",pattern:"legacyRequest($$$ARGS)"}).then(value => value.result);
-const args=capture(found,"ARGS");
-check(args.length===1 && found.includes("239 node(s)"),"Capture group silently shortened");
-const last=await tools.search({path:args,query:"arg119"}).then(value => value.result);
-check(matches(last).length===1,"Last captured node lost authority");
+      `const found=await tools.ast_search({path:"large.ts",pattern:"legacyRequest($$$ARGS)"});
+const args=found.matches[0].captures.ARGS;
+check(found.matches.length===1 && args.length===239 && args[238].text==="arg119","Capture group silently shortened");
+const last=await tools.search({path:args,query:"arg119"});
+check(last.matches.length===1,"Last captured node lost authority");
+check((await tools.search({path:args[238],query:"arg119"})).matches.length===1,"Last node id lost authority");
 text({nodes:239,last:"arg119"});`,
     ]);
     expectScriptsPassed(run, 1);
@@ -194,22 +230,25 @@ test("preserves AST input forms across calls and rejects captures after a depend
     await writeFile(path.join(cwd, "calls.ts"), source);
     const run = await runAstComposition(cwd, "ast-forms-cross-call-stale", [
       `const window=await tools.read({path:"calls.ts",offset:2,limit:1});
-for(const input of [window,uuid(window),"RESULT#"+uuid(window)]) {
- const found=await tools.ast_search({path:input,pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
- check(matches(found).length===1,"Read input forms differ");
- store("ast-capture",capture(found,"OPTIONS"));
+for(const input of [window,window.id.slice("RESULT#".length),window.id]) {
+ const found=await tools.ast_search({path:input,pattern:"legacyRequest($OPTIONS)"});
+ check(found.matches.length===1 && found.matches[0].line===2,"Read input forms differ");
+ store("ast-capture",found.matches[0].captures.OPTIONS);
 }
 text({saved:true});`,
       `const old=load("ast-capture");
 const changed=await tools.replace({path:old,text:"{ timeout: 99 }"});
-const found=await tools.ast_search({path:changed,pattern:"{ timeout: $VALUE }"}).then(value => value.result);
-check(matches(found).length===1,"AST cannot consume mutation");
-const values=await tools.search({path:capture(found,"VALUE"),query:"99"}).then(value => value.result);
-check(matches(values).length===1,"Capture VALUE lost authority");
-await rejects(()=>tools.replace({path:old,text:"BAD"}),/expired|stale/);
+const found=await tools.ast_search({path:changed,pattern:"{ timeout: $VALUE }"});
+check(found.matches.length===1,"AST cannot consume mutation");
+const values=await tools.search({path:found.matches[0].captures.VALUE,query:"99"});
+check(values.matches.length===1,"Capture VALUE lost authority");
+await rejects(()=>tools.replace({path:old,text:"BAD"}));
 text({pendingAst:1,staleRejected:true});`,
     ]);
     expectScriptsPassed(run, 2);
+    expect(codemodeFailures(getToolResultText(run, "ast-1"))).toMatch(
+      /^1 of \d+ IDE calls failed:\n- replace [\s\S]*(?:expired|stale)/u,
+    );
     expect(await readFile(path.join(cwd, "calls.ts"), "utf8")).toBe(source.replace("20", "99"));
   });
 });
@@ -217,10 +256,10 @@ test("never widens an empty AST scope or a range cutting through an AST node", a
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "calls.ts"), "legacyRequest({ timeout: 10 });\n");
     const run = await runAstComposition(cwd, "ast-boundary-empty-scope", [
-      `const seed=await tools.search({path:"calls.ts",query:"timeout"}).then(value => value.result);
-const cut=await tools.ast_search({path:seed,pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
-const empty=await tools.ast_search({path:[],pattern:"legacyRequest($OPTIONS)"}).then(value => value.result);
-for(const found of [cut,empty]) check(matches(found).length===0 && !found.includes("Result limit reached"),"AST scope widened");
+      `const seed=await tools.search({path:"calls.ts",query:"timeout"});
+const cut=await tools.ast_search({path:seed,pattern:"legacyRequest($OPTIONS)"});
+const empty=await tools.ast_search({path:[],pattern:"legacyRequest($OPTIONS)"});
+for(const found of [cut,empty]) check(found.matches.length===0 && found.complete===true,"AST scope widened");
 text({cut:0,empty:0});`,
     ]);
     expectScriptsPassed(run, 1);

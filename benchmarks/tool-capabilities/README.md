@@ -1,8 +1,8 @@
 # Paid tool capability matrix
 
-This checks whether a real model can execute our designed IDE operations and tool chains. It is not a model ranking, a reliability score, or a replacement for unit and integration tests.
+This checks whether agents and models can carry out the IDE tools' contracts without surprises. Each case supplies a precise, complete and unambiguous task, including the call shape and every value it depends on. It does not test guessing the intended task or the author's preferred arguments, rank models, measure reliability, or replace unit and integration tests.
 
-Each short task names the required route. The model must choose the arguments, use actual returned references, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass.
+Each task supplies a runnable recipe. Use actual returned references where a value must come from an earlier call, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass. In a Git fixture, the commit and index must also stay as prepared; expected worktree changes, such as deleting a tracked directory, are part of the final bytes.
 
 ## Free checks
 
@@ -13,7 +13,74 @@ pnpm validate:tools:models --list
 
 The coverage gate is part of `pnpm check`. It loads the current IDE without a prompt or model call, compares structural tool contracts, and checks links between the declared capabilities and executable cases. It includes deferred tools, not just initially active tools. Descriptions and other prompt wording are not snapshot-tested.
 
-The free regression tests cover route provenance and sandbox timeout/reset/cleanup. One scripted real-Pi integration test proves that nested Codemode events are read correctly. These tests do not use paid models.
+`pnpm test:benchmarks` runs the benchmark unit tests on their own. `pnpm test` and full CI validation also run them. The tests use Node’s test runner and cover route provenance, argument and selection equivalence, and sandbox timeout, reset, and cleanup. They do not call models.
+
+Separate scripted real-Pi integration tests check nested Codemode event handling, provider declarations before and after discovery, nested Bash and deferred-tool execution, and the unchanged direct loadout. They do not use paid models.
+
+The scripted edit RPC regression checks the raw update and end records against a 128 KiB per-record limit for small edit arguments. It covers direct batching with and without the editor renderer and a Codemode batch of at least 12 edits on a shared file over 1 MiB, including Replace, Delete, Insert, Move and Write. It also checks the resulting file bytes. This does not replace the paid shared-file mixed probe.
+
+The Codemode-only `codemode-search-anchor-batch` and `codemode-search-value-batch` cases check local Search selections mixed with Insert, Replace and Delete in one committed batch. The anchor case retains readable Search output under `.pi/issued-search.txt`; the value case reuses native match values. Both validators check child membership in the native batch metadata. Focused real-Pi cases cover scoped selectors, source and target inference, concurrent writers, vanished selections and multi-file boundaries; the paid cases do not verify those additional paths. The native-value paid route remains unverified until paid execution.
+
+The `search-multiline-between` case reuses a multiline selection after a shell append and a later Search. The scripted real-Pi regression repeats the append and Search on a CRLF file and checks the final bytes. The revised direct and Codemode paid routes remain unverified.
+
+The `replace-search-anchor-list` case issues references before moving a block and editing repeated calls and adjacent declarations in it. The final Replace reuses the original references and leaves unselected matches unchanged. Scripted real-Pi tests cover a separate writer that moves a larger block and edits it in one write, and a 403-match rename batch after a peer renames a different identifier on the same lines. The revised paid routes remain unverified until paid execution.
+
+The `line-anchor-range-interior-change` case checks that Delete refuses a pair of line anchors after a same-length interior edit. The scripted Pi regression separately covers a peer moving a neighbour of two identical blocks, plus a successful edit after an unrelated shift. The direct and Codemode paid routes remain unverified.
+
+The `unseen-edit-span` case checks that literal endpoints on separate Read pages do not authorize an unseen interior, then uses the offered anchored Read before retrying the edit. `read-fragment-recovery` uses the offered Read for an ambiguous fragment. `codemode-overlap-recovery` reads the committed file after a move overlaps an accepted replacement. The paid routes remain unverified.
+
+The `stale-whole-file-write` case checks refusal after a peer changes a file, then a fresh Read and successful Write that preserves the peer’s change. Scripted Pi cases also cover a partial Read, a changed whole-file result, and creation. The direct and Codemode paid routes remain unverified.
+
+The direct-only `parallel-same-file-replace` case checks six independent literal replacements sent together and verifies every resulting byte. The paid route can coalesce the calls; the separate `standalone-edit-wait` real-Pi regression forces standalone execution and holds the first file reservation beyond the old five-second limit. The paid route remains unverified.
+
+The Codemode-only `parallel-provider-write-queue` case requires three overlapping Write calls to the same provider action in one script. The fixture delays the first action; the runner checks that all three finish successfully and the provider journal records each comment exactly once, in submission order. The paid route remains unverified.
+
+Rust edition selection is formatter behavior after an edit, not a new model operation. The existing edit routes still cover tool use; focused Rust formatter and real-Pi tests cover Cargo edition discovery and formatting. The paid routes do not verify Rust editions.
+
+The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostics and requests a symbol from the real server. Its dependency-free build script records an unexpected compilation; the final validator requires that marker to remain absent. It covers default Cargo safety, not explicit build-backed opt-in or large-workspace performance. The focused Rust diagnostic integration case also guards compiler invocations on a cold target and can use a real large workspace. Direct and Codemode paid routes remain unverified until paid execution.
+
+The `outline-search-edit` case follows a continuation to a second outline page and reuses that page to restrict Search and Replace. A focused scripted real-Pi test checks bounded output and exact edit scope on a large C++ fixture. Direct and Codemode paid routes remain unverified until paid execution.
+
+The `copy-destination-recovery` and `move-destination-recovery` cases retry with a destination anchor printed in the refusal, from an ambiguous match's context or a near match for misspelled text. Move also requires a refusal for an explicitly empty `at`. The revised direct and Codemode paid routes remain unverified until paid execution.
+
+The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The `lsp-rename-window` tests use real clangd to cover stale plans, a stalled refresh, and a peer sync that makes clangd refuse the rename. The tests also check that exhausted recovery reports `SOURCE_CHANGED` without writing, and that it does not invalidate the capture. The paid case does not exercise contention.
+
+The scripted `lsp-selector-retry` integration tests cover exact C++ `calls` and `declaration` queries when a peer writes the file and the first clangd outline omits the requested overload. The quiet paid case does not exercise this retry.
+
+Shared-server tests cover another retry trigger: when one session syncs newer disk text, a session whose older text will not get diagnostics is told to resync rather than wait for the old report. The quiet paid case does not cover shared-server diagnostics.
+
+The `replace-anchored-display` case checks that Replace refuses a stale displayed prefix, accepts a current prefix with only part of the line, and uses literal file bytes when the same selector also matches the anchored view. It checks the resulting file bytes on both routes. Direct and Codemode paid routes remain unverified.
+
+The `search-highlight-selectors` case passes Search's `⟦ ⟧` marks in literal selectors for Replace, Insert, Delete, Copy and Move. It checks the fallback receipt, strict literal precedence when the file contains the marks, refusal for ambiguous or missing text, and final bytes. Direct and Codemode paid routes remain unverified.
+
+The `exact-range-replace` case checks that a literal `through` paired with `from` ignores an earlier match and ends at the only match after `from`. The revised direct and Codemode paid routes remain unverified.
+
+Replace, Delete, Copy and Move accept `at` or `from` alone for one selection. The `lenient-edit-ranges` case checks standalone `from` and `targetFrom` and contained `through` and `targetThrough` matches, each the only closing match from its opening match on. Its paid routes remain unverified. The `replace-exclusive-range` case checks that `after` and `before` keep their markers, stop at the one closing marker after the opening one, and support insertion between adjacent CRLF marker lines. It also checks both mixed inclusive/exclusive pairs. Its paid routes remain unverified. The `exclusive-delete-transfer` case checks source and destination exclusive ranges and insertion with `targetBefore` alone while preserving both markers. Its paid routes remain unverified.
+
+### Case contracts
+
+Check the subject of the case, not an example call:
+
+- Require actual successful tool executions on the selected direct or native-Codemode route. Require a refusal instead where refusal is the subject; a recovered success does not replace that observation.
+- Require reuse of the completed issuer's result when composition is the subject. Keep source and destination provenance separate. Equivalent supported representations of the same issued selection remain valid.
+- Require order only for a real dependency: consuming a result, observing a changed state, or using loaded tools. Run independent operations in any order. Require batching or overlap only when concurrency is the subject.
+- Check all final fixture bytes, including untouched files, and the requested answer or observed value. An accepted route alone is not a pass. In Git fixtures, also preserve the prepared commit and index.
+- Put only capability-defining arguments and call discriminators in `RouteStep.args`. Do not copy a complete example call into it. Check argument values or shapes only when they define the capability, such as paging, a bounded source, a view, an omitted endpoint or an explicit invalid request.
+- Use `exactText` when literal-text selection is the capability. It requires the named selector fields to contain literal text, not a regex or issued reference; it does not prescribe which equivalent boundary spelling to use. Final bytes decide whether the edit was correct. Do not add per-case alternative-argument lists.
+
+Supply exact queries, target names, payloads, flags and parameterized views in each prompt. For example, a sequence check must name a duration and interval that produce its required frame count. Runtime-issued references are the only values that must be obtained from earlier calls. Review the prompt and every step together: a model following the recipe literally must pass. Rewrite ambiguous instructions rather than counting an interpretation as a model failure.
+
+The validator compares execution arguments with the IDE's schema-aware decoder and Pi's checked schemas. Numeric strings and JSON text in object/array-only fields compare by their parsed values. Source recovery requires runtime path and issued-reference checks; the validator does not guess that a JSON-looking source string names an array or result object. Selector and content strings remain literal. Structured results and retained events stay unchanged. Fixture paths compare by source identity. Independent search roots are unordered; transfer source/destination lists remain paired. Required views allow additional views. Generic selection equivalence uses completed public witnesses, never invented hashes or an unproven post-edit snapshot. These normalizations support subject checks; they are not a reason to assert incidental arguments.
+
+### Failure analysis
+
+A runner status is an observation, not a diagnosis. Inspect the prompt, arguments, tool results, final files and answer before assigning a cause:
+
+- **Tool defect:** a tool violated its documented contract on the supplied input.
+- **Unclear tool contract:** the model needed a fact the tool interface did not state, such as a parameter's units.
+- **Model noncompliance:** the task and tool contract supplied an exact, usable instruction, but the model did not follow it.
+
+An ambiguous case or an overstrict validator is a false failure in the bench, not model noncompliance. Correct it under the current task's authorization and rerun the affected routes. Preserve the original attempt and source revision; never rewrite its status into a pass. Authentication, prerequisites, quota, infrastructure, cancellation and timeout without enough evidence remain unverified rather than being forced into one of the three causes.
 
 ## Paid runs
 
@@ -29,11 +96,13 @@ pnpm validate:tools:models --run --model luna-6-low \
 
 No inference happens without both `--run` and an explicit model profile. The command is separate from ordinary tests and CI. Obtain permission for the selected provider, model, thinking level, and runs before using it. Being in `models.json` is not permission to spend.
 
+Use `--concurrency N` to run up to N attempts at once (default 1). Reports are updated as attempts finish and list completed attempts in selection order. An account stop or signal cancels active attempts and prevents new ones; already-started requests may still incur cost. Within an invocation, ColGREP attempts share one scheduling resource and web fixtures share another for port 8765. Each resource is held through setup, execution and cleanup; unrelated cases can run in parallel. ColGREP serialization prevents cold runtime/model downloads and ONNX sessions from competing with another ColGREP attempt. Queued attempts start their prerequisite timer only after admission. Run only one invocation at a time on a host because resource exclusion does not cross invocation boundaries. TUI and mutable dedicated authentication require concurrency 1.
+
 Profiles use the Explicit Edit Benchmark registry as a starting point; Luna 6 low was added by explicit task approval. New models belong in `models.json`, not in case definitions. Use the same tasks and validators for each model.
 
-Most cases have direct and Codemode routes. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
+Most cases have direct and Codemode routes. Use `--mode direct` or `--mode codemode` to select one route without running the other. The direct route keeps its existing tool setup and excludes Codemode. The Codemode route sets native `codemode.mode: only`: IDE tools, including Bash, disappear from model declarations but remain callable through `tools` in scripts. Native `tool_search` is model-only: with Pi 1.5.2 it stays declared under `only`, and a direct discovery adds the loaded tool to model declarations. The runner therefore excludes it from the Codemode route, leaving only `codemode` declared. Scripts can use `searchTools` and `describeTool` without adding direct declarations, not `tools.tool_search`. Deferred session tools are callable without discovery. Cross-call `store`/`load` is Codemode-only. Cases are deliberately small: a representative route for each declared capability, not every Cartesian combination of tools, platforms, language servers, or debug adapters.
 The `semantic-code-search` and `semantic-code-search-vera` cases select ColGREP and Vera respectively and initialize a small project index as their prerequisite. They check grouped project-wide files, a directory search with include and exclude filters, and a file-scoped range before reading the source. `semantic-vera-refresh` writes a new file and searches without a separate update command. The Vera scope case permits its documented best-effort scoped retrieval; it does not prove scoped-result completeness. Each case requires its engine and local model in the sandbox. If setup cannot complete within the prerequisite timeout, the route is unavailable rather than passed. Direct and Codemode routes for each engine remain unverified without a paid run.
-Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases; these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
+Directory/link transfer cases cover the shared local policy and refusal to reuse an object receipt as text. SSH owner pairs are checked by focused integration cases, and Windows targets by an opt-in integration case that needs a real Windows host (`PI_AGENT_IDE_WINDOWS_SSH_TARGETS`); these paid cases do not prove paid SSH coverage. Unrun direct and Codemode routes remain unverified.
 
 Temporary Delete and Move cases check exact nested names, roots themselves, replacement settings, and Copy merge behavior locally. Target-native account/config resolution is checked by transport tests, not a paid SSH case. Paid SSH temporary-removal routes remain unverified.
 
@@ -45,11 +114,75 @@ IDE filesystem, GitHub and Linear approvals use the shared operation dialog. Ter
 
 The `ssh-guide` case checks that Read exposes SSH setup guidance before any target is configured. It does not verify connection setup, reload, or remote operations. Its direct and Codemode routes remain unverified until a paid run.
 
+The Codemode-only `shell-script-value` case checks that a script reads `exit_code` and `output` of a command that exits non-zero from the returned object, and deletes a background session through its `session` field. Truncation of long output and a command that cannot start are covered by `shell-result.integration.test.ts`, not a paid route. `powershell`, `remote_bash` and `remote_powershell` share the same value; only `bash` has a paid route. Its route remains unverified until paid execution.
+
+`remote_powershell` and `remote_bash` exist only when an SSH target of the other OS is configured, so the free inventory never lists them and no paid case covers them. The free inventory loads the IDE from an empty agent directory and project, so your own `ssh.json` targets and IDE settings do not change the gate. Registration and working-directory rules are checked by focused unit tests, and execution on a Windows target by live checks. Their direct and Codemode routes remain unverified.
+
 The `debug-backend-fallback` case checks the explicit VS Code refusal and recovery through the native backend; the sandbox has no VS Code. Debugging through VS Code and DebugMCP needs the user's running VS Code window, so it is checked live, not by a paid route.
 
-Resumed tool loadouts are host lifecycle, not a model route. On Pi 1.3.0 and newer, Pi restores discovered tools and applies CLI `+name`/`-name` selections; the deterministic `ide-exposure` real-Pi cases check that the IDE keeps those choices and its exclusions. The `discovery.*` capabilities stay fresh-session routes.
+Tool loadouts and their prompt guidance are host lifecycle, not a new model operation. On Pi 1.3.0 and newer, Pi restores discovered tools and applies CLI `+name`/`-name` selections; the deterministic `ide-exposure` real-Pi cases check that the IDE keeps those choices and its exclusions. Guidance names enabled IDE capabilities and separates direct discovery from script calls. The `ide-exposure` real-Pi test checks that script discovery leaves deferred tools out of direct declarations. The `discovery.*` capabilities and `deferred-navigation-recovery` case stay fresh-session routes; `read-diff`, AST, Git and debugger cases keep their existing operations. These paid routes do not prove prompt wording or loadout transitions. Unrun direct and Codemode routes remain unverified.
 
 The `compose.shell-first-use-input` and `compose.debug-first-use-controls` capabilities use fresh-session roundtrips after deferred terminal/debugger metadata becomes available. Bash activates terminal guidance on first use. Native `tool_search` activates debugger guidance from its loaded results; Codemode `searchTools` and `describeTool` do not activate it until an actual debug call. These paid routes validate the follow-up operations and reference reuse. Deterministic real-Pi cases check schema publication, composition, restoration and exclusions; a paid route does not inspect serialized schemas or prove cache savings. Unrun direct and Codemode routes remain unverified.
+
+The `shell-roundtrip` routes check that Read includes the final line from a background Bash command. The stalled-reader regression and real-Pi foreground and background runs check exit draining, complete logs and completion notices without inference. The revised paid routes remain unverified.
+
+### Case prerequisites
+
+Some cases need extra tools. The sandbox sees only `/usr`, `/etc`, `/opt`, and `~/.local/bin` and `~/.local/lib` of the user who runs the matrix. A tool installed elsewhere, such as rustup's `~/.cargo/bin`, stays invisible and its case reports `unavailable`. Each attempt also starts with an empty home, so caches in the host user's home do not reach it.
+
+| Tool                               | Cases                                                                                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `typescript-language-server`       | `lsp-read`, `lsp-rename`, `lsp-path-list`, `lsp-calls-script-value`, `deferred-navigation-recovery`, `read-symbol-delete`, `reject-lsp-declaration` |
+| `clangd`                           | `lsp-overload-rename`                                                                                                                               |
+| `jq`                               | `read-jq`, `read-jq-bounded-input`                                                                                                                  |
+| `cargo` and `rustfmt`              | `rust-style-preservation`                                                                                                                           |
+| `rust-analyzer` and `cargo clippy` | `rust-diagnostics-no-build`                                                                                                                         |
+| Python `debugpy`                   | `debug-roundtrip`, `debug-controls`, `debug-backend-fallback`                                                                                       |
+| ColGREP                            | `semantic-code-search`, `semantic-script-files`                                                                                                     |
+| Vera                               | `semantic-code-search-vera`, `semantic-vera-refresh`                                                                                                |
+
+On Ubuntu 24.04, install the system packages:
+
+```bash
+sudo apt-get install -y --no-install-recommends jq clangd cargo rustfmt rust-clippy python3-debugpy
+sudo npm install --global typescript typescript-language-server
+```
+
+For Linux x86-64, install the [standalone rust-analyzer binary](https://rust-analyzer.github.io/book/rust_analyzer_binary.html) into `/usr/local/bin`. A rustup proxy or a symlink into `~/.rustup` cannot reach its toolchain inside the sandbox.
+
+```bash
+curl -fL https://github.com/rust-lang/rust-analyzer/releases/latest/download/rust-analyzer-x86_64-unknown-linux-gnu.gz -o rust-analyzer.gz
+gunzip rust-analyzer.gz
+sudo install -m 0755 rust-analyzer /usr/local/bin/rust-analyzer
+rm rust-analyzer
+```
+
+The `rust-diagnostics-no-build` prerequisite runs `rust-analyzer --version && cargo clippy --version` inside the sandbox before inference. Both commands must succeed with the sandbox's empty home and mounted toolchain paths.
+
+Install the ColGREP and Vera versions pinned in `src/plugins/pi-agent-ide-semantic/src/backend.ts` and `vera-backend.ts`, with the SHA-256 listed there:
+
+```bash
+curl -fsSLO https://github.com/lightonai/next-plaid/releases/download/v1.8.5/colgrep-x86_64-unknown-linux-gnu.tar.xz
+curl -fsSLO https://github.com/VeraTools/vera/releases/download/v2.3.0/vera-x86_64-unknown-linux-gnu.tar.gz
+sha256sum -c <<'EOF'
+532e1da739f6b5d489cdaefd20c5918fa1bb0ff9f456c89098eb49a6379ae205  colgrep-x86_64-unknown-linux-gnu.tar.xz
+cf0e4c7847eaf2b4dd95c02c623ade21532762d1cf2a9361ea91558ba42145f9  vera-x86_64-unknown-linux-gnu.tar.gz
+EOF
+tar -xf colgrep-x86_64-unknown-linux-gnu.tar.xz
+tar -xf vera-x86_64-unknown-linux-gnu.tar.gz
+sudo install -m 0755 colgrep-x86_64-unknown-linux-gnu/colgrep vera-x86_64-unknown-linux-gnu/vera /usr/local/bin/
+```
+
+Prepare ColGREP's assets once, without inference, before running its cases:
+
+```bash
+bash benchmarks/tool-capabilities/prepare-colgrep.sh --download \
+  "$HOME/.local/lib/pi-capability-assets/colgrep-1.8.5"
+```
+
+The installer requires curl, tar, Git and sha256sum. It refuses an existing destination and publishes the directory only after checking the pinned downloads. The assets are ONNX Runtime 1.23.0 for CPU and the INT8 LateOn-Code-edge model at revision `4bcdf5ed93f791259eb130b577a240f753d68dd8`. A sandbox has no GPU devices, so these cases use CPU execution with one encoding session. The installed assets are read-only inside the sandbox; every trial keeps its own configuration, runtime copy and index. Initialization and searches need no asset downloads. The prerequisite verifies the assets and retains their checksum-manifest digest in its output. Missing or changed assets make the case unavailable.
+
+Vera still downloads its model into each attempt's empty home. The prerequisite timeout is 120 seconds. A timeout or nonzero exit makes the route `unavailable` without inference, including a process that handles timeout termination and exits zero. Each completed prerequisite retains `prerequisite.json` with its command, timing, exit status, timeout flag and redacted output.
 
 ## Connector runs
 
@@ -83,7 +216,7 @@ The runner does not log in, move credentials between provider keys or enable ext
 
 Pi automatic retries are disabled. SDK/CLI internal retries are not independently bounded by this setting. Account, quota, billing or authentication errors stop the remaining batch. Requested and runtime identity, assistant metadata and any reported response model are retained separately. If a provider does not report its response model, backend identity remains unobserved. Use `servedModel` in a profile for a documented model alias, not to hide fallback.
 
-Alias validation keeps raw names and events. A local wrapper passes only when its provenance, arguments, real IDE child, result and required reference reuse match. Foreign MCP names are not stripped into native tool names. `semantic-script-receipts` checks object values through a script call; `semantic-local-alias-receipts` additionally requires an actual local alias and skips connectors without one.
+Alias validation keeps raw names and events. A local wrapper passes only when its provenance, arguments, real IDE child, result and required reference reuse match. Foreign MCP names are not stripped into native tool names. `semantic-script-receipts` checks object values through a script call.
 
 ## Live terminal comparison
 
@@ -99,7 +232,7 @@ A run freezes the checkout's current source and dependencies in a disposable clo
 
 Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Snapshot credentials are copied into private case state and removed with it. Explicit dedicated-auth files are mounted separately and survive cleanup with their refresh rotations. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
 
-Media, browser, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Web setup uses a fixed local endpoint; do not run those cases concurrently.
+Media, browser, LSP, and debug cases need their own system prerequisites. Missing prerequisites produce `unavailable`, never a pass. Web setup uses a fixed local endpoint; the runner serializes those cases within an invocation.
 
 ## Evidence
 
@@ -109,6 +242,8 @@ Each invocation creates a new directory under `.tmp/capability-results/`, or a n
 - `manifest.json`: live inventory, selected profiles/cases, base revision, source digest, timeout.
 - `attempts.json`: all attempts, including failures.
 - Per attempt: prompt, JSONL events, stderr, actual model/thinking and system prompt, initial/final fixture bytes (`files.json`, Base64), result, and tool errors when execution reached validation.
+
+`runtime.json` records the complete registered tool inventory, not the declarations visible to the model. Hidden IDE tools still appear there in Codemode-only mode; use the focused provider-request integration test to verify visibility.
 
 `pass` means the required route and outcome were observed. `route_failed`, `outcome_failed`, `model_error`, `infra_error`, `timed_out`, `cancelled`, and `unavailable` remain distinct. Not run is not a pass. A later success does not erase earlier failures. An observed pass proves executability once, not consistency across runs.
 
@@ -126,15 +261,70 @@ Delayed terminal ownership also changes presentation metadata, not a model opera
 
 Optional provider error metadata changes the shared result schema, including tools that do not emit that metadata. The semantic receipt cases still require the original effect and attempted/delivered fields. Focused ResourceError, Read and Write tests exercise rate-limit metadata delivery and private-field removal. Write retains the closed metadata on each owning file diagnostic and revalidates it for the structured result without changing mutation effects. These paid cases do not establish rate-limit metadata coverage; unrun direct and Codemode routes remain unverified.
 
+Search and `ast_search` on a result whose file other sessions changed read the current text of the selected region and say so. `lsp_search` with a result scope follows the region onto the text it reads its hits from when another session writes the file before or while the server answers, and asks for references at the position the declaration has in the text the server holds. That needs a concurrent writer, so focused result-store, Search-core, AST resolver, LSP resolver and symbol-search tests cover it, with `lsp-reference-writer.integration.test.ts` for a complete reference list and a rename from it in real Pi, not a paid route. The existing `ast-capture-rename` and `ast-search-enclosing` cases still cover the unchanged-result routes; their direct and Codemode routes remain unverified until paid execution.
+
+A `search` whose matched file another session writes between the backend run and the registration of its anchors registers the matches of the text it captured, so every match a result shows keeps its anchors and the whole result stays usable as an edit source; a source that cannot be read at all is left out with a notice. That needs a concurrent writer, so the focused `search-registration-race` tests and the real-Pi `search-concurrent-writer.integration.test.ts` stress case cover it, not a paid route. The existing `read-search-replace` case still covers the unchanged single-writer route; its direct and Codemode routes remain unverified until paid execution.
+
+The possible names a `search` offers when it finds nothing register the same way: each candidate's matches are captured with the text of its files and registered from that text, within the candidate byte and match limits, so a candidate keeps its anchors while another session writes its file; a candidate whose file cannot be read or exceeds the byte budget is still shown without stable references and says so. That needs a concurrent writer, so the focused `fuzzy-fallback` tests and the possible-name case of `search-concurrent-writer.integration.test.ts` cover it, not a paid route.
+
+A Read of a `RESULT#` selection tolerates a concurrent local-file write outside the selection, mapping the selection onto the text acquired by Read; it rejects a selection whose text changed. The focused result-anchor tests and `search-concurrent-writer.integration.test.ts` exercise this timing and the changed-selection guard. The existing `read-search-replace` executable case covers the unchanged single-writer composition, not this race; its direct and Codemode routes remain unverified until paid execution.
+
+A Read of a search reference whose file another session wrote after the reference was resolved moves each selected range onto the text the Read acquired, so it shows the matched lines and not the lines that now stand at their old numbers; a range whose own text changed fails and says where it stands. An all reference whose file changed since the search searches again and captures the text it checks those matches against, so a writer between the two no longer fails it. Both need a concurrent writer, so the focused `read-tool` and `search-registration-race` tests and the Read case of `search-concurrent-writer.integration.test.ts` cover them, not a paid route. The existing `read-search-replace` case still covers the unchanged single-writer route; its direct and Codemode routes remain unverified until paid execution.
+
+`ast_search` registers the anchors of its matches and captures from the text ast-grep parsed, so another session writing the file between the search and the registration no longer fails the call, and a file that keeps changing past the bounded retries says so. That needs a concurrent writer too: the focused AST resolver tests and the real-Pi `ast-concurrent-writer.integration.test.ts` case, which runs `ast_search` followed by `replace` with the whole result against a writer, cover it instead of a paid route. The existing `ast-capture-rename` and `ast-search-enclosing` cases keep the unchanged single-writer routes, which remain unverified until paid execution.
+
+`lsp_search` registers the anchors of its symbol hits from the text it mapped them onto, so another session writing the file between the server's answer and the registration no longer makes the call search again. That needs a concurrent writer as well: a focused LSP resolver test that writes the file in that window covers it, and `lsp-reference-writer.integration.test.ts` keeps the reference list, result scope and whole-result rename working in real Pi under a writer, not a paid route. The existing `lsp-read` case keeps the unchanged single-writer route, which remains unverified until paid execution.
+
+An all-match anchor whose search must run again after other edits, and the reasons it gives when it cannot, also need a changed or concurrently written file. Focused search-session, AST resolver, anchor-registry and retry tests cover them, with `all-match-refresh.integration.test.ts` for a scoped `lsp_search` refresh in real Pi and a limited anchor's reason; no paid route is added. The existing `read-search-replace`, `ast-capture-rename` and `lsp-read` cases still cover the unchanged search and edit routes; their direct and Codemode routes remain unverified until paid execution.
+
+A retry of the same all-match edit moves the matches its earlier attempt found instead of searching again. That too needs a concurrent writer, so focused search-session retry and text-change tests cover it, not a paid route; the cases above still cover the unchanged single-writer routes, which remain unverified until paid execution.
+
+A native Codemode edit batch whose file another process changes is planned again on the current text, and a call whose anchor is gone fails alone. That also needs a concurrent writer, so the focused real-Pi cases in `native-codemode.integration.test.ts` cover it, not a paid route. The existing `codemode.parallel-edit-effects` case still covers the unchanged single-writer batch; its routes remain unverified until paid execution.
+A successful edit can resolve to `null` if its output selection cannot be verified after a concurrent write. The focused mutation-target and script-value tests cover the guarded result, and `search-concurrent-writer.integration.test.ts` checks the failure ledger separately from the value. Existing edit composition cases cover verified selections; they do not exercise this race. Their unrun routes remain unverified.
+
+The `search-path-list` and `lsp-path-list` cases pass two directories as one `path` list to `search`, `file_search`, `ast_search` and `lsp_search`, in either order, and require that a third directory stays out of the results; `lsp-path-list` needs typescript-language-server. Overlapping paths, mixed lists of paths and results, and lists of SSH paths are covered by the focused `search-path-list` and `ssh-search-path-list` integration cases, not a paid route. Their direct and Codemode routes remain unverified until paid execution.
+
+The `lsp-overload-rename` case needs clangd. It requires a failed `declaration` for an overloaded name whose error lists a selector per overload, then an exact declaration query that selects the definition. Replacing its issued name capture must rename both prototypes, the definition and the two nested Vec calls, while leaving the other overload and its calls unchanged, including the int call on the same line as both Vec calls. Listing overloads in `lsp_search` while clangd's index lags behind another session's writes needs a concurrent writer, so focused symbol-search tests cover it, not a paid route. Its direct and Codemode routes remain unverified until paid execution.
+
+In Codemode, `lsp_search` `query` and `declaration` return the same `{ id, complete, matches }` as Search, and `calls` returns `{ id, complete, matches, incoming, outgoing }` with each caller and callee as its whole declaration. The Codemode-only `lsp-calls-script-value` case checks the callers and callee of a function, including the callee's complete `lineText`, and deletes one caller by its `incoming` entry; it needs typescript-language-server. Focused checks cover merged file call graphs, incomplete C/C++ coverage, places in deleted files that clangd still indexes, and a 15-second navigation deadline. The real-Pi contention test uses an exact C++ overload with 110 callers in a 26,000-line file and checks both `calls` and `references` while another process edits the file. The paid TypeScript case does not cover contention. `read-symbol-delete` accepts the declaration value or its match on its Codemode route. These routes remain unverified until paid execution.
+
 The `read-jq` case includes a transformed output window. `read-jq-bounded-input` requires refusal when a jq query is given an issued selection, followed by a permitted query of the explicit source. These cases cover the shared filesystem calling contract. Provider-registered structured JSON and the public jq handler are covered by focused SDK and consumer tests, not by a paid Linear route. Those direct and Codemode provider routes remain unverified; no inference is required for the free gate.
 
-The `read-error-direct` and `read-error-codemode` cases also check a declared failure for a complete fragmented provider address. They require the safe error value and exactly one full-address acquisition, even though its bare source is readable. The independent missing-file error and successful file read remain controls. These direct and Codemode routes remain unverified until paid execution.
+A text Read inside Codemode returns `{ text, id }` with the whole requested text, so the AST overview is a direct-route behavior only: the `read-overview-search-*` cases have no Codemode route. `read-large-store` stores an exact window larger than the model output limit and searches it again after the edit. `read-large-json-script` parses a large JSON file in a script and writes it back. Their routes remain unverified until paid execution.
+
+Projection exceptions cannot be induced reliably by a model route. The focused `projection-failure.integration.test.ts` injects one after a successful tool execution in real Pi, checks that Codemode receives `null` and its failure reason without the private record, and keeps direct calls as a control. The existing Read error cases cover declared failures instead; their routes remain unverified without paid execution.
+
+The `read-error-direct` and `read-error-codemode` cases also check a declared failure for a complete fragmented provider address. They require a failed Read and exactly one full-address acquisition, even though its bare source is readable. In Codemode, each failed Read resolves to `null` and the script result lists it with its source and the fixture provider's post-result recovery context; the task tells the model not to catch errors. The independent missing-file error and successful file read remain controls. These direct and Codemode routes remain unverified until paid execution.
+
+The `diff-script-complete` case diffs a file with more lines than a tool result shows in a Codemode script and requires the complete unified diff as the script value, then an empty string for equal sources; `read-diff` and `diff-omission` also check the diff value. These routes remain unverified until paid execution.
+
+The `value-id-source` case passes objects with an `id` as Search's and Replace's `path` in one Codemode call; a route reuses a result when an object's `id` is `RESULT#` with that result's UUID. Search gets the Read value `{ text, id }` itself and Replace the Search value itself. Direct calls with such an object, arrays of them, issued preview metadata, unsupported-field refusals and unknown ids are covered by the focused `source-value-schemas` and `codemode-source-values` tests, not a paid route. Its Codemode route remains unverified until paid execution.
+
+The `result-selector-scope` case passes a Read result of one line as Replace's `path` together with a line anchor: an anchor outside that line must fail and identify the scoped line by its anchor, and one inside it edits only there. The `result-selector-multi-range-plain` and `result-selector-multi-range-unicode` cases reuse a whole ten-match Search result as `path`, refuse a pair spanning its first and last matches and an unselected literal, then replace every exact match with one selector. The Unicode fixture keeps a zero-width space inside each identifier. Both direct and Codemode routes remain unverified until paid execution.
+
+Edit routes whose `path` must name a file also accept a reused result of that file, such as a Read with anchors passed together with its anchor. Focused `result-scope-anchors` unit and integration tests cover whole-line Search selectors, narrower multi-match selections, Insert and Delete with result scopes, line anchors on matching lines and Move, plus exact text unique only inside a result and results of several files.
+
+In Codemode, Search and `ast_search` return `{ id, complete, matches }` with an `id` for each match and capture, and no numbered `SEARCH#` references. A route reuses a prior result when a passed id is the envelope UUID of its readable result or any `id` in its script value. `search-script-facts` checks the match list and `complete` of empty, bounded and complete searches, including the AST match's `lineText`. `search-script-match-ids` lists 150 matches with line context, more than a readable result shows, and replaces only the last one by its id. Cases that pass `:match` references accept a match id on their Codemode route. `search-issued-scope`, `insert-search-anchor-list` and `mixed-range-replace` use `:all` or `:line` selectors that only readable results issue, so they keep only their direct route. These routes remain unverified until paid execution.
+
+`search-literal-operators` requires the full containing line for a quoted C++ literal. Its Codemode route checks `text` separately from `lineText`; Read executions, including registered aliases, fail the case. Multiline context, preserved interior line endings, unavailable context and bounded direct previews are covered by focused value, registration and real-Pi tests, not additional paid routes. Unrun routes remain unverified.
+
+`search-script-fallback` checks that Codemode distinguishes an empty original search from its word fallback and reuses a fallback match id. Its paid route remains unverified until execution. The `token-search-edit-guard` case checks that a whole result from a search broadened to separate words cannot be replaced, while an individual Boolean match and a literal phrase result remain editable. A separate-word fallback also refuses edits through each of its matches; the `token-search-edit` integration test covers that, not a paid route. The direct and Codemode routes remain unverified until paid execution.
+
+The Codemode-only `whole-file-script-receipts` case writes, copies and moves a file in one script without printing the returned values. It checks the script result for each operation and excludes the file body. Its paid route remains unverified until execution.
+
+The `write-json-text` case checks that Write saves JSON text byte for byte, including `1.0`, spacing and escaped quotes. `read-image-write` passes the image through Write `image`, not `content`.
+
+`json-structured-arguments` keeps JSON-text path-array recovery and rereads an issued result through a JSON-text `{ id }` source. It uses native Diff request objects. Recovery applies only when the literal source string is not an existing path and the decoded value is valid for that field. `json-literal-selectors` uses JSON objects containing `id` as literal text in every edit selector field and reads a file literally named `["a.txt","b.txt"]`. Final bytes preserve adjacent commas and the decoy files. Both cases have direct and Codemode routes; unrun routes remain unverified.
+
+Windows executable discovery ignores extensionless project shims, including POSIX launchers in WSL-installed `node_modules`. The existing edit cases cover the unchanged editing route, not this Windows/WSL setup. Focused executable and registry tests cover availability; unrun paid routes remain unverified.
+
+Whole-line cases check the written bytes across selector types. `search-anchor-insert` and `read-window-insert` distinguish line insertion from inline text; `delete-selection` removes a complete match line with its separator. `replace-line-boundary-*` and `exact-eof-*` distinguish empty text from newline-only text over complete lines, including CRLF and unterminated EOF. `exact-range-copy` uses the same whole-line source at an inline slot, a line edge and a whole-line replacement target. Direct and Codemode routes remain unverified until paid execution.
 
 ## Required maintenance
 
 When an IDE tool or a supported composition changes:
 
-1. Review `matrix.ts`. Add, update, or remove the intended capability entries.
+1. Review `matrix.ts`. Add, update, or remove the intended capability entries. Keep one entry per capability ID and list all of its cases in that entry.
 2. Update the linked tasks in `cases.ts`, including their route and outcome checks. Include every required source/destination reference, not just one endpoint.
 3. Run the free gate and affected free regression tests.
 4. If the tool schema changed, review the cases first, then explicitly record the new contracts:
@@ -147,3 +337,5 @@ When an IDE tool or a supported composition changes:
 5. With paid permission, run the affected routes and preserve both failures and successes. Leave unrun routes unverified.
 
 The schema gate detects structural drift and broken coverage links. It cannot infer semantic completeness or detect every behavior change from code. Do not just regenerate `contracts.json` to bypass a failure; the matrix/case review is mandatory even when the schema stays unchanged.
+
+Codemode value guidance is shared once in the system prompt, and editing workflows are emitted once when mutation tools are enabled, rather than repeated in each tool's catalog entry. Output declarations retain the same values and validation; focused value tests and real-Pi interface exports cover the presentation. Existing Read/Search/edit composition, fallback, terminal, AST and LSP cases remain the relevant paid routes. The `deferred-navigation-recovery` case covers AST search, LSP search, Diff and Undo with the IDE's deferred tools initially inactive. Its direct route requires `tool_search` before those calls. One search can load several tools, so a `discovers` step checks the tools that all `tool_search` calls up to that step loaded together, not one search per tool. Its Codemode route requires only the tool calls: scripts can call every session tool directly, and discovery through `searchTools()` is optional. `tool_search` is model-only and is not available as `tools.tool_search`.

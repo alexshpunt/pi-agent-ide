@@ -1,4 +1,4 @@
-import type { ResultTargetStore } from "pi-agent-resource";
+import { rangesInText, type ResultTargetStore } from "pi-agent-resource";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import {
   TEXT_SEARCH_ANCHOR_KIND,
@@ -9,34 +9,42 @@ import {
 export function createResultTargetAnchors(
   store: ResultTargetStore,
 ): TextAnchorResolverRegistration {
+  const ownsReference = (value: string) =>
+    value.startsWith("RESULT#") ||
+    (value.endsWith(":all:match") && store.hasSearchReference(value));
   return {
     kind: TEXT_SEARCH_ANCHOR_KIND,
     type: "auxiliary",
     describeInPrompt: false,
+    // Resolve fixed matches ourselves, rather than sending them to a live Search session.
+    priority: -20,
     resolver: {
       id: "result-targets",
       description: "Use returned RESULT# references to target exact source snapshots.",
       renderFull: (value) => value,
       renderCompact: () => "result targets",
       async tryResolve(value, context) {
-        if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
+        if (!ownsReference(value)) return { kind: "not-handled" };
         try {
           const target = store
-            .resolve(value, context.cwd)
+            .resolve(value, context.cwd, { forEdit: true })
             .targets.find((target) => target.source === context.source);
           if (target === undefined)
             return {
               kind: "rejected",
               rejection: { code: "missing", reason: "Result does not select this source." },
             };
-          if (target.expectedContent !== context.content)
+          // Resolve in the caller's text: the store may already hold this selection on a newer
+          // text, or the caller may have read the file before another session wrote it.
+          const ranges = rangesInText(target.ranges, target.expectedContent, context.content);
+          if (ranges === undefined)
             return {
               kind: "rejected",
               rejection: { code: "stale", reason: "Result target is stale; repeat Read/Search." },
             };
           return {
             kind: "resolved",
-            anchor: new TextSelectionAnchor(value, target.source, target.ranges),
+            anchor: new TextSelectionAnchor(value, target.source, ranges),
           };
         } catch (error) {
           return {
@@ -52,10 +60,14 @@ export function createResultTargetAnchors(
     resources: {
       id: "result-target-sources",
       async tryResolve(value, context) {
-        if (!value.startsWith("RESULT#")) return { kind: "not-handled" };
+        if (!ownsReference(value)) return { kind: "not-handled" };
         try {
-          const selected = store.resolve(value, context.cwd);
-          await store.verify(selected, context.signal);
+          const selected = store.resolve(value, context.cwd, {
+            forEdit: context.edit !== undefined,
+          });
+          // Filesystem selections are mapped onto the text acquired by the consumer. Sources
+          // without filesystem tracking still need verification before their selections are used.
+          await store.verifyUnfollowed(selected, context.signal);
           return selected.targets.length === 0
             ? {
                 kind: "rejected",

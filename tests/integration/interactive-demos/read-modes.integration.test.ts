@@ -13,6 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { stripTerminalSequences } from "@earendil-works/pi-tui";
+import { isLineAnchor } from "pi-agent-text";
 
 import { generateReadExtensions } from "pi-agent-read/testing";
 import {
@@ -63,7 +64,7 @@ test("shows every read rendering mode", async () => {
       testName: "interactive-demo-read-modes",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read"],
+      tools: ["read", "outline"],
       rawMode: false,
       timeoutMs: 180_000,
       conversation: [
@@ -82,8 +83,8 @@ test("shows every read rendering mode", async () => {
           [
             toolCall({
               id: "demo-read-ast",
-              name: "read",
-              arguments: { path: `ast:${fileName}` },
+              name: "outline",
+              arguments: { path: fileName },
               ...interactivePacing,
             }),
           ],
@@ -146,7 +147,9 @@ test("shows included views once in the real read panel", async () => {
     const rendered = stripTerminalSequences(result.tuiRenderedOutput);
     const panel = rendered.slice(rendered.lastIndexOf("╭─"));
 
-    expect(firstProjectedLine).toMatch(/^1#[A-F\d]+\|alpha$/u);
+    const [anchor, content] = firstProjectedLine.split("|");
+    expect(isLineAnchor(anchor ?? "")).toBe(true);
+    expect(content).toBe("alpha");
     expect(panel).toContain(firstProjectedLine);
   });
 });

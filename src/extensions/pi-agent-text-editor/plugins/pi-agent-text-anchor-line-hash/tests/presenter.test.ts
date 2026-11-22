@@ -1,7 +1,7 @@
 import { createTextDocument } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { createLineHashAnchor } from "#src/anchor.ts";
+import { formatLineHashAnchor } from "#src/anchor.ts";
 import { createLineHashPresenter } from "#src/read-handler.ts";
 
 test.each([
@@ -17,8 +17,8 @@ test.each([
   });
 
   expect(presented.lines.map((line) => line.presentation?.prefix)).toEqual([
-    `${createLineHashAnchor(1, "alpha").value}|`,
-    `${createLineHashAnchor(2, "bravo").value}|`,
+    `${formatLineHashAnchor("alpha\nbravo", 1)}|`,
+    `${formatLineHashAnchor("alpha\nbravo", 2)}|`,
   ]);
 });
 
@@ -67,8 +67,6 @@ test("edit presentation anchors only the shown lines, padded like the whole file
   const shown = await presenter.present(document, { ...context, lineNumbers: new Set([8, 9]) });
 
   expect(shown.lines.slice(7, 9)).toEqual(whole.lines.slice(7, 9));
-  expect(shown.lines[7]?.presentation?.prefix).toBe(
-    `  ${createLineHashAnchor(8, "line 8").value}|`,
-  );
+  expect(shown.lines[7]?.presentation?.prefix).toBe(`${formatLineHashAnchor(content, 8)}|`);
   expect(shown.lines.filter((line) => line.presentation !== undefined)).toHaveLength(2);
 });

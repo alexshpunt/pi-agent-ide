@@ -23,6 +23,47 @@ function searchMatch(source: string, matchedText: string): TextSearchMatch {
   };
 }
 
+test("registered matches capture complete spanned lines from the searched snapshot", async () => {
+  const source = "/workspace/note.txt";
+  const contents = "prefix first\r\nlast suffix\r\nuntouched\r\n";
+  const session = await new SearchSessionStore().register(
+    "first",
+    [
+      {
+        source,
+        lineNumber: 1,
+        endLineNumber: 2,
+        startColumn: 7,
+        endColumn: 4,
+        matchedText: "first\r\nlast",
+        // Only LF ends a line: a CRLF line's text keeps its CR.
+        lineText: "prefix first\r",
+      },
+      {
+        source,
+        lineNumber: 1,
+        endLineNumber: 3,
+        startColumn: 7,
+        endColumn: 0,
+        matchedText: "first\r\nlast suffix\r\n",
+        lineText: "prefix first\r",
+      },
+    ],
+    true,
+    "/workspace",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new Map([[source, contents]]),
+  );
+  expect(session.matches.map((match) => match.linesText)).toEqual([
+    "prefix first\r\nlast suffix\r",
+    "prefix first\r\nlast suffix\r",
+  ]);
+  expect(session.matches[0]?.lineText).toBe("prefix first\r");
+});
 test("numbered line aliases keep complete containing lines and expire after source changes", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-line-alias-"));
   onTestFinished(() => rm(cwd, { recursive: true, force: true }));
@@ -40,7 +81,7 @@ test("numbered line aliases keep complete containing lines and expire after sour
         startColumn: 7,
         endColumn: 4,
         matchedText: "OLD\r\nTAIL",
-        lineText: "prefix OLD",
+        lineText: "prefix OLD\r",
       },
     ],
     false,
@@ -63,8 +104,124 @@ test("numbered line aliases keep complete containing lines and expire after sour
   await targets.verify(selected);
   await writeFile(source, "changed\r\n");
   await expect(targets.verify(selected)).rejects.toThrow(/stale/u);
+  // Its own lines are gone, so the next use retires it; the old bytes do not bring it back.
+  expect(() => targets.resolve(reference, cwd)).toThrow(/expired/u);
   await writeFile(source, original);
   expect(() => targets.resolve(reference, cwd)).toThrow(/expired/u);
+});
+test("token selections reject bulk edits but remain readable and individually editable", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-token-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  const content = "alpha beta\n";
+  await writeFile(source, content);
+  const targets = new ResultTargetStore();
+  const store = new SearchSessionStore(undefined, targets);
+  const query = "alpha AND beta";
+  const { createSearchRecipe } = await import("#src/search-recipe.ts");
+  const recipe = { ...createSearchRecipe({ query }), originalQuery: query };
+  const matches = [
+    { ...searchMatch(source, "alpha"), lineText: "alpha beta" },
+    { ...searchMatch(source, "beta"), startColumn: 6, endColumn: 10, lineText: "alpha beta" },
+  ];
+  const session = await store.register(recipe.query, matches, true, cwd, undefined, recipe);
+  expect(() => targets.resolve(session.target, cwd, { forEdit: true })).toThrow(
+    /alpha AND beta.*2/u,
+  );
+  try {
+    targets.resolve(session.target, cwd, { forEdit: true });
+    throw new Error("Unsafe selection was accepted");
+  } catch (error) {
+    expect(error).toMatchObject({ code: "UNSAFE_TOKEN_SELECTION" });
+  }
+  expect(targets.resolve(session.target, cwd).targets).toHaveLength(1);
+  expect(targets.resolve(session.matchTargets?.[0], cwd, { forEdit: true }).targets).toHaveLength(
+    1,
+  );
+  const all = `SEARCH#${session.id}:all:match`;
+  await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
+    targets: [{ source }],
+  });
+  const resolution = await store.anchorResolver().tryResolve(all, {
+    source,
+    content,
+    lines: content.split("\n"),
+    cwd,
+  });
+  expect(resolution.kind).toBe("rejected");
+  if (resolution.kind !== "rejected") throw new Error("Expected a rejected anchor");
+  expect(resolution.rejection.reason).toContain(query);
+});
+test("separate-word fallback matches are readable location hints that no reference can edit", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-word-hints-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  const content = "const alpha\nawait beta\n";
+  await writeFile(source, content);
+  const targets = new ResultTargetStore();
+  const store = new SearchSessionStore(undefined, targets);
+  const query = "const x = await f";
+  const { createSearchRecipe } = await import("#src/search-recipe.ts");
+  const recipe = { ...createSearchRecipe({ query }), originalQuery: query };
+  const words = recipe.fallbacks?.find((step) => step.mode === "words")?.query;
+  if (words === undefined) throw new Error("Expected a separate-word fallback");
+  const matches = [
+    { ...searchMatch(source, "const"), lineText: "const alpha" },
+    { ...searchMatch(source, "await"), lineNumber: 2, lineText: "await beta" },
+  ];
+  const session = await store.register(words, matches, true, cwd, undefined, recipe);
+  const handles = [session.target, ...(session.matchTargets ?? [])];
+  for (const mode of ["line", "match"]) handles.push(`SEARCH#${session.id}:1:${mode}`);
+  for (const handle of handles) {
+    expect(() => targets.resolve(handle, cwd, { forEdit: true }), handle).toThrow(
+      expect.objectContaining({ code: "UNSAFE_TOKEN_SELECTION" }),
+    );
+    expect(targets.resolve(handle, cwd).targets, handle).toHaveLength(1);
+  }
+  for (const selector of ["1:line", "1:match", "all:match"]) {
+    const resolution = await store.anchorResolver().tryResolve(`SEARCH#${session.id}:${selector}`, {
+      source,
+      content,
+      lines: content.split("\n"),
+      cwd,
+    });
+    expect(resolution.kind, selector).toBe("rejected");
+  }
+  await expect(
+    store.resolveSearchScope(`SEARCH#${session.id}:1:line`, { cwd }),
+  ).resolves.toMatchObject({ targets: [{ source }] });
+});
+test("an all anchor cannot broaden from a phrase to tokens during refresh", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-refresh-token-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  await writeFile(source, "alpha beta\n");
+  const { createSearchRecipe } = await import("#src/search-recipe.ts");
+  const recipe = { ...createSearchRecipe({ query: "alpha beta" }), originalQuery: "alpha beta" };
+  const words = recipe.fallbacks?.find((fallback) => fallback.mode === "words");
+  if (words === undefined) throw new Error("Missing word fallback");
+  const store = new SearchSessionStore();
+  const session = await store.register(
+    recipe.query,
+    [searchMatch(source, "alpha beta")],
+    true,
+    cwd,
+    undefined,
+    recipe,
+    async () => ({ query: words.query, matches: [searchMatch(source, "alpha")], complete: true }),
+  );
+  await writeFile(source, "alpha\n");
+  const all = `SEARCH#${session.id}:all:match`;
+  const resolution = await store.resourceResolver().tryResolve(all, {
+    cwd,
+    edit: { attempt: 0 },
+  });
+  expect(resolution.kind).toBe("rejected");
+  if (resolution.kind !== "rejected") throw new Error("Expected a rejected resource");
+  expect(resolution.rejection.reason).toContain("alpha beta");
+  await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
+    targets: [{ source }],
+  });
 });
 test("keeps changed search results displayable without registering anchors", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-changing-snapshot-"));
@@ -198,6 +355,31 @@ test("colliding short ids keep both registered searches resolvable", async () =>
   await expect(
     store.resourceResolver().tryResolve("SEARCH#ABCD1:1:match", { cwd }),
   ).resolves.toMatchObject({ kind: "resolved", targets: [{ source: secondSource }] });
+});
+
+test("a search never takes an id the result store issued for an all-match reference", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-issued-id-"));
+  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
+  const source = path.join(cwd, "note.txt");
+  await writeFile(source, "first\n", "utf8");
+  const targets = new ResultTargetStore();
+  // The id this search would get is already issued to another reference.
+  targets.claimSearchId("ABCD");
+  const store = new SearchSessionStore(() => `ABCD0${"0".repeat(59)}`, targets);
+
+  const session = await store.register("first", [searchMatch(source, "first")], true, cwd);
+
+  expect(session.id).not.toBe("ABCD");
+  expect(targets.hasSearchId(session.id)).toBe(true);
+  const issued = targets.registerAllMatchesReference(
+    {
+      source,
+      expectedContent: "first\n",
+      ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 5 } }],
+    },
+    cwd,
+  );
+  expect(issued).not.toContain(`SEARCH#${session.id}:`);
 });
 
 test("search session id allocation fails instead of reusing an occupied identity", () => {
@@ -412,12 +594,12 @@ test("all selections refresh through the original backend while single selection
   const store = new SearchSessionStore();
   let refreshes = 0;
   const session = await store.register(
-    "ast:node",
+    "custom:node",
     [searchMatch(source, "old")],
     true,
     cwd,
     undefined,
-    { query: "ast:node", regex: false },
+    { query: "custom:node", regex: false },
     async () => {
       refreshes++;
       return { matches: [searchMatch(source, "new")], complete: true };

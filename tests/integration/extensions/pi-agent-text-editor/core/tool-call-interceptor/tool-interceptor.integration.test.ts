@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -50,11 +51,23 @@ describe("pi-agent-text-editor tool-call interceptor", () => {
         directory,
         "interceptor-partial",
         ["intercept_partial"],
-        [call("intercept_partial", "partial-call", { value: "streamed" })],
+        [
+          toolCall({
+            id: "partial-call",
+            name: "intercept_partial",
+            argumentsJson: '{"value":"streamed","block":false}',
+            chunks: {
+              kind: "explicit",
+              chunks: ['{"value":"streamed",', '"block":false}'],
+            },
+          }),
+        ],
       );
 
       expect(getToolExecution(result, "partial-call").isError).toBe(true);
-      expect(getToolResultText(result, "partial-call")).toContain("partial:streamed");
+      expect(getToolExecutionDetails(getToolExecution(result, "partial-call"))).toMatchObject({
+        partialValue: "streamed",
+      });
     });
   });
 

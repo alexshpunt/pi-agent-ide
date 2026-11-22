@@ -1,4 +1,7 @@
 import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  truncateHead,
   ToolExecutionComponent,
   type ExtensionAPI,
   type ToolDefinition,
@@ -12,6 +15,7 @@ import {
 import { compactMutationDetails } from "#src/extensions/pi-agent-text-editor/plugins/pi-agent-text-editor-renderer/src/persisted-result.ts";
 import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
 import { registerIdeAliasCompatibility } from "./ide-alias-rendering.ts";
+import { ALREADY_DONE_TEXT } from "#src/extensions/pi-agent-text-editor/src/core/already-done.ts";
 
 const ENTRY_TYPE = "ide-nested-results";
 const MAX_CALLS = 256;
@@ -31,7 +35,7 @@ interface ChildPanel {
   batched?: boolean;
   rollback?: boolean;
   postWriteFailure?: boolean;
-  unchangedCopy?: boolean;
+  unchanged?: boolean;
   copyRollback?: "restored" | "failed";
   /** The call's host-recorded execution time; absent in older history or when it did not run. */
   durationMs?: number;
@@ -95,6 +99,40 @@ export function formatToolDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${totalSeconds % 60}s`;
 }
 
+/**
+ * A display copy of a result whose text exceeds the shared output limit: the head of its text and
+ * only its scalar details, since line records describe the whole text. Undefined when it fits.
+ */
+function shortenedDisplay(
+  result: NonNullable<ChildPanel["result"]>,
+): NonNullable<ChildPanel["result"]> | undefined {
+  const content = result.content.map((block) => {
+    if (block.type !== "text") return block;
+    // The composition reference line is not part of the result's own text.
+    const reference = /^<system-result\b[^>]*><uuid>[a-f\d-]{36}<\/uuid><\/system-result>\n/u.exec(
+      block.text,
+    )?.[0];
+    const body = reference ? block.text.slice(reference.length) : block.text;
+    const head = truncateHead(body, { maxBytes: DEFAULT_MAX_BYTES, maxLines: DEFAULT_MAX_LINES });
+    if (!head.truncated) return block;
+    const notice = `[Showing ${head.outputLines} of ${head.totalLines} lines in this panel; the calling tool received the whole result.]`;
+    return {
+      ...block,
+      text: (reference ?? "") + (head.content ? `${head.content}\n\n${notice}` : notice),
+    };
+  });
+  if (content.every((block, index) => block === result.content[index])) return undefined;
+  const details =
+    result.details !== null && typeof result.details === "object"
+      ? Object.fromEntries(
+          Object.entries(result.details).filter(([, value]) =>
+            ["string", "number", "boolean"].includes(typeof value),
+          ),
+        )
+      : result.details;
+  return { ...result, content, details };
+}
+
 /** Keep bounded display data for nested IDE tools, separate from model context and usage. */
 export function createNestedIdeRendering(
   pi: ExtensionAPI,
@@ -146,16 +184,21 @@ export function createNestedIdeRendering(
     result: NonNullable<ChildPanel["result"]>,
   ) => {
     // Bound in-memory display data as each call finishes, not only at persistence.
-    call.result = result;
     call.resultOmitted = false;
-    try {
-      const serialized = JSON.stringify(group);
-      if (Buffer.byteLength(serialized) <= MAX_BYTES) {
-        call.result = JSON.parse(JSON.stringify(result)) as NonNullable<ChildPanel["result"]>;
-        return;
+    // A script can receive a whole large file from Read; its panel needs only the head. Other
+    // renderers depend on complete details, so their oversized results stay omitted.
+    for (const candidate of [result, call.name === "read" ? shortenedDisplay(result) : undefined]) {
+      if (candidate === undefined) continue;
+      call.result = candidate;
+      try {
+        const serialized = JSON.stringify(group);
+        if (Buffer.byteLength(serialized) <= MAX_BYTES) {
+          call.result = JSON.parse(JSON.stringify(candidate)) as NonNullable<ChildPanel["result"]>;
+          return;
+        }
+      } catch {
+        // A renderer payload that cannot be serialized must not break tool execution.
       }
-    } catch {
-      // A renderer payload that cannot be serialized must not break tool execution.
     }
     const references =
       result.details && typeof result.details === "object"
@@ -375,16 +418,17 @@ export function createNestedIdeRendering(
       const group = groups.get(batch.parentToolCallId);
       if (!group) return;
       const details = compactMutationDetails(batch.result.details);
-      const lastChangedCall = batch.calls.findLast((id) => !batch.unchangedCopyCalls?.includes(id));
+      const lastChangedCall = batch.calls.findLast((id) => !batch.unchangedCalls?.includes(id));
       const callIdsByResult: readonly unknown[] =
-        "callIdsByResult" in details && Array.isArray(details.callIdsByResult)
-          ? details.callIdsByResult
+        "callIdsByResult" in batch.result.details &&
+        Array.isArray(batch.result.details.callIdsByResult)
+          ? batch.result.details.callIdsByResult
           : [];
       for (const id of batch.calls) {
         const call = group.calls.find((call) => call.id === id);
         if (!call) continue;
         const postWriteResults =
-          details.results?.filter(
+          batch.result.details.results?.filter(
             (result, index) =>
               (callIdsByResult[index] === id ||
                 (callIdsByResult.length === 0 && batch.calls.length === 1)) &&
@@ -398,7 +442,7 @@ export function createNestedIdeRendering(
           delete call.renderArgs;
           retainResult(group, call, {
             content: batch.result.content,
-            details: { results: postWriteResults, effect: "applied" },
+            details: compactMutationDetails({ results: postWriteResults, effect: "applied" }),
             isError: true,
           });
           continue;
@@ -419,17 +463,18 @@ export function createNestedIdeRendering(
           });
           continue;
         }
-        // Keep no-op Copy outcomes; changed peers share the final batch diff.
-        call.unchangedCopy =
-          call.name === "copy" && batch.unchangedCopyCalls?.includes(id) === true;
-        call.batched = !call.unchangedCopy && id !== lastChangedCall;
+        // Keep outcomes of calls that changed nothing; changed peers share the final batch diff.
+        call.unchanged = batch.unchangedCalls?.includes(id) === true;
+        call.batched = !call.unchanged && id !== lastChangedCall;
         call.groupedResult =
           !call.batched &&
-          !call.unchangedCopy &&
-          batch.calls.filter((other) => !batch.unchangedCopyCalls?.includes(other)).length > 1;
-        if (call.unchangedCopy) {
+          !call.unchanged &&
+          batch.calls.filter((other) => !batch.unchangedCalls?.includes(other)).length > 1;
+        if (call.unchanged) {
           retainResult(group, call, {
-            content: [{ type: "text", text: "No changes: destination already has this text." }],
+            content: batch.mutationResults?.get(id)?.content ?? [
+              { type: "text", text: ALREADY_DONE_TEXT },
+            ],
             details: {},
             isError: false,
           });
@@ -439,7 +484,8 @@ export function createNestedIdeRendering(
           if (new Set(details.mutationRender?.map((resource) => resource.path)).size > 1)
             call.renderArgs = {};
           call.rollback =
-            details.results?.some((result) => result.data.rollback !== undefined) === true;
+            batch.result.details.results?.some((result) => result.data.rollback !== undefined) ===
+            true;
           const targetUnavailable = (call.result?.details as FileMutationBatchResult | undefined)
             ?.metadata?.targetUnavailable;
           retainResult(group, call, {
@@ -473,7 +519,7 @@ export function createNestedIdeRendering(
             const errors = operation.errors.map((error) => error.message);
             // Keep precise failure effects and their custom error panels.
             if (call.rollback || call.postWriteFailure || call.copyRollback !== undefined) continue;
-            if (call.unchangedCopy && errors.length === 0 && operation.effect === "not-applied")
+            if (call.unchanged && errors.length === 0 && operation.effect === "not-applied")
               continue;
             if (errors.length > 0 || operation.effect !== "applied") {
               call.batched = false;

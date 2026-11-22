@@ -1,5 +1,37 @@
+export {
+  normalizeStructuredArguments,
+  type StructuredSourceContext,
+} from "./json-structured-arguments.ts";
 export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.ts";
+export {
+  EDIT_EXECUTION_TIMEOUT_MS,
+  EDIT_WAIT_TIMEOUT_MS,
+  NAVIGATION_TIMEOUT_MS,
+  SEARCH_TIMEOUT_MS,
+  configureSearchDeadline,
+  ideToolTimeoutMs,
+  reportToolEffect,
+  runWithToolDeadline,
+  runWithinToolDeadline,
+  snapshotOnToolDeadline,
+  toolDeadlineFailure,
+  trackToolCleanup,
+  type DeadlineEffect,
+  ToolDeadlineError,
+} from "./tool-deadline.ts";
 export { resourceAccesses } from "./resource-access.ts";
+export {
+  fileTextDigest,
+  fileTextKeys,
+  FILE_TEXT_READ_EVENT,
+  type FileTextRead,
+  FILE_TEXT_VISIBLE_EVENT,
+  type FileTextVisible,
+  type FileTextWindow,
+  attachFileTextWindows,
+  takeFileTextWindows,
+  retainFileTextWindows,
+} from "./file-text-read.ts";
 export { TempResourceStore, type TempResourceStoreOptions } from "./temp-resource-store.ts";
 export {
   assertJsonData,
@@ -11,6 +43,7 @@ export {
   type ResultError,
   type StructuredResult,
 } from "./tool-result.ts";
+export { trackScriptCalls } from "./script-calls.ts";
 export { ResourceError } from "./resource-error.ts";
 export {
   resourceErrorMetadata,
@@ -101,10 +134,31 @@ export {
 export {
   connectResultTargets,
   verifyResultTargets,
+  currentResultTargets,
+  resultTargetsInText,
+  describeAdjustedRanges,
   ResultTargetStore,
   resultInputSchema,
+  resultSourceSchema,
+  resultValueSchema,
+  resultValueId,
+  resultValueReference,
   type ResultRange,
   type ResultSourceTarget,
   type ResolvedResultTargets,
 } from "./result-targets.ts";
 export { connectResultImages, ResultImageStore } from "./result-images.ts";
+export {
+  readUnchanged,
+  type FileGeneration,
+  type FileGenerationReader,
+  type UnchangedRead,
+} from "./unchanged-read.ts";
+export {
+  createLineMap,
+  createRangeTracker,
+  describeLostRange,
+  rangesInText,
+  rebaseOrRelocateRange,
+  type LineMap,
+} from "./line-map.ts";

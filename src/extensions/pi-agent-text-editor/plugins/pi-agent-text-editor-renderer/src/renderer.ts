@@ -17,13 +17,18 @@ import {
   projectTypingResources,
 } from "./mutation-projection.ts";
 import { resolveMutationResultResources } from "./mutation-result.ts";
+import { compactMutationDetails } from "./persisted-result.ts";
 import { TYPING_FRAME_INTERVAL_MS, TypingInterpolation } from "./typing-interpolation.ts";
 
 import type { MutationRenderResource } from "./render-resource.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
+import { isLineAnchor, SEARCH_HIGHLIGHT_CLOSE, SEARCH_HIGHLIGHT_OPEN } from "pi-agent-text";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
-import type { FileMutationBatchResult } from "pi-agent-text-editor/api/mutation-result";
+import {
+  NO_TEXT_TARGET,
+  type FileMutationBatchResult,
+} from "pi-agent-text-editor/api/mutation-result";
 import { isDiffStatusContribution } from "pi-agent-text-editor/api/post-edit";
 import type { MutationDiffStatus } from "pi-agent-text-editor/api/mutation-result";
 import type { AnyTextMutationToolRegistration } from "pi-agent-text-editor/api/mutation-tool";
@@ -91,6 +96,13 @@ interface RenderState {
   releaseAnimationPressure?: () => void;
 }
 
+function mutationRenderState(
+  state: Partial<RenderState>,
+  registration: RenderRegistration,
+): RenderState {
+  return Object.assign(state, { registration: state.registration ?? registration });
+}
+
 /** Register mutation renderers with optional model-stream animation pressure. */
 export function registerMutationRenderers(
   api: TextEditorPluginApi,
@@ -109,6 +121,7 @@ export function registerMutationRenderers(
         animationPressure,
         animationsEnabled,
         presentation,
+        displayName,
       ),
     );
   });
@@ -120,6 +133,7 @@ function createRenderer(
   animationPressure: MutationAnimationPressure | undefined,
   animationsEnabled: () => boolean,
   presentationSource: ToolPresentation | (() => ToolPresentation),
+  displayName: ((name: string) => string) | undefined,
 ): TextEditorToolRendererRegistration {
   const getPresentation = () =>
     typeof presentationSource === "function" ? presentationSource() : presentationSource;
@@ -128,11 +142,11 @@ function createRenderer(
   return {
     tool,
     fallback: true,
+    persistResult: compactMutationDetails,
     renderCall(arguments_, theme, context) {
       const component = panel(context.lastComponent, theme, false);
       const input = asInput(arguments_);
-      const state = context.state as RenderState;
-      state.registration = registration;
+      const state = mutationRenderState(context.state as Partial<RenderState>, registration);
       const now = performance.now();
       state.panel = component;
       state.input = input;
@@ -154,7 +168,7 @@ function createRenderer(
 
       const generated = generatedText(tool, input);
       const renderedHeader = renderHeader(
-        registration,
+        state.registration,
         input,
         state.preview,
         theme,
@@ -225,8 +239,22 @@ function createRenderer(
       return component;
     },
     renderResult(result, options, theme, context) {
-      const state = context.state as RenderState;
-      state.registration = registration;
+      const state = mutationRenderState(context.state as Partial<RenderState>, registration);
+      const operations = [
+        ...new Set(
+          result.details.results?.flatMap(
+            ({ data }) => data.operations?.map(({ operation }) => operation) ?? [],
+          ),
+        ),
+      ];
+      const name =
+        operations.length > 1
+          ? operations.map((operation) => displayName?.(operation) ?? operation).join(" + ")
+          : registration.displayName;
+      // A completed grouped result represents every operation, not just its final call.
+      if (state.registration.displayName !== name) delete state.stableHeader;
+      state.registration =
+        name === registration.displayName ? registration : { ...registration, displayName: name };
       const viewports = state.viewports;
       state.theme = theme;
       state.cwd = context.cwd;
@@ -241,7 +269,11 @@ function createRenderer(
 
       state.panel?.setBackground(context.isError ? "toolErrorBg" : "toolSuccessBg");
       cancelPreviewWorker(state);
-      const resources = resolveMutationResultResources(result.details, viewports, false);
+      const details = result.details;
+      const truncated = mutationDetailsWereTruncated(details)
+        ? theme.fg("warning", "Edit display shortened to fit the saved-result limit.")
+        : "";
+      const resources = resolveMutationResultResources(details, viewports, false);
 
       if (!context.isError && resources.length > 0) {
         const typing = state.typing;
@@ -254,7 +286,7 @@ function createRenderer(
           typing.finish(performance.now());
           state.pendingResult = { details: result.details, expanded: options.expanded, theme };
           ensureTypingTimer(state);
-          return new Text("", 0, 0);
+          return new Text(truncated, 0, 0);
         }
 
         applyResultResources(
@@ -267,13 +299,20 @@ function createRenderer(
           theme,
         );
         return new Text(
-          registration.name === "copy" &&
+          [
+            registration.name === "copy" &&
             typeof result.details.metadata?.targetUnavailable === "string"
-            ? theme.fg(
-                "muted",
-                "No verified text selection. Read the destination before further edits.",
-              )
-            : "",
+              ? theme.fg(
+                  "muted",
+                  result.details.metadata.targetUnavailable === NO_TEXT_TARGET
+                    ? `No verified text selection. ${NO_TEXT_TARGET}`
+                    : "No verified text selection. Read the destination before further edits.",
+                )
+              : "",
+            truncated,
+          ]
+            .filter(Boolean)
+            .join("\n"),
           0,
           0,
         );
@@ -284,7 +323,7 @@ function createRenderer(
       delete state.viewports;
       state.panel?.setHeader(
         renderHeader(
-          registration,
+          state.registration,
           state.input ?? {},
           undefined,
           theme,
@@ -311,14 +350,19 @@ function createRenderer(
       const summary = wholeFileOperationSummary(result.details);
       if (summary !== undefined) {
         const unavailable =
-          typeof result.details.metadata?.targetUnavailable === "string"
-            ? " · no verified text selection; read destination before further edits"
-            : "";
+          result.details.metadata?.targetUnavailable === NO_TEXT_TARGET
+            ? " · no verified text selection; not a text file"
+            : typeof result.details.metadata?.targetUnavailable === "string"
+              ? " · no verified text selection; read destination before further edits"
+              : "";
         return new Text(
           [
             theme.fg(summary.color, summary.text + unavailable),
             ...summary.diffStatuses.map((status) => theme.fg(status.tone ?? "muted", status.text)),
-          ].join("\n"),
+            truncated,
+          ]
+            .filter(Boolean)
+            .join("\n"),
           0,
           0,
         );
@@ -344,9 +388,12 @@ function createRenderer(
               : userFacingFailure(output, result.details)
         : output;
       return new Text(
-        displayedOutput.length === 0
-          ? ""
-          : theme.fg(context.isError ? "error" : "toolOutput", displayedOutput),
+        [
+          displayedOutput && theme.fg(context.isError ? "error" : "toolOutput", displayedOutput),
+          truncated,
+        ]
+          .filter(Boolean)
+          .join("\n"),
         0,
         0,
       );
@@ -854,19 +901,44 @@ function renderAnchorRange(
       return undefined;
     }
     const raw = stringValue(input[field]);
+    const state = anchorRenderPatch?.[field];
+    // An anchor names a line by content, so the user sees the line number it resolved to.
+    if (raw !== undefined && !expanded && isLineAnchor(raw) && state?.kind === "resolved") {
+      return singleLine(state.compact);
+    }
     if (raw !== undefined) {
       const displayed = singleLine(raw);
       const structured =
-        /^(?:\d+#[0-9A-F]+|CHANGE#[0-9A-F]+|SEARCH#|scope-(?:begin|end)-|begin$|end$)/.test(raw);
+        isLineAnchor(raw) ||
+        /^(?:CHANGE#[0-9A-F]+|SEARCH#|scope-(?:begin|end)-|begin$|end$)/.test(raw);
       return expanded || structured || displayed.length <= 100
         ? displayed
         : `${displayed.slice(0, 60)}…${displayed.slice(-30)} (${raw.length} chars)`;
     }
-    const state = anchorRenderPatch?.[field];
     return state?.kind === "resolved"
       ? singleLine(expanded ? state.full : state.compact)
       : undefined;
   };
+  if (registration.name === "insert") {
+    const before = renderField("before");
+    return range(
+      before === undefined ? renderField("after") : `before ${before}`,
+      undefined,
+      theme,
+    );
+  }
+  if (["replace", "delete", "copy", "move"].includes(registration.name)) {
+    const target = sourceField !== registration.source.field;
+    const at = renderField(target ? "targetAt" : "at");
+    if (at !== undefined) return range(at, undefined, theme);
+    const after = renderField(target ? "targetAfter" : "after");
+    const from =
+      after === undefined ? renderField(target ? "targetFrom" : "from") : `after ${after}`;
+    const before = renderField(target ? "targetBefore" : "before");
+    const through =
+      before === undefined ? renderField(target ? "targetThrough" : "through") : `before ${before}`;
+    return from === undefined ? range(through, undefined, theme) : range(from, through, theme);
+  }
   return range(renderField(fields.at(0)), renderField(fields.at(1)), theme);
 }
 function resourceLink(
@@ -967,10 +1039,58 @@ function wholeFileOperationSummary(details: unknown):
 
 const GENERIC_FAILURE_CAUSE = "file operation failed";
 
+function mutationDetailsWereTruncated(details: unknown): boolean {
+  return (
+    details !== null &&
+    typeof details === "object" &&
+    "mutationDetailsTruncated" in details &&
+    details.mutationDetailsTruncated === true
+  );
+}
+
 function wholeFileFailureCause(code: string): string {
   switch (code) {
+    case "missing": {
+      return "anchor not found";
+    }
+    case "ambiguous": {
+      return "anchor matches more than once";
+    }
+    case "invalid": {
+      return "anchor is invalid";
+    }
+    case "stale": {
+      return "anchor is stale";
+    }
+    case "UNSEEN_EDIT_SPAN": {
+      return "selection includes too much unread text; read the range or use closer anchors";
+    }
+    case "STALE_ANCHOR_RANGE": {
+      return "line anchors no longer verify the range; select the full span again";
+    }
+    case "COPIED_LINE_ANCHOR": {
+      return "replacement contains a copied line prefix; remove it and retry";
+    }
+    case "REPLACEMENT_IDENTICAL": {
+      return "replacement is identical to the selected text; send the changed text";
+    }
+    case "EMPTY_SELECTOR": {
+      return "a required selector is empty";
+    }
+    case "OVERLAPPING_EDITS": {
+      return "overlaps an earlier edit; read the current text before retrying";
+    }
+    case "SOURCE_CHANGED": {
+      return "newer edits blocked this change; repeat the same edit";
+    }
     case "INVALID_REQUEST": {
       return "the request was invalid";
+    }
+    case "NO_EDITABLE_TEXT": {
+      return "this result is read-only; read the source file to edit it";
+    }
+    case "UNSAFE_TOKEN_SELECTION": {
+      return "search selected separate tokens, not one phrase";
     }
     case "RESULT_INPUT_REJECTED": {
       return "result input was rejected";
@@ -1009,6 +1129,15 @@ function wholeFileFailureCause(code: string): string {
     case "EPERM": {
       return "permission denied";
     }
+    case "FILE_IN_USE": {
+      return "file is open in another process";
+    }
+    case "FILE_READ_ONLY": {
+      return "file is read-only";
+    }
+    case "LOCK_TIMEOUT": {
+      return "another operation holds the file";
+    }
     case "INVALID_FILE_TYPE": {
       return "a regular file is required";
     }
@@ -1017,6 +1146,9 @@ function wholeFileFailureCause(code: string): string {
     }
     case "TIMEOUT": {
       return "operation timed out";
+    }
+    case "TRANSFER_STALLED": {
+      return "transfer stopped making progress";
     }
     case "CANCELLED": {
       return "operation was canceled";
@@ -1035,8 +1167,16 @@ function userFacingFailure(
     details?.results?.flatMap((result) =>
       // Provider reasons can contain private data; decode only public editor failure codes.
       (result.data.errors ?? []).map((error) => {
-        const cause = wholeFileFailureCause(error.code ?? "");
+        if (error.searchHighlightFallback === true) {
+          const markers = `${SEARCH_HIGHLIGHT_OPEN} ${SEARCH_HIGHLIGHT_CLOSE}`;
+          if (error.code === "ambiguous")
+            return `multiple matches after removing Search markers ${markers}`;
+          if (error.code === "before-start")
+            return `no match after the start selector without Search markers ${markers}`;
+          return `no match without Search markers ${markers}`;
+        }
         // A provider's own code still names the editor step that failed.
+        const cause = wholeFileFailureCause(error.code ?? "");
         return cause === GENERIC_FAILURE_CAUSE && error.stage !== undefined
           ? wholeFileFailureCause(error.stage)
           : cause;
@@ -1073,7 +1213,11 @@ function mutationFailureSummary(
   if (details?.effect === "unknown") return "Effects unknown · edit failed";
   if (details?.effect === "applied") return "Saved · post-write step failed";
   if (details?.metadata?.rollback === "restored") return "Rolled back · edit failed";
-  if (/\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
+  // An ambiguity error that offers a way to change every match leads with that step instead.
+  const ambiguousCode = details?.results?.some((result) =>
+    result.data.errors?.some((error) => error.code === "ambiguous"),
+  );
+  if (ambiguousCode === true || /\banchor\b[\s\S]*\bis ambiguous\./iu.test(agentOutput)) {
     return "Not changed · selection is ambiguous";
   }
   if (/\banchor\b[\s\S]*\bis stale\./iu.test(agentOutput)) {

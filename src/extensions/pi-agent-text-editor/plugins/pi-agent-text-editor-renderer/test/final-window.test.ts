@@ -1,11 +1,12 @@
 import { expect, test, vi } from "vitest";
-import { DefaultLinesDiffComputer } from "vscode-diff";
 
 import { FileMutationResult } from "pi-agent-text-editor/api/mutation-result";
 import { resolveMutationResultResources } from "#src/mutation-result.ts";
 import { freezeMutationViewports, projectFinalResources } from "#src/frozen-viewport.ts";
 import { expandedViewport, compactViewport } from "#src/diff-viewport.ts";
+import { createDiffModel } from "#src/diff-model.ts";
 import { requiredValue } from "pi-agent-invariant";
+import replaceFormatted from "./fixtures/replace-formatted.json" with { type: "json" };
 
 const before =
   Array.from({ length: 30 }, (_, i) => `const value${i + 1} = ${i + 1};`).join("\n") + "\n";
@@ -29,6 +30,19 @@ function final(content: string) {
     )[0]?.model,
   );
 }
+
+test("freezing viewports without a model gives the windows of the paired model", () => {
+  const { before: original, after } = replaceFormatted;
+  const unpaired = {
+    path: "code-views.ts",
+    beforeContent: original,
+    afterContent: after,
+    ranges: [],
+  };
+  expect(freezeMutationViewports([unpaired])).toEqual(
+    freezeMutationViewports([{ ...unpaired, model: createDiffModel(original, after) }]),
+  );
+});
 
 test("a growing local change retains its end without inventing removals of shifted context", () => {
   const model = final(formatted);
@@ -231,11 +245,11 @@ test("compact omission counts include the rows replaced by indicators", () => {
   ).toBe(model.added + model.modified + model.removed);
 });
 
-test("alignment budget exhaustion is explicit without inventing counts", () => {
+test("comparison budget exhaustion is explicit without inventing counts", () => {
   const frozen = freezeMutationViewports([resource]);
-  const diff = vi
-    .spyOn(DefaultLinesDiffComputer.prototype, "computeDiff")
-    .mockReturnValue({ changes: [], moves: [], hitTimeout: true });
+  // Every clock read lands a second later, so the comparison deadline has always passed.
+  let now = 0;
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += 1_000));
   try {
     const model = requiredValue(
       projectFinalResources([{ ...resource, afterContent: formatted }], frozen)[0]?.model,
@@ -243,7 +257,7 @@ test("alignment budget exhaustion is explicit without inventing counts", () => {
     expect(model.omittedChanges).toEqual({ outside: 0, ambiguous: 0, unavailable: true });
     expect(model.rows).toEqual([]);
   } finally {
-    diff.mockRestore();
+    clock.mockRestore();
   }
 });
 

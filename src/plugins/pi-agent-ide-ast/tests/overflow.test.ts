@@ -49,10 +49,13 @@ test("overview preserves source-window data attached by an earlier transform", a
   expect(result.script).toBe(script);
   expect(result.content).not.toEqual(input.result.content);
 });
-test("script data is never replaced with an overflow outline", async () => {
-  const input: ReadPipelineContext = { ...context(), audience: "script" };
-  expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
-});
+test.each<Partial<ReadPipelineContext>>([{ audience: "script" }, { outputLimit: "none" }])(
+  "text for a program is never replaced with an overflow outline (%o)",
+  async (caller) => {
+    const input: ReadPipelineContext = { ...context(), ...caller };
+    expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
+  },
+);
 test.each(["sample.ts", "ssh://fixture/work/sample.ts"])(
   "overflow returns the compact tree from the %s snapshot",
   async (file) => {
@@ -116,6 +119,29 @@ test("unsupported and invalid source keep normal truncation", async () => {
     expect(await createAstOverflowHandler()(input)).toEqual({ kind: "continue", context: input });
   }
 });
+
+// Before LPT-1365 this 600 KB file took one to several minutes; the timeout is the assertion.
+test(
+  "a large pretty-printed JSON file gets its overview within seconds",
+  { timeout: 20_000 },
+  async () => {
+    const items = Array.from({ length: 6000 }, (_, id) => ({
+      id,
+      name: `item-${id}-${"x".repeat(18)}`,
+      ok: id % 2 === 0,
+      value: id * 3,
+    }));
+    const content = `${JSON.stringify(items, null, 2)}\n`;
+    expect(content.split("\n")).toHaveLength(36003);
+
+    const result = await overview(context(content, "large.json"));
+
+    expect(result.details.resolvedBy).toBe("ast-overflow");
+    const block = result.content[0];
+    if (block?.type !== "text") throw new Error("Missing text");
+    expect(truncateHead(block.text).truncated).toBe(false);
+  },
+);
 
 test("flat oversized outlines reduce to file-only detail within budget", async () => {
   const input = context("import 'package';\n".repeat(2100));

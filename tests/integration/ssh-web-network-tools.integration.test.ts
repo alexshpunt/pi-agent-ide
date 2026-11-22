@@ -11,6 +11,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { startIsolatedSshWebFixture } from "./support/ssh-isolated-web-fixture.ts";
 
@@ -114,10 +115,10 @@ test("ordinary web tools keep local URLs local and reach an SSH-only network end
     expect(getToolResultText(run, "regex")).toContain("Native value 42");
     expect(getToolResultText(run, "browser")).toContain("Native value 43");
     expect(getToolExecution(run, "image").isError).toBe(true);
-    // Codemode receives the completed Read failure as its public error value instead of a throw.
+    // The refused Read resolves to null in the script, and the Codemode result lists it.
     expect(getToolExecution(run, "sequence").isError).toBe(false);
-    expect(getToolResultText(run, "sequence")).toContain(
-      '{"status":"error","errors":[{"code":"UNSUPPORTED_CAPABILITY"',
+    expect(codemodeFailures(getToolResultText(run, "sequence"))).toContain(
+      `1 of 1 IDE call failed:\n- read ${imageSource}\n`,
     );
     for (const id of ["image", "sequence"]) {
       expect(getToolResultMessage(run, id).content.some((block) => block.type === "image")).toBe(

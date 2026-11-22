@@ -155,10 +155,11 @@ test("disposing an SSH subscription during readiness releases its actual remote 
   const processes = vi
     .spyOn(owner.backend, "startProcess")
     .mockImplementation(async (command, args, cwd, options) => {
-      const delayed = [...args];
-      const script = delayed.indexOf("-c") + 1;
-      delayed[script] = `import time; time.sleep(2)\n${delayed[script]}`;
-      const channel = await startProcess(command, delayed, cwd, options);
+      const delayed =
+        typeof command === "string"
+          ? command
+          : { python: `import time; time.sleep(2)\n${command.python}` };
+      const channel = await startProcess(delayed, args, cwd, options);
       channels.push(channel);
       return channel;
     });

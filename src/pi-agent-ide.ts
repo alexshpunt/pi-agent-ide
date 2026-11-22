@@ -12,11 +12,17 @@ import { createFeatureFlags } from "#src/composite/feature-flags.ts";
 import { connectAgentDocumentation } from "#src/api/documentation.ts";
 import { createIdeSettingsDocumentation } from "#src/composite/settings-documentation.ts";
 import { createIdeToolAvailability } from "#src/composite/tool-availability.ts";
+import {
+  buildIdeDiscoveryGuidance,
+  explainCodemodeDiscoveryError,
+} from "#src/composite/tool-discovery-guidance.ts";
+import { buildParallelToolGuidance } from "#src/composite/parallel-tool-guidance.ts";
 import { createIdeCapabilities } from "#src/composite/capabilities.ts";
 import { createNestedIdeRendering } from "#src/composite/nested-tool-rendering.ts";
 import { createIdeTextResults } from "#src/composite/text-results.ts";
 import { registerDetachedResults } from "#src/composite/detached-results.ts";
 import { preserveResponsesToolOmission } from "#src/composite/responses-tools.ts";
+import { explainCodemodeToolNames } from "#src/composite/codemode-tool-names.ts";
 import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
 import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.ts";
 import { readAgentIdeSetting } from "#src/api/settings.ts";
@@ -55,14 +61,23 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     shutDown = true;
   });
   pi.on("before_provider_request", (event, context) => {
-    if (shutDown || context.model?.api !== "openai-responses") return;
+    if (shutDown) return;
+    const api: unknown = context.model?.api;
+    const registered = pi.getAllTools();
     const names = new Set(
-      pi
-        .getAllTools()
-        .filter((tool) => tool.namespace?.name.startsWith("ide_"))
+      registered
+        .filter((tool) => tool.namespace?.name.startsWith("ide_") && tool.exposure !== "hidden")
         .map((tool) => tool.name),
     );
-    return preserveResponsesToolOmission(event.payload, names);
+    const payload =
+      api === "openai-responses"
+        ? preserveResponsesToolOmission(event.payload, names)
+        : event.payload;
+    return explainCodemodeToolNames(
+      payload,
+      names,
+      registered.some((tool) => tool.name === "tool_search" && tool.exposure === "model-only"),
+    );
   });
   pi.on("session_start", (event, context) => {
     shutDown = false;
@@ -81,7 +96,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
           ).map((tool) => tool.name);
     availability.reconcile(true, restored);
   });
-  pi.on("before_agent_start", (event) => {
+  pi.on("before_agent_start", (event, context) => {
     availability.reconcile();
     const options = event.systemPromptOptions;
     if (options.toolSnippets.bash)
@@ -89,33 +104,26 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
         "Execute bash commands (ls, grep, find, etc.)",
         "Execute Bash commands",
       );
-    // Keep the legacy host-rule correction structured so portable providers can project it.
+    // A prior extension can force the complete prompt, making section overrides ineffective.
     const rules = /^<rules>\n([\s\S]*?)\n<\/rules>$/mu.exec(event.systemPrompt)?.[1];
-    if (rules?.includes("- Use bash for file operations like ls, rg, find"))
-      options.sections.rules = rules
-        .replace(/(?:^|\n)- Use bash for file operations like ls, rg, find(?=\n|$)/u, "")
-        .trim();
-    const tools = pi.getAllTools().filter((tool) => tool.exposure !== "hidden");
-    const active = pi.getActiveTools();
-    const discovery = active.includes("tool_search")
-      ? "Use tool_search to find"
-      : active.includes("codemode")
-        ? "Use searchTools inside codemode to find"
-        : "Enable native tool_search to find";
-    const gitTools = tools
-      .filter((tool) => tool.namespace?.name === "ide_git")
-      .map((tool) => tool.name);
-    const guidance = [
-      ...(gitTools.length === 0
-        ? []
-        : [
-            `${discovery} ${gitTools.join(" and ")} in ide_git when staging or unstaging selected Git changes.`,
-          ]),
-      ...(tools.some((tool) => tool.name === "debug" && tool.namespace?.name === "ide_debug")
-        ? [`${discovery} debug in ide_debug when creating a debugger session.`]
-        : []),
-    ];
-    options.sections.ide_discovery = guidance.join("\n");
+    const bashRule = /(?:^|\n)- Use bash for file operations like ls, rg, find(?=\n|$)/u;
+    if (rules && bashRule.test(rules)) {
+      const corrected = rules.replace(bashRule, "").replace(/^\n/u, "");
+      if (options.forceSystemPrompt !== undefined) {
+        options.forceSystemPrompt = options.forceSystemPrompt.replace(
+          `<rules>\n${rules}\n</rules>`,
+          `<rules>\n${corrected}\n</rules>`,
+        );
+      } else {
+        options.sections.rules = corrected;
+      }
+    }
+    options.sections.parallel_tool_calls = buildParallelToolGuidance(context.model?.api);
+    options.sections.ide_discovery = buildIdeDiscoveryGuidance(
+      pi.getAllTools(),
+      pi.getActiveTools(),
+      pi.getSettings().codemode?.mode === "only",
+    );
   });
   const flags = createFeatureFlags(pi, {
     "pi-agent-ide-no-animations": config.noAnimations ?? false,
@@ -219,6 +227,7 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
   }
   capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();
+  pi.on("tool_result", explainCodemodeDiscoveryError);
   textResults.finalize();
   registerDetachedResults(pi);
 }

@@ -76,3 +76,55 @@ test.runIf(process.platform !== "win32")(
     });
   },
 );
+
+test.runIf(process.platform !== "win32")(
+  "searches retained terminal output with a regex query",
+  async () => {
+    await withTempWorkspace(async (cwd) => {
+      const search = (id: string, scope: string, query: string) =>
+        assistantMessage([toolCall({ id, name: "search", arguments: { path: scope, query } })], {
+          stopReason: "toolUse",
+        });
+      const run = await new PiIntegrationTest({
+        testName: "terminal-search-regex",
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        cwd,
+        tuiSize: { cols: 80, rows: 50 },
+        rawMode: false,
+        isolateUserResources: true,
+        extensions: [
+          path.resolve("src/extensions/pi-agent-search/index.ts"),
+          // The filesystem regex resolver that used to read `shell:` as a file path.
+          path.resolve("src/extensions/pi-agent-search/plugins/pi-agent-search-text/index.ts"),
+          path.resolve("tests/integration/fixtures/terminal-search-deterministic.ts"),
+        ],
+        tools: ["bash", "search"],
+        conversation: [
+          assistantMessage(
+            [
+              toolCall({
+                id: "fixture",
+                name: "bash",
+                arguments: { command: "printf 'alpha 42\\nbeta\\ngamma 7\\n'" },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+          search("all-sessions", "shell:", "regex:\\w+ \\d+"),
+          search("one-session", "shell:abcdef123456", "regex:^beta$"),
+          search("no-match", "shell:", "regex:zzz+"),
+          assistantMessage([text("Done.")]),
+        ],
+      }).run("Search retained shell output with regular expressions");
+
+      for (const id of ["all-sessions", "one-session", "no-match"]) {
+        expect(getToolExecution(run, id).isError).toBe(false);
+      }
+      const all = getToolResultText(run, "all-sessions");
+      expect(all).toContain("alpha 42");
+      expect(all).toContain("gamma 7");
+      expect(getToolResultText(run, "one-session")).toContain("beta");
+      expect(getToolResultText(run, "no-match")).toContain("No matches in");
+    });
+  },
+);

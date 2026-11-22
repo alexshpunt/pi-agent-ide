@@ -9,22 +9,42 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 test("empty replacements remove lines and keep unselected separators in real Pi", async () => {
   const root = path.resolve(".agents/tmp/empty-replace");
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "case-"));
   const cases = [
+    // LPT-1747: the terminal break belongs to the whole-line span either way.
     { content: "A\nSTART\nmiddle\nEND\n\nB\n", start: "START", end: "END", expected: "A\n\nB\n" },
     {
       content: "A\r\nSTART\r\nmiddle\r\nEND\r\n\r\nB\r\n",
       start: "START",
-      end: "END",
+      // A literal matches only the file's own line breaks: CRLF in a CRLF file.
+      end: "END\r\n",
       expected: "A\r\n\r\nB\r\n",
     },
-    { content: "A\nBLOCK", start: "end", expected: "A\n" },
+    {
+      content: "A\r\nSTART\r\n\r\nB\r\n",
+      start: "START",
+      end: formatLineHashAnchor("A\r\nSTART\r\n\r\nB\r\n", 3),
+      expected: "A\r\nB\r\n",
+    },
+    // A last line without a line break takes the line ending before it.
+    { content: "A\nBLOCK", start: "end", expected: "A" },
     { content: "BLOCK\n", start: "begin", expected: "" },
     { content: "A BLOCK B\n", start: "BLOCK", expected: "A  B\n" },
+    // LPT-1747: a trailing break describes an empty line rather than deleting the span.
+    { content: "A\nBLOCK\nB\n", start: "BLOCK", text: "\n", expected: "A\n\nB\n" },
+    {
+      content: "A\r\nBLOCK\r\nB\r\n",
+      start: "BLOCK",
+      text: "\n\n",
+      expected: "A\r\n\r\n\r\nB\r\n",
+    },
+    { content: "A\r\nBLOCK", start: "BLOCK", text: "\n", expected: "A\r\n" },
+    { content: "A\r\nBLOCK", start: "BLOCK", text: "\n\n", expected: "A\r\n\r\n" },
   ];
   try {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -48,9 +68,10 @@ test("empty replacements remove lines and keep unselected separators in real Pi"
               name: "replace",
               arguments: {
                 path: `${i}.txt`,
-                start: item.start,
-                ...(item.end === undefined ? {} : { end: item.end }),
-                text: "",
+                ...(item.end === undefined
+                  ? { at: item.start }
+                  : { from: item.start, through: item.end }),
+                text: item.text ?? "",
               },
             }),
           ),

@@ -75,7 +75,7 @@ test("an edit leaves diagnostics to explicit inspection of the written TypeScrip
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(1, "export const value = 1;"),
+        at: formatLineHashAnchor(before, 1),
         text: "export const value: string = 1;",
       },
     });

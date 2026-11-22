@@ -1,10 +1,13 @@
+import { quoteAnchorExcerpt } from "#src/api/anchor-excerpt.ts";
 import { requiredValue } from "pi-agent-invariant";
 import {
   attachTextAnchorRenderer,
   isTextAnchorRecoveryOutcome,
   isTextAnchorResolutionAttempt,
   type TextAnchor,
+  type TextAnchorRecoveryCandidateRange,
   type TextAnchorRecoveryOutcome,
+  type TextAnchorRecoveryRange,
   type TextAnchorRejection,
   type TextAnchorResolver,
   type TextAnchorResolverContext,
@@ -22,6 +25,12 @@ import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 
 import type { TextAnchorInspectionOutcome } from "#src/api/anchor-inspection.ts";
 const resolvedAnchorTypes = new WeakMap<TextAnchor, TextAnchorType>();
+const resolvedAnchorNotices = new WeakMap<TextAnchor, string>();
+
+/** Returns the result notice for a selector resolved by a fallback. */
+export function resolvedTextAnchorNotice(anchor: TextAnchor): string | undefined {
+  return resolvedAnchorNotices.get(anchor);
+}
 
 /** Returns the registered resolver type that produced an anchor. */
 export function resolvedTextAnchorType(anchor: TextAnchor): TextAnchorType | undefined {
@@ -48,18 +57,102 @@ export class TextAnchorResolutionError extends Error {
     private readonly recoverAgain?: (
       context: TextAnchorResolverContext,
     ) => Promise<TextAnchorRecoveryOutcome>,
-    private readonly originalRecoveryContext?: TextAnchorResolverContext,
+    private recoveryContext?: TextAnchorResolverContext,
   ) {
     super(message, options);
   }
 
+  /** The same rejection with a reason that says more, such as the range the anchor was limited to. */
+  public withReason(
+    reason: string,
+    contextRange?: TextAnchorRecoveryRange,
+    recoveryScope?: TextAnchorResolverContext["scope"],
+  ): TextAnchorResolutionError {
+    const range = contextRange ?? this.rejection?.contextRange;
+    const snapshot = this.recoveryContext;
+    // A reference failure keeps its own presentation, so keep its class.
+    const Kind = this.constructor as typeof TextAnchorResolutionError;
+    return new Kind(
+      reason,
+      this.resolverId,
+      { cause: this },
+      {
+        code: this.rejection?.code ?? "invalid",
+        reason,
+        ...(this.rejection?.searchHighlightRetry !== undefined && {
+          searchHighlightRetry: this.rejection.searchHighlightRetry,
+        }),
+        ...(range !== undefined && { contextRange: range }),
+      },
+      recoveryScope === undefined ? this.recovery : undefined,
+      this.recoverAgain,
+      recoveryScope === undefined || snapshot === undefined
+        ? snapshot
+        : { ...snapshot, scope: recoveryScope },
+    );
+  }
+
+  /** The text the rejection was produced against. */
+  public snapshot(): TextAnchorResolverContext | undefined {
+    return this.recoveryContext;
+  }
+
+  /** The complete selection of the same snapshot used to produce the recovery. */
+  public allMatchesTarget():
+    | (TextTarget & {
+        readonly expectedContent: string;
+        readonly ranges: readonly TextAnchorRecoveryCandidateRange[];
+      })
+    | undefined {
+    const context = this.recoveryContext;
+    if (
+      this.rejection?.code !== "ambiguous" ||
+      this.rejection.searchHighlightRetry !== undefined ||
+      this.recovery?.kind !== "candidates" ||
+      this.recovery.allMatches === undefined ||
+      context === undefined
+    )
+      return undefined;
+    return {
+      source: context.source,
+      ranges: this.recovery.allMatches,
+      expectedContent: context.content,
+    };
+  }
+
   /** Recomputes recovery against a supplied or original immutable source snapshot. */
   public async refreshRecovery(context?: TextAnchorResolverContext): Promise<void> {
-    const recoveryContext = context === undefined ? this.originalRecoveryContext : context;
-    if (this.recoverAgain !== undefined && recoveryContext !== undefined) {
-      this.recovery = await this.recoverAgain(recoveryContext);
+    const recoveryContext = context ?? this.recoveryContext;
+    if (this.recoverAgain === undefined || recoveryContext === undefined) return;
+    const rejected = this.recoveryContext;
+    const bounded = rejected?.scope !== undefined || rejected?.endAfter !== undefined;
+    // Scope ranges and pairing offsets belong to the rejected snapshot. A sibling edit in a
+    // batch can invalidate both; don't offer a retry without those constraints.
+    if (
+      bounded &&
+      (recoveryContext.content !== rejected.content || recoveryContext.source !== rejected.source)
+    ) {
+      this.recovery = { kind: "unavailable" };
+      return;
     }
+    const snapshot = bounded ? rejected : recoveryContext;
+    this.recovery = await this.recoverAgain(snapshot);
+    this.recoveryContext = snapshot;
   }
+}
+
+/**
+ * A reference such as `SEARCH#…:all:match` that names resources rather than a position in one
+ * text could not resolve. It has no lines to show around it, so its reason must say what to do.
+ */
+export class TextAnchorResourceResolutionError extends TextAnchorResolutionError {}
+
+/** The resolver's own reason; resolvers word it for the agent, with the next step. */
+function resourceFailureReason(error: unknown): string {
+  const reason = error instanceof Error ? error.message.trim() : "";
+  return reason.length > 0
+    ? reason
+    : "the reference could not be resolved because of an internal error; repeat the Read or Search that produced it";
 }
 
 export class TextAnchorRegistry {
@@ -191,16 +284,14 @@ export class TextAnchorRegistrySnapshot {
       try {
         attempt = await resources.tryResolve(value, context);
       } catch (error) {
-        throw new TextAnchorResolutionError(
-          `Text anchor resource resolver ${resolver.id} failed for "${value}"`,
-          resolver.id,
-          { cause: error },
-        );
+        throw new TextAnchorResourceResolutionError(resourceFailureReason(error), resolver.id, {
+          cause: error,
+        });
       }
 
       if (!isTextAnchorResourceResolutionAttempt(attempt)) {
-        throw new TextAnchorResolutionError(
-          `Text anchor resource resolver ${resolver.id} returned an invalid result for "${value}"`,
+        throw new TextAnchorResourceResolutionError(
+          `Text anchor resource resolver ${resolver.id} returned an invalid result for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: attempt },
         );
@@ -211,15 +302,15 @@ export class TextAnchorRegistrySnapshot {
       }
 
       if (attempt.kind === "failed") {
-        throw new TextAnchorResolutionError(
-          `Text anchor resource resolver ${resolver.id} failed for "${value}"`,
+        throw new TextAnchorResourceResolutionError(
+          resourceFailureReason(attempt.error),
           resolver.id,
           { cause: attempt.error },
         );
       }
 
       if (attempt.kind === "rejected") {
-        throw new TextAnchorResolutionError(
+        throw new TextAnchorResourceResolutionError(
           attempt.rejection.reason,
           resolver.id,
           undefined,
@@ -238,9 +329,10 @@ export class TextAnchorRegistrySnapshot {
     allowedKinds?: ReadonlySet<string>,
   ): Promise<TextAnchor> {
     if (context.lines.length === 0) {
-      throw new TextAnchorResolutionError(`Anchor "${value}" cannot resolve in an empty file`);
+      throw new TextAnchorResolutionError(
+        `Anchor ${quoteAnchorExcerpt(value)} cannot resolve in an empty file`,
+      );
     }
-
     for (const { kind, resolver, type } of this.resolvers) {
       if (allowedKinds !== undefined && !allowedKinds.has(kind)) {
         continue;
@@ -259,7 +351,7 @@ export class TextAnchorRegistrySnapshot {
         attempt = await resolver.tryResolve(normalizedValue, context);
       } catch (error) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} failed for "${value}"`,
+          `Text anchor resolver ${resolver.id} failed for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: error },
         );
@@ -267,7 +359,7 @@ export class TextAnchorRegistrySnapshot {
 
       if (!isTextAnchorResolutionAttempt(attempt)) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} returned an invalid result for "${value}"`,
+          `Text anchor resolver ${resolver.id} returned an invalid result for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: attempt },
         );
@@ -279,7 +371,7 @@ export class TextAnchorRegistrySnapshot {
 
       if (attempt.kind === "failed") {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} failed for "${value}"`,
+          `Text anchor resolver ${resolver.id} failed for ${quoteAnchorExcerpt(value)}`,
           resolver.id,
           { cause: attempt.error },
         );
@@ -307,7 +399,7 @@ export class TextAnchorRegistrySnapshot {
         attempt.anchor.lineNumber > context.lines.length
       ) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} resolved "${value}" outside the current text`,
+          `Text anchor resolver ${resolver.id} resolved ${quoteAnchorExcerpt(value)} outside the current text`,
           resolver.id,
           { cause: attempt },
         );
@@ -318,7 +410,7 @@ export class TextAnchorRegistrySnapshot {
         !isSelectionWithinContext(attempt.anchor, context)
       ) {
         throw new TextAnchorResolutionError(
-          `Text anchor resolver ${resolver.id} resolved "${value}" outside the current text`,
+          `Text anchor resolver ${resolver.id} resolved ${quoteAnchorExcerpt(value)} outside the current text`,
           resolver.id,
           { cause: attempt },
         );
@@ -327,10 +419,13 @@ export class TextAnchorRegistrySnapshot {
       attachTextAnchorRenderer(attempt.anchor, resolver, resolver.id);
 
       resolvedAnchorTypes.set(attempt.anchor, type);
+      if (attempt.notice !== undefined) resolvedAnchorNotices.set(attempt.anchor, attempt.notice);
       return attempt.anchor;
     }
 
-    throw new TextAnchorResolutionError(`No text anchor resolver handled "${value}"`);
+    throw new TextAnchorResolutionError(
+      `No text anchor resolver handled ${quoteAnchorExcerpt(value)}`,
+    );
   }
 }
 
@@ -343,20 +438,33 @@ function isSelectionWithinContext(
   }
 
   return anchor.ranges.every((range) => {
-    const startLine = context.lines[range.start.lineNumber - 1];
-    const endLine = context.lines[range.end.lineNumber - 1];
-    const virtualTrailingLine =
-      endLine === undefined &&
-      range.end.lineNumber === context.lines.length + 1 &&
-      range.end.column === 0 &&
-      /(?:\r\n|\r|\n)$/u.test(context.content);
-    return (
-      startLine !== undefined &&
-      (endLine !== undefined || virtualTrailingLine) &&
-      range.start.column <= startLine.length &&
-      (virtualTrailingLine || range.end.column <= (endLine?.length ?? -1))
-    );
+    return rangeFitsContext(range, context);
   });
+}
+
+function rangeFitsContext(
+  range: TextAnchorRecoveryCandidateRange,
+  context: TextAnchorResolverContext,
+): boolean {
+  const startLine = context.lines[range.start.lineNumber - 1];
+  const endLine = context.lines[range.end.lineNumber - 1];
+  const virtualTrailingLine =
+    endLine === undefined &&
+    range.end.lineNumber === context.lines.length + 1 &&
+    range.end.column === 0 &&
+    context.content.endsWith("\n");
+  return (
+    startLine !== undefined &&
+    range.start.column <= startLine.length &&
+    (virtualTrailingLine || range.end.column <= (endLine?.length ?? -1))
+  );
+}
+
+function comparePositions(
+  left: TextAnchorRecoveryCandidateRange["start"],
+  right: TextAnchorRecoveryCandidateRange["start"],
+): number {
+  return left.lineNumber - right.lineNumber || left.column - right.column;
 }
 
 function renderResolverDescription(resolver: TextAnchorResolver): string | undefined {
@@ -403,16 +511,23 @@ function recoveryFitsContext(
   if (recovery.kind !== "candidates" || recovery.total < recovery.candidates.length) {
     return recovery.kind !== "candidates";
   }
-  return recovery.candidates.every(({ rank, range }, index) => {
-    const startLine = context.lines[range.start.lineNumber - 1];
-    const endLine = context.lines[range.end.lineNumber - 1];
-    return (
-      rank === index + 1 &&
-      startLine !== undefined &&
-      endLine !== undefined &&
-      range.start.column <= startLine.length &&
-      range.end.column <= endLine.length &&
-      (range.start.lineNumber < range.end.lineNumber || range.start.column <= range.end.column)
-    );
-  });
+  return (
+    recovery.candidates.every(
+      ({ rank, range }, index) =>
+        rank === index + 1 &&
+        rangeFitsContext(range, context) &&
+        comparePositions(range.start, range.end) <= 0,
+    ) &&
+    (recovery.allMatches === undefined ||
+      (recovery.allMatches.length === recovery.total &&
+        recovery.allMatches.length > 1 &&
+        recovery.allMatches.every((range, index, ranges) => {
+          const previous = ranges[index - 1];
+          return (
+            rangeFitsContext(range, context) &&
+            comparePositions(range.start, range.end) < 0 &&
+            (previous === undefined || comparePositions(previous.end, range.start) <= 0)
+          );
+        })))
+  );
 }

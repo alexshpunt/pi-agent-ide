@@ -1,8 +1,9 @@
-/** Shared editing workflows owned by enabled mutation tools. */
+/** Shared editing workflows, emitted once when mutation tools are enabled. */
 export const EDITING_GUIDELINES = [
   "Read only what you need: search for known text, find code by structure with ast_search or by symbol with lsp_search, and reuse anchors you already have.",
-  "Select with an anchor when you have one, otherwise with the shortest unique exact text.",
-  "Send independent edits as parallel calls in one response; each sees the files as they were before the batch, so merge overlapping edits into one. Use Codemode when an edit depends on another's result. Retry only the edits that failed.",
-  "Read, search and edit tools compose: pass an unchanged result to the next tool to narrow it or act on it. For example, read a function, search that result for a call, then replace that match.",
-  "In Codemode, edit different files concurrently and the same file in order.",
+  "For edit sources, pass one path or one result selection; lists take results or references, not paths, and may combine searches. If any item is unusable, the call changes nothing and lists all errors. A result passed with explicit selectors is their scope: they select inside its ranges. Omit an optional source to use its anchor's file or the last resolved source.",
+  "Use these forms for text selectors: a line anchor from Read's anchors view, scope-begin-… or scope-end-… from its ast view, a SEARCH# reference, begin/end for the first/last line, or unique exact text. For an exact-text selector, copy text as shown in Read, with or without the current line prefixes; omit display prefixes from the text you write.",
+  "In edit calls, use at or from alone for one selection, or from/after with through/before for a range. Use through for a block’s own closing line and before for the next opening line when the block has no closing line. Copy and Move prefix destination selectors with target; targetAfter or targetBefore alone inserts. Insert uses after or before without a range.",
+  "Select from line start to line end to edit whole lines, with or without the last line break. This works with every selector. Delete and empty replace remove the lines and their separators. Copy and move land whole lines separately only at line edges or over whole-line targets. Line breaks in insert and replace text take the local line ending; line breaks inside copied content stay unchanged. A file keeps its BOM; a BOM sent at the start of a BOM file is dropped.",
+  "Send independent standalone edits together; each sees the original snapshots, so merge overlapping edits into one. In Codemode, edit different files concurrently and the same file in order. Retry only failed edits.",
 ] as const;

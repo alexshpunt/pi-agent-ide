@@ -4,7 +4,7 @@ import path from "node:path";
 import v8 from "node:v8";
 import vm from "node:vm";
 
-import { expect, onTestFinished, test } from "vitest";
+import { expect, test, type TestContext } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 
 import { SearchSessionStore, type TextSearchMatch } from "#src/search-session.ts";
@@ -42,72 +42,152 @@ function matchesOnLines(source: string, query: string, first: number): TextSearc
   });
 }
 
-async function largeSource(): Promise<{ cwd: string; source: string }> {
-  const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-memory-"));
-  onTestFinished(() => rm(cwd, { recursive: true, force: true }));
-  const source = path.join(cwd, "main.cpp");
-  await writeFile(source, `${lines.join("\n")}\n`);
-  return { cwd, source };
+function withLargeSource(
+  run: (fixture: { cwd: string; source: string; signal: AbortSignal }) => Promise<void>,
+): (context: TestContext) => Promise<void> {
+  return ({ onTestFinished, signal }) => {
+    let cwd: string | undefined;
+    const work = (async () => {
+      cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-memory-"));
+      const source = path.join(cwd, "main.cpp");
+      await writeFile(source, `${lines.join("\n")}\n`, { signal });
+      signal.throwIfAborted();
+      await run({ cwd, source, signal });
+    })();
+    onTestFinished(async () => {
+      // The timeout aborts the test, but Vitest does not wait for pending filesystem work.
+      await Promise.allSettled([work]);
+      if (cwd !== undefined) await rm(cwd, { recursive: true, force: true });
+    });
+    return work;
+  };
 }
 
-test("stored matches do not keep the file text their lines were cut from", async () => {
-  const { cwd, source } = await largeSource();
-  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
-  // A search engine cuts each match from the text it read; every search reads a new copy.
-  const search = (index: number) => {
-    const content = `${lines.join("\n")}\n// search ${index}\n`;
-    const lineStart = content.indexOf(lines[index] ?? "");
-    const lineText = content.slice(lineStart, lineStart + (lines[index] ?? "").length);
-    const startColumn = lineText.indexOf("compute");
-    return sessions.register(
-      `compute(${index}`,
-      [
-        {
-          source,
-          lineNumber: index + 1,
-          startColumn,
-          endColumn: startColumn + "compute".length,
-          matchedText: content.slice(lineStart + startColumn, lineStart + startColumn + 7),
-          lineText,
-        },
-      ],
-      true,
-      cwd,
-    );
-  };
+test(
+  "stored matches do not keep the file text their lines were cut from",
+  withLargeSource(async ({ cwd, source, signal }) => {
+    const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+    // A search engine cuts each match from the text it read; every search reads a new copy.
+    const search = (index: number) => {
+      const content = `${lines.join("\n")}\n// search ${index}\n`;
+      const lineStart = content.indexOf(lines[index] ?? "");
+      const lineText = content.slice(lineStart, lineStart + (lines[index] ?? "").length);
+      const startColumn = lineText.indexOf("compute");
+      return sessions.register(
+        `compute(${index}`,
+        [
+          {
+            source,
+            lineNumber: index + 1,
+            startColumn,
+            endColumn: startColumn + "compute".length,
+            matchedText: content.slice(lineStart + startColumn, lineStart + startColumn + 7),
+            lineText,
+          },
+        ],
+        true,
+        cwd,
+        signal,
+      );
+    };
 
-  await search(0);
-  const afterOneSearch = liveHeap();
-  for (let index = 1; index <= 30; index += 1) await search(index);
+    await search(0);
+    const afterOneSearch = liveHeap();
+    for (let index = 1; index <= 30; index += 1) {
+      signal.throwIfAborted();
+      await search(index);
+    }
 
-  expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
-});
+    expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
+  }),
+);
 
-test("repeated searches of an unchanged file keep one copy of its content", async () => {
-  const { cwd, source } = await largeSource();
-  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
-  const search = (index: number) =>
-    sessions.register(`compute(${index}`, matchesOnLines(source, "compute", index + 1), true, cwd);
+test(
+  "repeated searches of an unchanged file keep one copy of its content",
+  withLargeSource(async ({ cwd, source, signal }) => {
+    const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+    const search = (index: number) =>
+      sessions.register(
+        `compute(${index}`,
+        matchesOnLines(source, "compute", index + 1),
+        true,
+        cwd,
+        signal,
+      );
 
-  await search(0);
-  const afterOneSearch = liveHeap();
-  for (let index = 1; index <= 20; index += 1) await search(index);
+    await search(0);
+    const afterOneSearch = liveHeap();
+    for (let index = 1; index <= 20; index += 1) {
+      signal.throwIfAborted();
+      await search(index);
+    }
 
-  expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
-});
+    expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
+  }),
+);
 
-test("searches after each file change do not keep earlier file versions", async () => {
-  const { cwd, source } = await largeSource();
-  const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
-  const search = (index: number) =>
-    sessions.register(`compute(${index}`, matchesOnLines(source, "compute", index + 1), true, cwd);
+test(
+  "repeated multiline searches do not retain parsed source documents",
+  withLargeSource(async ({ cwd, source, signal }) => {
+    const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+    const search = (index: number) => {
+      const lineText = lines[index] ?? "";
+      const nextLine = lines[index + 1] ?? "";
+      const startColumn = lineText.indexOf("compute");
+      const endColumn = nextLine.indexOf("compute") + "compute".length;
+      return sessions.register(
+        `multiline ${index}`,
+        [
+          {
+            source,
+            lineNumber: index + 1,
+            endLineNumber: index + 2,
+            startColumn,
+            endColumn,
+            matchedText: `${lineText.slice(startColumn)}\n${nextLine.slice(0, endColumn)}`,
+            lineText,
+          },
+        ],
+        true,
+        cwd,
+        signal,
+      );
+    };
 
-  await search(0);
-  const afterOneSearch = liveHeap();
-  for (let index = 1; index <= 20; index += 1) {
-    await appendFile(source, `// change ${index}\n`);
-    await search(index);
-  }
+    await search(0);
+    const afterOneSearch = liveHeap();
+    for (let index = 1; index <= 20; index += 1) {
+      signal.throwIfAborted();
+      await search(index);
+    }
 
-  expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
-});
+    expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
+  }),
+);
+
+test(
+  "searches after each file change do not keep earlier file versions",
+  { timeout: 15_000 },
+  withLargeSource(async ({ cwd, source, signal }) => {
+    const sessions = new SearchSessionStore(undefined, new ResultTargetStore());
+    const search = (index: number) =>
+      sessions.register(
+        `compute(${index}`,
+        matchesOnLines(source, "compute", index + 1),
+        true,
+        cwd,
+        signal,
+      );
+
+    await search(0);
+    const afterOneSearch = liveHeap();
+    for (let index = 1; index <= 20; index += 1) {
+      signal.throwIfAborted();
+      await appendFile(source, `// change ${index}\n`);
+      signal.throwIfAborted();
+      await search(index);
+    }
+
+    expect(liveHeap() - afterOneSearch).toBeLessThan(10 * megabyte);
+  }),
+);

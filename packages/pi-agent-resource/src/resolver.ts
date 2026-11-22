@@ -5,6 +5,8 @@ export interface ResourceResolverContext {
   readonly signal?: AbortSignal;
   /** Caller surface; script reads can request different data readiness. */
   readonly audience?: "agent" | "script";
+  /** The editor is acquiring a write reservation. Providers can defer reading content until Resource.read. */
+  readonly deferSnapshot?: true;
 }
 
 export type ResourceResolutionAttempt =

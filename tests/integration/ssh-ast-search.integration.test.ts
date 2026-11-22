@@ -80,7 +80,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
         path.resolve("tests/integration/fixtures/ssh-search.ts"),
         "builtin:codemode",
       ],
-      tools: ["search", "ast_search", "replace", "read", "codemode"],
+      tools: ["search", "ast_search", "replace", "read", "outline", "codemode"],
       timeoutMs: 60000,
       conversation: [
         assistantMessage([
@@ -94,7 +94,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
           toolCall({
             id: "replace-search",
             name: "replace",
-            arguments: { start: "SEARCH#0000:all:match", text: "console.info(label)" },
+            arguments: { at: "SEARCH#0000:all:match", text: "console.info(label)" },
           }),
         ]),
         assistantMessage([toolCall({ id: "read", name: "read", arguments: { path: note } })]),
@@ -103,7 +103,7 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `const r = await tools.ast_search({pattern:"console.info($VALUE)", path: ${JSON.stringify(scope)}}).then(value => value.result); if (!r.includes(${JSON.stringify(note)}) || !r.includes("console.info(label)")) throw new Error(r); text(r);`,
+              code: `const r = await tools.ast_search({pattern:"console.info($VALUE)", path: ${JSON.stringify(scope)}}); if (r.matches.length !== 1 || r.matches[0].path !== ${JSON.stringify(note)} || r.matches[0].text !== "console.info(label)" || r.matches[0].captures.VALUE[0].text !== "label") throw new Error(JSON.stringify(r)); text(JSON.stringify(r));`,
             },
           }),
         ]),
@@ -115,20 +115,45 @@ test("ordinary structural search executes remotely and edits its shared SEARCH r
           }),
         ]),
         assistantMessage([
-          toolCall({ id: "outline", name: "read", arguments: { path: `ast:${outlineFile}` } }),
+          toolCall({ id: "outline", name: "outline", arguments: { path: outlineFile } }),
+        ]),
+        assistantMessage([
+          toolCall({
+            id: "outline-reuse",
+            name: "codemode",
+            arguments: {
+              code: `const outline = await tools.outline({path:${JSON.stringify(outlineFile)}});
+const hit = await tools.search({path:outline,query:"greet"});
+if (hit.matches.length !== 1 || hit.matches[0].path !== ${JSON.stringify(outlineFile)}) throw Error(JSON.stringify(hit));
+const hidden = await tools.search({path:outline,query:"const count"});
+if (hidden.matches.length !== 0) throw Error("Outline exposed a hidden body");
+text(await tools.replace({path:hit.matches[0],text:"welcome"}));`,
+            },
+          }),
         ]),
         assistantMessage([
           toolCall({
             id: "unknown-outline",
-            name: "read",
-            arguments: { path: "ast:ssh://unknown/tmp/outline.ts" },
+            name: "outline",
+            arguments: { path: "ssh://unknown/tmp/outline.ts" },
           }),
         ]),
         assistantMessage([text("Verified.")]),
       ],
     }).run("Use ordinary structural search and replace on the SSH scope.");
-    for (const id of ["search", "replace-search", "read", "structured", "scopes", "outline"])
+    for (const id of [
+      "search",
+      "replace-search",
+      "read",
+      "structured",
+      "scopes",
+      "outline",
+      "outline-reuse",
+    ])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
+    expect((await backend.read(path.join(fixture.workspace, "outline.ts"))).bytes.toString()).toBe(
+      'export function welcome() {\n  const label = "café";\n  const count = 1;\n  return label + count;\n}\n',
+    );
     expect(getToolResultText(run, "search")).toContain(note);
     expect(getToolExecution(run, "unknown-outline").isError).toBe(true);
     expect(getToolResultText(run, "unknown-outline")).toContain("UNKNOWN_TARGET");

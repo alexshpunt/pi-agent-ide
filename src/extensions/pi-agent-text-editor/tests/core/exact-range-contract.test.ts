@@ -4,7 +4,7 @@ import { TextAnchor } from "pi-agent-text";
 import { resolveExactTextAnchor } from "pi-agent-text-anchor-exact/api/anchor";
 import type { TextMutationContext } from "#src/api/mutation-tool.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
-import { anchorSpanRange, deleteAnchorSpan, replaceAnchorSpan } from "#src/tools/text-selection.ts";
+import { anchorSpanRange } from "#src/tools/text-selection.ts";
 import { copyMutationTool } from "#src/tools/tool-text-copy.ts";
 import { moveMutationTool } from "#src/tools/tool-text-move.ts";
 import { insertMutationTool } from "#src/tools/tool-text-insert.ts";
@@ -36,7 +36,7 @@ function fixture(
     const resolved = resolveExactTextAnchor(value, {
       source,
       content,
-      lines: content.split(/\r\n|\r|\n/u),
+      lines: content.split("\n"),
       cwd: process.cwd(),
     });
     if (resolved.kind !== "resolved") throw new Error(`Fixture anchor ${field} did not resolve`);
@@ -56,65 +56,68 @@ function fixture(
 
 for (const eol of ["\n", "\r\n"]) {
   test.each([`keep${eol}`, `keep${eol}${eol}`, ""])(
-    "line deletion owns no preceding separator (%j)",
-    (prefix) => {
+    "deleting an unterminated last line also removes the line ending before it (%j)",
+    async (prefix) => {
       const content = `${prefix}尾🙂`;
       const line = prefix.split(eol).length;
       const f = fixture({ source: content }, { start: ["source", line] });
-      const span = anchorSpanRange(f.context, f.resolve("start"), undefined, "start", "end");
-      const expected = { from: prefix.length, to: content.length, insert: "" };
-      expect(f.documentFor("source").deleteLines(line, line)).toEqual(expected);
-      expect(f.documentFor("source").replaceLines(line, line, "")).toEqual(expected);
-      expect(deleteAnchorSpan(span)).toEqual(expected);
-      expect(replaceAnchorSpan(f.context, span, "")).toEqual(expected);
-      expect(applyTextChanges(content, [deleteAnchorSpan(span)]).content).toBe(prefix);
+      const span = await anchorSpanRange(f.context, f.resolve("start"), undefined, "start", "end");
+      const document = f.documentFor("source");
+      const kept = prefix.slice(0, Math.max(0, prefix.length - eol.length));
+      const expected = { from: kept.length, to: content.length, insert: "" };
+      expect(document.delete(span)).toEqual(expected);
+      expect(document.replace(span, "")).toEqual(expected);
+      expect(applyTextChanges(content, [document.delete(span)]).content).toBe(kept);
     },
   );
 
   test("empty whole-line replacement removes the line's own terminator", () => {
     const content = `keep${eol}尾🙂${eol}${eol}after`;
     const document = new TextChangeDocument(content);
-    expect(document.replaceLines(2, 2, "")).toEqual(document.deleteLines(2, 2));
-    expect(applyTextChanges(content, [document.replaceLines(2, 2, "")]).content).toBe(
+    const line = document.lineSpan(2, 2);
+    expect(document.replace(line, "")).toEqual(document.delete(line));
+    expect(applyTextChanges(content, [document.replace(line, "")]).content).toBe(
       `keep${eol}${eol}after`,
     );
   });
+}
 
-  test("append then delete restores the original terminated EOF", () => {
-    const original = `base${eol}`;
+for (const original of ["base\n", "base\r\n", "base", "\uFEFFbase\r\n"]) {
+  test(`insert after the last line, then delete it, restores the original bytes (${JSON.stringify(original)})`, () => {
     const document = new TextChangeDocument(original);
-    const appended = applyTextChanges(original, [document.insertAfterLine(1, "added")]).content;
+    const appended = applyTextChanges(original, [
+      document.insert(document.lineSpan(1, 1), "added\n"),
+    ]).content;
     const after = new TextChangeDocument(appended);
-    expect(applyTextChanges(appended, [after.deleteLines(2, 2)]).content).toBe(original);
+    expect(after.text(after.lineSpan(2, 2))).toBe("added");
+    expect(applyTextChanges(appended, [after.delete(after.lineSpan(2, 2))]).content).toBe(original);
   });
 }
 
 for (const operation of [copyMutationTool, moveMutationTool]) {
   for (const ending of ["", "\n", "\r\n"]) {
-    test(`${operation.name} transfers the same whole-line source into an exact destination (${JSON.stringify(ending)})`, async () => {
+    test(`${operation.name} transfers a whole line as characters onto a partial target (LPT-1747) (${JSON.stringify(ending)})`, async () => {
       const content = `keep\r\n段🙂${ending}`;
       const f = fixture(
         { source: content, target: "left TARGET right\n" },
         {
-          start: ["source", "段🙂"],
-          targetStart: ["target", "TARGET"],
-          targetEnd: ["target", "TARGET"],
+          at: ["source", "段🙂"],
+          targetAt: ["target", "TARGET"],
         },
       );
       const result = await operation.mutate(f.context, {
-        start: "段🙂",
-        targetStart: "TARGET",
-        targetEnd: "TARGET",
+        at: "段🙂",
+        targetAt: "TARGET",
       });
       const target = result.edits.get("target");
       expect(target).toBeDefined();
       expect(applyTextChanges("left TARGET right\n", requiredValue(target).changes).content).toBe(
-        `left 段🙂${ending} right\n`,
+        "left 段🙂 right\n",
       );
       const deletion = result.edits.get("source");
       expect(
         deletion === undefined ? content : applyTextChanges(content, deletion.changes).content,
-      ).toBe(operation.name === "copy" ? content : "keep\r\n");
+      ).toBe(operation.name === "copy" ? content : ending === "" ? "keep" : "keep\r\n");
     });
   }
 }
@@ -124,27 +127,29 @@ for (const operation of [copyMutationTool, moveMutationTool]) {
     const f = fixture(
       { source: "keep\nTAIL", target: "before\nTARGET\nafter\n" },
       {
-        start: ["source", "TAIL"],
-        targetStart: ["target", "TARGET"],
-        targetEnd: ["target", "TARGET"],
+        at: ["source", "TAIL"],
+        targetAt: ["target", "TARGET"],
       },
     );
     const result = await operation.mutate(f.context, {
-      start: "TAIL",
-      targetStart: "TARGET",
-      targetEnd: "TARGET",
+      at: "TAIL",
+      targetAt: "TARGET",
     });
     expect(
       applyTextChanges("before\nTARGET\nafter\n", requiredValue(result.edits.get("target")).changes)
         .content,
-    ).toBe("before\nTAILafter\n");
+    ).toBe("before\nTAIL\nafter\n");
   });
 }
 for (const before of [false, true]) {
+  const side = before ? "before" : "after";
   test(`exact insertion uses the selected boundary (before=${before})`, async () => {
     const content = "pre α🙂 end\n";
-    const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
-    const result = await insertMutationTool.mutate(f.context, { anchor: "α🙂", text: "+", before });
+    const f = fixture({ source: content }, { [side]: ["source", "α🙂"] });
+    const result = await insertMutationTool.mutate(f.context, {
+      [side]: "α🙂",
+      text: "+",
+    });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,
     ).toBe(before ? "pre +α🙂 end\n" : "pre α🙂+ end\n");
@@ -152,27 +157,25 @@ for (const before of [false, true]) {
 
   test(`blank-line insertion keeps the exact boundary (before=${before})`, async () => {
     const content = "pre α🙂 end\n";
-    const f = fixture({ source: content }, { anchor: ["source", "α🙂"] });
+    const f = fixture({ source: content }, { [side]: ["source", "α🙂"] });
     const result = await insertMutationTool.mutate(f.context, {
-      anchor: "α🙂",
+      [side]: "α🙂",
       text: "+",
-      before,
       separation: "blank-line",
     });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,
-    ).toBe(before ? "pre \n\n+\n\nα🙂 end\n" : "pre α🙂\n\n+\n\n end\n");
+    ).toBe(before ? "pre +α🙂 end\n" : "pre α🙂+ end\n");
   });
-  test(`multiline exact insertion does not widen the selection (before=${before})`, async () => {
+  test(`inserting multiline text mid-line keeps the character boundary (before=${before})`, async () => {
     const content = "pre α\r\nβ end\r\n";
-    const f = fixture({ source: content }, { anchor: ["source", "α\nβ"] });
+    const f = fixture({ source: content }, { [side]: ["source", "α\r\nβ"] });
     const result = await insertMutationTool.mutate(f.context, {
-      anchor: "α\nβ",
-      text: "+",
-      before,
+      [side]: "α\r\nβ",
+      text: "X\nY",
     });
     expect(
       applyTextChanges(content, requiredValue(result.edits.get("source")).changes).content,
-    ).toBe(before ? "pre +α\r\nβ end\r\n" : "pre α\r\nβ+ end\r\n");
+    ).toBe(before ? "pre X\r\nYα\r\nβ end\r\n" : "pre α\r\nβX\r\nY end\r\n");
   });
 }

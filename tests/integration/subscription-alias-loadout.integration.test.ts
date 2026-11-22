@@ -83,7 +83,7 @@ test.skipIf(connector === undefined)(
           "--pi-agent-ide-no-post-processing",
           "true",
           "--",
-          "Exercise direct and nested subscription aliases and their editing guide.",
+          "Exercise direct and nested subscription aliases and a guide.",
         ],
         {
           cwd,
@@ -107,7 +107,7 @@ test.skipIf(connector === undefined)(
       expect(result.timedOut).toBe(false);
       expect(result.code, result.stderr || result.stdout).toBe(0);
       expect(result.stdout).toContain("SUBSCRIPTION_ALIAS_FIXTURE_OK");
-      expect(result.stdout).toContain("# Precise text editing");
+      expect(result.stdout).toContain("# Terminal");
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("NESTED\n");
       expect(state.requests).toBe(3);
       for (const snapshot of state.snapshots) {

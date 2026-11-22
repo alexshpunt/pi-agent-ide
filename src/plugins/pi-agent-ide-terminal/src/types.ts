@@ -31,8 +31,12 @@ export interface TerminalExecutionOrigin {
 export interface TerminalSession {
   /** Assigned once by the launching tool; retained with the process across reload. */
   origin?: TerminalExecutionOrigin;
+  /** Generated key for logs and internal bookkeeping; addresses the session only while unnamed. */
   readonly id: string;
-  readonly source: string;
+  /** Agent-chosen address; `shell:<name>` replaces `shell:<id>` while it is set. */
+  name?: string;
+  /** Current `shell:` address; changes when the session is renamed. */
+  source: string;
   readonly command: string;
   background: boolean;
   readonly cwd: string;
@@ -66,6 +70,7 @@ export interface TerminalSession {
 export interface TerminalSessionSnapshot {
   readonly origin?: TerminalExecutionOrigin;
   readonly id: string;
+  readonly name?: string;
   readonly source: string;
   readonly command: string;
   readonly cwd: string;

@@ -29,9 +29,9 @@ describe("pi-agent-text-editor move", () => {
         tool: "move",
         arguments: {
           path: sourcePath,
-          start: formatLineHashAnchor(2, "move-me"),
+          at: formatLineHashAnchor("source-one\nmove-me\nsource-end\n", 2),
           target: targetPath,
-          targetStart: formatLineHashAnchor(1, "target-start"),
+          targetAfter: formatLineHashAnchor("target-start\ntarget-end\n", 1),
         },
       });
 
@@ -51,9 +51,9 @@ describe("pi-agent-text-editor move", () => {
         tool: "move",
         arguments: {
           path: relativeFile,
-          start: formatLineHashAnchor(2, "move-me"),
+          at: formatLineHashAnchor("first\nmove-me\nlast\n", 2),
           target: relativeFile,
-          targetStart: formatLineHashAnchor(3, "last"),
+          targetAfter: formatLineHashAnchor("first\nmove-me\nlast\n", 3),
         },
       });
 

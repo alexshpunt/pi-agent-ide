@@ -6,6 +6,11 @@ export interface TextSourceLine {
   readonly source: string;
   readonly lineNumber: number;
   readonly content: string;
+  /**
+   * The line's anchor in the whole source file. An anchor names content in context, so only the
+   * code that holds the whole file can issue it; a mapped line without one is shown unanchored.
+   */
+  readonly anchor?: string;
 }
 
 export function getTextSourceLine(line: Pick<TextLine, "metadata">): TextSourceLine | undefined {
@@ -41,6 +46,7 @@ function isTextSourceLine(value: unknown): value is TextSourceLine {
     typeof candidate.lineNumber === "number" &&
     Number.isInteger(candidate.lineNumber) &&
     candidate.lineNumber > 0 &&
-    typeof candidate.content === "string"
+    typeof candidate.content === "string" &&
+    (candidate.anchor === undefined || typeof candidate.anchor === "string")
   );
 }

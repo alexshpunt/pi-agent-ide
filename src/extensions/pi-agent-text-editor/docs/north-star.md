@@ -45,6 +45,8 @@ Mutation tools describe each change as inserted text over a half-open range in t
 
 For one edit, the editor snapshots the ordered anchor and target registries once. It expands typed targets before reading any Resource, then resolves explicit anchors independently against each selected current snapshot with the same cwd, signal, and registry snapshot. Compatible path ranges and explicit anchor ranges are unioned. Different Resource sets, incompatible selection shapes, ambiguous or overlapping ranges, and invalid spans are rejected before persistence.
 
+For files, matching two endpoints does not authorize a large unseen interior. Replace, Delete, Move, and Copy check the chosen range against the text returned to this session by Read, Search, and edit results. Move and Copy also check a destination selected by two endpoints. A range is refused if more than 200 lines or 128 Ki characters are unseen. Observation follows unchanged lines when another session shifts the file; new or changed lines are not covered. Use narrower endpoints, or read the intended range (in pages if necessary) before retrying.
+
 A resolver may recover its own rejected value. Recovery is non-mutating: core validates candidate line/column spans, renders current context through the primary presenter, and keeps the original mutation blocked. Batch recovery recomputes candidates after successful writes and post-edit work.
 
 ## Resource mutation
@@ -73,7 +75,7 @@ A claimed Resource or anchor failure is terminal. Only `not-handled` continues t
 
 The built-in `search` tool registers four typed search values. `SEARCH#HASH:N:line` selects one result's complete containing line and `SEARCH#HASH:N:match` selects its exact characters. Complete searches also register `SEARCH#HASH:all:line` for every unique containing line and `SEARCH#HASH:all:match` for every exact match across all matched Resources.
 
-A line selection includes its LF or CRLF ending. Replacement preserves that ending when new text does not provide one. Insertion happens after the line by default and before it when `before: true`. A final line without an ending selects through EOF and remains without a trailing ending when replaced, unless the replacement text provides a line ending. Whole-line deletion removes the preceding separator when needed so the final line is removed cleanly, and adjacent whole-line deletions are coalesced. Match selections never include line endings.
+Only LF ends a line; a CR before it belongs to the line ending. A line selection selects whole lines; replacement writes their content and the last line keeps its own ending, so text never joins the next line. Line breaks in the text take the line ending of the line where it lands. Insert just after a line with `after` or just before it with `before`. An issued `path` alone inserts after its selected lines. Whole-line deletion removes the line endings too, or the preceding one for a final line without an LF, and adjacent whole-line deletions are coalesced. Match selections never include line endings.
 
 Per-result values remain tied to the search-time snapshots and reject changed files as stale. Complete `:all` values rerun the stored search recipe when a selected file changes. Limited or incomplete searches omit the `:all` values and reject forged ones. Bare `SEARCH#HASH:N` and `SEARCH#HASH:all` forms are invalid and are not displayed.
 
@@ -81,7 +83,7 @@ Per-result values remain tied to the search-time snapshots and reject changed fi
 
 Standard anchor formats are optional extensions:
 
-- `pi-agent-text-anchor-line-hash` registers the major `LINE#HASH` resolver and matching read prefix;
+- `pi-agent-text-anchor-line-hash` registers the major line-anchor resolver and matching read prefix;
 - `pi-agent-text-anchor-constant` registers `begin` and `end` as constant line selectors;
 - `pi-agent-text-anchor-exact` is the final fallback and selects any unique non-empty exact text span;
 - `pi-agent-ide-ast` registers auxiliary scope anchors and matching sparse read markers.

@@ -25,7 +25,7 @@ test("uses Search frames for file lists without changing data", async () => {
     );
     await writeFile(path.join(cwd, "a.ts"), "function task() { probe(); }\r\n");
     const scripts = [
-      `const r=await tools.file_search({pattern:"*.ts"}).then(value => value.result); if(typeof r!=="string" || !r.includes("a.ts")) throw Error(r); text({fileCount:1});`,
+      `const r=await tools.file_search({pattern:"*.ts"}); if(JSON.stringify(r)!=='["a.ts"]') throw Error(JSON.stringify(r)); text({fileCount:r.length});`,
     ];
     const run = await new PiIntegrationTest({
       testName: "search-list-style",

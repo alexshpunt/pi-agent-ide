@@ -2,6 +2,7 @@ import path from "node:path";
 import { expect, test } from "vitest";
 import { SshBackend } from "#src/backend/ssh.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import {
   assistantMessage,
@@ -120,7 +121,7 @@ test("ordinary and structured writes keep a committed SSH write unknown after re
             id: "structured",
             name: "codemode",
             arguments: {
-              code: `let failure; try { await tools.write({path:${JSON.stringify(source)},content:"after\\n"}); } catch(error) { failure = String(error); } if (!failure) throw Error("An uncertain write must reject"); text(failure);`,
+              code: `const written = await tools.write({path:${JSON.stringify(source)},content:"after\\n"}); if (written !== null) throw Error("An uncertain write must fail"); text("write failed");`,
             },
           }),
         ]),
@@ -141,8 +142,11 @@ test("ordinary and structured writes keep a committed SSH write unknown after re
     expect(getToolResultText(run, "read-after")).toContain("after");
     expect(getToolExecution(run, "reset").isError).toBe(false);
     expect(getToolExecution(run, "structured").isError).toBe(false);
-    expect(getToolResultText(run, "structured")).toContain("REMOTE_OPERATION_FAILED");
-    expect(getToolResultText(run, "structured")).toContain("Write outcome unknown.");
+    // The script got null; the Codemode result lists the failed Write with its readable reason.
+    const structured = codemodeFailures(getToolResultText(run, "structured"));
+    expect(structured).toContain(`- write ${source}`);
+    expect(structured).toContain("REMOTE_OPERATION_FAILED");
+    expect(structured).toContain("Write outcome unknown.");
     expect(getToolResultText(run, "structured")).not.toContain("No file was changed.");
     expect(getToolResultText(run, "read-final")).toContain("after");
     expect((await backend.read(file)).bytes.toString("utf8")).toBe("after\n");

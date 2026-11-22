@@ -1,7 +1,15 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connectResultImages, connectResultTargets } from "pi-agent-resource";
+import {
+  connectResultImages,
+  connectResultTargets,
+  UnsupportedContentError,
+} from "pi-agent-resource";
+import { NoTextTargetError } from "./file-result-targets.ts";
+import { FileWriteObservations } from "./file-write-observations.ts";
 import { setMutationSnapshotReader } from "./mutation-result-targets.ts";
 import { registerTextEditOrigins } from "./text-edit-origin.ts";
+import { compactMutationReceipt } from "./mutation-result/compact-receipt.ts";
+import type { FileMutationBatchResult } from "./mutation-result/file-mutation-result.ts";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -31,6 +39,7 @@ import { createTextEditorCore } from "#src/core/text-editor-core.ts";
 import { createResultTargetAnchors } from "#src/core/result-target-anchors.ts";
 import { createReadFragmentResolver } from "#src/core/read-fragment-resolver.ts";
 import { createTextTool } from "#src/core/text-mutation.ts";
+import { EDITING_GUIDELINES } from "#src/core/editing-guidelines.ts";
 import { registerDiff } from "#src/core/diff-tool.ts";
 import { ToolCallInterceptionRenderStore } from "#src/core/tool-call-interceptor/rendering.ts";
 import { registerToolCallAnnotationSink } from "pi-agent-text-editor/api/tool-call-interceptor";
@@ -50,25 +59,40 @@ export default async function registerTextEditorCore(
     registerToolCallAnnotationSink(pi);
     interceptionRendering.clear();
   });
+  const observations = new FileWriteObservations(pi);
   const resultTargets = connectResultTargets(pi);
   const resultImages = connectResultImages(pi);
   const mutationTools = new Set<string>();
-  const core = createTextEditorCore((registration, editor) => {
-    mutationTools.add(registration.name);
-    pi.registerTool(
-      createTextTool(
-        editor,
-        registration,
-        interceptionRendering,
-        () => getLastResolvedResource(pi)?.source,
-        resultTargets,
-        pi.events,
-        resultImages,
-      ),
-    );
-  }, resultTargets);
+  const core = createTextEditorCore(
+    (registration, editor) => {
+      mutationTools.add(registration.name);
+      pi.registerTool(
+        createTextTool(
+          editor,
+          registration,
+          interceptionRendering,
+          () => getLastResolvedResource(pi)?.source,
+          resultTargets,
+          pi.events,
+          resultImages,
+          observations,
+        ),
+      );
+    },
+    resultTargets,
+    {
+      checkSpan: observations.checkSpan.bind(observations),
+    },
+  );
+  pi.on("before_agent_start", (event) => {
+    const enabled = pi
+      .getAllTools()
+      .some((tool) => mutationTools.has(tool.name) && tool.exposure !== "hidden");
+    event.systemPromptOptions.sections.ide_editing = enabled ? EDITING_GUIDELINES.join("\n") : "";
+  });
   registerTextEditOrigins(pi, core);
   setTextEditBatchRenderArgumentSink(core, interceptionRendering.resolveArguments);
+  core.onDidEdit((completion) => observations.saved(completion));
   core.onDidEdit((completion) => {
     // A final formatting pass must not retire fresh mutation spans when it left the text unchanged.
     const before = completion.beforePostProcessing ?? completion.before;
@@ -89,11 +113,18 @@ export default async function registerTextEditorCore(
   pi.on("tool_result", (event) => {
     rememberLastResolvedResource(pi, event.details);
 
-    if (mutationTools.has(event.toolName) && isFailedTextMutationResult(event.details)) {
-      return { isError: true };
+    if (!mutationTools.has(event.toolName)) return;
+    const isError = isFailedTextMutationResult(event.details);
+    const details = event.details as FileMutationBatchResult | undefined;
+    if (details && Array.isArray(details.results)) {
+      const persist = core.getToolRenderer(event.toolName)?.persistResult ?? compactMutationReceipt;
+      return { details: persist(details), ...(isError ? { isError: true } : {}) };
     }
-
-    return;
+    if (isError) return { isError: true };
+  });
+  pi.on("message_end", async ({ message }, context) => {
+    if (message.role === "toolResult" && message.toolName !== "write")
+      await observations.presented(message.content, context.cwd);
   });
   let readApi: ReadPluginApi | undefined;
   await connectReadPlugin(pi, {
@@ -106,7 +137,7 @@ export default async function registerTextEditorCore(
       api.addFragmentResolver(createReadFragmentResolver(core));
 
       api.describe({
-        path: "path#anchor — text around a returned anchor, e.g. notes.txt#12#A4F0; SEARCH#… and RESULT#… go in as they are.",
+        path: "path#anchor — text around a returned anchor, e.g. notes.txt#K7M2QX4; SEARCH#… and RESULT#… go in as they are.",
         offset: "For an anchor or result selection, counts from its line.",
         limit: "For a selection, per selected window.",
       });
@@ -115,6 +146,8 @@ export default async function registerTextEditorCore(
   setMutationSnapshotReader(core, async (source, cwd, signal) => {
     if (readApi === undefined) throw Error("Mutation targets require pi-agent-read.");
     const result = await readApi.read({ path: source }, { cwd, signal }, "script");
+    if (result.details.failure?.cause instanceof UnsupportedContentError)
+      throw new NoTextTargetError();
     if (result.isError || result.script?.kind !== "text" || result.script.target === undefined)
       throw Error("Saved resource did not provide guarded text authority.");
     const selected = resultTargets.resolve(result.script.target, cwd);
@@ -128,7 +161,7 @@ export default async function registerTextEditorCore(
       throw new Error("Text anchor recovery requires pi-agent-read");
     }
 
-    // Recovery context teaches the agent a fresh anchor, so it must carry hashes.
+    // Recovery context teaches the agent a fresh anchor, so it must carry anchors.
     return readApi.read({ ...request, views: ["anchors"] }, context);
   });
 

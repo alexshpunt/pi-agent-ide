@@ -17,6 +17,8 @@ export interface BeforeDeleteEvent {
 export interface DeleteFileAccess {
   /** Omitted means POSIX target paths; native uses the controller platform's path syntax. */
   readonly pathStyle?: "posix" | "native";
+  /** Names that differ only by letter case are the same name, as on a Windows volume. */
+  readonly caseInsensitive?: boolean;
   /** Native account defaults and config directory for temporary removal exceptions.
    * Omitted disables those exceptions; a remote owner must never use controller values.
    * All returned paths are absolute on this owner. Called again during policy recheck.

@@ -60,11 +60,13 @@ test("anchor recovery names the actual source while preserving a stale-line cand
   const text = resultText({
     code: "FRAGMENT_FAILED",
     source: '/workspace/quoted"notes.txt',
-    message: "line hash anchor is stale\nCandidate: line 2",
+    message: 'no line has anchor "K7M2QX4"\nCandidate: line 2',
   });
-  expect(text).toContain("line hash anchor is stale\nCandidate: line 2");
+  expect(text).toContain('no line has anchor "K7M2QX4"\nCandidate: line 2');
   expect(text).toContain(JSON.stringify('/workspace/quoted"notes.txt'));
-  expect(text).toContain('views=["anchors"]');
+  expect(text).toContain(
+    `read(${JSON.stringify({ path: '/workspace/quoted"notes.txt', views: ["anchors"] })})`,
+  );
   expect(text).not.toContain("FRAGMENT_FAILED");
 });
 

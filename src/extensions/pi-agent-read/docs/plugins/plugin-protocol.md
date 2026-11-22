@@ -60,7 +60,7 @@ interface ReadFragmentContext {
 type ReadFragmentResolution =
   | { readonly kind: "resolved"; readonly originLine: number }
   | { readonly kind: "not-handled" }
-  | { readonly kind: "failed"; readonly message: string };
+  | { readonly kind: "failed"; readonly message: string; readonly retryPath?: string };
 
 interface FragmentResolverRegistration {
   readonly id: string;
@@ -89,6 +89,8 @@ interface ReadViewRegistration {
   readonly priority?: number;
 }
 ```
+
+A failed fragment resolver may set `retryPath` to the source or a known `source#anchor`. Read renders it as a ready call with the anchors view, without executing it.
 
 A view may list other views in `includes` when its complete presentation already contains theirs. If a request names both views, read skips the included view instead of returning duplicate annotations. Only declare an inclusion when that plugin actually supplies the complete included presentation.
 
@@ -200,7 +202,7 @@ The exact resolver, validation, capability, pipeline, and failure behavior is de
 
 ## Prompt contributions
 
-`api.describe()` contributes syntax to the matching `path`, `views`, `offset` or `limit` description in Read's parameter schema. Each value is static text or a lazy callback; `undefined` omits that parameter contribution from the snapshot. Registration and delivery are defined in [prompt-contributions.md](prompt-contributions.md).
+`api.describe()` contributes syntax to the matching `views`, `offset` or `limit` description in Read's parameter schema. The `path` description stays generic; source-specific path metadata remains accepted for compatibility but is not published in that field. Each value is static text or a lazy callback; `undefined` omits that parameter contribution from the snapshot. Registration and delivery are defined in [prompt-contributions.md](prompt-contributions.md).
 
 ## Testing contract
 
@@ -213,3 +215,11 @@ Integration tests load real core and plugin entrypoints in both load orders. Cor
 Pipeline handlers receive `context.audience`. Presentation-only overflow handlers must keep script data intact; failures still apply to both audiences. The AST overflow handler therefore leaves script reads unchanged. Multi-target script results retain every selected result in `details.resources`, rather than exposing only the first target's details.
 
 This is the shared data path for native tool composition and Diff, not a new parameter on the model-facing read tool. Resource, bridge and execution limits remain separate from presentation truncation.
+
+## Reads issued by another tool
+
+A `read` tool call that another tool issued, such as `tools.read` in a Codemode script, reaches Read with Pi's `parentToolCallId`. Read keeps the agent audience and its window notices for that call, but sets `context.outputLimit` to `"none"` and returns the whole text instead of fitting it to the model's output budget. Overflow handlers must leave such results unchanged; the AST overflow handler does. Model-issued calls have `outputLimit` `"model"`.
+
+The structured data of such a call is complete: every selected line and byte, without the 1 MiB record limit. Text data adds `text`, the requested window as the requested views present it, without notices, and directory data adds `entries`, the names a resource reported in `Resource.entries`. Raw byte reads return every requested byte as data and keep their bounded hex view as content.
+
+The Read tool also takes an array `path`. It reads each source on its own and returns `{ kind: "list", items }`, one structured outcome per source in order. The call succeeds when every source does, is `partial` when some fail, and fails when all fail; its errors carry each failed source's readable failure text.

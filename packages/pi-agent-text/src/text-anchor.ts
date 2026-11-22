@@ -38,6 +38,12 @@ export abstract class TextAnchor {
     }
   }
 
+  /** Optionally checks the full current selection when paired with another endpoint. */
+  public rangeRejection?(
+    end: TextAnchor,
+    selected: string,
+  ): { readonly code: string; readonly reason: string } | undefined;
+
   public toString(): string {
     return this.value;
   }
@@ -50,6 +56,15 @@ export interface TextAnchorResolverContext {
   readonly lines: readonly string[];
   readonly cwd: string;
   readonly signal?: AbortSignal;
+  /**
+   * Ranges of the text that the caller limits this anchor to, such as the selection of a result
+   * passed together with the anchor. A resolver that searches the text, such as exact text,
+   * matches only inside them; the caller checks that other anchors land inside them. A range that
+   * ends where a line ends also covers that line's break, so whole-line text inside it counts.
+   */
+  readonly scope?: readonly TextAnchorRecoveryCandidateRange[];
+  /** Exclusive end of a paired start in UTF-16 source offsets. Used to disambiguate literals. */
+  readonly endAfter?: number;
 }
 
 /** Legacy line window used by anchor inspection. */
@@ -60,8 +75,11 @@ export interface TextAnchorRecoveryRange {
 
 /** Why an anchor could not resolve safely. */
 export interface TextAnchorRejection {
-  readonly code: "invalid" | "stale" | "missing" | "ambiguous";
+  /** outside-scope means the selector matches the source, but not within the requested ranges. */
+  readonly code: "invalid" | "stale" | "missing" | "ambiguous" | "outside-scope" | "before-start";
   readonly reason: string;
+  /** The literal after removing Search highlight delimiters, for suggestions only. */
+  readonly searchHighlightRetry?: string;
   readonly contextRange?: TextAnchorRecoveryRange;
 }
 
@@ -95,6 +113,8 @@ export type TextAnchorRecoveryOutcome =
       readonly kind: "candidates";
       readonly candidates: readonly TextAnchorRecoveryCandidate[];
       readonly total: number;
+      /** Every disjoint match of the original selector, not guessed recovery candidates. */
+      readonly allMatches?: readonly TextAnchorRecoveryCandidateRange[];
     }
   | { readonly kind: "timed-out" }
   | { readonly kind: "failed"; readonly error: unknown };
@@ -102,7 +122,12 @@ export type TextAnchorRecoveryOutcome =
 /** Result of resolving an anchor value. */
 export type TextAnchorResolutionAttempt =
   | { readonly kind: "not-handled" }
-  | { readonly kind: "resolved"; readonly anchor: TextAnchor }
+  | {
+      readonly kind: "resolved";
+      readonly anchor: TextAnchor;
+      /** Agent-visible notice when a fallback matched instead of the supplied selector. */
+      readonly notice?: string;
+    }
   | { readonly kind: "rejected"; readonly rejection: TextAnchorRejection }
   | { readonly kind: "failed"; readonly error: unknown };
 
@@ -193,10 +218,11 @@ const positionSchema = Type.Object(
   },
   objectOptions,
 );
+const rangeSchema = Type.Object({ start: positionSchema, end: positionSchema }, objectOptions);
 const candidateSchema = Type.Object(
   {
     rank: Type.Integer({ minimum: 1 }),
-    range: Type.Object({ start: positionSchema, end: positionSchema }, objectOptions),
+    range: rangeSchema,
   },
   objectOptions,
 );
@@ -217,9 +243,12 @@ const rejectionSchema = Type.Object({
     Type.Literal("invalid"),
     Type.Literal("stale"),
     Type.Literal("missing"),
+    Type.Literal("outside-scope"),
+    Type.Literal("before-start"),
     Type.Literal("ambiguous"),
   ]),
   reason: Type.String(),
+  searchHighlightRetry: Type.Optional(Type.String()),
   contextRange: Type.Optional(
     Type.Object({
       offset: Type.Number(),
@@ -233,6 +262,7 @@ const attemptSchema = Type.Union([
     {
       kind: Type.Literal("resolved"),
       anchor: Type.Unknown(),
+      notice: Type.Optional(Type.String()),
     },
     objectOptions,
   ),
@@ -258,6 +288,7 @@ const recoveryOutcomeSchema = Type.Union([
       kind: Type.Literal("candidates"),
       candidates: Type.Array(candidateSchema),
       total: Type.Integer({ minimum: 0 }),
+      allMatches: Type.Optional(Type.Array(rangeSchema)),
     },
     objectOptions,
   ),

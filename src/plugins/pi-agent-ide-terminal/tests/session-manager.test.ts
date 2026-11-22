@@ -64,6 +64,39 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
     await expect(access(snapshot.fullOutputPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  test("drains the last lines before publishing completion despite a stalled PTY reader", async () => {
+    const manager = createManager();
+    const lineCount = 20_000;
+    const expected = Array.from({ length: lineCount }, (_, index) => `line ${index + 1}\r\n`).join(
+      "",
+    );
+    const session = manager.start({
+      command: `stty -echo; seq -f 'line %g' ${lineCount - 100}; IFS= read -r _; seq -f 'line %g' ${lineCount - 99} ${lineCount}`,
+      background: true,
+      cwd: process.cwd(),
+      shell: resolveShellProfile("linux", { SHELL: "/bin/bash" }),
+    });
+    const prefix = `line ${lineCount - 100}\r\n`;
+    const beforeTail = new Promise<void>((resolve) => {
+      const unsubscribe = manager.onDidChange(() => {
+        if (!session.output.endsWith(prefix)) return;
+        unsubscribe();
+        session.process?.pause();
+        resolve();
+      });
+    });
+    const atCompletion = new Promise<string>((resolve) => {
+      manager.onDidComplete((completed) => resolve(completed.output));
+    });
+    await beforeTail;
+    await manager.write(session.source, "\n");
+    await manager.wait(session.source);
+    const output = await atCompletion;
+    expect(output).toHaveLength(expected.length);
+    expect(output).toBe(expected);
+    expect(await readFile(session.fullOutputPath, "utf8")).toBe(expected);
+  });
+
   test("classifies a command timeout exit", async () => {
     const manager = createManager();
     const session = manager.start({
@@ -248,6 +281,88 @@ describe.runIf(process.platform !== "win32")("terminal session manager", () => {
 
     expect(manager.get(first.source)).toBeUndefined();
     expect(manager.snapshot(second)).toMatchObject({ status: "completed", output: "alive" });
+  });
+});
+
+describe.runIf(process.platform !== "win32")("terminal session names", () => {
+  const shell = resolveShellProfile("linux", { SHELL: "/bin/bash" });
+  const start = (manager: TerminalSessionManager, name?: string) =>
+    manager.start({
+      command: "sleep 5",
+      ...(name === undefined ? {} : { name }),
+      background: true,
+      cwd: process.cwd(),
+      shell,
+    });
+
+  test("a named session answers only to its name", () => {
+    const manager = createManager();
+    const session = start(manager, "dev-server");
+
+    expect(session.source).toBe("shell:dev-server");
+    expect(manager.get("shell:dev-server")).toBe(session);
+    expect(manager.get(`shell:${session.id}`)).toBeUndefined();
+  });
+
+  test("a taken or invalid name leaves the session on a generated address", () => {
+    const manager = createManager();
+    start(manager, "dev-server");
+
+    for (const name of ["dev-server", "has space", "abcdef123456", ""]) {
+      expect(manager.nameProblem(name)).toBeDefined();
+      const session = start(manager, name);
+      expect(session.name).toBeUndefined();
+      expect(session.source).toBe(`shell:${session.id}`);
+    }
+  });
+
+  test("renaming moves the address and frees the old name", () => {
+    const manager = createManager();
+    const unnamed = start(manager);
+    const generated = unnamed.source;
+
+    manager.rename(generated, "api");
+    expect(manager.get("shell:api")).toBe(unnamed);
+    expect(manager.get(generated)).toBeUndefined();
+
+    manager.rename("shell:api", "web");
+    expect(manager.get("shell:api")).toBeUndefined();
+    expect(start(manager, "api").source).toBe("shell:api");
+  });
+
+  test("renaming to a used or invalid name changes nothing", () => {
+    const manager = createManager();
+    const first = start(manager, "one");
+    start(manager, "two");
+
+    expect(() => manager.rename("shell:one", "two")).toThrow(Error);
+    expect(() => manager.rename("shell:one", "bad name")).toThrow(Error);
+    expect(first.source).toBe("shell:one");
+    expect(manager.get("shell:one")).toBe(first);
+  });
+
+  test("deleting a named session frees its name", async () => {
+    const manager = createManager();
+    await manager.delete(start(manager, "worker").source);
+
+    expect(manager.get("shell:worker")).toBeUndefined();
+    expect(start(manager, "worker").source).toBe("shell:worker");
+  });
+
+  test("lists the sessions of one Pi session and sessions without a known owner", () => {
+    const manager = createManager();
+    const own = start(manager, "own");
+    const other = start(manager, "other");
+    start(manager, "unknown");
+    own.origin = { toolCallId: "a", parentToolCallId: "a", sessionId: "current" };
+    other.origin = { toolCallId: "b", parentToolCallId: "b", sessionId: "previous" };
+
+    expect(manager.listOwnedBy("current").map((snapshot) => snapshot.source)).toEqual(
+      expect.arrayContaining(["shell:own", "shell:unknown"]),
+    );
+    expect(manager.listOwnedBy("current").map((snapshot) => snapshot.source)).not.toContain(
+      "shell:other",
+    );
   });
 });
 

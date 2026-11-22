@@ -1,12 +1,16 @@
-export class IndexMutationQueue {
-  private tail: Promise<void> = Promise.resolve();
+import { EDIT_WAIT_TIMEOUT_MS, ResourceScheduler } from "pi-agent-resource";
 
-  run<Result>(operation: () => Promise<Result>): Promise<Result> {
-    const result = this.tail.then(operation, operation);
-    this.tail = result.then(
-      () => void 0,
-      () => void 0,
-    );
-    return result;
+export class IndexMutationQueue {
+  private readonly scheduler = new ResourceScheduler();
+
+  run<Result>(
+    file: string,
+    signal: AbortSignal | undefined,
+    operation: () => Promise<Result>,
+  ): Promise<Result> {
+    return this.scheduler.run(undefined, operation, signal, {
+      waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+      waitFor: `the Git index for ${file}`,
+    });
   }
 }

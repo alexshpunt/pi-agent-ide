@@ -6,11 +6,20 @@
 
 Pass `pattern` in source-code syntax. `$NAME` captures one node and `$$$ARGS` captures several, including their punctuation. A pattern must parse as code in the file's language.
 
-Each match shows a `SEARCH#...:N:match` reference and a `capture NAME: RESULT#...` reference per capture. Pass either to Read, Search or an edit tool; a capture selects exactly its nodes, such as a function body or an argument list. `SEARCH#...:all:match` selects every match of a complete result. A single-match reference goes stale when its file changes; repeat the search.
+In direct calls, each match shows a `SEARCH#...:N:match` reference and a `capture NAME: RESULT#...` reference per capture. Pass either to Read, Search or an edit tool; a capture selects exactly its nodes, such as a function body or an argument list. `SEARCH#...:all:match` selects every match of a complete result. A single-match reference keeps working when other lines of its file change, including other parts of its own line, and goes stale when the matched text or its direct neighbours change; repeat the search.
+
+In Codemode, `ast_search` returns `{ id, complete, matches }` like Search, and each match adds `captures`: the nodes of each metavariable, keyed by its name without `$`, as `{ text, id }`. Pass any `id` to a source parameter.
 
 ```js
 const calls = await tools.ast_search({ path: "client.ts", pattern: "request($OPTIONS)" });
-text(calls.result);
+if (calls && typeof calls !== "string") {
+  for (const call of calls.matches) {
+    const [options] = call.captures.OPTIONS ?? [];
+    if (options?.id) {
+      await tools.replace({ path: options.id, text: `{ ...${options.text}, retry: true }` });
+    }
+  }
+}
 ```
 
 ## Rules
@@ -40,9 +49,9 @@ Node kinds are tree-sitter names and differ by language, for example `function_d
 Pass a Read, Search or edit result as `path` and `relation: "enclosing"` to get the innermost match that contains each of its ranges. Starting from a text match:
 
 ```js
-const hit = await tools.search({ path: "src/app.ts", query: '"connection lost"' });
+const hit = await tools.search({ path: "src/app.ts", query: "connection lost" });
 const fn = await tools.ast_search({
-  path: hit.result,
+  path: hit,
   relation: "enclosing",
   language: "typescript",
   rule: {
@@ -56,3 +65,5 @@ const fn = await tools.ast_search({
 ```
 
 Without `relation`, a result scope keeps only matches wholly inside its ranges; matches are never clipped.
+
+If other sessions changed lines inside the result since it was issued, `ast_search` searches the current text of the same region and says so; it fails only when no line of the region is left. Its matches are anchored to the current file.

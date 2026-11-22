@@ -12,20 +12,20 @@ import {
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 
 const initial = "alpha\nbeta\ngap\n});\nINSERT_HERE\n});\ntail\n";
 const copy = {
   path: "same.txt",
-  start: "alpha",
-  end: "beta",
-  targetStart: "});",
+  from: "alpha",
+  through: "beta\n",
 };
 
 test.each([
-  ["standalone", "targetStart"],
-  ["codemode", "targetStart"],
-  ["standalone", "targetEnd"],
-  ["codemode", "targetEnd"],
+  ["standalone", "targetAfter"],
+  ["codemode", "targetAfter"],
+  ["standalone", "targetThrough"],
+  ["codemode", "targetThrough"],
 ] as const)(
   "Copy recovers a %s %s failure without blocking its validated source",
   async (surface, field) => {
@@ -41,13 +41,16 @@ test.each([
         path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
         JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
       );
+      const missingEnd = "MISSING_DESTINATION";
       const request =
-        field === "targetStart" ? copy : { ...copy, targetStart: "gap", targetEnd: "});" };
-      const rejectCopy = `await rejects(()=>tools.copy(${JSON.stringify(request)}),/ambiguous/);`;
+        field === "targetAfter"
+          ? { ...copy, targetAfter: "});" }
+          : { ...copy, targetFrom: "gap", targetThrough: missingEnd };
+      const rejectCopy = `await rejects(()=>tools.copy(${JSON.stringify(request)}));`;
       const corrected =
-        field === "targetStart"
-          ? '{path:"same.txt",start:"alpha",end:"beta",targetStart:destination}'
-          : '{path:"same.txt",start:"alpha",end:"beta",targetStart:"gap",targetEnd:destination}';
+        field === "targetAfter"
+          ? '{path:"same.txt",from:"alpha",through:"beta\\n",targetAfter:destination}'
+          : '{path:"same.txt",from:"alpha",through:"beta\\n",targetFrom:"gap",targetThrough:destination}';
       const run = await new PiIntegrationTest({
         testName: `copy-destination-recovery-${surface}-${field}`,
         artifactsDir: testArtifactsDir(import.meta.filename),
@@ -59,7 +62,7 @@ test.each([
           ...(surface === "standalone"
             ? [
                 assistantMessage(
-                  [toolCall({ id: "ambiguous-copy", name: "copy", arguments: request })],
+                  [toolCall({ id: "rejected-copy", name: "copy", arguments: request })],
                   { stopReason: "toolUse" },
                 ),
               ]
@@ -73,7 +76,7 @@ test.each([
                   code: withTextResultChecks(String.raw`
 ${surface === "codemode" ? rejectCopy : ""}
 const current = await tools.read({path:"same.txt",views:["anchors"]});
-const destination = /^(\d+#[A-F\d]+)\|INSERT_HERE$/m.exec(current)?.[1];
+const destination = /^([0-9A-HJKMNP-TV-Z]{7})\|INSERT_HERE$/m.exec(current.text)?.[1];
 check(destination,"Missing issued destination anchor");
 text(await tools.copy(${corrected}));
 `),
@@ -91,17 +94,20 @@ text(await tools.copy(${corrected}));
       );
 
       if (surface === "standalone") {
-        expect(getToolExecution(run, "ambiguous-copy").isError).toBe(true);
-        expect(getToolResultText(run, "ambiguous-copy")).toContain("ambiguous");
+        expect(getToolExecution(run, "rejected-copy").isError).toBe(true);
+      } else {
+        const failures = codemodeFailures(getToolResultText(run, "corrected-copy"));
+        expect(failures).toMatch(/^1 of 3 IDE calls failed:\n- copy same\.txt\n/u);
       }
       expect(
         getToolExecution(run, "corrected-copy").isError,
         getToolResultText(run, "corrected-copy"),
       ).toBe(false);
       expect(await readFile(file, "utf8")).toBe(
-        field === "targetStart"
+        field === "targetAfter"
           ? "alpha\nbeta\ngap\n});\nINSERT_HERE\nalpha\nbeta\n});\ntail\n"
-          : "alpha\nbeta\nalpha\nbeta\n});\ntail\n",
+          : // The whole-line target keeps its own ending (LPT-1747).
+            "alpha\nbeta\nalpha\nbeta\n});\ntail\n",
       );
     });
   },

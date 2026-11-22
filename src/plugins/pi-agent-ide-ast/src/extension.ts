@@ -7,7 +7,7 @@ import {
   READ_PROTOCOL,
   type ReadPlugin,
 } from "pi-agent-read/api/plugin-protocol";
-import { createReadResultRenderer } from "pi-agent-read/api/rendering";
+import { registerOutlineTool, type OutlineRuntime } from "./tool-outline.ts";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import { connectTextEditorPlugin } from "pi-agent-text-editor/api/connect-plugin";
@@ -18,18 +18,18 @@ import {
   type TextEditorPlugin,
 } from "pi-agent-text-editor/api/plugin-protocol";
 
+import { probeLocalAstGrep } from "./ast-grep-binary.ts";
 import { AstScopeManager } from "./ast/manager.ts";
 import { astDoctorPlugin } from "./doctor-plugin.ts";
-import { createAstOutlineResolver } from "./outline-resolver.ts";
 import { createAstOverflowHandler, reduceAstReadOutput } from "./overflow-handler.ts";
 import { createAstScopePostReadHandler, createAstScopePresenter } from "./scope-handler.ts";
 import { createAstScopeAnchorResolver } from "./scope-resolver.ts";
 import { createAstSearchResolver } from "./search-resolver.ts";
 import { registerAstSearchTool, type AstSearchRuntime } from "./tool-ast-search.ts";
 
-const renderReadResult = createReadResultRenderer({ kind: "code-view", label: "AST" });
-
 export default async function registerAst(pi: ExtensionAPI): Promise<void> {
+  let outlineRuntime: OutlineRuntime | undefined;
+  registerOutlineTool(pi, () => outlineRuntime);
   let resolveSearchApi!: (value: AstSearchRuntime) => void;
   const searchApi = new Promise<AstSearchRuntime>((resolve) => (resolveSearchApi = resolve));
   const manager = new AstScopeManager();
@@ -40,26 +40,10 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
     apiVersion: READ_API_VERSION,
     id: "ast",
     async setup(api) {
-      api.addResolver({
-        resolver: createAstOutlineResolver(undefined, async (source, context) => {
-          const result = await api.read({ path: source }, context, "script");
-          if (result.isError === true)
-            throw new Error(
-              result.details.failure?.message ??
-                "Could not acquire an owned text snapshot for the AST outline.",
-            );
-          if (result.script?.kind !== "text")
-            throw new Error("AST outlines require an owned text snapshot.");
-          return {
-            source: result.script.source,
-            lines: result.script.lines.map((line) => line.content),
-          };
-        }),
-        renderResult: renderReadResult,
-      });
+      outlineRuntime = { api };
       api.addHandler({
         stage: "read",
-        when: { resolvedBy: "ast", contentKind: "text" },
+        when: { resolvedBy: "outline", contentKind: "text" },
         handler: createSourceMappedTextReadHandler(),
       });
       // Scope context appends each scope's closing line, which may lie outside the range.
@@ -77,7 +61,6 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         },
       });
       api.describe({
-        path: "ast:<path> — declaration outline.",
         views: "ast — scope boundaries.",
       });
     },
@@ -95,6 +78,8 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
     },
   } satisfies TextEditorPlugin;
 
+  // Agents must never see a tool that cannot run; `doctor` reports why ast-grep cannot start.
+  const astGrep = await probeLocalAstGrep(process.cwd());
   await Promise.all([
     connectReadPlugin(pi, readPlugin),
     connectDoctorPlugin(pi, astDoctorPlugin),
@@ -108,6 +93,6 @@ export default async function registerAst(pi: ExtensionAPI): Promise<void> {
         resolveSearchApi({ api, resolver: createAstSearchResolver(api.registerSelection) });
       },
     }),
-    registerAstSearchTool(pi, () => searchApi),
+    ...(astGrep.ok ? [registerAstSearchTool(pi, () => searchApi)] : []),
   ]);
 }

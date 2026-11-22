@@ -1,6 +1,15 @@
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
 import {
+  resultError,
+  resultInputSchema,
+  trackScriptCalls,
+  withStructuredResult,
+} from "pi-agent-resource";
+import {
+  describePathArgument,
+  markNullFields,
+  nullFieldsMessage,
+  searchCallPolicy,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -25,7 +34,7 @@ export const lspSearchSchema = Type.Object(
       Type.String({
         minLength: 1,
         description:
-          "file#selector, such as src/app.ts#App/start: returns that declaration as an editable selection.",
+          "file#selector, such as src/app.ts#App/start or main.cpp#clamp(int, float) for one overload: returns the editable declaration with captures.name. Replace its name capture with a new identifier to rename through LSP; replacing the declaration edits only its text.",
       }),
     ),
     calls: Type.Optional(
@@ -37,7 +46,7 @@ export const lspSearchSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "For query: file, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
+          "For query: file, directory, unchanged Read/Search/edit result or its UUID, or an array of paths or of results.",
       }),
     ),
     references: Type.Optional(
@@ -49,7 +58,11 @@ export const lspSearchSchema = Type.Object(
     include: Type.Optional(Type.String({ description: "Include glob for query" })),
     exclude: Type.Optional(Type.String({ description: "Exclude glob for query" })),
     limit: Type.Optional(
-      Type.Integer({ minimum: 1, maximum: 1000, description: "Maximum matches (default 100)." }),
+      Type.Integer({
+        minimum: 1,
+        maximum: 1000,
+        description: "Maximum matches (default 100; in Codemode, all matches).",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -70,13 +83,19 @@ export async function registerLspSearchTool(
 ): Promise<void> {
   let resolved: LspSearchRuntime | undefined;
   void runtime.then((value) => (resolved = value));
+  // A call from a script, such as Codemode, gets every match with its whole text.
+  const scriptCall = trackScriptCalls(pi, "lsp_search");
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
         name: "lsp_search",
         label: "lsp_search",
         exposure: "direct",
-        namespace: { name: "ide_lsp_search", description: "Find code through language servers." },
+        namespace: {
+          name: "ide_lsp_search",
+          description:
+            "Navigate code through language servers: symbol definitions, references and call graphs.",
+        },
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
@@ -89,6 +108,8 @@ export async function registerLspSearchTool(
           "Find symbols, references, declarations and call graphs through language servers",
         parameters: lspSearchSchema,
         outputSchema: searchOutputSchema,
+        prepareArguments: (arguments_) =>
+          markNullFields(arguments_, lspSearchSchema) as LspSearchParameters,
         renderCall(parameters, theme, context) {
           return toolCallHeader(
             context.lastComponent,
@@ -106,10 +127,7 @@ export async function registerLspSearchTool(
                   ? []
                   : [
                       {
-                        text:
-                          typeof parameters.path === "string"
-                            ? `in ${parameters.path}`
-                            : "in result scope",
+                        text: `in ${describePathArgument(parameters.path)}`,
                         color: "accent" as const,
                         truncate: "start" as const,
                       },
@@ -150,12 +168,14 @@ export async function registerLspSearchTool(
           );
         },
         async execute(
-          _id,
+          id,
           parameters: LspSearchParameters,
           signal,
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
+          const nulls = nullFieldsMessage(parameters);
+          if (nulls !== undefined) return failure(nulls);
           const label = parameters.query ?? parameters.declaration ?? parameters.calls;
           const modes = [parameters.query, parameters.declaration, parameters.calls].filter(
             (value) => value !== undefined,
@@ -176,6 +196,7 @@ export async function registerLspSearchTool(
               "lsp_search needs the Search module (search.core), which is not loaded.",
             );
           const { api, resolver: lsp } = resolved;
+          const { limit, audience } = searchCallPolicy(parameters.limit, scriptCall(id), "matches");
           return (await api.searchWith(
             lsp,
             {
@@ -184,7 +205,7 @@ export async function registerLspSearchTool(
               ...(parameters.path === undefined ? {} : { path: parameters.path }),
               ...(parameters.include === undefined ? {} : { include: parameters.include }),
               ...(parameters.exclude === undefined ? {} : { exclude: parameters.exclude }),
-              ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+              ...(limit === undefined ? {} : { limit }),
               options: { lsp: options },
             },
             {
@@ -192,6 +213,7 @@ export async function registerLspSearchTool(
               ...(signal !== undefined && { signal }),
               ...(onUpdate !== undefined && { onUpdate }),
             },
+            audience,
           )) as AgentToolResult<SearchToolDetails>;
         },
       },

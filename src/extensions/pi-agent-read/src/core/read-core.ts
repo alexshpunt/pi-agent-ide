@@ -56,6 +56,7 @@ export function createReadCore(
     | "compact"
     | "disabled"
     | (() => "full" | "compact" | "disabled") = "compact",
+  isNestedCall?: (toolCallId: string) => boolean,
 ): ReadCore {
   const outputReducers: ReadOutputReducer[] = [];
   const pendingPlugins = new Set<Promise<void>>();
@@ -64,6 +65,7 @@ export function createReadCore(
     () => renderPromptGuidelines(plugins),
     presentation,
     () => renderParameterDescriptions(plugins),
+    isNestedCall,
   );
   let registrationQueue = Promise.resolve();
 
@@ -212,6 +214,10 @@ function createPluginContributionController(
     read(request, context, audience) {
       assertAvailable();
       return read.execute(request, context, audience);
+    },
+    readWith(resolver, request, context, audience) {
+      assertAvailable();
+      return read.executeWith(resolver, request, context, audience);
     },
     addResourceGuard(registration): void {
       assertAvailable();

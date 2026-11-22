@@ -11,8 +11,11 @@ process = subprocess.Popen(
     stderr=sys.stderr,
 )
 for line in process.stdout:
-    packet = json.loads(line)
-    if packet.get("kind") != "exit":
+    try:
+        packet = json.loads(line)
+    except ValueError:
+        packet = None  # The bootstrap's handshake precedes the frames.
+    if not isinstance(packet, dict) or packet.get("kind") != "exit":
         sys.stdout.buffer.write(line)
         sys.stdout.buffer.flush()
 sys.exit(process.wait())

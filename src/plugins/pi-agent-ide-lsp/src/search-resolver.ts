@@ -1,7 +1,13 @@
+import type { NameCaptures } from "./name-captures.ts";
 import { ResultPanel } from "pi-agent-tool-ui";
-import { parseCodeViewReference, resolveCodeViewPath } from "pi-agent-ide/api/code-view";
-import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
 import {
+  formatSymbolSelector,
+  parseCodeViewReference,
+  resolveCodeViewPath,
+} from "pi-agent-ide/api/code-view";
+import type { ResolvedResultTargets } from "pi-agent-resource";
+import {
+  currentScope,
   renderSearchMatches,
   selectionData,
   type SearchPluginApi,
@@ -10,10 +16,23 @@ import {
   type SearchSelectionMatch,
 } from "pi-agent-search/api/search";
 import path from "node:path";
-import { readLspFileGraph, readLspSymbolGraph, resolveLspDeclaration } from "./lsp/code-views.ts";
+import { requiredValue } from "pi-agent-invariant";
+import {
+  readLspFileGraph,
+  readLspSymbolGraph,
+  resolveLspDeclaration,
+  type LspGraph,
+} from "./lsp/code-views.ts";
+import { coverageNotes, mergeCoverage, type ClangCoverage } from "./lsp/clang-coverage.ts";
+import { missingSourcesNotes } from "./lsp/missing-sources.ts";
 import type { LspManager } from "./lsp/manager.ts";
 import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
+import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
+import { lspRangeMatch } from "./lsp/range-match.ts";
+import { assertLspLines } from "./lsp/line-breaks.ts";
+import { withNavigationDeadline } from "./lsp/navigation.ts";
+import { createTextDocument, type TextDocument } from "pi-agent-text";
 
 /** Options the `lsp_search` tool passes in `SearchRequest.options.lsp`; their presence selects this resolver. */
 export interface LspSearchOptions {
@@ -35,17 +54,27 @@ type Payload =
       readonly sessionId: string;
       readonly hits: readonly SymbolHit[];
       readonly complete: boolean;
+      /** Why C/C++ references can be missing. */
+      readonly coverage?: ClangCoverage;
+      /** Files the server reported places in that no longer exist. */
+      readonly missing?: readonly string[];
       readonly references: boolean;
       readonly data: unknown;
     }
   | {
       readonly mode: "declaration";
+      readonly nameTarget?: string;
       readonly sessionId: string;
       readonly selector: string;
       readonly match: SearchSelectionMatch;
       readonly data: unknown;
     }
-  | { readonly mode: "calls"; readonly text: string };
+  | {
+      readonly mode: "calls";
+      readonly text: string;
+      /** References, callers and callees as registered selections, for scripts. */
+      readonly data: unknown;
+    };
 
 function lspOptions(request: SearchRequest): LspSearchOptions | undefined {
   const value = request.options?.lsp;
@@ -72,22 +101,46 @@ export function createLspSearchResolver(
   managerFor: ManagerFor,
   registerSelection: SearchPluginApi["registerSelection"],
   backend: LspSearchBackend = defaultBackend,
+  nameCaptures?: NameCaptures,
 ): SearchResolver {
   return {
     id: "lsp",
     supportsResultScope: true,
+    supportsPathList: true,
     // Workspace symbol backends may read beyond the requested path.
     readResources: (request) => (lspOptions(request) === undefined ? [] : undefined),
     toScriptData(payload) {
       const result = payload as Payload;
       return result.mode === "calls"
-        ? { kind: "custom", resolverId: "lsp", value: { calls: result.text } }
+        ? { kind: "custom", resolverId: "lsp", value: result.data }
         : result.data;
     },
-    tryResolve(request, context) {
+    tryResolve(request, callerContext) {
+      const options = lspOptions(request);
+      const navigate =
+        options?.calls !== undefined ||
+        options?.declaration !== undefined ||
+        options?.references === true;
+      const withDocuments = <T>(run: (context: typeof callerContext) => Promise<T>): Promise<T> =>
+        navigate
+          ? withNavigationDeadline(callerContext.signal, (signal) =>
+              withLspDocuments(() => run({ ...callerContext, signal })),
+            )
+          : withLspDocuments(() => run(callerContext));
       // Documents opened for this request close when it finishes.
-      return withLspDocuments(async () => {
-        const options = lspOptions(request);
+      return withDocuments(async (context) => {
+        // Anchors register only while the file still has the text the server answered for; another
+        // process may write it in between, and the search then runs again on the new text.
+        const register = async (selection: Parameters<typeof registerSelection>[0]) => {
+          try {
+            return await registerSelection(selection, context);
+          } catch (error) {
+            if (error instanceof Error && error.name === "SearchSnapshotChangedError")
+              throw sourceChanged(error.message);
+            throw error;
+          }
+        };
+
         if (options === undefined) return { kind: "not-handled" };
         const modes = [options.query, options.declaration, options.calls].filter(
           (value) => value !== undefined,
@@ -102,23 +155,66 @@ export function createLspSearchResolver(
           const reference = parseCodeViewReference(`graph:${options.calls}`, "graph");
           if (reference === undefined) throw new Error("calls requires a file path.");
           const filePath = resolveCodeViewPath(reference.path, context.cwd);
-          const manager = await managerFor(context.cwd, filePath, context.signal);
-          const text =
-            reference.selector === undefined
-              ? await backend.readLspFileGraph(manager, filePath, context.cwd, context.signal)
-              : await backend.readLspSymbolGraph(
-                  manager,
-                  filePath,
-                  reference.selector,
-                  context.cwd,
-                  context.signal,
-                );
-          return { kind: "resolved", payload: { mode: "calls", text } satisfies Payload };
+          const selector = reference.selector;
+          const graph = async (signal?: AbortSignal) => {
+            const manager = await managerFor(context.cwd, filePath, signal);
+            const found =
+              selector === undefined
+                ? await backend.readLspFileGraph(manager, filePath, context.cwd, signal)
+                : await backend.readLspSymbolGraph(
+                    manager,
+                    filePath,
+                    selector,
+                    context.cwd,
+                    signal,
+                  );
+            return { text: found.text, complete: found.complete, ...graphMatches(found) };
+          };
+          // References, callers and callees each register their own selection, so each match
+          // gets an id and the references' selection stands for the whole graph.
+          const lists = ["references", "incoming", "outgoing"] as const;
+          const { text, data } = await retryWhileSourceChanges(async () => {
+            const found = await graph(context.signal);
+            const sessions: Awaited<ReturnType<typeof register>>[] = [];
+            for (const list of lists)
+              sessions.push(
+                await register({
+                  request,
+                  matches: found[list],
+                  complete: found.complete,
+                  contents: found.contents,
+                  refresh: (signal) =>
+                    withLspDocuments(async () => {
+                      const next = await graph(signal);
+                      return {
+                        matches: next[list],
+                        complete: next.complete,
+                        contents: next.contents,
+                      };
+                    }),
+                }),
+              );
+            const [references, incoming, outgoing] = lists.map((list, index) => {
+              const session = requiredValue(sessions[index]);
+              return selectionData(session.matches, found.complete, session.id, session);
+            });
+            return {
+              text: found.text,
+              data: {
+                target: requiredValue(sessions[0]).target,
+                complete: found.complete,
+                matches: references,
+                incoming,
+                outgoing,
+              },
+            };
+          }, context.signal);
+          return { kind: "resolved", payload: { mode: "calls", text, data } satisfies Payload };
         }
 
         if (options.declaration !== undefined) {
           const reference = options.declaration.includes("#")
-            ? parseCodeViewReference(`symbol:${options.declaration}`, "symbol")
+            ? parseCodeViewReference(`graph:${options.declaration}`, "graph")
             : undefined;
           if (reference?.selector === undefined)
             throw new Error("declaration requires file#selector, such as src/app.ts#App/start.");
@@ -133,23 +229,51 @@ export function createLspSearchResolver(
               context.cwd,
               signal,
             );
-            // Keep only the declaration text, not the whole file it was cut from.
-            return structuredClone(declarationMatch(found.source, found.content, found.range));
+            // Keep only the declaration text, not the whole file it was cut from. The file text
+            // is used once to register or refresh the anchor and is not retained.
+            return {
+              match: structuredClone(declarationMatch(found.source, found.content, found.range)),
+              name: lspRangeMatch(
+                found.source,
+                createTextDocument(found.source, found.content),
+                found.selectionRange,
+              ),
+              contents: new Map([[found.source, found.content]]),
+            };
           };
-          const match = await resolve(context.signal);
-          const session = await registerSelection(
-            {
+          const { match, session, captured } = await retryWhileSourceChanges(async () => {
+            const { match, name, contents } = await resolve(context.signal);
+            const names = await register({
+              request,
+              matches: [name],
+              complete: true,
+              contents,
+              refresh: async () => {
+                throw new Error("Name captures cannot refresh; repeat lsp_search.");
+              },
+            });
+            nameCaptures?.register([names.target, ...(names.matchTargets ?? [])], {
+              source: filePath,
+              selector,
+            });
+            const captured = selectionData(names.matches, true, undefined, names);
+            const session = await register({
               request,
               matches: [match],
               complete: true,
+              // The text the declaration was found in: a second read could find another
+              // session's write and no longer fit it.
+              contents,
               refresh: (signal) =>
-                withLspDocuments(async () => ({
-                  matches: [await resolve(signal)],
-                  complete: true,
-                })),
-            },
-            context,
-          );
+                withNavigationDeadline(signal, (refreshSignal) =>
+                  withLspDocuments(async () => {
+                    const next = await resolve(refreshSignal);
+                    return { matches: [next.match], complete: true, contents: next.contents };
+                  }),
+                ),
+            });
+            return { match, session, captured };
+          }, context.signal);
           return {
             kind: "resolved",
             payload: {
@@ -157,7 +281,16 @@ export function createLspSearchResolver(
               sessionId: session.id,
               selector: options.declaration,
               match,
-              data: selectionData([match], true, session.id, session),
+              nameTarget: captured.target,
+              data: {
+                ...selectionData(session.matches, true, session.id, session),
+                matches: selectionData(session.matches, true, session.id, session).matches.map(
+                  (match) => ({
+                    ...match,
+                    captures: { name: captured.matches },
+                  }),
+                ),
+              },
             } satisfies Payload,
           };
         }
@@ -166,24 +299,48 @@ export function createLspSearchResolver(
         if (query.length === 0)
           return { kind: "failed", error: new Error("query must not be empty") };
         const references = options.references === true;
-        const scope = context.scope;
-        const groups = new Map<LspManager, ResolvedResultTargets["targets"][number][]>();
-        if (scope !== undefined) {
-          await verifyResultTargets(scope, context.signal);
-          for (const target of scope.targets) {
-            const manager = await managerFor(context.cwd, target.source, context.signal);
-            const group = groups.get(manager) ?? [];
-            group.push(target);
-            groups.set(manager, group);
+        const initialScope = context.scope;
+        const groupScope = async (
+          scope: ResolvedResultTargets | undefined,
+          signal?: AbortSignal,
+        ) => {
+          const groups = new Map<
+            LspManager,
+            { targets: ResolvedResultTargets["targets"][number][]; paths: string[] }
+          >();
+          const group = async (source: string | undefined) => {
+            const manager = await managerFor(context.cwd, source, signal);
+            const found = groups.get(manager) ?? { targets: [], paths: [] };
+            groups.set(manager, found);
+            return found;
+          };
+          if (scope === undefined) {
+            if (request.paths === undefined) await group(request.path);
+            for (const source of request.paths ?? []) (await group(source)).paths.push(source);
+            return groups;
           }
-        } else {
-          groups.set(await managerFor(context.cwd, request.path, context.signal), []);
-        }
+          for (const target of scope.targets) (await group(target.source)).targets.push(target);
+          return groups;
+        };
+        const initialGroups = await groupScope(initialScope, context.signal);
         const limit = request.limit ?? 100;
-        const collect = async (signal?: AbortSignal) => {
+        // A refresh, such as for an all-anchor after other edits, finds the scope in the current
+        // text first, like text and AST search; the scope as first resolved is stale by then. A
+        // write while the server answers needs no new request: the backend follows the scope's
+        // region to the text it reads its hits from.
+        const collect = async (signal?: AbortSignal, refresh = false) => {
+          const scope = refresh ? await currentScope(context, signal) : initialScope;
+          const groups = refresh ? await groupScope(scope, signal) : initialGroups;
           const hits: SymbolHit[] = [];
+          // The text each source's hits were mapped onto, so their anchors register from it.
+          const contents = new Map<string, string>();
+          // Two language servers can read one file at different times, around another session's
+          // write. Such a file has no single text for its hits; the registration then reads it.
+          const conflicting = new Set<string>();
           let complete = scope?.complete ?? true;
-          for (const [manager, targets] of groups) {
+          const coverages: (ClangCoverage | undefined)[] = [];
+          const missing = new Set<string>();
+          for (const [manager, { targets, paths }] of groups) {
             const found = await backend.searchSymbols(
               query,
               manager.workspaceRoot,
@@ -191,6 +348,7 @@ export function createLspSearchResolver(
               signal,
               {
                 ...(request.path === undefined ? {} : { path: request.path }),
+                ...(request.paths === undefined ? {} : { paths }),
                 ...(request.include === undefined ? {} : { include: request.include }),
                 ...(request.exclude === undefined ? {} : { exclude: request.exclude }),
                 ...(references ? { navigation: "references" as const } : {}),
@@ -201,31 +359,50 @@ export function createLspSearchResolver(
               manager,
             );
             hits.push(...found.hits);
+            for (const [source, text] of found.contents) {
+              const known = contents.get(source);
+              if (known === undefined) contents.set(source, text);
+              else if (known !== text) conflicting.add(source);
+            }
             complete = complete && found.complete;
+            coverages.push(found.coverage);
+            for (const source of found.missing ?? []) missing.add(source);
           }
-          if (scope !== undefined) await verifyResultTargets(scope, signal);
+          for (const source of conflicting) contents.delete(source);
           // The search session keeps these hits and its refresh closure for as long as its anchors
-          // live. A copy keeps only the matched text, not each file the text was cut from.
-          return structuredClone({
-            hits: hits.slice(0, limit),
-            complete: complete && hits.length <= limit,
-          });
+          // live. A copy keeps only the matched text, not each file the text was cut from. The
+          // file texts are used once to register or refresh the anchors and are not retained.
+          const coverage = mergeCoverage(coverages);
+          return {
+            ...structuredClone({
+              hits: hits.slice(0, limit),
+              complete: complete && hits.length <= limit,
+              ...(coverage && { coverage }),
+              ...(missing.size > 0 && { missing: [...missing].sort() }),
+            }),
+            contents,
+          };
         };
-        const found = await collect(context.signal);
-        const session = await registerSelection(
-          {
+        let attempts = 0;
+        const { found, session } = await retryWhileSourceChanges(async () => {
+          // A later attempt finds the scope in the current text, like a refresh.
+          const { contents, ...found } = await collect(context.signal, attempts++ > 0);
+          const session = await register({
             request,
             matches: found.hits,
             complete: found.complete,
+            // The text the hits were mapped onto: a second read could find another session's
+            // write and no longer fit them.
+            contents,
             refresh: (signal) =>
               withLspDocuments(async () => {
-                const next = await collect(signal);
-                return { matches: next.hits, complete: next.complete };
+                const next = await collect(signal, true);
+                return { matches: next.hits, complete: next.complete, contents: next.contents };
               }),
-          },
-          context,
-        );
-        const data = selectionData(found.hits, found.complete, session.id, session);
+          });
+          return { found, session };
+        }, context.signal);
+        const data = selectionData(session.matches, found.complete, session.id, session);
         return {
           kind: "resolved",
           payload: {
@@ -233,6 +410,8 @@ export function createLspSearchResolver(
             sessionId: session.id,
             hits: found.hits,
             complete: found.complete,
+            ...(found.coverage && { coverage: found.coverage }),
+            ...(found.missing && { missing: found.missing }),
             references,
             data: {
               ...data,
@@ -276,16 +455,23 @@ export function createLspSearchResolver(
         theme,
         options.expanded,
         data.cwd,
-        data.references ? ["LSP reference navigation · may leave input scope"] : [],
+        [
+          ...(data.references ? ["LSP reference navigation · may leave input scope"] : []),
+          ...coverageNotes(data.coverage, (source) => displaySource(source, data.cwd)),
+          ...missingSourcesNotes(data.missing ?? [], (source) => displaySource(source, data.cwd)),
+        ],
         data.hits.map((hit) => `${hit.role} ${hit.symbol.name}`),
       );
     },
     format(payload, context) {
       const result = payload as Payload;
-      const display = (source: string) =>
-        source.startsWith("ssh://") ? source : path.relative(context.cwd, source);
+      const display = (source: string) => displaySource(source, context.cwd);
+      // The rendered graph needs only its text; the selections stay out of the saved session.
       if (result.mode === "calls")
-        return { content: [{ type: "text", text: result.text }], details: result };
+        return {
+          content: [{ type: "text", text: result.text }],
+          details: { mode: "calls", text: result.text },
+        };
       if (result.mode === "declaration") {
         const { match } = result;
         // A selection ending at column 0 of the next line ends on the line before it.
@@ -298,6 +484,11 @@ export function createLspSearchResolver(
               text: [
                 `SEARCH#${result.sessionId}:1:match ${display(match.source)}:${match.lineNumber}-${lastLine} declaration ${result.selector}`,
                 match.matchedText.replace(/\r?\n$/u, ""),
+                ...(result.nameTarget
+                  ? [
+                      `capture name: ${result.nameTarget} · replace this capture to rename through LSP; replacing the declaration edits only its text.`,
+                    ]
+                  : []),
               ].join("\n"),
             },
           ],
@@ -310,20 +501,56 @@ export function createLspSearchResolver(
       const lines =
         result.hits.length === 0
           ? ["No symbols found."]
-          : result.hits
-              .slice(0, 100)
-              .map(
-                (hit, index) =>
-                  `SEARCH#${result.sessionId}:${index + 1}:match ${display(hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · declared at ${display(hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`,
-              );
+          : result.hits.slice(0, 100).map(
+              (hit, index) =>
+                `SEARCH#${result.sessionId}:${index + 1}:match ${display(hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · ${
+                  // A definition names the selector of its declaration, which tells overloads apart.
+                  hit.role === "definition" && hit.symbol.selector !== undefined
+                    ? `selector ${display(hit.symbol.source)}#${formatSymbolSelector(hit.symbol.selector)}`
+                    : `declared at ${display(hit.symbol.source)}:${hit.symbol.range.startLine}:${hit.symbol.range.startColumn + 1}`
+                }`,
+            );
       if (result.complete && result.hits.length)
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
+      lines.push(...coverageNotes(result.coverage, display));
+      lines.push(...missingSourcesNotes(result.missing ?? [], display));
       return {
         content: [{ type: "text", text: [heading, ...lines].join("\n") }],
         details: { ...result, cwd: context.cwd },
       };
     },
+  };
+}
+
+/** A source as the result names it: relative to the workspace, or its ssh:// URI. */
+function displaySource(source: string, cwd: string): string {
+  return source.startsWith("ssh://") ? source : path.relative(cwd, source);
+}
+
+/**
+ * A graph's places as selections: each reference exactly, each caller and callee as its whole
+ * declaration. The file texts are used to cut the matches and are not retained by them.
+ */
+function graphMatches(graph: LspGraph) {
+  const textOf = (source: string) => requiredValue(graph.contents.get(source));
+  const documents = new Map<string, TextDocument>();
+  const documentOf = (source: string) => {
+    const document = documents.get(source) ?? createTextDocument(source, textOf(source));
+    documents.set(source, document);
+    return document;
+  };
+  const declarations = (locations: LspGraph["incoming"]) =>
+    locations.map(({ source, range }) =>
+      structuredClone(declarationMatch(source, textOf(source), range)),
+    );
+  return {
+    references: graph.references.map(({ source, range }) =>
+      structuredClone(lspRangeMatch(source, documentOf(source), range)),
+    ),
+    incoming: declarations(graph.incoming),
+    outgoing: declarations(graph.outgoing),
+    contents: graph.contents,
   };
 }
 
@@ -339,12 +566,13 @@ function declarationMatch(
     readonly end: { readonly line: number };
   },
 ): SearchSelectionMatch {
-  const raw = content.split("\n");
-  const lines = raw.map((line) => line.replace(/\r$/u, ""));
+  assertLspLines(content);
+  // Only LF ends a line: a CRLF line's text keeps its CR, as the editor's line does.
+  const lines = content.split("\n");
   const starts = [0];
-  for (const line of raw) starts.push((starts.at(-1) ?? 0) + line.length + 1);
+  for (const line of lines) starts.push((starts.at(-1) ?? 0) + line.length + 1);
   const first = range.start.line;
-  const hasNextLine = range.end.line + 1 < raw.length;
+  const hasNextLine = range.end.line + 1 < lines.length;
   // Without a following line, the selection ends at the end of the last declaration line.
   const endLine = hasNextLine ? range.end.line + 1 : range.end.line;
   const endColumn = hasNextLine ? 0 : (lines[range.end.line] ?? "").length;

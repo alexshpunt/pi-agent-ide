@@ -65,14 +65,14 @@ test("structured transfers pair ranges in declared order and remove only repeate
   const mutation = await prepared.mutate?.(f.context);
   const edit = mutation?.edits.get(f.destination);
   expect(edit?.changes).toEqual([
-    { from: 0, to: 3, insert: "last", allowUnchanged: true },
-    { from: 4, to: 7, insert: "first", allowUnchanged: true },
+    { from: 0, to: 3, insert: "last" },
+    { from: 4, to: 7, insert: "first" },
   ]);
   expect(mutation?.edits.has(f.source)).toBe(false);
   expect(applyTextChanges("ONE TWO", edit?.changes ?? []).content).toBe("last first");
 });
 
-test("structured transfers reject count mismatches, incomplete inputs and mixed selectors", async () => {
+test("structured transfers reject count mismatches, incomplete inputs and partial file sources", async () => {
   const f = fixture();
   const first = f.selected(f.source, 0, 5);
   const last = f.selected(f.source, 11, 15);
@@ -88,9 +88,15 @@ test("structured transfers reject count mismatches, incomplete inputs and mixed 
       f.cwd,
     ),
   ).rejects.toThrow(/Incomplete/u);
-  await expect(
-    prepareResultTransfer("copy", { path: first, start: "first", target: one }, f.store, f.cwd),
-  ).rejects.toThrow(/combine/u);
+  // Selectors with a result select inside it: the result becomes their scope.
+  const scoped = await prepareResultTransfer(
+    "copy",
+    { path: first, at: "first", target: one },
+    f.store,
+    f.cwd,
+  );
+  expect(scoped.input.path).toMatch(/^RESULT#/u);
+  expect(scoped.input.at).toBe("first");
   await expect(
     prepareResultTransfer("copy", { path: first, target: f.destination }, f.store, f.cwd),
   ).rejects.toThrow(/partial/u);
@@ -112,7 +118,7 @@ test("moves reject destinations touching any source before returning effects", a
   expect(f.texts.get(f.source)).toBe("first café last");
 });
 
-test("a prepared transfer refuses a snapshot changed after resolution", async () => {
+test("a prepared transfer refuses a snapshot changed after resolution as a changed source, so the edit runs again", async () => {
   const f = fixture();
   const prepared = await prepareResultTransfer(
     "copy",
@@ -121,7 +127,7 @@ test("a prepared transfer refuses a snapshot changed after resolution", async ()
     f.cwd,
   );
   f.texts.set(f.source, "external café last");
-  await expect(prepared.mutate?.(f.context)).rejects.toThrow(/stale/u);
+  await expect(prepared.mutate?.(f.context)).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
 });
 
 test("empty paired selections are no-ops, not whole-file fallback", async () => {
@@ -135,3 +141,29 @@ test("empty paired selections are no-ops, not whole-file fallback", async () => 
   );
   expect(prepared.empty).toBe(true);
 });
+
+test.each(["copy", "move"] as const)(
+  "%s lands a whole line separately at a zero-width line edge",
+  async (operation) => {
+    const f = fixture();
+    const sourceContent = "block\nkeep\n";
+    const destinationContent = "target\r\nafter\r\n";
+    f.texts.set(f.source, sourceContent);
+    f.texts.set(f.destination, destinationContent);
+    const prepared = await prepareResultTransfer(
+      operation,
+      { path: f.selected(f.source, 0, 5), target: f.selected(f.destination, 0, 0) },
+      f.store,
+      f.cwd,
+    );
+    const mutation = await prepared.mutate?.(f.context);
+
+    expect(
+      applyTextChanges(destinationContent, mutation?.edits.get(f.destination)?.changes ?? [])
+        .content,
+    ).toBe("block\r\ntarget\r\nafter\r\n");
+    expect(
+      applyTextChanges(sourceContent, mutation?.edits.get(f.source)?.changes ?? []).content,
+    ).toBe(operation === "copy" ? sourceContent : "keep\n");
+  },
+);

@@ -3,24 +3,61 @@ import type { Capability } from "./validation.ts";
 // This declared inventory is reviewed separately from executable cases.
 // SDK capability-loader rendering retains model results and adds no paid operation.
 // Native cards and receipt visibility have deterministic real-Pi coverage.
+// Refusal routes retain authority/provenance and invalid argument shape, not incidental payloads,
+// selectors or insertion direction; early authority guards may stop before these fields arrive.
+// Codemode routes use native mode "only": IDE operations, including Bash, are nested.
+// Model-only tool_search is excluded here to prevent discovered direct declarations;
+// discovery.* requires it only in the direct route.
+// Session tools stay callable in scripts without discovery. Actual provider declarations are
+// checked by capability-codemode-only.integration.test.ts, not by the registry inventory.
+// Undo recipes permit any supported selector for the preceding mutation and an inferred file.
+// Literal boundary/EOF edits use exactText; their line-anchor deletion remains an issued selector.
+// Batch/line-shift setup Inserts leave selector spelling free; outcomes establish their placement.
 const groups: [string[], string[]][] = [
+  [["codemode.provider-tool-names"], ["codemode-tool-names"]],
   [
-    ["standalone.discovery", "standalone.read-search-edit", "standalone.resource-bounds"],
+    ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],
+    ["deferred-navigation-recovery"],
+  ],
+  [
+    [
+      "standalone.discovery",
+      "standalone.read-search-edit",
+      "standalone.resource-bounds",
+      "standalone.refusal-classification",
+    ],
     ["standalone-resource-host"],
   ],
   [["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"], ["binary-copy-move"]],
+  [["edit.missing-selector-recovery"], ["missing-edit-selector-recovery"]],
   [["read.text", "read.directory", "read.raw", "read.paging"], ["read-text"]],
+  [["compose.json-text-structured-arguments"], ["json-structured-arguments"]],
+  [["edit.literal-json-selectors", "read.literal-json-path"], ["json-literal-selectors"]],
+  [
+    ["diagnostics.file", "compose.diagnostics-read-search", "diagnostics.readonly-report"],
+    ["diagnostics-report"],
+  ],
   [
     ["read.failure", "read.provider-failure-ownership"],
     ["read-error-direct", "read-error-codemode"],
   ],
-  [["compose.read-error-value"], ["read-error-codemode"]],
+  [
+    ["codemode.failed-call-null", "codemode.failed-call-summary"],
+    ["read-error-codemode", "search-script-facts"],
+  ],
+  [["codemode.provider-failure-context"], ["read-error-codemode"]],
   [["read.jq", "read.jq-paging"], ["read-jq"]],
   [["read.jq-bounded-input"], ["read-jq-bounded-input"]],
   [["read.ssh-guide"], ["ssh-guide"]],
   [["read.ide-settings", "search.ide-settings"], ["ide-settings-catalog"]],
   [
-    ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
+    [
+      "search.docs-all",
+      "search.docs-one",
+      "search.docs-flags",
+      "search.docs-readonly",
+      "search.docs-literal-colon",
+    ],
     ["docs-search"],
   ],
   [
@@ -28,9 +65,16 @@ const groups: [string[], string[]][] = [
     ["docs-search-status"],
   ],
   [["compose.read-search", "compose.search-replace"], ["read-search-replace"]],
+  [["edit.rust-style-preservation"], ["rust-style-preservation"]],
   // Pair actual native/alias TUI frames; execution alone cannot establish renderer parity.
   [["compose.codemode-child-result"], ["codemode-child-presentation"]],
-  [["search.script-facts", "compose.search-script-result"], ["search-script-facts"]],
+  [
+    ["search.script-facts", "compose.search-script-result", "ast.script-line-text"],
+    ["search-script-facts"],
+  ],
+  [["search.script-match-list", "compose.search-match-id"], ["search-script-match-ids"]],
+  [["compose.token-search-edit-guard"], ["token-search-edit-guard"]],
+  [["search.script-fallback"], ["search-script-fallback"]],
   // Reuse the same byte/provenance contracts across native and explicitly selected connector runs.
   [["compose.provider-reference-roundtrip"], ["read-search-replace"]],
   [["compose.provider-cross-call-reference"], ["codemode-store"]],
@@ -38,15 +82,26 @@ const groups: [string[], string[]][] = [
   [
     [
       "edit.issued-result-streaming",
-      "edit.reject-result-anchor-combination",
+      "edit.result-anchor-combination",
       "compose.native-provider-auth",
     ],
     ["issued-result-edit"],
   ],
   [["compose.scoped-boolean"], ["read-scoped-boolean"]],
-  [["compose.search-issued-scope"], ["search-issued-scope"]],
+  [["compose.search-issued-scope", "compose.search-object-scope"], ["search-issued-scope"]],
   [["compose.batch-insert-search"], ["search-line-batch-insert"]],
+  [["compose.codemode-search-anchor-batch"], ["codemode-search-anchor-batch"]],
+  [["compose.codemode-search-value-batch"], ["codemode-search-value-batch"]],
   [["compose.batch-replace-search"], ["selection-batch-replace"]],
+  [["edit.replace-search-anchor-list"], ["replace-search-anchor-list"]],
+  [["edit.already-done-targets"], ["replace-already-done-anchor-list"]],
+  [["edit.insert-search-anchor-list"], ["insert-search-anchor-list"]],
+  ...["insert", "replace", "delete"].map((operation): [string[], string[]] => [
+    [`edit.${operation}-list-selectors-refused`],
+    [`${operation}-list-selectors-refused`],
+  ]),
+  [["edit.search-anchor-list-unusable"], ["replace-search-anchor-list-unusable"]],
+  [["edit.surviving-scoped-match"], ["replace-surviving-scoped-match"]],
   ...["delete", "insert"].map((operation): [string[], string[]] => [
     [`edit.search-line-batch-${operation}`],
     [`search-line-batch-${operation}`],
@@ -58,14 +113,49 @@ const groups: [string[], string[]][] = [
   [["compose.read-window-delete"], ["read-window-delete"]],
   [["compose.read-window-insert"], ["read-window-insert"]],
   [["edit.grouped-file-count"], ["grouped-replace-file-count"]],
+  // Guard metadata and identical execution/transcript refusals protect early payload truncation.
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
+  [["edit.copied-line-prefix-refusal"], ["copied-line-prefix-recovery"]],
+  [["edit.replace-anchored-display"], ["replace-anchored-display"]],
+  [["edit.search-highlight-selectors"], ["search-highlight-selectors"]],
+  [["edit.ambiguous-exact-all-match"], ["ambiguous-exact-all-match"]],
+  // Stale checks follow the edit; literal Search is independent of either refusal.
+  // Early streaming cutoffs remain refusals, even when their payload has not arrived.
+  [
+    ["edit.stale-line-anchor-literal-collision", "edit.anchor-shaped-literal-search"],
+    ["stale-line-anchor-literal-collision"],
+  ],
+  [["edit.repeated-line-anchor-shift"], ["repeated-line-anchor-after-shift"]],
+  [["edit.repeated-line-anchor-block-recovery"], ["repeated-line-anchor-after-block-delete"]],
+  [["edit.line-anchor-range-interior-change"], ["line-anchor-range-interior-change"]],
+  [["edit.unseen-edit-span"], ["unseen-edit-span"]],
+  [["read.fragment-recovery"], ["read-fragment-recovery"]],
+  [["edit.batch-overlap-recovery"], ["codemode-overlap-recovery"]],
   [
     ["read.overview-source", "compose.overview-search", "compose.overview-window"],
     ["read-overview-search-lines", "read-overview-search-bytes"],
   ],
-  [["compose.overview-store-load"], ["read-overview-store"]],
-  [["search.text", "compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
+  [["compose.large-read-store-load"], ["read-large-store"]],
+  [["codemode.read-exact-text"], ["read-large-json-script"]],
+  [
+    ["codemode.read-bytes", "codemode.read-entries", "codemode.read-path-list"],
+    ["read-script-values"],
+  ],
+  [["search.text"], ["search-anchor-insert", "search-query"]],
+  [["compose.search-insert", "edit.insert"], ["search-anchor-insert"]],
   [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
+  [["search.path-list", "file_search.path-list", "ast_search.path-list"], ["search-path-list"]],
+  [
+    [
+      "file_search.script-paths",
+      "file_search.script-limit",
+      "file_search.sorted-limit",
+      "compose.file-search-paths-read",
+    ],
+    ["file-search-script-paths"],
+  ],
+  [["lsp_search.path-list"], ["lsp-path-list"]],
+  [["search.literal-operators", "search.script-line-text"], ["search-literal-operators"]],
   [
     // Engine switching is a settings-menu lifecycle, checked in real Pi rather than a model route.
     ["search.semantic", "search.semantic-scope-filters", "compose.semantic-read"],
@@ -76,11 +166,26 @@ const groups: [string[], string[]][] = [
     ["semantic-code-search-vera"],
   ],
   [["search.semantic-vera-refresh"], ["semantic-vera-refresh"]],
-  [["search.multiline", "compose.search-multiline-replace"], ["search-multiline-between"]],
+  [["search.semantic-script-files"], ["semantic-script-files"]],
+  [
+    ["search.multiline", "compose.search-multiline-replace", "compose.search-retained-result"],
+    ["search-multiline-between"],
+  ],
   [["read.anchors", "edit.replace-range"], ["read-anchor-replace"]],
   [["edit.replace-exact-range", "edit.leading-newline-range"], ["exact-range-replace"]],
+  [["edit.single-from", "edit.overlapping-inclusive-range"], ["lenient-edit-ranges"]],
+  [["edit.replace-exclusive-range"], ["replace-exclusive-range"]],
   [["edit.delete-exact-range"], ["exact-range-delete"]],
+  [
+    ["edit.delete-exclusive-range", "edit.transfer-exclusive-range", "edit.transfer-insert-before"],
+    ["exclusive-delete-transfer"],
+  ],
+  // Exact destination cases require object-form Search endpoints alongside a peer transfer.
+  // Copy separately requires literal source endpoints and literal peer SLOT destination fields;
+  // its task names those fields explicitly rather than leaving selector representation implicit.
   [["edit.copy-exact-range", "edit.copy-exact-destination"], ["exact-range-copy"]],
+  // Range routes validate equal issued selections across explicit selectors and result paths;
+  // exact-range-move also exercises multiline EOF selectors with LF/CRLF argument variants.
   [["edit.move-exact-range", "edit.move-exact-destination"], ["exact-range-move"]],
   [["edit.copy-source-range"], ["exact-range-copy", "selection-copy-move"]],
   [["edit.move-source-range"], ["exact-range-move", "selection-copy-move"]],
@@ -90,20 +195,19 @@ const groups: [string[], string[]][] = [
     ["exact-range-delete", "exact-range-copy", "exact-range-move"],
   ],
   [["edit.write", "edit.write-receipt", "compose.write-read"], ["write-read"]],
+  [["edit.stale-whole-file-write"], ["stale-whole-file-write"]],
   [["edit.semantic-write-receipt"], ["semantic-write-receipts"]],
   // Optional safe error metadata does not change provider receipt effects or their data fields.
   // Rate-limit metadata transport has deterministic ResourceError/Read/Write coverage, not a paid route.
   [["compose.provider-structured-receipt"], ["semantic-script-receipts"]],
-  // Local forwarding aliases may be deferred and absent from the initial catalogue. The alias
-  // receipt case asks for discovery and requires the real native child; prompt deduplication is
-  // checked separately by deterministic real-Pi loadout tests.
-  [["compose.local-alias-structured-receipt"], ["semantic-local-alias-receipts"]],
+  [["compose.parallel-provider-writes"], ["parallel-provider-write-queue"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [
     ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
     ["write-confirmed-readback"],
   ],
   [["codemode.silent-write"], ["write-silent"]],
+  [["codemode.whole-file-receipts"], ["whole-file-script-receipts"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
   [["compose.write-large-read"], ["write-large-read"]],
   [
@@ -115,9 +219,9 @@ const groups: [string[], string[]][] = [
     ["insert-before"],
   ],
   [["edit.delete-selection", "compose.search-delete"], ["delete-selection"]],
-  [["edit.delete-declaration"], ["delete-symbol"]],
+  [["edit.delete-declaration"], ["read-symbol-delete"]],
   [["compose.symbol-read-delete"], ["read-symbol-delete"]],
-  [["edit.reject-symbol-delete"], ["reject-symbol-delete"]],
+  [["lsp.declaration-refusals"], ["reject-lsp-declaration"]],
   [
     ["edit.copy-file", "edit.move-file", "edit.delete-file", "edit.whole-file-omission"],
     ["file-copy-move-delete"],
@@ -140,6 +244,8 @@ const groups: [string[], string[]][] = [
     ["edit.transfer-refusal", "edit.move-policy-refusal", "edit.approval-headless-move"],
     ["directory-transfer-gates"],
   ],
+  [["edit.parallel-same-file-replace"], ["parallel-same-file-replace"]],
+  [["compose.parallel-object-transfer-refusals"], ["parallel-directory-transfer-gates"]],
   [["compose.approval-refusal-read"], ["delete-policy-gates", "directory-transfer-gates"]],
   [
     ["edit.approval-yolo-delete", "edit.approval-yolo-move", "compose.yolo-protected-target"],
@@ -181,6 +287,8 @@ const groups: [string[], string[]][] = [
     ["selection-copy-move"],
   ],
   [
+    // read-failed-mutation-id.integration.test.ts checks caller-ID attribution after rollback.
+    // These paid cases keep the filesystem refusal/recovery route; they do not reuse the rejected ID.
     ["edit.move-rollback"],
     [
       "move-rollback-restored",
@@ -190,22 +298,46 @@ const groups: [string[], string[]][] = [
   ],
   [["compose.paired-sources-targets"], ["paired-copy"]],
   [["edit.copy-destination-recovery"], ["copy-destination-recovery"]],
+  [["edit.move-destination-recovery"], ["move-destination-recovery"]],
   [["edit.move-empty"], ["move-empty"]],
   [["edit.move-zero-width", "compose.move-point-replace"], ["move-zero-width"]],
   [["read.diff", "compose.read-diff"], ["read-diff"]],
   [["read.diff-omission"], ["diff-omission"]],
+  [["codemode.diff-complete"], ["diff-script-complete"]],
+  [["edit.hash-shaped-literal"], ["hash-shaped-literal"]],
+  // LPT-1747: boundaries and payload, not selector type, determine the edit.
+  [
+    ["edit.whole-line-spans"],
+    [
+      "search-anchor-insert",
+      "read-window-insert",
+      "delete-selection",
+      "exact-range-copy",
+      "whole-line-move-to-point",
+      "replace-line-boundary-lf",
+      "replace-line-boundary-crlf",
+      "exact-eof-lf",
+      "exact-eof-crlf",
+      "exact-eof-unterminated",
+    ],
+  ],
+  // These recipes explicitly require literal text and an omitted end, across LF/CRLF/EOF.
   [["edit.replace-line-endings"], ["replace-line-boundary-lf", "replace-line-boundary-crlf"]],
+  // A retyped line keeps the original look-alike bytes (non-breaking space) outside its change.
+  [["edit.replace-lookalike-bytes"], ["replace-lookalike-bytes"]],
   [
     ["edit.exact-eof", "edit.delete-empty-replace"],
     ["exact-eof-lf", "exact-eof-crlf", "exact-eof-unterminated"],
   ],
   [
-    ["codemode.parallel-edit-effects"],
+    ["codemode.parallel-edit-effects", "compose.read-concurrent-edit-snapshot"],
     ["parallel-edit-effects-all", "parallel-edit-effects-allSettled"],
   ],
+  // This route checks exact restoration without competing writes. Scripted Pi covers contention.
   [["edit.undo-last", "compose.mutation-undo"], ["undo-last"]],
   [
     [
+      // Changes may be read by file or issued result; CHANGE anchors retain their provenance.
       "git.changes",
       "git.stage",
       "git.stage-noop",
@@ -216,17 +348,37 @@ const groups: [string[], string[]][] = [
     ["git-stage-unstage-undo"],
   ],
   [["compose.search-narrow-result"], ["read-search-narrow"]],
+  [["search.compaction-numbered"], ["search-compaction-numbered"]],
+  [["search.compaction-all"], ["search-compaction-all"]],
   // Result-input paths accept the same file as a scalar or an array; both keep real reuse checks.
-  [["read.ast", "search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
+  [["outline.file"], ["ast-capture-rename", "outline-search-edit"]],
+  [["search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
+  // Both routes require { id: "<bare capture UUID>" }, stripping RESULT# even in Codemode.
+  [["compose.capture-uuid-source"], ["ast-capture-rename", "lsp-rename"]],
+  [["outline.page", "compose.outline-search-edit"], ["outline-search-edit"]],
   [["ast_search.rule", "compose.ast-search-enclosing"], ["ast-search-enclosing"]],
   [["read.ast-view", "edit.scope-anchors"], ["read-ast-boundary"]],
   [["codemode.store-load", "compose.cross-call"], ["codemode-store"]],
+  // Direct calls take the same object; the focused source-value cases cover them without a model.
+  [["compose.value-id-source"], ["value-id-source", "move-zero-width"]],
   [["compose.stale-recovery", "read.reference-recovery"], ["stale-recovery"]],
-  [["compose.result-selector-rejection"], ["result-selector-rejection"]],
+  // Out-of-scope selectors fail; a scope-only exact miss leaves later exact edits enabled.
+  // Anchor-rejection card causes are presentation only; renderer tests decode all four codes.
+  [
+    ["compose.result-selector-scope"],
+    [
+      "result-selector-scope",
+      "result-selector-multi-range-plain",
+      "result-selector-multi-range-unicode",
+      "result-selector-surviving-scope",
+      "result-selector-exact-retry",
+    ],
+  ],
   [
     [
       // Fresh-session follow-up operations exercise metadata activated by the first Bash call.
       // Schema publication and delayed-card ownership have deterministic integration coverage.
+      // The shell Read verifies the final marker; deterministic tests cover exit-drain timing.
       "shell.execute",
       "shell.read",
       "shell.search",
@@ -241,7 +393,12 @@ const groups: [string[], string[]][] = [
     ],
     ["shell-roundtrip"],
   ],
+  // Real-Pi regression coverage also checks completed local/SSH shells without ignored-view metadata.
   [["shell.image", "shell.sequence"], ["shell-screen"]],
+  // The process list sent after compaction has deterministic registry and live checks.
+  [["shell.name", "shell.list", "shell.search-all", "shell.rename"], ["shell-catalog"]],
+  // Scripts get Pi's bash fields; a non-zero exit is a value, so the Codemode result lists no failure.
+  [["shell.script-value"], ["shell-script-value"]],
   [
     [
       "debug.create",
@@ -268,6 +425,8 @@ const groups: [string[], string[]][] = [
     ["debug-controls"],
   ],
   [["debug.backend-vscode-refusal", "debug.backend-native"], ["debug-backend-fallback"]],
+  // Rust has a separate no-build route; the TypeScript route does not prove Cargo safety.
+  [["read.rust-diagnostics-no-build"], ["rust-diagnostics-no-build"]],
   [
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],
@@ -277,14 +436,29 @@ const groups: [string[], string[]][] = [
       "lsp.rename",
       "lsp.rename-cross-file",
       "lsp.rename-keeps-unrelated-names",
+      // Refusals must be actionable INVALID_REQUEST results, not plugin crashes.
+      "lsp.rename-refusal-recovery",
+      "lsp.rename-selector-refusal",
       "compose.symbol-read-rename",
     ],
     ["lsp-rename"],
+  ],
+  // Declaration/calls selectors compare fixture-relative file paths, preserving symbol fragments.
+  // The quiet paid case checks nested calls. The real-Pi rename window tests cover layout drift,
+  // changes to overload binding, and bounded recovery from clangd refusals within one replace call.
+  // They also check that exhausted recovery reports SOURCE_CHANGED with no edit applied.
+  [["lsp.overload-selectors", "compose.symbol-overload-rename"], ["lsp-overload-rename"]],
+  [
+    ["lsp.script-call-graph", "compose.lsp-caller-id", "lsp.script-line-text"],
+    ["lsp-calls-script-value"],
   ],
   // The PDF route covers ordinary and recoverable documents; terminal silence is a separate check.
   [["read.image", "read.pdf"], ["read-media"]],
   [["compose.codemode-image-value"], ["codemode-image-value"]],
   [["compose.read-image-write"], ["read-image-write"]],
+  // This paid case checks a successful Write. The real-Pi edit-window-writes tests
+  // check stale Write recovery on both routes, including applying a fresh anchor.
+  [["write.json-text"], ["write-json-text"]],
   [["web.read", "web.search"], ["web-read-search"]],
 ];
 

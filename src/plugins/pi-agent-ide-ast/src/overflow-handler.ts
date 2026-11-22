@@ -5,6 +5,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { ReadOutputReducer, ReadPostReadHandler } from "pi-agent-read/api/tools/read";
 import type { SourceViewBlock } from "pi-agent-ide/api/code-view";
+// A static import keeps the outline code from the version this Pi loaded.
+import { AstOutlineManager, isSupportedOutlinePath } from "./ast/outline.ts";
 
 /** Builds a compact source view from recorded text, never from a newer filesystem snapshot. */
 export const reduceAstReadOutput: ReadOutputReducer = async (result, context, budget) => {
@@ -18,7 +20,6 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
   )
     return undefined;
   try {
-    const { AstOutlineManager, isSupportedOutlinePath } = await import("./ast/outline.ts");
     if (!isSupportedOutlinePath(source)) return undefined;
     const format = (outline: SourceViewBlock): string =>
       [
@@ -35,6 +36,8 @@ export const reduceAstReadOutput: ReadOutputReducer = async (result, context, bu
       lines.map((line) => line.content),
       (candidate) => {
         context.signal?.throwIfAborted();
+        // The two header lines and each rendered line take at least one output line.
+        if (candidate.renderedLines.length + 2 > budget.maxLines) return false;
         return !truncateHead(format(candidate), budget).truncated;
       },
     );
@@ -59,6 +62,7 @@ export function createAstOverflowHandler(): ReadPostReadHandler {
     const block = result?.content.length === 1 ? result.content[0] : undefined;
     if (
       context.audience === "script" ||
+      context.outputLimit === "none" ||
       result === undefined ||
       state?.contentKind !== "text" ||
       (state.resolvedBy !== "filesystem" && !state.source.startsWith("ssh://")) ||

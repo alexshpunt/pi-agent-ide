@@ -26,6 +26,7 @@ text-pre-edit
 interface TextPreEditState<Input = unknown> {
   readonly cwd: string;
   readonly input: Input;
+  readonly planEdit?: TextEditPlanner;
   readonly signal?: AbortSignal;
   readonly metadata?: Readonly<Record<string, unknown>>;
 }
@@ -33,9 +34,13 @@ interface TextPreEditState<Input = unknown> {
 interface TextEditState<Input = unknown, Result = unknown> extends TextPreEditState<Input> {
   readonly result: Result;
 }
+
+type TextEditPlanner = () => Promise<TextEditPlan>;
 ```
 
 Each handler returns the complete state for the next handler. Core does not merge plugin metadata.
+
+A plugin that computes its own edits, such as a language server rename, sets `planEdit` instead of a text selection. The planner returns each file’s expected text and changes. The editor asks for the plan on each attempt and checks it against the text read by the guarded transaction. If the text differs, the file’s optional `rebase(current)` may map the same edits onto that snapshot. A refusal fails the attempt before writing, and the next attempt asks for a plan again. The transaction still verifies its own snapshot before writing. Planners can also request a retry by throwing with code `SOURCE_CHANGED`.
 
 ## Resource operation
 

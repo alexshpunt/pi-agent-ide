@@ -32,7 +32,8 @@ export function renderSearchMatches(
         const lines =
           endLine === match.lineNumber
             ? [match.lineText]
-            : [match.lineText, ...match.matchedText.split(/\r\n|\n|\r/u).slice(1)];
+            : // Only LF ends a line; a lone CR inside a line must not shift the rows below it.
+              [match.lineText, ...match.matchedText.split("\n").slice(1)];
         return lines.slice(0, 20).map((text, index) => ({
           source: match.source,
           label,

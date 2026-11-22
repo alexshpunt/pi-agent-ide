@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.2",
     "cross-spawn": "^7.0.6",
     "diff": "^9.0.0",
     "pi-agent-doctor": "workspace:^",
@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
+    "pi-agent-search-text": "workspace:^",
     "pi-coding-agent-test": "^0.1.1",
     "vitest": "^4.1.10"
   },

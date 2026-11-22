@@ -1,4 +1,5 @@
 export {
+  assertToolCallArgumentsNotBlocked,
   getToolCallInterception,
   type InterceptorContext,
   type InterceptResult,

@@ -18,7 +18,7 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
       const cwd = await mkdtemp(path.join(root, "case-"));
       const separator = before ? "\r\n" : "\n";
       const original = ["BEFORE", "left ANCHOR right", "SECOND", "AFTER", ""].join(separator);
-      const payloads = ["NEW", "\nNEW", "NEW\n\n"];
+      const payloads = ["NEW", "\nNEW", "NEW\n\n", "\nFIRST\nLAST\n", "\n\nNEW\n"];
       const expected: string[] = [];
       const conversation = [];
       const call = (id: string, name: string, args: Record<string, unknown>) =>
@@ -45,20 +45,36 @@ for (const kind of ["hash", "exact", "multiline", "search-line", "search-match"]
                   ? `left ANCHOR right${separator}SECOND`
                   : `SEARCH#RUNTIME:${index + 1}:1:${kind === "search-line" ? "line" : "match"}`;
           conversation.push(
-            call(`insert-${index}`, "insert", { path: file, anchor, before, text: payload }),
+            call(`insert-${index}`, "insert", {
+              path: file,
+              [before ? "before" : "after"]: anchor,
+              text: payload,
+            }),
           );
-          if (kind === "exact" || kind === "search-match") {
-            const normalized = payload.replace(/\n/gu, separator);
-            expected.push(
-              original.replace("ANCHOR", before ? `${normalized}ANCHOR` : `ANCHOR${normalized}`),
-            );
-          } else {
+          // LPT-1747: only multiline input at a line edge inserts separate lines.
+          const selected =
+            kind === "exact" || kind === "search-match"
+              ? "ANCHOR"
+              : kind === "multiline"
+                ? anchor
+                : "left ANCHOR right";
+          const atEdge = kind !== "exact" && kind !== "search-match";
+          const verbatim = payload.replaceAll("\n", separator);
+          if (atEdge && payload.includes("\n")) {
             const lines = original.split(separator);
             const at = before ? 1 : kind === "multiline" ? 3 : 2;
             const inserted = payload.split("\n");
+            if (inserted[0] === "") inserted.shift();
             if (inserted.at(-1) === "") inserted.pop();
             lines.splice(at, 0, ...inserted);
             expected.push(lines.join(separator));
+          } else {
+            expected.push(
+              original.replace(
+                selected,
+                before ? `${verbatim}${selected}` : `${selected}${verbatim}`,
+              ),
+            );
           }
         }
         conversation.push(assistantMessage([text("Done")]));

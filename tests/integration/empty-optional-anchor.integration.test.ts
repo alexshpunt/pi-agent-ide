@@ -14,9 +14,8 @@ import {
   withTempWorkspace,
 } from "#integration/support/pi-runtime/fixtures.ts";
 
-// Models often send an empty string for an optional selector they mean to omit. A single
-// direct call, a batch of direct calls in one message and native Codemode take separate paths.
-test("empty optional anchors act as omitted on single, batched and Codemode calls", async () => {
+// Cover single selections and lone destination insertion on each route.
+test("single selectors and destination insertion work on all routes", async () => {
   await withTempWorkspace(async (cwd) => {
     await enableNativeCodemode(cwd);
     const files = ["single", "batched", "delete", "copy", "script"];
@@ -26,7 +25,7 @@ test("empty optional anchors act as omitted on single, batched and Codemode call
       toolCall({
         id,
         name: "replace",
-        arguments: { path: `${file}.txt`, start: "beta", end: "", text: "BETA" },
+        arguments: { path: `${file}.txt`, at: "beta", text: "BETA" },
       });
     const result = await new PiIntegrationTest({
       testName: "empty-optional-anchor",
@@ -42,17 +41,17 @@ test("empty optional anchors act as omitted on single, batched and Codemode call
             toolCall({
               id: "delete",
               name: "delete",
-              arguments: { path: "delete.txt", start: "beta", end: "" },
+              // A literal selects only its characters; include the break to delete the line.
+              arguments: { path: "delete.txt", at: "beta\n" },
             }),
             toolCall({
               id: "copy",
               name: "copy",
               arguments: {
                 path: "copy.txt",
-                start: "alpha",
+                at: "alpha\n",
                 target: "copy.txt",
-                targetStart: "gamma",
-                targetEnd: "",
+                targetAfter: "gamma\n",
               },
             }),
           ],
@@ -64,7 +63,7 @@ test("empty optional anchors act as omitted on single, batched and Codemode call
               id: "script",
               name: "codemode",
               arguments: {
-                code: 'text(await tools.replace({path:"script.txt",start:"beta",end:"",text:"BETA"}));',
+                code: 'text(await tools.replace({path:"script.txt",at:"beta",text:"BETA"}));',
               },
             }),
           ],

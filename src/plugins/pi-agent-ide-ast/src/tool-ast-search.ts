@@ -1,8 +1,17 @@
 import type { AgentToolResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
-import { resultError, resultInputSchema, withStructuredResult } from "pi-agent-resource";
 import {
+  resultError,
+  resultInputSchema,
+  trackScriptCalls,
+  withStructuredResult,
+} from "pi-agent-resource";
+import {
+  describePathArgument,
+  markNullFields,
+  nullFieldsMessage,
+  searchCallPolicy,
   searchDataSchema,
   searchOutputSchema,
   type SearchPluginApi,
@@ -43,7 +52,7 @@ export const astSearchSchema = Type.Object(
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
         description:
-          "File, directory, unchanged Read/Search/edit result, its UUID, or an array of such results.",
+          "File, directory, unchanged Read/Search/edit result or its UUID, or an array of paths or of results.",
       }),
     ),
     relation: Type.Optional(
@@ -55,7 +64,11 @@ export const astSearchSchema = Type.Object(
     include: Type.Optional(Type.String({ description: "Include glob for files" })),
     exclude: Type.Optional(Type.String({ description: "Exclude glob for files" })),
     limit: Type.Optional(
-      Type.Integer({ minimum: 1, maximum: 1000, description: "Maximum matches (default 100)." }),
+      Type.Integer({
+        minimum: 1,
+        maximum: 1000,
+        description: "Maximum matches (default 100; in Codemode, all matches).",
+      }),
     ),
   },
   { additionalProperties: false },
@@ -76,6 +89,8 @@ export async function registerAstSearchTool(
 ): Promise<void> {
   let resolved: AstSearchRuntime | undefined;
   void runtime().then((value) => (resolved = value));
+  // A call from a script, such as Codemode, gets every match and capture with its whole text.
+  const scriptCall = trackScriptCalls(pi, "ast_search");
 
   pi.registerTool(
     withToolCallInterceptionRendering(
@@ -95,6 +110,8 @@ export async function registerAstSearchTool(
         promptSnippet: "Find code by syntax with ast-grep patterns and relational rules",
         parameters: astSearchSchema,
         outputSchema: searchOutputSchema,
+        prepareArguments: (arguments_) =>
+          markNullFields(arguments_, astSearchSchema) as AstSearchParameters,
         renderCall(parameters, theme, context) {
           return toolCallHeader(
             context.lastComponent,
@@ -112,10 +129,7 @@ export async function registerAstSearchTool(
                   ? []
                   : [
                       {
-                        text:
-                          typeof parameters.path === "string"
-                            ? `in ${parameters.path}`
-                            : "in result scope",
+                        text: `in ${describePathArgument(parameters.path)}`,
                         color: "accent" as const,
                         truncate: "start" as const,
                       },
@@ -144,12 +158,14 @@ export async function registerAstSearchTool(
           );
         },
         async execute(
-          _id,
+          id,
           parameters: AstSearchParameters,
           signal,
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
+          const nulls = nullFieldsMessage(parameters);
+          if (nulls !== undefined) return failure(nulls);
           if ((parameters.pattern === undefined) === (parameters.rule === undefined))
             return failure("Pass exactly one of pattern or rule.");
           if (parameters.rule !== undefined && parameters.language === undefined)
@@ -166,6 +182,7 @@ export async function registerAstSearchTool(
               "ast_search needs the Search module (search.core), which is not loaded.",
             );
           const { api, resolver } = resolved;
+          const { limit, audience } = searchCallPolicy(parameters.limit, scriptCall(id), "matches");
           return (await api.searchWith(
             resolver,
             {
@@ -174,7 +191,7 @@ export async function registerAstSearchTool(
               ...(parameters.path === undefined ? {} : { path: parameters.path }),
               ...(parameters.include === undefined ? {} : { include: parameters.include }),
               ...(parameters.exclude === undefined ? {} : { exclude: parameters.exclude }),
-              ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
+              ...(limit === undefined ? {} : { limit }),
               options: { ast: options },
             },
             {
@@ -182,6 +199,7 @@ export async function registerAstSearchTool(
               ...(signal !== undefined && { signal }),
               ...(onUpdate !== undefined && { onUpdate }),
             },
+            audience,
           )) as AgentToolResult<SearchToolDetails>;
         },
       },

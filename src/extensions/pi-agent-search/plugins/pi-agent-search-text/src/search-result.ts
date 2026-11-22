@@ -7,6 +7,7 @@ import {
 } from "pi-agent-search/api/search";
 import { pathToFileURL } from "node:url";
 
+import type { UnreadablePaths } from "#src/ripgrep.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
 import { planSearchPresentation } from "#src/search-presentation.ts";
 
@@ -301,11 +302,19 @@ function isCount(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
-function displaySource(source: string, cwd: string): string {
+/** A matched source as a result shows it: relative to the search's cwd when it is inside it. */
+export function displaySource(source: string, cwd: string): string {
   if (source.includes("://")) return source;
   const relative = path.relative(cwd, source);
   // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
   return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
     ? relative
     : source;
+}
+
+/** Summarize in one line the paths a search could not read, so they never replace its results. */
+export function unreadableNotice(unreadable: UnreadablePaths, cwd: string): string {
+  const paths = unreadable.count === 1 ? "1 path" : `${unreadable.count} paths`;
+  const { path: source, error } = unreadable.first;
+  return `Search notice: could not read ${paths}, so matches in them are missing. First: ${displaySource(source, cwd)}: ${error}`;
 }

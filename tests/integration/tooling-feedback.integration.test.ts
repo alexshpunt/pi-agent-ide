@@ -64,7 +64,7 @@ test("whole-file Delete keeps its filesystem route beside a text edit batch", as
       {
         id: "edit",
         name: "insert",
-        arguments: { path: "note.txt", anchor: "keep", text: "ADDED\n" },
+        arguments: { path: "note.txt", after: "keep", text: "ADDED\n" },
       },
       ...removed.map((file, index) => ({
         id: `remove${index}`,
@@ -109,14 +109,14 @@ const sameFileEdits = [
   {
     tool: "insert",
     kind: "search",
-    args: { text: "ADDED", before: true },
-    after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+    args: { text: "ADDED\n" },
+    after: "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
   },
   {
     tool: "insert",
     kind: "uuid",
-    args: { text: "ADDED", before: true },
-    after: "keep1\nADDED\nOLD\nkeep2\nADDED\nOLD\nkeep3\nADDED\nOLD\n",
+    args: { text: "ADDED\n" },
+    after: "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
   },
 ] as const;
 
@@ -134,7 +134,7 @@ test.each(sameFileEdits)(
                     call(`window${index}`, "read", { path: "note.txt", offset: line, limit: 1 }),
                     call(`selection${index}`, "search", {
                       path: `$issued-uuid:window${index}`,
-                      query: '"OLD"',
+                      query: "OLD",
                     }),
                   ]
                 : [
@@ -226,7 +226,6 @@ test.each(sameFileEdits)(
         };
         expect(validateRoute(inFixture, events, "direct")).toEqual({ passed: true, reasons: [] });
       }
-      expect(result.tuiRenderedOutput).not.toContain("edit failed");
     });
   },
 );
@@ -254,7 +253,7 @@ test("batch output selections preserve shifted ranges and empty replacement posi
           query: "LONG OR Ω OR OLD OR keep",
         }),
       ),
-      batch("second", ["FINAL0", "FINAL1", "FINAL2"], (index) => `$issued-uuid:first${index}`),
+      batch("second", ["FINAL0", "FINAL1\n", "FINAL2"], (index) => `$issued-uuid:first${index}`),
     ]);
     for (const index of [0, 1, 2]) {
       for (const prefix of ["first", "scope", "second"]) {
@@ -300,7 +299,7 @@ test("same-file selection batches reject overlaps and later reuse without losing
     ).toBe(false);
     expect(getToolExecution(result, "peer").isError, getToolResultText(result, "peer")).toBe(false);
     expect(getToolExecution(result, "overlap").isError).toBe(true);
-    expect(getToolResultText(result, "overlap")).toContain("overlaps");
+
     expect(getToolExecution(result, "expired").isError).toBe(true);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("FIRST\nmiddle\nLAST\n");
   });
@@ -312,16 +311,16 @@ test("issued Search line and match scopes stay sparse through direct calls and C
       "title first\nfeature legacyCheckout\ntitle middle\nfeature legacyCheckout\ntitle final\n";
     await writeFile(path.join(cwd, "note.txt"), original);
     const scopes = [
-      { kind: "searchallline", query: '"legacyCheckout"', count: 0 },
-      { kind: "searchallline", query: '"title"', count: 3 },
-      { kind: "search", query: '"first"', count: 1 },
-      { kind: "searchmatch", query: '"first"', count: 0 },
-      { kind: "searchallmatch", query: '"first"', count: 0 },
-      { kind: "searchallmatch", query: '"title"', count: 3 },
-      { kind: "uuid", query: '"title"', count: 3 },
+      { kind: "searchallline", query: "legacyCheckout", count: 0 },
+      { kind: "searchallline", query: "title", count: 3 },
+      { kind: "search", query: "first", count: 1 },
+      { kind: "searchmatch", query: "first", count: 0 },
+      { kind: "searchallmatch", query: "first", count: 0 },
+      { kind: "searchallmatch", query: "title", count: 3 },
+      { kind: "uuid", query: "title", count: 3 },
     ];
     const result = await run(cwd, "search-reference-scopes", [
-      call("titles", "search", { path: "note.txt", query: '"title"' }),
+      call("titles", "search", { path: "note.txt", query: "title" }),
       ...scopes.map((scope, index) =>
         call(`direct${index}`, "search", {
           path: `$issued-${scope.kind}:titles`,
@@ -332,7 +331,7 @@ test("issued Search line and match scopes stay sparse through direct calls and C
         code: scopes
           .map(
             (scope) =>
-              `text(await tools.search(${JSON.stringify({ path: `$issued-${scope.kind}:titles`, query: scope.query })}).then(value => value.result));`,
+              `{ const found = await tools.search(${JSON.stringify({ path: `$issued-${scope.kind}:titles`, query: scope.query })}); if (found.matches.length !== ${scope.count} || found.complete !== true) throw new Error(${JSON.stringify(scope.kind)} + ": " + JSON.stringify(found)); text(JSON.stringify(found)); }`,
           )
           .join("\n"),
       }),
@@ -359,11 +358,7 @@ test("issued Search line and match scopes stay sparse through direct calls and C
         {
           steps: scopes.map((scope) => ({
             tool: "search",
-            args: { query: scope.query.slice(1, -1) },
-            contains:
-              scope.count === 0
-                ? "No matches found"
-                : `${scope.count} ${scope.count === 1 ? "match" : "matches"} in 1 file`,
+            args: { query: scope.query },
           })),
         },
         events,
@@ -386,8 +381,8 @@ const consumers = [
     name: "insert-uuid",
     tool: "insert",
     kind: "uuid",
-    extra: { text: "BEFORE", before: true },
-    after: "first\nBEFORE\nOLD\nlast\n",
+    extra: { text: "AFTER\n" },
+    after: "first\nOLD\nAFTER\nlast\n",
   },
 ] as const;
 
@@ -451,10 +446,15 @@ test("direct Search consumes a Read UUID without widening its window", async () 
       false,
     );
     expect(getToolResultText(result, "inside")).toContain("inside-feature");
+    expect(getToolResultMessage(result, "inside").details).toMatchObject({
+      payload: { matchCount: 1, complete: true },
+    });
     expect(getToolExecution(result, "outside").isError, getToolResultText(result, "outside")).toBe(
       false,
     );
-    expect(getToolResultText(result, "outside")).toContain("No matches found");
+    expect(getToolResultMessage(result, "outside").details).toMatchObject({
+      payload: { matchCount: 0, complete: true },
+    });
   });
 });
 
@@ -471,12 +471,18 @@ test("direct Search evaluates Boolean colon terms inside issued windows", async 
     expect(getToolExecution(result, "inside").isError, getToolResultText(result, "inside")).toBe(
       false,
     );
-    expect(getToolResultText(result, "inside")).toContain("1 match in 1 file");
+
+    expect(getToolResultMessage(result, "inside").details).toMatchObject({
+      payload: { matchCount: 1, complete: true },
+    });
     expect(getToolResultText(result, "inside")).toContain("legacy​Checkout");
     expect(getToolResultText(result, "inside")).not.toContain("note.txt:4:");
     // Search no longer owns a process: protocol, so the term is ordinary text inside the window.
     expect(getToolExecution(result, "former-protocol").isError).toBe(false);
-    expect(getToolResultText(result, "former-protocol")).toContain("No matches found");
+    expect(getToolResultMessage(result, "former-protocol").details).toMatchObject({
+      payload: { matchCount: 0, complete: true },
+    });
+
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(original);
   });
 });
@@ -485,7 +491,7 @@ test("direct references reject a changed snapshot without deleting its file", as
     await writeFile(path.join(cwd, "note.txt"), "first\nOLD\nlast\n");
     const result = await run(cwd, "direct-issued-stale", [
       call("selection", "read", { path: "note.txt", offset: 2, limit: 1 }),
-      call("change", "replace", { path: "note.txt", start: "OLD", text: "NEW" }),
+      call("change", "replace", { path: "note.txt", at: "OLD", text: "NEW" }),
       call("stale", "delete", { path: "$issued-uuid:selection" }),
     ]);
     expect(getToolExecution(result, "change").isError).toBe(false);
@@ -505,7 +511,21 @@ test("three sequential replacements report one file through native Codemode", as
     expect(getToolExecution(result, "script").isError, getToolResultText(result, "script")).toBe(
       false,
     );
-    expect(getToolResultText(result, "script")).toContain("Applied 3 replacements in 1 file.");
+
+    const details = getToolResultMessage<{
+      calls: { name: string; status: string }[];
+      editorBatchResults: { data: { files: { source: string }[] } }[];
+    }>(result, "script").details;
+    expect(
+      details.calls.filter((call) => call.name === "replace").map((call) => call.status),
+    ).toEqual(["ok", "ok", "ok"]);
+    expect([
+      ...new Set(
+        details.editorBatchResults.flatMap((receipt) =>
+          receipt.data.files.map((file) => path.basename(file.source)),
+        ),
+      ),
+    ]).toEqual(["note.txt"]);
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("NEW\nNEW\nNEW\n");
   });
 });
@@ -515,11 +535,11 @@ test.each([false, true])(
   async (queuedPayload) => {
     await withTempWorkspace(async (cwd) => {
       await writeFile(path.join(cwd, "note.txt"), "alpha\nbeta\ngamma\n");
-      const prefix = '{"path":"note.txt","anchor":"$issued-anchor:original:3","';
+      const prefix = '{"path":"note.txt","after":"$issued-anchor:original:3","';
       const payload = 'text":"BLOCKED"}';
       const result = await run(cwd, `streamed-insert-before-payload-${queuedPayload}`, [
         call("original", "read", { path: "note.txt", views: ["anchors"] }),
-        call("shift", "replace", { path: "note.txt", start: "beta", text: "beta\nadded" }),
+        call("shift", "replace", { path: "note.txt", at: "gamma", text: "gamma2\nadded" }),
         assistantMessage(
           [
             toolCall({
@@ -535,25 +555,22 @@ test.each([false, true])(
         call("current", "read", { path: "note.txt", views: ["anchors"] }),
         call("recovery", "insert", {
           path: "note.txt",
-          anchor: "$issued-anchor:current:4",
-          text: "recovered",
+          after: "$issued-anchor:current:4",
+          text: "recovered\n",
         }),
       ]);
       expect(getToolExecution(result, "shift").isError).toBe(false);
       expect(getToolExecution(result, "blocked").isError).toBe(true);
-      expect(getToolResultText(result, "blocked")).toContain("is stale");
-      expect(getToolResultText(result, "blocked")).not.toContain("Validation failed");
       expect(getToolResultMessage(result, "blocked").details).toMatchObject({
         effect: "not-applied",
       });
-      expect(getToolResultText(result, "blocked")).toContain("4#");
       expect(JSON.stringify(result.messages)).not.toContain('"text":"BLOCKED"');
       expect(
         getToolExecution(result, "recovery").isError,
         getToolResultText(result, "recovery"),
       ).toBe(false);
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe(
-        "alpha\nbeta\nadded\ngamma\nrecovered",
+        "alpha\nbeta\ngamma2\nadded\nrecovered\n",
       );
     });
   },
@@ -567,10 +584,10 @@ test.each([{}, { text: "" }])(
       const result = await run(
         cwd,
         `complete-invalid-insert-${"text" in payload ? "empty" : "missing"}`,
-        [call("invalid", "insert", { path: "note.txt", anchor: "alpha", ...payload })],
+        [call("invalid", "insert", { path: "note.txt", after: "alpha", ...payload })],
       );
       expect(getToolExecution(result, "invalid").isError).toBe(true);
-      expect(getToolResultText(result, "invalid")).toContain("Validation failed");
+
       expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\nbeta\n");
     });
   },

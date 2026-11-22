@@ -1,7 +1,11 @@
 import { TextAnchor, type TextAnchorResolver } from "pi-agent-text";
 import { expect, test } from "vitest";
 
-import { TextAnchorRegistry, TextAnchorResolutionError } from "#src/core/text-anchor-registry.ts";
+import {
+  TextAnchorRegistry,
+  TextAnchorResolutionError,
+  TextAnchorResourceResolutionError,
+} from "#src/core/text-anchor-registry.ts";
 
 const POSITION_KIND = "fixture/position";
 const OPERATION_KIND = "fixture/operation";
@@ -164,6 +168,48 @@ test("rejects recovery candidates outside the current snapshot", async () => {
     await error.refreshRecovery();
     expect(error.recovery).toMatchObject({ kind: "failed" });
   }
+});
+
+test("a reference that fails to resolve carries its resolver's reason, not a generic one", async () => {
+  const cause = Object.assign(new Error("main.cpp changed while its search ran again"), {
+    code: "SOURCE_CHANGED",
+  });
+  const registry = new TextAnchorRegistry();
+  registry.add({
+    resolver: resolver("search", undefined),
+    resources: { id: "search-targets", tryResolve: () => Promise.reject(cause) },
+    kind: POSITION_KIND,
+    type: "auxiliary",
+    priority: 0,
+  });
+  registry.add({
+    resolver: resolver("symbols", undefined),
+    resources: {
+      id: "symbol-targets",
+      tryResolve: (value) =>
+        Promise.resolve(
+          value === "symbol:x" ? { kind: "failed", error: new Error("") } : { kind: "not-handled" },
+        ),
+    },
+    kind: OPERATION_KIND,
+    type: "auxiliary",
+    priority: 1,
+  });
+
+  const thrown = await registry
+    .snapshot()
+    .resolveResources("SEARCH#51AC:all:match", { cwd: "/workspace" }, new Set([POSITION_KIND]))
+    .catch((error: unknown) => error);
+  expect(thrown).toBeInstanceOf(TextAnchorResourceResolutionError);
+  expect(thrown).toMatchObject({ message: cause.message, resolverId: "search", cause });
+
+  const empty = await registry
+    .snapshot()
+    .resolveResources("symbol:x", { cwd: "/workspace" }, new Set([OPERATION_KIND]))
+    .catch((error: unknown) => error);
+  expect(empty).toBeInstanceOf(TextAnchorResourceResolutionError);
+  expect((empty as Error).message).toContain("internal error");
+  expect((empty as Error).message).toContain("repeat the Read or Search");
 });
 
 function resolver(

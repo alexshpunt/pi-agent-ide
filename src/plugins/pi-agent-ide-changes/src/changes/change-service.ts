@@ -38,47 +38,81 @@ export class ChangeService {
   private constructor(private readonly git: GitChangesBackend) {}
 
   async inspect(input: ChangeInspectionInput): Promise<ChangeInspection> {
+    return (await this.inspectNormalized(input)).inspection;
+  }
+
+  /** Inspect with CRLF worktree text compared as Git stores it (LF), when Git converts it. */
+  private async inspectNormalized(input: ChangeInspectionInput): Promise<{
+    readonly inspection: ChangeInspection;
+    /** The worktree text the groups describe. */
+    readonly comparable: string;
+    /** Rebuild the worktree's line endings; undefined when they cannot be rebuilt exactly. */
+    readonly restore: (text: string) => string | undefined;
+  }> {
+    const unchanged = (inspection: ChangeInspection) => ({
+      inspection,
+      comparable: input.worktreeText,
+      restore: (text: string): string | undefined => text,
+    });
     if (input.worktreeText.includes("\0")) {
-      return {
+      return unchanged({
         status: "unavailable",
         reason: "binary",
         message: "worktree file contains binary content",
-      };
+      });
     }
 
     const versions = await this.git.readTrackedFile(input.source, input.cwd, input.signal);
 
     if (versions.status !== "found") {
-      return versions.status === "untracked"
-        ? { status: "not-applicable", reason: "untracked" }
-        : versions;
+      return unchanged(
+        versions.status === "untracked"
+          ? { status: "not-applicable", reason: "untracked" }
+          : versions,
+      );
     }
 
     if (versions.headText.includes("\0") || versions.indexText.includes("\0")) {
-      return {
+      return unchanged({
         status: "unavailable",
         reason: "binary",
         message: "Git file state contains binary content",
-      };
+      });
     }
+
+    // With `core.autocrlf` or an `eol` attribute, a CRLF worktree file matches LF blobs.
+    const converts =
+      input.worktreeText.includes("\r\n") &&
+      !versions.headText.includes("\r\n") &&
+      !versions.indexText.includes("\r\n") &&
+      (await this.git.normalizesLineEndings(versions.repositoryPath, input.signal));
+    const comparable = converts ? input.worktreeText.replaceAll("\r\n", "\n") : input.worktreeText;
+    // Only a uniformly CRLF file can be rebuilt exactly from its LF form.
+    const uniform = !/(?:^|[^\r])\n/u.test(input.worktreeText);
+    const restore = (text: string): string | undefined =>
+      !converts ? text : uniform ? text.replaceAll("\n", "\r\n") : undefined;
 
     const groups = createChangeGroups(
       versions.repositoryPath,
       versions.headText,
       versions.indexText,
-      input.worktreeText,
+      comparable,
     );
 
     if (groups.length === 0) {
-      return { status: "not-applicable", reason: "clean" };
+      return { inspection: { status: "not-applicable", reason: "clean" }, comparable, restore };
     }
 
     return {
-      status: "applicable",
-      head: versions.head,
-      repositoryRoot: versions.repositoryRoot,
-      repositoryPath: versions.repositoryPath,
-      groups,
+      inspection: {
+        status: "applicable",
+        head: versions.head,
+        repositoryRoot: versions.repositoryRoot,
+        repositoryPath: versions.repositoryPath,
+        groups,
+      },
+      comparable,
+      restore,
     };
   }
 
@@ -133,7 +167,7 @@ export class ChangeService {
   }
 
   async prepareUndo(input: ChangeInspectionInput, selector: string): Promise<PreparedUndoResult> {
-    const inspection = await this.inspect(input);
+    const { inspection, comparable, restore } = await this.inspectNormalized(input);
 
     if (inspection.status !== "applicable") {
       return inspection;
@@ -148,13 +182,22 @@ export class ChangeService {
       );
     }
 
-    const worktreeText = reverseChangeGroup(input.worktreeText, group);
+    // Groups describe the text as Git stores it; reverse there, then restore CRLF.
+    const reversed = reverseChangeGroup(comparable, group);
+    const worktreeText = reversed === undefined ? undefined : restore(reversed);
 
     if (worktreeText === undefined) {
-      return staleSelector(
-        selector,
-        inspection.groups.map(({ selector: available }) => available),
-      );
+      return reversed === undefined
+        ? staleSelector(
+            selector,
+            inspection.groups.map(({ selector: available }) => available),
+          )
+        : {
+            status: "unavailable",
+            reason: "mixed-line-endings",
+            message:
+              "the file mixes CRLF and LF line endings, so the change cannot be reversed exactly",
+          };
     }
 
     const segment = requiredValue(group.segments[0]);

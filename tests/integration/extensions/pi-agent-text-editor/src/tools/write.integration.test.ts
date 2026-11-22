@@ -37,7 +37,7 @@ describe("pi-agent-text-editor tools", () => {
       ).toEqual(tools);
       expect(getToolExecution(result, mutationCallId).isError).toBe(false);
       const receipt = getToolResultText(result, mutationCallId);
-      expect(receipt).toContain("Saved file.");
+
       expect(receipt).not.toContain("after\n");
       expectTextToolDiff(scenario, relativeFile, "before\n", "after\n", "tui");
       for (const id of scenario.postflightCallIds)

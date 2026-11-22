@@ -1,0 +1,154 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import {
+  assistantMessage,
+  getToolExecution,
+  getToolResultText,
+  PiIntegrationTest,
+  testArtifactsDir,
+  text,
+  toolCall,
+} from "pi-coding-agent-test";
+import { expect, test } from "vitest";
+import { installConcurrentWriter } from "#integration/support/concurrent-writer.ts";
+import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { withTextResultChecks } from "#integration/support/text-result-checks.ts";
+
+/** Callers of the graphed function, each on its own line. */
+const CALLERS = 110;
+/** Graphs taken while the peer writes the file. */
+const ROUNDS = 4;
+
+/** A large C++ file with two overloads and separate callers. */
+function sourceFile(): string {
+  const lines = [
+    "// header",
+    "int helper(int value) { return value * 2; }",
+    "struct Vec3fForm { int value; };",
+    "int handle(const Vec3fForm& arg) { return helper(arg.value) + 1; }",
+    "int handle(int value) { return value - 1; }",
+    "int other_caller() { return handle(1); }",
+  ];
+  for (let index = 0; index < CALLERS; index += 1) {
+    lines.push(`int caller_${String(index)}() { return handle(Vec3fForm{${String(index)}}); }`);
+    for (let filler = 0; filler < 235; filler += 1)
+      lines.push(
+        `int filler_${String(index)}_${String(filler)}() { return ${String(filler)} * 3; }`,
+      );
+  }
+  lines.push("int main() { return caller_0(); }", "");
+  return lines.join("\n");
+}
+
+/**
+ * Takes the call graph of one function while another session keeps writing the file, and compares
+ * every graph with the one taken before the writer started. The peer only inserts lines at the top,
+ * so every reference and caller stays, and each line number in one graph moves by the same amount
+ * as the definition's.
+ */
+const script = (peer: {
+  command: string;
+  session: string;
+}) => String.raw`// @options: {"timeout_ms": 170000}
+function graphOf(value) {
+  check(value && Array.isArray(value.matches) && Array.isArray(value.incoming), "The graph has no value: " + JSON.stringify(value).slice(0, 600));
+  // The declaration comes before its callers, so its name is the first reference.
+  const definition = Math.min(...value.matches.map((match) => match.line));
+  return {
+    definition,
+    references: value.matches.length,
+    referenceLines: value.matches.map((match) => match.line),
+    incoming: value.incoming.length,
+    // Each caller is its whole declaration, on its own line.
+    callers: value.incoming.map((match) => ({ name: /^int (\w+)\(/.exec(match.text)?.[1], line: match.line })),
+    outgoing: value.outgoing.map((match) => match.text).join(""),
+    raw: JSON.stringify(value).slice(0, 1500),
+  };
+}
+const calls = async () => graphOf(await tools.lsp_search({ calls: "main.cpp#handle(const Vec3fForm&)" }));
+// clangd answers callers from an index it fills after parsing the opened file.
+let baseline;
+for (let attempt = 1; attempt <= 15; attempt += 1) {
+  baseline = await calls();
+  if (baseline.incoming === ${String(CALLERS)}) break;
+  await tools.bash({ command: "sleep 2" });
+}
+check(baseline.incoming === ${String(CALLERS)}, "Without a writer the graph is already short: " + JSON.stringify(baseline));
+check(baseline.references === ${String(CALLERS + 1)}, "Without a writer the references are already short: " + JSON.stringify(baseline));
+check(baseline.callers.length > 0 && baseline.referenceLines.length > 0, "The graph lists no lines: " + JSON.stringify(baseline));
+const relative = (graph) => JSON.stringify({
+  references: graph.references,
+  referenceLines: graph.referenceLines.map((line) => line - graph.definition),
+  incoming: graph.incoming,
+  callers: graph.callers.map(({ name, line }) => [name, line - graph.definition]),
+  outgoing: graph.outgoing,
+});
+const expected = relative(baseline);
+await tools.bash({ command: ${JSON.stringify(peer.command)}, background: true, name: ${JSON.stringify(peer.session)} });
+const report = ["baseline " + expected];
+const failures = [];
+try {
+  for (let round = 1; round <= ${String(ROUNDS)}; round += 1) {
+    let graph;
+    try {
+      graph = await calls();
+    } catch (error) {
+      failures.push("round " + round + " failed: " + String(error).slice(0, 300));
+      continue;
+    }
+    const found = relative(graph);
+    report.push("round " + round + " definition=" + graph.definition + " " + graph.references + " " + graph.incoming);
+    if (found !== expected) failures.push("round " + round + " differs: " + found);
+    const refs = await tools.lsp_search({ query: "handle", path: "main.cpp", references: true, limit: 200 });
+    check(refs.matches.length === 113, "Expected both overloads and their references: " + refs.matches.length);
+  }
+} finally {
+  await tools.delete({ path: ${JSON.stringify(`shell:${peer.session}`)} });
+}
+const writes = (await tools.bash({ command: "grep -c '// peer' main.cpp" })).output.match(/^\d+$/mu);
+check(writes && Number(writes[0]) > ${String(ROUNDS)}, "The concurrent writer did not run: " + report.join("\n"));
+report.push("writes=" + writes[0]);
+check(failures.length === 0, failures.join("\n") + "\n" + report.join("\n"));
+text(report.join("\n"));`;
+
+test("lsp_search calls lists every reference and caller while another session writes the file", async () => {
+  await withTempWorkspace(async (cwd) => {
+    await mkdir(path.join(cwd, ".pi"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/settings.json"),
+      JSON.stringify({ codemode: { mode: "on" } }),
+    );
+    await writeFile(path.join(cwd, "main.cpp"), sourceFile());
+    const peer = await installConcurrentWriter(cwd, {
+      file: "main.cpp",
+      intervalMs: 150,
+      lifetimeMs: 150_000,
+    });
+    const run = await new PiIntegrationTest({
+      testName: "lsp-calls-writer",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      traceToolDetails: false,
+      timeoutMs: 200_000,
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["read", "lsp_search", "bash", "delete", "codemode"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "composed",
+              name: "codemode",
+              arguments: { code: withTextResultChecks(script(peer)) },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done.")]),
+      ],
+    }).run("Take the call graph of a function while another session writes the file");
+    const result = getToolResultText(run, "composed");
+    expect(getToolExecution(run, "composed").isError, result).toBe(false);
+    expect(await peer.writes()).toBeGreaterThan(ROUNDS);
+  });
+}, 300_000);

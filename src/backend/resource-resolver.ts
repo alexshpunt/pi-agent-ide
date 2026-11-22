@@ -31,6 +31,7 @@ export function createSshResourceResolver(
         }
         let version: string | null | undefined;
         let sourceBytes: Uint8Array | undefined;
+        let names: readonly string[] | undefined;
         const snapshot = async (operationContext: ResourceOperationContext) => {
           try {
             const current = await backend.read(location.path, operationContext);
@@ -43,8 +44,12 @@ export function createSshResourceResolver(
         };
         const read = async (operationContext: ResourceOperationContext): Promise<AgentContent> => {
           sourceBytes = undefined;
+          names = undefined;
           if (directory) {
             const entries = await backend.list(location.path, operationContext);
+            names = entries.map((entry) =>
+              entry.kind === "directory" ? `${entry.name}/` : entry.name,
+            );
             const rows = entries.map(
               (entry) =>
                 `  ${entry.kind === "directory" ? "📁" : entry.kind === "file" ? "📄" : "🔗"} ${entry.name}`,
@@ -62,39 +67,10 @@ export function createSshResourceResolver(
             operationContext,
           );
         };
+        // One stream sends the whole window, and the target rejects it if the file changes meanwhile.
         const readBytes: ResourceByteRead = async (offset, limit, operationContext) => {
-          const chunkSize = 4 * 1024 * 1024;
-          const first = await backend.readRange(
-            location.path,
-            offset,
-            Math.min(limit ?? chunkSize, chunkSize),
-            operationContext,
-          );
-          const chunks = [first.bytes];
-          let length = first.bytes.length;
-          const wanted = Math.min(limit ?? first.totalBytes, first.totalBytes - first.offset);
-          while (length < wanted) {
-            const next = await backend.readRange(
-              location.path,
-              first.offset + length,
-              Math.min(wanted - length, chunkSize),
-              operationContext,
-            );
-            if (
-              next.revision !== first.revision ||
-              next.totalBytes !== first.totalBytes ||
-              next.offset !== first.offset + length
-            )
-              throw new SshBackendError("SOURCE_CHANGED", location.source, "not-applied");
-            if (next.bytes.length === 0) break;
-            chunks.push(next.bytes);
-            length += next.bytes.length;
-          }
-          return {
-            bytes: Buffer.concat(chunks, length),
-            byteOffset: first.offset,
-            totalBytes: first.totalBytes,
-          };
+          const range = await backend.readRange(location.path, offset, limit, operationContext);
+          return { bytes: range.bytes, byteOffset: range.offset, totalBytes: range.totalBytes };
         };
         if (capability === "read" || directory)
           return {
@@ -105,6 +81,9 @@ export function createSshResourceResolver(
               read,
               get sourceBytes() {
                 return sourceBytes;
+              },
+              get entries() {
+                return names;
               },
               ...(directory ? {} : { readBytes }),
             },

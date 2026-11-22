@@ -17,6 +17,9 @@ LIMIT = 8 * 1024 * 1024
 
 
 def interrupted(signum, _frame):
+    # Only the first stop signal exits, so a later one cannot interrupt the cleanup it starts.
+    for ignored in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+        signal.signal(ignored, signal.SIG_IGN)
     raise SystemExit(128 + signum)
 
 
@@ -205,10 +208,14 @@ def run():
                 selector_thread.start()
                 relay(connection, server, frames)
         finally:
-            for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
-                signal.signal(signum, signal.SIG_IGN)
-            stop(target)
-            stop(server)
+            # A stop signal can land here as cleanup begins. The exit it raises is kept, and the
+            # inner finally still stops both JVMs.
+            try:
+                for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
+                    signal.signal(signum, signal.SIG_IGN)
+            finally:
+                stop(target)
+                stop(server)
 
 
 try:

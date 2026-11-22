@@ -2,7 +2,8 @@ import { mkdtemp, readFile, writeFile, mkdir, symlink, rm, lstat } from "node:fs
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
-import { executeFileOperation } from "#src/core/file-operations.ts";
+import { ResourceError } from "pi-agent-resource";
+import { executeFileOperation, formatFileOperation } from "#src/core/file-operations.ts";
 import { isWholeFileInvocation } from "#src/core/file-operation-tools.ts";
 
 const roots: string[] = [];
@@ -20,8 +21,8 @@ test("whole-file mode requires paths and no text selectors", () => {
   expect(isWholeFileInvocation("copy", { path: "a", target: "b" })).toBe(true);
   expect(isWholeFileInvocation("move", { path: "a", target: "b" })).toBe(true);
   expect(isWholeFileInvocation("delete", { path: "a" })).toBe(true);
-  expect(isWholeFileInvocation("copy", { path: "a", target: "b", start: "alpha" })).toBe(false);
-  expect(isWholeFileInvocation("delete", { path: "a", start: "alpha" })).toBe(false);
+  expect(isWholeFileInvocation("copy", { path: "a", target: "b", at: "alpha" })).toBe(false);
+  expect(isWholeFileInvocation("delete", { path: "a", at: "alpha" })).toBe(false);
   expect(isWholeFileInvocation("delete", { path: "SEARCH#ABCD:all:line" })).toBe(false);
   expect(isWholeFileInvocation("delete", {})).toBe(false);
 });
@@ -146,12 +147,6 @@ test("unclaimed URI operations fail without touching a similarly named local pat
   expect(await readFile(misleading, "utf8")).toBe("keep local");
 });
 
-test("direct symbol deletion never enters whole-file mode", () => {
-  for (const source of ["symbol:source.ts#greet", "symbol:source.ts", "symbol:source.ts#missing"]) {
-    expect(isWholeFileInvocation("delete", { path: source })).toBe(false);
-  }
-});
-
 test("copies bytes, moves the copy, and removes only the moved file", async () => {
   const cwd = await fixture();
   expect((await executeFileOperation("copy", { path: "source", target: "copy" }, cwd)).ok).toBe(
@@ -165,6 +160,28 @@ test("copies bytes, moves the copy, and removes only the moved file", async () =
   expect((await executeFileOperation("delete", { path: "moved" }, cwd)).ok).toBe(true);
   await expect(lstat(path.join(cwd, "moved"))).rejects.toMatchObject({ code: "ENOENT" });
   expect(await readFile(path.join(cwd, "source"))).toEqual(Buffer.from([0, 255, 10]));
+});
+
+test("failures name their code once when the message already starts with it", async () => {
+  const cwd = await fixture();
+  const local = await executeFileOperation("copy", { path: "missing", target: "copy" }, cwd);
+  const remote = await executeFileOperation(
+    "copy",
+    { path: "ssh://sandbox/missing", target: "copy" },
+    cwd,
+    undefined,
+    {},
+    [
+      async () => {
+        throw new ResourceError("ENOENT", "ssh://sandbox/missing", "not-applied");
+      },
+    ],
+  );
+  for (const result of [local, remote]) {
+    expect(result.error?.code).toBe("ENOENT");
+    const line = formatFileOperation(result).split("\n").at(-1) ?? "";
+    expect(line.match(/ENOENT/gu)).toHaveLength(1);
+  }
 });
 
 for (const operation of ["copy", "move"] as const) {

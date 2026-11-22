@@ -39,12 +39,13 @@ for (const native of [false, true]) {
         const target = `${directory}/${scenario}-target.txt`;
         await writeFile(path.join(cwd, source), "head\nmove-me\nend\n");
         await writeFile(path.join(cwd, target), "top\nbottom\n");
-        const parameters = { path: source, start: "move-me", target, targetStart: "top" };
+        // Literals select only their characters; the line breaks make this a whole-line move.
+        const parameters = { path: source, at: "move-me\n", target, targetAfter: "top\n" };
         const peer = `${directory}/peer.txt`;
         const hasPeer = native && scenario === "target-failed";
         if (hasPeer) await writeFile(path.join(cwd, peer), "OLD\n");
         const peerCode = hasPeer
-          ? `await tools.replace({path:${JSON.stringify(peer)},start:"OLD",text:"CONFIRMED"}); await tools.read({path:${JSON.stringify(peer)}});`
+          ? `await tools.replace({path:${JSON.stringify(peer)},at:"OLD",text:"CONFIRMED"}); await tools.read({path:${JSON.stringify(peer)}});`
           : "";
         const run = await new PiIntegrationTest({
           testName: `move-rollback-${native ? "native" : "immediate"}-${scenario}`,

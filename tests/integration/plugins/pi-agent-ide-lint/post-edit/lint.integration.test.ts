@@ -83,8 +83,9 @@ test("background lint reports fixable errors without changing the edited file", 
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(1, 'export const value = "before";'),
-        text: requested.trimEnd(),
+        at: formatLineHashAnchor(before, 1),
+        // A line anchor selects the line with its line break; the text keeps it.
+        text: requested,
       },
     });
 
@@ -110,7 +111,11 @@ test("an installed Ruff does not run without project evidence", async () => {
       testName: "post-edit-ruff-without-evidence",
       postflightViews: ["diagnostics"],
       tool: "replace",
-      arguments: { path: fileName, start: formatLineHashAnchor(1, "value = 1"), text: "value = 2" },
+      arguments: {
+        path: fileName,
+        at: formatLineHashAnchor("value = 1\n", 1),
+        text: "value = 2\n",
+      },
     });
     await expect(readFile(path.join(directory, ".ruff_cache", "ran"), "utf8")).rejects.toThrow(
       "ENOENT",
@@ -130,7 +135,11 @@ test("built-in Ruff uses an isolated cache", async () => {
       testName: "post-edit-ruff-no-cache",
       postflightViews: ["diagnostics"],
       tool: "replace",
-      arguments: { path: fileName, start: formatLineHashAnchor(1, "value = 1"), text: "value = 2" },
+      arguments: {
+        path: fileName,
+        at: formatLineHashAnchor("value = 1\n", 1),
+        text: "value = 2\n",
+      },
     });
     expect(await readFile(path.join(directory, "ruff-ran"), "utf8")).toBe("isolated-cache");
     await expect(readFile(path.join(directory, ".ruff_cache", "ran"), "utf8")).rejects.toThrow(
@@ -177,8 +186,9 @@ test("malformed linter output does not break an edit", async () => {
       tool: "replace",
       arguments: {
         path: fileName,
-        start: formatLineHashAnchor(1, before.trimEnd()),
-        text: after.trimEnd(),
+        at: formatLineHashAnchor(before, 1),
+        // A line anchor selects the line with its line break; the text keeps it.
+        text: after,
       },
     });
 

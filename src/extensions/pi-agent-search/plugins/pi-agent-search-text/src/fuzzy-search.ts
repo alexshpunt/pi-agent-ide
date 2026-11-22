@@ -9,7 +9,7 @@ import {
   type SearchEnvironment,
 } from "pi-agent-search/api/search";
 import { ripgrepScope, searchText, type TextSearchRequest } from "#src/search-backend.ts";
-import { resolveRipgrepExecutable } from "#src/ripgrep.ts";
+import { resolveRipgrepExecutable, RipgrepStderr } from "#src/ripgrep.ts";
 
 /** Scan fresh names, then capture only bounded exact alternatives in the same scope. */
 export async function searchFuzzy(
@@ -81,14 +81,20 @@ export async function searchFuzzyAlternative(
     { matches: fuzzyLimits.matchesPerCandidate, bytes: fuzzyLimits.verificationBytes },
     environment,
   );
-  // ripgrep's word boundary includes letters/digits/underscore, but treats dollar as punctuation.
-  return {
-    ...result,
-    matches: result.matches.filter(
-      (match) =>
-        match.lineText[match.startColumn - 1] !== "$" && match.lineText[match.endColumn] !== "$",
-    ),
-  };
+  // The search of the query itself reports the paths this scope could not read.
+  return { matches: result.matches.filter(isWholeIdentifierMatch), complete: result.complete };
+}
+
+/**
+ * Whether an exact alternative's match is a whole identifier. Ripgrep's word boundary includes
+ * letters, digits and underscore, but treats a dollar sign as punctuation.
+ */
+export function isWholeIdentifierMatch(match: {
+  readonly lineText: string;
+  readonly startColumn: number;
+  readonly endColumn: number;
+}): boolean {
+  return match.lineText[match.startColumn - 1] !== "$" && match.lineText[match.endColumn] !== "$";
 }
 async function ownedByteSize(
   environment: SearchEnvironment,
@@ -108,10 +114,24 @@ async function collectNames(
   cwd: string,
   signal: AbortSignal,
   environment?: SearchEnvironment,
+  vocabulary = new FuzzyVocabulary(),
 ): Promise<FuzzyVocabulary> {
+  if (request.paths !== undefined) {
+    // Each listed path adds its names to one vocabulary with one budget.
+    for (const root of request.paths) {
+      if (vocabulary.limited) break;
+      await collectNames(
+        { ...request, paths: undefined, path: root },
+        cwd,
+        signal,
+        environment,
+        vocabulary,
+      );
+    }
+    return vocabulary;
+  }
   const scope = await ripgrepScope(request, cwd, environment, signal);
   if (environment !== undefined) {
-    const vocabulary = new FuzzyVocabulary();
     const controller = new AbortController();
     const ownedSignal = AbortSignal.any([signal, controller.signal]);
     try {
@@ -133,8 +153,11 @@ async function collectNames(
         },
         ownedSignal,
       );
-      if (!vocabulary.limited && result.code !== 0 && result.code !== 1)
-        throw new Error(result.stderr.trim() || "Ripgrep failed.");
+      // Names come only from paths ripgrep could read; the search reports the others.
+      const stderr = new RipgrepStderr();
+      stderr.write(result.stderr);
+      if (!vocabulary.limited && stderr.failed(result.code))
+        throw new Error(stderr.message || "Ripgrep failed.");
     } catch (error) {
       signal.throwIfAborted();
       if (!vocabulary.limited) throw error;
@@ -156,10 +179,9 @@ async function collectNames(
       ],
       { cwd: scope.cwd, stdio: ["ignore", "pipe", "pipe"] },
     );
-    const vocabulary = new FuzzyVocabulary();
     let token = "";
     let oversized = false;
-    let stderr = "";
+    const stderr = new RipgrepStderr();
     const abort = (): void => {
       child.kill();
     };
@@ -191,7 +213,7 @@ async function collectNames(
     });
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk: string) => {
-      stderr = (stderr + chunk).slice(0, 4096);
+      stderr.write(chunk);
     });
     child.once("error", (error) => {
       cleanup();
@@ -203,8 +225,9 @@ async function collectNames(
         reject(signal.reason);
         return;
       }
-      if (!vocabulary.limited && code !== 0 && code !== 1) {
-        reject(new Error(stderr.trim() || `ripgrep exited with code ${String(code)}`));
+      // Names come only from paths ripgrep could read; the search reports the others.
+      if (!vocabulary.limited && stderr.failed(code)) {
+        reject(new Error(stderr.message || `ripgrep exited with code ${String(code)}`));
         return;
       }
       resolve(vocabulary);

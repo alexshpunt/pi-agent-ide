@@ -1,11 +1,11 @@
 import path from "node:path";
-import { LinePositionMap } from "./position-map.ts";
+import { followRange, LinePositionMap } from "./position-map.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./source-changes.ts";
 import { requiredValue } from "pi-agent-invariant";
 import { URI } from "vscode-uri";
 import { documentUri } from "./document-uri.ts";
 import { createTextDocument } from "pi-agent-text";
-import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import { resultTargetsInText, type ResolvedResultTargets } from "pi-agent-resource";
 import {
   containsSearchMatch,
   splitGlobList,
@@ -13,17 +13,33 @@ import {
 } from "pi-agent-search/api/search";
 
 import { LspManager } from "./manager.ts";
-import { requestReferences, type LspLocation } from "./navigation.ts";
+import type { LspClient } from "./client.ts";
+import { requireReferenceReply, requestReferences, type LspLocation } from "./navigation.ts";
+import { lspRangeMatch } from "./range-match.ts";
+import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
+import { isMissingSource } from "./missing-sources.ts";
+import type { LspPosition } from "./types.ts";
 import {
-  requestWorkspaceSymbols,
-  requestDocumentSymbols,
-  type LspDocumentSymbol,
-} from "./symbols.ts";
-import type { LspRange } from "./types.ts";
+  clangCoverage,
+  coverageComplete,
+  createClangReach,
+  mergeCoverage,
+  type ClangCoverage,
+} from "./clang-coverage.ts";
+import { requestWorkspaceSymbols, requestDocumentSymbols } from "./symbols.ts";
+import {
+  declarationAt,
+  declarationsNamed,
+  normalizeDocumentSymbols,
+  preferredDeclaration,
+  type LspCodeSymbol,
+} from "./symbol-selectors.ts";
 
 /** Strict discovery scope, or an explicit seed scope for reference navigation. */
 export interface SymbolSearchScope {
   readonly path?: string;
+  /** Several files and directories in place of `path`; a hit inside any of them is in scope. */
+  readonly paths?: readonly string[];
   readonly include?: string;
   readonly exclude?: string;
   readonly resultScope?: ResolvedResultTargets;
@@ -35,6 +51,8 @@ export interface SearchSymbol {
   readonly id: string;
   readonly name: string;
   readonly kind: string;
+  /** Selector segments that name this declaration alone in its file, such as `clamp(int, int)`. */
+  readonly selector?: readonly string[];
   readonly source: string;
   readonly range: {
     readonly startLine: number;
@@ -50,20 +68,23 @@ export interface SymbolHit extends SearchSelectionMatch {
   readonly symbol: SearchSymbol;
 }
 
-function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boolean {
+/** Whether `file` is inside the workspace `cwd` and the path, include and exclude of `scope`. */
+export function withinScope(file: string, cwd: string, scope: SymbolSearchScope): boolean {
   const remote = cwd.startsWith("ssh://");
   const filesystem = remote ? path.posix : path;
   const native = (source: string) =>
     remote ? decodeURIComponent(new URL(documentUri(source, cwd)).pathname) : source;
-  const base = remote ? native(scope.path ?? cwd) : path.resolve(cwd, scope.path ?? ".");
-  const relative = filesystem.relative(base, native(file));
-  if (
-    // oxlint-disable-next-line repo/no-parent-paths -- containment check only.
-    relative === ".." ||
-    relative.startsWith(`..${filesystem.sep}`) ||
-    filesystem.isAbsolute(relative)
-  )
-    return false;
+  const inside = (root: string | undefined) => {
+    const base = remote ? native(root ?? cwd) : path.resolve(cwd, root ?? ".");
+    const relative = filesystem.relative(base, native(file));
+    return !(
+      // oxlint-disable-next-line repo/no-parent-paths -- containment check only.
+      relative === ".." ||
+      relative.startsWith(`..${filesystem.sep}`) ||
+      filesystem.isAbsolute(relative)
+    );
+  };
+  if (!(scope.paths ?? [scope.path]).some(inside)) return false;
   const candidate = filesystem.relative(native(cwd), native(file)).split(filesystem.sep).join("/");
   const matches = (patterns: string) =>
     splitGlobList(patterns).some((glob) =>
@@ -85,35 +106,30 @@ function sourceOf(uri: string, cwd: string): string {
   return path.resolve(parsed.fsPath);
 }
 
-function sameRange(left: LspRange, right: LspRange): boolean {
-  return (
-    left.start.line === right.start.line &&
-    left.start.character === right.start.character &&
-    left.end.line === right.end.line &&
-    left.end.character === right.end.character
-  );
+/** A file's text as one pass of {@link searchSymbols} read it. */
+interface Snapshot {
+  readonly document: ReturnType<typeof createTextDocument>;
+  readonly version: string;
 }
-function declarationNames(
-  symbols: readonly LspDocumentSymbol[],
-  name: string,
-  range: LspRange,
-): LspRange[] {
-  return symbols.flatMap((symbol) => [
-    ...(symbol.name === name &&
-    symbol.range !== undefined &&
-    sameRange(symbol.range, range) &&
-    symbol.selectionRange !== undefined
-      ? [symbol.selectionRange]
-      : []),
-    ...declarationNames(symbol.children ?? [], name, range),
-  ]);
+
+/** Symbols found by {@link searchSymbols}. */
+export interface SymbolSearchResult {
+  readonly hits: SymbolHit[];
+  /**
+   * Text of each source with hits, as the hits were mapped onto it. Anchors register from this
+   * text, so no second read can find a file another session wrote in between.
+   */
+  readonly contents: ReadonlyMap<string, string>;
+  readonly complete: boolean;
+  /** Why C/C++ references can be missing; present only when they can. */
+  readonly coverage?: ClangCoverage;
+  /**
+   * Files the server reported places in that no longer exist and that the search could have
+   * listed; their places are left out. Present only when there are such files.
+   */
+  readonly missing?: readonly string[];
 }
-function declarationsNamed(symbols: readonly LspDocumentSymbol[], name: string): LspRange[] {
-  return symbols.flatMap((symbol) => [
-    ...(symbol.name === name && symbol.selectionRange !== undefined ? [symbol.selectionRange] : []),
-    ...declarationsNamed(symbol.children ?? [], name),
-  ]);
-}
+
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
 export async function searchSymbols(
   query: string,
@@ -122,7 +138,7 @@ export async function searchSymbols(
   signal?: AbortSignal,
   scope: SymbolSearchScope = {},
   manager = LspManager.getInstance(),
-): Promise<{ readonly hits: SymbolHit[]; readonly complete: boolean }> {
+): Promise<SymbolSearchResult> {
   // Another Pi process may edit a searched file while the server answers. Its ranges then fit
   // neither version, so search again on the current text.
   return retryWhileSourceChanges(
@@ -138,13 +154,11 @@ async function searchSymbolsOnce(
   signal: AbortSignal | undefined,
   scope: SymbolSearchScope,
   manager: LspManager,
-): Promise<{ readonly hits: SymbolHit[]; readonly complete: boolean }> {
+): Promise<SymbolSearchResult> {
   signal?.throwIfAborted();
   const resultScope = scope.resultScope;
-  if (resultScope !== undefined) {
-    await verifyResultTargets(resultScope, signal);
-    if (resultScope.targets.length === 0) return { hits: [], complete: resultScope.complete };
-  }
+  if (resultScope?.targets.length === 0)
+    return { hits: [], contents: new Map(), complete: resultScope.complete };
   if (
     resultScope === undefined &&
     scope.path !== undefined &&
@@ -155,8 +169,26 @@ async function searchSymbolsOnce(
     ) &&
     (await manager.isSourceFile(scope.path, cwd, signal))
   )
-    return { hits: [], complete: true };
-  const roots = resultScope?.targets.map((target) => target.source) ?? [scope.path ?? cwd];
+    return { hits: [], contents: new Map(), complete: true };
+  // Each file is read once per pass. The server is opened with that text, so its answers and the
+  // hits name the same text unless something else publishes another one meanwhile.
+  const contents = new Map<string, Snapshot>();
+  const reads = new Map<string, Promise<Snapshot>>();
+  const snapshotOf = (source: string): Promise<Snapshot> => {
+    let read = reads.get(source);
+    if (read === undefined) {
+      read = manager.readSourceSnapshot(source, signal).then(({ content, version }) => {
+        const snapshot = { document: createTextDocument(source, content), version };
+        contents.set(source, snapshot);
+        return snapshot;
+      });
+      reads.set(source, read);
+    }
+    return read;
+  };
+  const readText = async (file: string) => (await snapshotOf(sourceOf(file, cwd))).document.content;
+  const roots = resultScope?.targets.map((target) => target.source) ??
+    scope.paths ?? [scope.path ?? cwd];
   const clients = new Set(
     (
       await Promise.all(
@@ -166,6 +198,7 @@ async function searchSymbolsOnce(
             root,
             (source) => withinScope(source, cwd, scope),
             signal,
+            readText,
           ),
         ),
       )
@@ -175,10 +208,31 @@ async function searchSymbolsOnce(
     throw new Error(
       "LSP symbol search is unavailable: no provider supports workspace/symbol in this scope.",
     );
-  const contents = new Map<
+  // The result scope as the text each hit was read from. Another session may have written the file
+  // since the scope was resolved, before or while the server answered; the scope follows its
+  // region through unchanged lines, and the call fails when the region is gone.
+  const scopeIn = new Map<string, ResolvedResultTargets>();
+  // One line diff per file and served text: a pass maps many ranges of the same two texts.
+  const diffs = new Map<
     string,
-    { document: ReturnType<typeof createTextDocument>; version: string }
+    { served: string; toSnapshot?: LinePositionMap; toServed?: LinePositionMap }
   >();
+  const lineDiff = (
+    source: string,
+    served: string,
+    snapshot: string,
+    direction: "toSnapshot" | "toServed",
+  ): LinePositionMap => {
+    let entry = diffs.get(source);
+    if (entry === undefined || entry.served !== served) {
+      entry = { served };
+      diffs.set(source, entry);
+    }
+    return (entry[direction] ??=
+      direction === "toSnapshot"
+        ? LinePositionMap.between(served, snapshot)
+        : LinePositionMap.between(snapshot, served));
+  };
   // A server answers for the text its client synced. Another Pi process may have written the
   // file since; ranges then move with their unchanged lines to the file text read here.
   const toMatch = async (
@@ -187,55 +241,109 @@ async function searchSymbolsOnce(
   ): Promise<SearchSelectionMatch> => {
     signal?.throwIfAborted();
     const source = sourceOf(location.uri, cwd);
-    let snapshot = contents.get(source);
-    if (snapshot === undefined) {
-      const { content, version } = await manager.readSourceSnapshot(source, signal);
-      snapshot = { document: createTextDocument(source, content), version };
-      contents.set(source, snapshot);
-    }
-    const { document } = snapshot;
+    const { document } = await snapshotOf(source);
+    if (resultScope !== undefined && !scopeIn.has(source))
+      scopeIn.set(
+        source,
+        resultTargetsInText(
+          {
+            targets: resultScope.targets.filter((target) => target.source === source),
+            complete: resultScope.complete,
+          },
+          new Map([[source, document.content]]),
+        ),
+      );
     const served = client?.documentContent(location.uri);
     const range =
       served === undefined || served === document.content
         ? location.range
-        : LinePositionMap.between(served, document.content).mapRange(location.range);
+        : lineDiff(source, served, document.content, "toSnapshot").mapRange(location.range);
     if (range === undefined) throw sourceChanged("LSP range does not match its source snapshot.");
-    const { start, end } = range;
-    const positions = [start, end];
-    for (const position of positions) {
-      const line = document.lines[position.line];
-      if (
-        !Number.isInteger(position.line) ||
-        !Number.isInteger(position.character) ||
-        line === undefined ||
-        position.character < 0 ||
-        position.character > line.content.length
-      )
-        throw sourceChanged("LSP range does not match its source snapshot.");
-    }
-    const first = requiredValue(document.lines[start.line]);
-    const offset = (line: number) =>
-      document.lines
-        .slice(0, line)
-        .reduce((total, row) => total + row.content.length + row.lineEnding.length, 0);
-    const from = offset(start.line) + start.character;
-    const to = offset(end.line) + end.character;
-    if (to < from) throw new Error("LSP returned a reversed source range.");
-    return {
-      source,
-      lineNumber: start.line + 1,
-      endLineNumber: end.line + 1,
-      startColumn: start.character,
-      endColumn: end.character,
-      matchedText: document.content.slice(from, to),
-      lineText: first.content,
+    return lspRangeMatch(source, document, range);
+  };
+  /**
+   * The declaration's position in the text the server holds now. Another search or edit in this
+   * process can publish a newer text of the file than the one this pass read, so a position of the
+   * text a declaration was read from can name another line in the server's text after another
+   * session wrote the file; the server then reports no references there. The position follows its
+   * unchanged line into the served text instead, and the call runs again when that line is gone.
+   */
+  const servedPosition = (
+    client: { documentContent(uri: string): string | undefined },
+    uri: string,
+    declaration: SearchSelectionMatch,
+  ): LspPosition => {
+    const start = { line: declaration.lineNumber - 1, character: declaration.startColumn };
+    const served = client.documentContent(uri);
+    const snapshot = contents.get(declaration.source)?.document.content;
+    if (served === undefined || snapshot === undefined || served === snapshot) return start;
+    const range = {
+      start,
+      end: {
+        line: (declaration.endLineNumber ?? declaration.lineNumber) - 1,
+        character: declaration.endColumn,
+      },
     };
+    const mapped = followRange(
+      lineDiff(declaration.source, served, snapshot, "toServed"),
+      range,
+      served,
+      declaration.matchedText,
+    );
+    if (mapped === undefined)
+      throw sourceChanged(
+        `The line of declaration "${declaration.matchedText}" changed before the server was asked for its references.`,
+      );
+    return mapped.start;
   };
   const included = (hit: SearchSelectionMatch) =>
     withinScope(hit.source, cwd, scope) &&
-    (resultScope === undefined || containsSearchMatch(resultScope, hit));
+    (resultScope === undefined || containsSearchMatch(requiredValue(scopeIn.get(hit.source)), hit));
   const hits: SymbolHit[] = [];
   const seen = new Set<string>();
+  const errorsOf = diagnosticErrors(
+    (uri) => manager.openFile(sourceOf(uri, cwd), cwd, "symbols", signal, readText),
+    signal,
+  );
+  // A search with references can leave its scope; without them it lists only hits inside it.
+  const listable = (source: string) =>
+    scope.navigation === "references"
+      ? withinScope(source, cwd, {})
+      : withinScope(source, cwd, scope) &&
+        (resultScope === undefined ||
+          resultScope.targets.some((target) => target.source === source));
+  const reachOf = createClangReach({
+    manager,
+    cwd,
+    errorsOf,
+    accepts: listable,
+    ...(signal && { signal }),
+  });
+  // The server's index can keep places in files deleted since, such as another session's scratch
+  // copy of a source. The search leaves them out and names the files it could have listed.
+  const missing = new Set<string>();
+  const exists = async (source: string): Promise<boolean> => {
+    try {
+      await snapshotOf(source);
+      return true;
+    } catch (error) {
+      if (!isMissingSource(error)) throw error;
+      if (listable(source)) missing.add(source);
+      return false;
+    }
+  };
+  const coverages: (ClangCoverage | undefined)[] = [];
+  // Declarations already listed, by file and the name position of their first entry.
+  const listed = new Set<string>();
+  const outlines = new Map<string, Promise<LspCodeSymbol[]>>();
+  const outlineOf = (client: LspClient, uri: string) => {
+    let outline = outlines.get(uri);
+    if (outline === undefined) {
+      outline = requestDocumentSymbols(client, uri, signal).then(normalizeDocumentSymbols);
+      outlines.set(uri, outline);
+    }
+    return outline;
+  };
   for (const client of clients) {
     signal?.throwIfAborted();
     const definitions = await requestWorkspaceSymbols(
@@ -247,7 +355,7 @@ async function searchSymbolsOnce(
     for (const definition of definitions) {
       signal?.throwIfAborted();
       if (!withinScope(sourceOf(definition.location.uri, cwd), cwd, {})) continue;
-      // The server's symbol index can lag behind edits; a stale position is looked up by name.
+      if (!(await exists(sourceOf(definition.location.uri, cwd)))) continue;
       const workspaceMatch = await toMatch(definition.location, client).catch((error: unknown) => {
         if ((error as { code?: unknown } | null)?.code === "SOURCE_CHANGED") return undefined;
         throw error;
@@ -257,84 +365,152 @@ async function searchSymbolsOnce(
         cwd,
         "symbols",
         signal,
+        readText,
       );
       if (opened === null)
         throw new Error("LSP references are unavailable for a discovered declaration.");
-      let location = definition.location;
-      if (workspaceMatch?.matchedText !== definition.name) {
-        const symbols = await requestDocumentSymbols(opened.client, opened.uri, signal);
-        let names = declarationNames(symbols, definition.name, definition.location.range);
-        // The server's symbol index can lag behind edits, so its range may belong to an older
-        // text. A name declared once in the file still identifies the declaration.
-        if (names.length !== 1) names = declarationsNamed(symbols, definition.name);
-        if (names.length !== 1)
-          throw sourceChanged(
-            "LSP declaration has no unique provider selectionRange; cannot search its references.",
-          );
-        location = { uri: opened.uri, range: requiredValue(names[0]) };
-      }
-      const declared = await toMatch(location, opened.client);
-      const symbol: SearchSymbol = {
-        id: JSON.stringify([client.serverId, declared.source, definition.location.range]),
-        name: definition.name,
-        kind: String(definition.kind),
-        source: declared.source,
-        range: {
-          startLine: declared.lineNumber,
-          startColumn: declared.startColumn,
-          endLine: declared.endLineNumber ?? declared.lineNumber,
-          endColumn: declared.endColumn,
-        },
-      };
-      const references = await requestReferences(
-        opened.client,
-        opened.uri,
-        location.range.start,
-        signal,
-      );
-      signal?.throwIfAborted();
-      const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
-      for (const location of references) {
-        if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
-        const reference = await toMatch(location, opened.client);
-        if (
-          reference.source === declared.source &&
-          reference.lineNumber === declared.lineNumber &&
-          reference.startColumn === declared.startColumn &&
-          reference.endLineNumber === declared.endLineNumber &&
-          reference.endColumn === declared.endColumn
-        )
-          continue;
-        candidates.push({ ...reference, role: "reference", symbol });
-      }
-      if (scope.navigation === "references" && !candidates.some(included)) continue;
-      for (const hit of candidates) {
-        if (scope.navigation !== "references" && !included(hit)) continue;
-        // Navigation can leave the seed region, never the workspace source-access boundary.
-        if (scope.navigation === "references" && !withinScope(hit.source, cwd, {})) continue;
-        const key = JSON.stringify([
-          symbol.id,
-          hit.source,
-          hit.lineNumber,
-          hit.startColumn,
-          hit.endLineNumber,
-          hit.endColumn,
+      // The server's symbol index can lag behind edits, so its range may belong to an older text.
+      // The file's current symbols then name every declaration with that name, each overload
+      // apart; a prototype and its definition are one declaration.
+      const outline = await outlineOf(opened.client, opened.uri);
+      const fresh = workspaceMatch?.matchedText === definition.name;
+      const declarations: (readonly LspCodeSymbol[] | undefined)[] = fresh
+        ? [declarationAt(outline, definition.location.range)]
+        : declarationsNamed(outline, definition.name);
+      if (declarations.length === 0)
+        throw sourceChanged(
+          `LSP declaration "${definition.name}" is not among the current symbols of its file.`,
+        );
+      for (const entries of declarations) {
+        signal?.throwIfAborted();
+        // A declaration's references and renames are the same from each of its entries; its
+        // definition is the one listed.
+        const entry =
+          entries === undefined
+            ? undefined
+            : preferredDeclaration(
+                entries,
+                opened.client.documentContent(opened.uri) ??
+                  (await manager.readSourceText(sourceOf(opened.uri, cwd), signal)),
+              );
+        const location =
+          entry === undefined
+            ? definition.location
+            : { uri: opened.uri, range: entry.selectionRange };
+        const identity = JSON.stringify([
+          opened.uri,
+          (entries?.[0]?.selectionRange ?? definition.location.range).start,
         ]);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        hits.push(hit);
+        if (listed.has(identity)) continue;
+        listed.add(identity);
+        const declared = await toMatch(location, opened.client);
+        const symbol: SearchSymbol = {
+          id: JSON.stringify([client.serverId, declared.source, location.range]),
+          name: entry?.name ?? definition.name,
+          kind: String(entry?.kind ?? definition.kind),
+          ...(entry !== undefined && { selector: entry.selector }),
+          source: declared.source,
+          range: {
+            startLine: declared.lineNumber,
+            startColumn: declared.startColumn,
+            endLine: declared.endLineNumber ?? declared.lineNumber,
+            endColumn: declared.endColumn,
+          },
+        };
+        const reach = await reachOf(opened.client, opened.languageId, symbol.name);
+        const servedBefore = opened.client.documentContent(opened.uri);
+        const requestPosition = servedPosition(opened.client, opened.uri, declared);
+        const references = await requestReferences(
+          opened.client,
+          opened.uri,
+          requestPosition,
+          signal,
+        );
+        // An answer for a text the server replaced while answering fits neither text.
+        if (opened.client.documentContent(opened.uri) !== servedBefore)
+          throw sourceChanged("The server's text changed while it answered a references request.");
+        signal?.throwIfAborted();
+        if (reach !== undefined) requireReferenceReply(symbol.name, references);
+        const candidates: SymbolHit[] = [{ ...declared, role: "definition", symbol }];
+        const reported: { location: LspLocation; reference: SearchSelectionMatch }[] = [];
+        for (const location of references) {
+          if (!withinScope(sourceOf(location.uri, cwd), cwd, {})) continue;
+          if (!(await exists(sourceOf(location.uri, cwd)))) continue;
+          const reference = await toMatch(location, opened.client);
+          if (
+            reference.source === declared.source &&
+            reference.lineNumber === declared.lineNumber &&
+            reference.startColumn === declared.startColumn &&
+            reference.endLineNumber === declared.endLineNumber &&
+            reference.endColumn === declared.endColumn
+          )
+            continue;
+          reported.push({ location, reference });
+        }
+        const named = await withoutCorrectedNames(
+          reported,
+          ({ location, reference }) => ({
+            uri: location.uri,
+            start: location.range.start,
+            text: reference.matchedText,
+          }),
+          [symbol.name, declared.matchedText],
+          errorsOf,
+        );
+        for (const { reference } of named)
+          candidates.push({ ...reference, role: "reference", symbol });
+        if (!candidates.some(included)) continue;
+        // Only symbols that contribute hits decide what the result can be missing.
+        if (reach !== undefined)
+          coverages.push(
+            await clangCoverage(
+              reach,
+              [opened.uri, ...reported.map(({ location }) => location.uri)],
+              errorsOf,
+              (uri) => sourceOf(uri, cwd),
+            ),
+          );
+        for (const hit of candidates) {
+          if (scope.navigation !== "references" && !included(hit)) continue;
+          // Navigation can leave the seed region, never the workspace source-access boundary.
+          if (scope.navigation === "references" && !withinScope(hit.source, cwd, {})) continue;
+          const key = JSON.stringify([
+            symbol.id,
+            hit.source,
+            hit.lineNumber,
+            hit.startColumn,
+            hit.endLineNumber,
+            hit.endColumn,
+          ]);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          hits.push(hit);
+        }
       }
     }
   }
   signal?.throwIfAborted();
   // Files edited during the search keep the hits whose lines are unchanged, at their new lines.
   const moved = new Map<string, LinePositionMap>();
-  for (const [source, snapshot] of contents) {
-    const current = await manager.readSourceSnapshot(source, signal);
+  // The text each source's hits end up on: the last text read of it.
+  const mappedOnto = new Map<string, string>();
+  for (const source of new Set(hits.map((hit) => hit.source))) {
+    const snapshot = requiredValue(contents.get(source));
+    const current = await manager.readSourceSnapshot(source, signal).catch((error: unknown) => {
+      if (!isMissingSource(error)) throw error;
+      return undefined;
+    });
+    // A file deleted during the search has no text left for its hits.
+    if (current === undefined) {
+      if (listable(source)) missing.add(source);
+      continue;
+    }
+    mappedOnto.set(source, current.content);
     if (current.version !== snapshot.version && current.content !== snapshot.document.content)
       moved.set(source, LinePositionMap.between(snapshot.document.content, current.content));
   }
-  for (const [index, hit] of hits.entries()) {
+  const kept = hits.filter((hit) => mappedOnto.has(hit.source));
+  for (const [index, hit] of kept.entries()) {
     const map = moved.get(hit.source);
     if (map === undefined) continue;
     const range = map.mapRange({
@@ -342,10 +518,9 @@ async function searchSymbolsOnce(
       end: { line: (hit.endLineNumber ?? hit.lineNumber) - 1, character: hit.endColumn },
     });
     if (range === undefined) throw sourceChanged("LSP source changed during search.");
-    hits[index] = { ...hit, lineNumber: range.start.line + 1, endLineNumber: range.end.line + 1 };
+    kept[index] = { ...hit, lineNumber: range.start.line + 1, endLineNumber: range.end.line + 1 };
   }
-  if (resultScope !== undefined) await verifyResultTargets(resultScope, signal);
-  hits.sort(
+  kept.sort(
     (left, right) =>
       left.source.localeCompare(right.source) ||
       left.lineNumber - right.lineNumber ||
@@ -353,8 +528,15 @@ async function searchSymbolsOnce(
       left.endColumn - right.endColumn ||
       left.symbol.id.localeCompare(right.symbol.id),
   );
+  const returned = kept.slice(0, limit);
+  const coverage = mergeCoverage(coverages);
   return {
-    hits: hits.slice(0, limit),
-    complete: (resultScope?.complete ?? true) && hits.length <= limit,
+    hits: returned,
+    contents: new Map(
+      returned.map((hit) => [hit.source, requiredValue(mappedOnto.get(hit.source))]),
+    ),
+    complete: (resultScope?.complete ?? true) && kept.length <= limit && coverageComplete(coverage),
+    ...(coverage !== undefined && !coverageComplete(coverage) && { coverage }),
+    ...(missing.size > 0 && { missing: [...missing].sort() }),
   };
 }

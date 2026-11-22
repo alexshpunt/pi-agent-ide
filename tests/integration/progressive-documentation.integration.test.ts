@@ -4,7 +4,6 @@ import path from "node:path";
 
 import {
   assistantMessage,
-  getProviderSystemPrompt,
   getToolExecution,
   getToolResultMessage,
   PiIntegrationTest,
@@ -17,6 +16,7 @@ import { PiRun } from "#integration/support/pi-runtime/native-pi-coding-agent-te
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const extension = process.env.PI_AGENT_IDE_TEST_EXTENSION ?? path.resolve("src/pi-agent-ide.ts");
+const guides = path.resolve("tests/integration/fixtures/tool-guides.ts");
 const workspaces: string[] = [];
 const restoreRuntime = forceStandaloneIntegrationFile();
 afterAll(restoreRuntime);
@@ -31,7 +31,7 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
   const workspace = await createWorkspace();
   const result = await run(workspace, [
     { id: "list", name: "read", arguments: { path: "docs:" } },
-    { id: "guide", name: "read", arguments: { path: "docs:editing" } },
+    { id: "guide", name: "read", arguments: { path: "docs:terminal" } },
     { id: "ssh-guide", name: "read", arguments: { path: "docs:ssh" } },
     { id: "unknown", name: "read", arguments: { path: "docs:missing" } },
   ]);
@@ -41,9 +41,10 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
     readonly ids: readonly string[];
   };
   expect(listDetails.kind).toBe("list");
-  expect(listDetails.ids).toEqual(expect.arrayContaining(["editing", "search", "ssh"]));
+  expect(listDetails.ids).toEqual(expect.arrayContaining(["ssh", "terminal"]));
+  for (const id of ["editing", "search"]) expect(listDetails.ids).not.toContain(id);
   expect(getToolResultMessage(result, "guide").details).toMatchObject({
-    documentation: { kind: "document", id: "editing" },
+    documentation: { kind: "document", id: "terminal" },
   });
   expect(getToolExecution(result, "ssh-guide").isError).toBe(false);
   expect(getToolResultMessage(result, "ssh-guide").details).toMatchObject({
@@ -53,8 +54,6 @@ test("lists, reads, and rejects documentation resources through real Pi", async 
   expect(getToolResultMessage(result, "unknown").details).toMatchObject({
     documentation: { kind: "error", code: "UNKNOWN_DOCUMENTATION", id: "missing" },
   });
-  const prompt = getProviderSystemPrompt(result);
-  for (const id of ["editing", "search"]) expect(prompt).toContain(`  - ${id} — `);
 });
 
 test("attaches each relevant guide once and keeps guides independent", async () => {
@@ -65,12 +64,12 @@ test("attaches each relevant guide once and keeps guides independent", async () 
       {
         id: "insert-first",
         name: "insert",
-        arguments: { path: "example.ts", anchor: "export const marker = 1;", text: "// a" },
+        arguments: { path: "example.ts", after: "export const marker = 1;", text: "// a" },
       },
       {
         id: "insert-again",
         name: "insert",
-        arguments: { path: "example.ts", anchor: "export const marker = 1;", text: "// b" },
+        arguments: { path: "example.ts", after: "export const marker = 1;", text: "// b" },
       },
       { id: "search-first", name: "search", arguments: { query: "marker", path: "example.ts" } },
       { id: "search-again", name: "search", arguments: { query: "marker", path: "example.ts" } },
@@ -78,7 +77,7 @@ test("attaches each relevant guide once and keeps guides independent", async () 
     ["insert", "search"],
   );
 
-  expectGuideAttachment(result, "insert-first");
+  expectGuideAttachment(result, "insert-first", ["fixture-insert-guide"]);
   expect(documentationDetails(result, "insert-again")).toBeUndefined();
   expectGuideAttachment(result, "search-first");
   expect(documentationDetails(result, "search-again")).toBeUndefined();
@@ -101,13 +100,16 @@ test("an explicit guide read allows the first matching tool call", async () => {
   const result = await run(
     workspace,
     [
-      { id: "guide", name: "read", arguments: { path: "docs:search" } },
+      { id: "guide", name: "read", arguments: { path: "docs:fixture-search-guide" } },
       { id: "search", name: "search", arguments: { query: "marker", path: "example.ts" } },
     ],
     ["read", "search"],
   );
 
-  expect(documentationDetails(result, "guide")).toMatchObject({ kind: "document", id: "search" });
+  expect(documentationDetails(result, "guide")).toMatchObject({
+    kind: "document",
+    id: "fixture-search-guide",
+  });
   expect(documentationDetails(result, "search")).toBeUndefined();
   expect(getToolExecution(result, "search").isError).toBe(false);
 });
@@ -118,7 +120,7 @@ test("claims a guide once across parallel tool calls", async () => {
     testName: "progressive-docs-parallel-claim",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd: workspace,
-    extensions: [extension],
+    extensions: [extension, guides],
     tools: ["search"],
     environment: {
       PI_AGENT_IDE_TEST_SKIP_GUIDE_PRELOAD: "1",
@@ -158,14 +160,8 @@ test("adds the full guide to an error without changing failure status", async ()
   expect(message.isError).toBe(true);
   expect(documentationDetails(result, "missing-file")).toMatchObject({
     kind: "attachment",
-    ids: ["search"],
+    ids: ["fixture-search-guide"],
   });
-  expect(
-    message.content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n"),
-  ).toContain("# Guide: search");
   expect(documentationDetails(result, "after-error")).toBeUndefined();
   expect(getToolExecution(result, "after-error").isError).toBe(false);
 });
@@ -175,7 +171,11 @@ test("a partial guide read does not consume the full document", async () => {
   const result = await run(
     workspace,
     [
-      { id: "partial-guide", name: "read", arguments: { path: "docs:search", limit: 1 } },
+      {
+        id: "partial-guide",
+        name: "read",
+        arguments: { path: "docs:fixture-search-guide", limit: 1 },
+      },
       { id: "after-partial", name: "search", arguments: { query: "marker", path: "example.ts" } },
     ],
     ["read", "search"],
@@ -201,7 +201,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
     testName: "progressive-docs-native-codemode",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd: workspace,
-    extensions: [extension, "builtin:codemode"],
+    extensions: [extension, guides, "builtin:codemode"],
     tools: ["read", "search", "insert", "codemode"],
     environment: { PI_AGENT_IDE_TEST_SKIP_GUIDE_PRELOAD: "1" },
     conversation: [
@@ -211,7 +211,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-first",
             name: "codemode",
             arguments: {
-              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read !== "string" || !read.includes("marker")) throw new Error("Readable content lost"); if (read.includes("# Guide:")) throw new Error("Guide leaked into nested result"); text("success"); text(await tools.search({query:"marker",path:"example.ts"}).then(value => value.result)); text(await tools.insert({path:"example.ts",anchor:"export const marker = 1;",text:"// changed"}));',
+              code: 'const read = await tools.read({path:"example.ts"}); if (typeof read?.text !== "string" || !read.text.includes("marker")) throw new Error("Readable content lost"); if (read.text !== "export const marker = 1;\\n") throw new Error("Read value changed: " + JSON.stringify(read)); text("success"); const found = await tools.search({query:"marker",path:"example.ts"}); if (found.matches.length !== 1 || found.matches[0].text !== "marker") throw new Error("Search value changed: " + JSON.stringify(found)); text(JSON.stringify(found)); text(await tools.insert({path:"example.ts",after:"export const marker = 1;",text:"// changed\\n"}));',
             },
           }),
         ],
@@ -223,7 +223,7 @@ test("native Codemode returns guides without blocking or replaying mutations", a
             id: "nested-again",
             name: "codemode",
             arguments: {
-              code: 'text(await tools.read({path:"example.ts"}));',
+              code: 'text((await tools.read({path:"example.ts"})).text);',
             },
           }),
         ],
@@ -238,24 +238,23 @@ test("native Codemode returns guides without blocking or replaying mutations", a
       .map((part) => part.text)
       .join("\n");
   expect(getToolExecution(result, "nested-first").isError).toBe(false);
-  for (const id of ["search", "editing"])
-    expect(output("nested-first")).toContain(`# Guide: ${id}`);
-  expect(output("nested-again")).not.toContain("# Guide:");
+  expect(documentationDetails(result, "nested-first")).toMatchObject({
+    kind: "attachment",
+    ids: ["fixture-search-guide", "fixture-insert-guide"],
+  });
+  expect(documentationDetails(result, "nested-again")).toBeUndefined();
   expect(output("nested-again")).toContain("changed");
   expect(await readFile(path.join(workspace, "example.ts"), "utf8")).toBe(
-    "export const marker = 1;\n// changed",
+    "export const marker = 1;\n// changed\n",
   );
 });
-function expectGuideAttachment(result: Awaited<ReturnType<typeof run>>, id: string): void {
-  const message = getToolResultMessage(result, id);
-  expect(message.isError).toBe(false);
-  expect(documentationDetails(result, id)).toMatchObject({ kind: "attachment" });
-  const output = message.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-  expect(output).toContain("# Guide:");
-  expect(output).not.toContain("Repeat the tool call");
+function expectGuideAttachment(
+  result: Awaited<ReturnType<typeof run>>,
+  id: string,
+  ids: readonly string[] = ["fixture-search-guide"],
+): void {
+  expect(getToolExecution(result, id).isError).toBe(false);
+  expect(documentationDetails(result, id)).toMatchObject({ kind: "attachment", ids });
 }
 
 function documentationDetails(result: Awaited<ReturnType<typeof run>>, id: string): unknown {
@@ -270,14 +269,14 @@ test("filters documents with their disabled owner modules", async () => {
   await mkdir(path.join(workspace, ".pi", "pi-agent-ide"), { recursive: true });
   await writeFile(
     path.join(workspace, ".pi", "pi-agent-ide", "extensions.json"),
-    JSON.stringify({ disabled: ["search.core"] }),
+    JSON.stringify({ disabled: ["ide.ast"] }),
   );
   const result = await run(workspace, [
     { id: "list-filtered", name: "read", arguments: { path: "docs:" } },
   ]);
   const details = documentationDetails(result, "list-filtered") as { readonly ids: string[] };
-  expect(details.ids).toContain("editing");
-  expect(details.ids).not.toContain("search");
+  expect(details.ids).toContain("ssh");
+  expect(details.ids).not.toContain("ast-search");
 });
 
 test.each(["resume", "tree", "nested"] as const)(
@@ -316,7 +315,11 @@ test.each(["resume", "tree", "nested"] as const)(
       testName: "progressive-docs-restored",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd: workspace,
-      extensions: [extension, path.resolve("tests/integration/fixtures/restore-tool-history.ts")],
+      extensions: [
+        extension,
+        guides,
+        path.resolve("tests/integration/fixtures/restore-tool-history.ts"),
+      ],
       environment: {
         IDE_RESTORE_SESSION: session,
         IDE_RESTORE_TREE_ROOT: mode === "tree" ? "1" : "0",
@@ -347,7 +350,16 @@ test.each(["direct", "codemode"] as const)(
   "searches packaged guides through %s without consuming their full-read state",
   async (mode) => {
     const workspace = await createWorkspace();
+    const literalQueries = [
+      { id: "docs-trailing-colon", query: "ZinLaptop:", line: 4 },
+      { id: "docs-former-prefix", query: "ast:$NAME", line: 5 },
+    ];
     const calls = [
+      ...literalQueries.map(({ id, query }) => ({
+        id,
+        name: "search",
+        arguments: { path: "docs:search-fixture-one", query },
+      })),
       {
         id: "docs-all",
         name: "search",
@@ -401,7 +413,9 @@ test.each(["direct", "codemode"] as const)(
                       id: call.id,
                       name: "codemode",
                       arguments: {
-                        code: `try { text(await tools.search(${JSON.stringify(call.arguments)}).then(value => value.result)); } catch (error) { text(String(error)); }`,
+                        // A failed Search resolves to null; its reason ends the Codemode result.
+                        // Guide matches select no text, so neither they nor the list have ids.
+                        code: `const value = await tools.search(${JSON.stringify(call.arguments)}); text(value === null ? "search failed" : value.matches.map((match) => match.path + ":" + match.line + ":" + ("id" in match ? "id" : "") + ":" + match.text).join("\\n") + "\\n" + JSON.stringify({ complete: value.complete, id: "id" in value }));`,
                       },
                     },
               ),
@@ -421,15 +435,43 @@ test.each(["direct", "codemode"] as const)(
         .content.filter((part) => part.type === "text")
         .map((part) => part.text)
         .join("\n");
+    for (const { id, query, line } of literalQueries) {
+      if (mode === "direct") {
+        expect(getToolResultMessage(result, id).details).toMatchObject({
+          payload: {
+            complete: true,
+            matches: [{ source: "docs:search-fixture-one", lineNumber: line, matchedText: query }],
+          },
+        });
+      } else {
+        expect(resultText(id)).toContain(`docs:search-fixture-one:${line}::${query}`);
+      }
+    }
     expect(resultText("docs-all")).toContain("docs:search-fixture-one:2:");
     expect(resultText("docs-all")).toContain("docs:search-fixture-two:2:");
     expect(resultText("docs-regex")).toContain("docs:search-fixture-one:2:");
     expect(resultText("docs-regex")).toContain("docs:search-fixture-two:2:");
     expect(resultText("docs-one")).not.toContain("docs:search-fixture-two");
-    expect(resultText("docs-one")).toContain("incomplete");
-    expect(resultText("docs-empty")).toContain("No matches");
-    expect(resultText("docs-missing")).toContain("Unknown documentation ID");
-    expect(resultText("docs-bare")).toContain("Use docs:all");
+    if (mode === "direct") {
+      expect(getToolResultMessage(result, "docs-one").details).toMatchObject({
+        payload: { complete: false, reason: "limit", matches: [expect.any(Object)] },
+      });
+      expect(getToolResultMessage(result, "docs-empty").details).toMatchObject({
+        payload: { complete: true, matches: [] },
+      });
+    } else {
+      expect(resultText("docs-one")).toContain('{"complete":false,"id":false}');
+      expect(resultText("docs-empty")).toContain('{"complete":true,"id":false}');
+      expect(resultText("docs-empty")).not.toMatch(/^docs:/mu);
+      for (const id of ["docs-all", "docs-regex"]) {
+        expect(resultText(id)).toContain('{"complete":true,"id":false}');
+        expect(resultText(id)).not.toMatch(/:id:/mu);
+      }
+    }
+    if (mode === "codemode")
+      for (const id of ["docs-missing", "docs-bare"]) {
+        expect(resultText(id)).toContain("search failed");
+      }
     expect(resultText("docs-all")).not.toContain("SEARCH#");
     const attached = documentationDetails(result, "after-docs-search") as {
       kind: string;
@@ -472,7 +514,7 @@ async function run(
     testName: calls[0]?.id ?? "progressive-docs",
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd,
-    extensions: [extension, ...(tools.includes("codemode") ? ["builtin:codemode"] : [])],
+    extensions: [extension, guides, ...(tools.includes("codemode") ? ["builtin:codemode"] : [])],
     tools,
     environment: {
       PI_AGENT_IDE_TEST_SKIP_GUIDE_PRELOAD: "1",

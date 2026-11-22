@@ -17,7 +17,7 @@ export function writeProblemNotices(results: readonly FileMutationResult[]): str
     if (
       result.data.diffStatuses?.some(
         (status) =>
-          status.origin !== "after-edit" &&
+          status.origin === undefined &&
           (status.tone === "warning" || status.tone === "error") &&
           (status.formattingStatus === undefined ||
             status.formattingStatus !== result.data.formatting?.status),
@@ -25,7 +25,7 @@ export function writeProblemNotices(results: readonly FileMutationResult[]): str
     )
       notices.add("Post-edit processing was interrupted or incomplete.");
     for (const status of result.data.diffStatuses ?? [])
-      if (status.origin === "after-edit") notices.add(status.text);
+      if (status.origin !== undefined) notices.add(status.text);
   }
   return [...notices];
 }
@@ -59,13 +59,16 @@ export function writeAgentResult(
         : outcome.data?.effect === "unknown"
           ? "Write outcome unknown."
           : "Write failed; no file was written.";
-  const reason = outcome.errors[0]?.message.split(/\r?\n/u)[0]?.slice(0, 200);
+  const error = outcome.errors[0];
+  const conflict = error?.code === "CONFLICT";
+  // Preserve the complete recovery call, including long paths.
+  const reason = conflict ? error.message : error?.message.split(/\r?\n/u)[0]?.slice(0, 200);
   const lines = [
     status,
     ...((source ?? fallback) ? [`Path: ${source ?? fallback}`] : []),
     ...(reason ? [`Reason: ${reason}`] : []),
     ...writeProblemNotices(result.details.results ?? []),
-    "Read the file if you need its content.",
+    ...(conflict ? [] : ["Read the file if you need its content."]),
   ];
   return { ...result, content: [{ type: "text", text: lines.join("\n") }] };
 }

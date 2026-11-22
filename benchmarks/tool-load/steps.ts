@@ -96,29 +96,29 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       { path: file, offset: lineOf(files, unit), limit: readLimit(files), views: ["anchors"] },
       (result) =>
         expectAll(result, [`|${unitMarker(spec, agent, unit)}`]) ??
-        (/\d+#[0-9A-F]{4}\|/.test(result) ? undefined : "no LINE#HASH anchors"),
+        (/^[0-9A-HJKMNP-TV-Z]{7}\|/mu.test(result) ? undefined : "no line anchors"),
     ),
     {
-      ...step("read-outline", "read", { path: `ast:${file}`, limit: 40 }, (result) =>
+      ...step("read-outline", "outline", { path: file }, (result) =>
         files.sizeBytes > AST_OUTLINE_LIMIT_BYTES
           ? expectAll(result, ["AST outline limit"])
           : expectAll(result, [unitName(agent, 0), "scope-begin-"]),
       ),
       expectsError: files.sizeBytes > AST_OUTLINE_LIMIT_BYTES,
     },
-    step("search-file", "search", { query: `"${name}"`, path: file }, (result) =>
+    step("search-file", "search", { query: name, path: file }, (result) =>
       expectAll(result, ["2 matches in 1 file"]),
     ),
     step(
       "search-project",
       "search",
-      { query: `"${stepLine}"`, path: "src", include: `*.${spec.extension}` },
+      { query: stepLine, path: "src", include: `*.${spec.extension}` },
       (result) => expectAll(result, ["1 match in 1 file", file]),
     ),
     step(
       "replace-text",
       "replace",
-      { path: file, start: stepLine, text: `${stepLine} + ${cycle}` },
+      { path: file, at: stepLine, text: `${stepLine} + ${cycle}` },
       (result) => expectAll(result, ["Replaced selected text", `${stepLine} + ${cycle}`]),
     ),
     step(
@@ -142,7 +142,7 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
       (result) => expectAll(result, ["Inserted new text", spec.brokenLine(agent, cycle)]),
     ),
     {
-      ...step("read-diagnostics", "read", { path: `diagnostics:${file}` }, (result) =>
+      ...step("diagnostics", "diagnostics", { path: file }, (result) =>
         expectErrorOn(result, spec.brokenLine(agent, cycle)),
       ),
       // A shared file can change faster than its server checks it, so no revision settles.
@@ -165,23 +165,19 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
     ),
     step(
       "move-symbol-out",
-      "move",
+      "codemode",
       {
-        path: `symbol:${file}#${detachedName(agent, detached)}`,
-        target: scratch,
-        targetStart: "end",
+        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(file + "#" + detachedName(agent, detached))}}); const moved = await tools.move({path:declaration, target:${JSON.stringify(scratch)}, targetStart:"end"}); if (!moved) throw Error("Declaration move failed"); text("declaration moved");`,
       },
-      (result) => expectAll(result, ["Moved selected text", detachedName(agent, detached)]),
+      (result) => expectAll(result, ["declaration moved"]),
     ),
     step(
       "move-symbol-back",
-      "move",
+      "codemode",
       {
-        path: `symbol:${scratch}#${detachedName(agent, detached)}`,
-        target: file,
-        targetStart: detachedMarker(spec, agent, detached),
+        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(scratch + "#" + detachedName(agent, detached))}}); const moved = await tools.move({path:declaration, target:${JSON.stringify(file)}, targetStart:${JSON.stringify(detachedMarker(spec, agent, detached))}}); if (!moved) throw Error("Declaration move failed"); text("declaration moved");`,
       },
-      (result) => expectAll(result, ["Moved selected text", detachedName(agent, detached)]),
+      (result) => expectAll(result, ["declaration moved"]),
     ),
     step(
       "copy-text",
@@ -212,12 +208,11 @@ function cycleSteps(spec: LanguageSpec, files: AgentFiles, cycle: number): Step[
     ),
     step(
       "replace-symbol",
-      "replace",
+      "codemode",
       {
-        path: `symbol:${file}#${unitName(agent, symbolUnit)}`,
-        text: functionText(spec, agent, symbolUnit, cycle),
+        code: `const declaration = await tools.lsp_search({declaration:${JSON.stringify(file + "#" + unitName(agent, symbolUnit))}}); const edited = await tools.replace({path:declaration, text:${JSON.stringify(functionText(spec, agent, symbolUnit, cycle))}}); if (!edited) throw Error("Declaration edit failed"); text("declaration edited");`,
       },
-      (result) => expectAll(result, ["Replaced selected text", `total + ${cycle} + `]),
+      (result) => expectAll(result, ["declaration edited"]),
     ),
     step(
       "codemode-batch",
@@ -255,20 +250,20 @@ function codemodeBatch(
   const name = unitName(files.agent, index);
   return `const file = ${JSON.stringify(files.file)};
 const stepLine = ${JSON.stringify(stepLine)};
-const page = String(await tools.read({ path: file, offset: ${lineOf(files, index)}, limit: ${readLimit(files)}, views: ["anchors"] }));
+const page = (await tools.read({ path: file, offset: ${lineOf(files, index)}, limit: ${readLimit(files)}, views: ["anchors"] })).text;
 const line = page.split("\\n").find((candidate) => candidate.includes(stepLine));
-const match = line && /^\\s*(\\d+#[0-9A-F]{4})\\|(.*)$/.exec(line);
+const match = line && /^\\s*([0-9A-HJKMNP-TV-Z]{7})\\|(.*)$/.exec(line);
 if (!match) throw new Error("no anchored line with " + stepLine);
-await tools.replace({ path: file, start: match[1], text: match[2].replace(stepLine, stepLine + " + ${cycle}") });
+await tools.replace({ path: file, at: match[1], text: match[2].replace(stepLine, stepLine + " + ${cycle}") });
 const [found, calls, diagnostics] = await Promise.all([
-  tools.search({ query: JSON.stringify(stepLine + " + ${cycle}"), path: file }),
+  tools.search({ query: stepLine + " + ${cycle}", path: file }),
   tools.ast_search({ pattern: ${JSON.stringify(`${name}($A)`)}, path: file, language: ${JSON.stringify(spec.astLanguage)} }),
-  tools.read({ path: "diagnostics:" + file }),
+  tools.diagnostics({ path: file }),
 ]);
-if (!String(found.result).includes("1 match in 1 file")) throw new Error("search after replace: " + found.result);
-if (!calls.hasMatches) throw new Error("ast_search found no call of ${name}");
+if (found?.matches?.length !== 1) throw new Error("search after replace: " + JSON.stringify(found));
+if (!(calls?.matches?.length > 0)) throw new Error("ast_search found no call of ${name}");
 // Other agents' error lines in a shared file are theirs to check.
-const errors = String(diagnostics).split("\\n").filter((entry) => entry.includes("[ERROR]") && !/broken_a\\d+_\\d+/i.test(entry));
+const errors = (diagnostics?.text ?? "").split("\\n").filter((entry) => entry.includes("[ERROR]") && !/broken_a\\d+_\\d+/i.test(entry));
 if (errors.length > 0) throw new Error("unexpected diagnostics: " + errors.join("\\n"));
 text("codemode batch ok");`;
 }

@@ -11,11 +11,12 @@ import {
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const extension = path.resolve("src/pi-agent-ide.ts");
 
 for (const [name, original, payload, mode, expected] of [
-  ["unterminated EOF", "anchor", "new\n\n", "line", "anchor\nnew\n\n"],
+  ["unterminated EOF with a trailing empty line", "anchor", "new\n\n", "line", "anchor\nnew\n"],
   ["LF block", "A\nB\n", "X", "blank-line", "A\n\nX\n\nB\n"],
   ["existing LF separator", "A\n\nB\n", "X", "blank-line", "A\n\nX\n\nB\n"],
   ["CRLF block", "A\r\nB\r\n", "X", "blank-line", "A\r\n\r\nX\r\n\r\nB\r\n"],
@@ -32,17 +33,13 @@ for (const [name, original, payload, mode, expected] of [
         tools: ["read", "insert"],
         conversation: [
           assistantMessage(
-            [toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } })],
-            { stopReason: "toolUse" },
-          ),
-          assistantMessage(
             [
               toolCall({
                 id: "insert",
                 name: "insert",
                 arguments: {
                   path: "standalone.txt",
-                  anchor: original.startsWith("anchor") ? "anchor" : "A",
+                  after: formatLineHashAnchor(original, 1),
                   text: payload,
                   separation: mode,
                 },
@@ -70,15 +67,11 @@ test("real Pi rejects empty insert without changing EOF bytes", async () => {
       tools: ["read", "insert"],
       conversation: [
         assistantMessage(
-          [toolCall({ id: "editing-guide", name: "read", arguments: { path: "docs:editing" } })],
-          { stopReason: "toolUse" },
-        ),
-        assistantMessage(
           [
             toolCall({
               id: "insert",
               name: "insert",
-              arguments: { path: "standalone.txt", anchor: "anchor", text: "" },
+              arguments: { path: "standalone.txt", after: "anchor", text: "" },
             }),
           ],
           { stopReason: "toolUse" },

@@ -4,10 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { randomUUID } from "node:crypto";
-import { stripVTControlCharacters } from "node:util";
 import { StringDecoder } from "node:string_decoder";
 import type { ResolvedSshSource } from "#src/backend/registry.ts";
-import { remoteBashProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { targetOs } from "#src/backend/ssh-transport.ts";
+import { remoteShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
+import { TerminalTextStream } from "#src/plugins/pi-agent-ide-terminal/src/terminal-text.ts";
+import { preserveUnixPtyOutput } from "#src/plugins/pi-agent-ide-terminal/src/unix-pty-output.ts";
 
 import type { Terminal as XtermTerminal } from "@xterm/headless";
 import type { IPty, IPtyForkOptions, IWindowsPtyForkOptions } from "node-pty";
@@ -27,6 +29,22 @@ const STOP_GRACE_MS = 2_000;
 // Finished sessions keep their output and virtual screen in memory. Bound how many stay so a
 // long-lived Pi process does not grow with every command it has ever run.
 const MAX_FINISHED_SESSIONS = 50;
+const SESSION_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,47}$/u;
+const GENERATED_ID = /^[a-f0-9]{12}$/u;
+
+/** Address part after `shell:`: a session name or a generated ID. */
+export function isTerminalAddress(value: string): boolean {
+  return SESSION_NAME.test(value);
+}
+
+/** Explain why a session name cannot be used, or return undefined for a valid name. */
+export function terminalNameSyntaxProblem(name: string): string | undefined {
+  if (!SESSION_NAME.test(name))
+    return "Use 1 to 48 letters, digits, '.', '_' or '-', starting with a letter or digit.";
+  if (GENERATED_ID.test(name))
+    return "Twelve lowercase hexadecimal characters are reserved for generated addresses.";
+  return undefined;
+}
 
 type SessionListener = (session: TerminalSession) => void;
 
@@ -34,9 +52,13 @@ type SessionListener = (session: TerminalSession) => void;
 export class TerminalSessionManager {
   readonly #createId: () => string;
   readonly #sessions = new Map<string, TerminalSession>();
+  /** Session names, including sessions whose remote start is still pending, mapped to IDs. */
+  readonly #names = new Map<string, string>();
   readonly #changeListeners = new Set<SessionListener>();
   readonly #completionListeners = new Set<SessionListener>();
   readonly #outputLogs = new Map<string, number>();
+  /** Each session's text follows its own cursor; sessions kept across reload start a new one. */
+  readonly #outputText = new WeakMap<TerminalSession, TerminalTextStream>();
   readonly #pendingStarts = new Map<
     string,
     { readonly abort: AbortController; readonly completion: Promise<TerminalSession> }
@@ -63,13 +85,53 @@ export class TerminalSessionManager {
       .map((session) => this.snapshot(session));
   }
 
-  public get(sourceOrId: string): TerminalSession | undefined {
-    return this.#sessions.get(normalizeSessionId(sourceOrId));
+  /** List sessions owned by one Pi session, plus sessions whose owner is unknown. */
+  public listOwnedBy(sessionId: string | undefined): readonly TerminalSessionSnapshot[] {
+    return this.list().filter(
+      (snapshot) => snapshot.origin === undefined || snapshot.origin.sessionId === sessionId,
+    );
+  }
+
+  /** Find a session by its current address, with or without the `shell:` prefix. */
+  public get(source: string): TerminalSession | undefined {
+    const address = normalizeSessionId(source);
+    const named = this.#names.get(address);
+    if (named !== undefined) return this.#sessions.get(named);
+    const session = this.#sessions.get(address);
+    return session?.name === undefined ? session : undefined;
+  }
+
+  /** Find a session by its generated ID, regardless of its current address. */
+  public getById(id: string): TerminalSession | undefined {
+    return this.#sessions.get(id);
+  }
+
+  /** Explain why a name cannot be given to a session, or return undefined when it is free. */
+  public nameProblem(name: string): string | undefined {
+    const syntax = terminalNameSyntaxProblem(name);
+    if (syntax !== undefined) return syntax;
+    if (this.#names.has(name)) return `shell:${name} is already used by another session.`;
+    return undefined;
+  }
+
+  /** Give a session a new name; its previous address stops resolving. */
+  public rename(source: string, name: string): TerminalSession {
+    const session = this.required(source);
+    if (session.name === name) return session;
+    const problem = this.nameProblem(name);
+    if (problem !== undefined) throw new Error(`Cannot rename ${session.source}: ${problem}`);
+    if (session.name !== undefined) this.#names.delete(session.name);
+    this.#names.set(name, session.id);
+    session.name = name;
+    session.source = `shell:${name}`;
+    this.#emitChanged(session);
+    return session;
   }
 
   public snapshot(session: TerminalSession, now = Date.now()): TerminalSessionSnapshot {
     return {
       id: session.id,
+      ...(session.name === undefined ? {} : { name: session.name }),
       source: session.source,
       ...(session.origin === undefined ? {} : { origin: session.origin }),
       command: session.command,
@@ -114,6 +176,7 @@ export class TerminalSessionManager {
 
   public start(options: {
     readonly command: string;
+    readonly name?: string;
     readonly background: boolean;
     readonly cwd: string;
     readonly shell: ShellProfile;
@@ -164,6 +227,7 @@ export class TerminalSessionManager {
     const session: TerminalSession = { ...base, process };
     this.#sessions.set(id, session);
     process.onData((data) => this.#appendOutput(session, data));
+    if (globalThis.process.platform !== "win32") preserveUnixPtyOutput(process);
     // Answer terminal queries such as PowerShell's startup device-attributes probe, which
     // otherwise waits about two seconds for a reply under the bundled ConPTY.
     if (globalThis.process.platform === "win32")
@@ -192,6 +256,7 @@ export class TerminalSessionManager {
 
   #createSession(options: {
     readonly command: string;
+    readonly name?: string;
     readonly background: boolean;
     readonly cwd: string;
     readonly shell: ShellProfile;
@@ -200,8 +265,13 @@ export class TerminalSessionManager {
   }): TerminalSession {
     if (this.#disposed) throw new Error("Terminal session manager is closed");
     const id = this.#createId();
-    if (!/^[a-f0-9]{12}$/u.test(id) || this.#sessions.has(id) || this.#pendingStarts.has(id))
+    if (!GENERATED_ID.test(id) || this.#sessions.has(id) || this.#pendingStarts.has(id))
       throw new Error("Terminal session IDs must be unique 12-character hexadecimal values");
+    const name =
+      options.name !== undefined && this.nameProblem(options.name) === undefined
+        ? options.name
+        : undefined;
+    if (name !== undefined) this.#names.set(name, id);
     const fullOutputPath = createOutputLog(id);
     this.#outputLogs.set(id, openSync(fullOutputPath, "a", 0o600));
     const cols = options.cols ?? DEFAULT_COLS;
@@ -213,7 +283,8 @@ export class TerminalSessionManager {
     });
     return {
       id,
-      source: `shell:${id}`,
+      ...(name === undefined ? {} : { name }),
+      source: `shell:${name ?? id}`,
       command: options.command,
       background: options.background,
       cwd: options.cwd,
@@ -238,13 +309,14 @@ export class TerminalSessionManager {
   /** Start remote Bash through the same output, screen, input and session lifetime model. */
   public async startRemote(options: {
     readonly command: string;
+    readonly name?: string;
     readonly background: boolean;
     readonly remote: ResolvedSshSource;
     readonly cols?: number;
     readonly rows?: number;
     readonly signal?: AbortSignal;
   }): Promise<TerminalSession> {
-    const shell = remoteBashProfile;
+    const shell = remoteShellProfile(targetOs(options.remote.backend.target));
     const base = this.#createSession({ ...options, cwd: options.remote.location.source, shell });
     const startupAbort = new AbortController();
     this.#pendingStarts.set(base.id, { abort: startupAbort, completion: base.completion });
@@ -523,7 +595,7 @@ export class TerminalSessionManager {
     session.screen.dispose();
     this.#closeOutputLog(session.id);
     rmSync(session.fullOutputPath, { force: true });
-    this.#sessions.delete(session.id);
+    this.#forget(session);
     this.#emitChanged(session);
   }
   public async screenLines(sourceOrId: string): Promise<readonly string[]> {
@@ -580,7 +652,13 @@ export class TerminalSessionManager {
 
   #appendOutput(session: TerminalSession, data: string): void {
     session.lastActivityAt = Date.now();
-    const plain = stripVTControlCharacters(data);
+    let text = this.#outputText.get(session);
+    if (!text) {
+      const { screen } = session;
+      text = new TerminalTextStream(() => ({ cols: screen.cols, rows: screen.rows }));
+      this.#outputText.set(session, text);
+    }
+    const plain = text.write(data);
     const descriptor = this.#outputLogs.get(session.id);
     if (descriptor !== undefined) writeSync(descriptor, plain);
     session.output += plain;
@@ -626,8 +704,14 @@ export class TerminalSessionManager {
       if (session.background && !session.completionDelivered) continue;
       session.screen.dispose();
       this.#closeOutputLog(session.id);
-      this.#sessions.delete(session.id);
+      this.#forget(session);
     }
+  }
+
+  #forget(session: TerminalSession): void {
+    this.#sessions.delete(session.id);
+    if (session.name !== undefined && this.#names.get(session.name) === session.id)
+      this.#names.delete(session.name);
   }
 }
 

@@ -198,6 +198,57 @@ test.each([
     }
   },
 );
+/** A selection resolved in `resolvedIn`, read from a source whose text is now `current`. */
+function readSelectionOf(resolvedIn: string, current: string, line: number) {
+  const read = createReadTool();
+  read.registerContributions("fixture", {
+    resolvers: [{ resolver: textResolver(current) }],
+    targetResolvers: [
+      {
+        resolver: {
+          id: "targets",
+          tryResolve: () => ({
+            kind: "resolved",
+            targets: [
+              {
+                source: "names.txt",
+                expectedContent: resolvedIn,
+                ranges: [
+                  { start: { lineNumber: line, column: 0 }, end: { lineNumber: line, column: 5 } },
+                ],
+              },
+            ],
+          }),
+        },
+      },
+    ],
+  });
+  return read;
+}
+
+test("a selection resolved in older text shows its own lines after another session moved them", async () => {
+  const read = readSelectionOf("alpha\nmatch\nomega\n", "peer\nalpha\nmatch\nomega\n", 2);
+  try {
+    const result = await read.execute({ path: "selection" }, { cwd: process.cwd() }, "script");
+    expect(result.isError).not.toBe(true);
+    expect(result.script).toMatchObject({ kind: "text", startLine: 3, content: "match\n" });
+  } finally {
+    await read.dispose();
+  }
+});
+
+test("a selection whose own line another session changed is rejected, not shown elsewhere", async () => {
+  const read = readSelectionOf("alpha\nmatch\nomega\n", "alpha\nmatcher\nomega\n", 2);
+  try {
+    const result = await read.execute({ path: "selection" }, { cwd: process.cwd() });
+    expect(result.isError).toBe(true);
+    const block = result.content[0];
+    expect(block?.type === "text" ? block.text : "").toContain("line 2");
+  } finally {
+    await read.dispose();
+  }
+});
+
 test("script multi-target reads keep every selected resource", async () => {
   const read = createReadTool();
   read.registerContributions("fixture", {
@@ -445,7 +496,7 @@ test("presents text before projecting the read result", async () => {
         resource: {
           source,
           async read() {
-            return [{ type: "text", text: "alpha" }];
+            return [{ type: "text", text: "alpha\n" }];
           },
         },
       };
@@ -475,10 +526,10 @@ test("presents text before projecting the read result", async () => {
   });
 
   const raw = await executeRead(read, "notes.txt");
-  expect(raw.content).toEqual([{ type: "text", text: "alpha" }]);
+  expect(raw.content).toEqual([{ type: "text", text: "alpha\n" }]);
 
   const annotated = await executeRead(read, "notes.txt", ["fixture"]);
-  expect(annotated.content).toEqual([{ type: "text", text: "anchor|alpha" }]);
+  expect(annotated.content).toEqual([{ type: "text", text: "anchor|alpha\n" }]);
 });
 
 test("a read of a line range presents only those lines unless a view shows lines outside it", async () => {
@@ -600,7 +651,7 @@ test("runs text presenters in parallel and merges them in priority order", async
         resource: {
           source,
           async read() {
-            return [{ type: "text", text: "alpha" }];
+            return [{ type: "text", text: "alpha\n" }];
           },
         },
       };
@@ -657,7 +708,7 @@ test("runs text presenters in parallel and merges them in priority order", async
     await resultReady;
   }
   const result = await resultReady;
-  expect(result.content).toEqual([{ type: "text", text: "ABalpha" }]);
+  expect(result.content).toEqual([{ type: "text", text: "ABalpha\n" }]);
 });
 
 test("truncates large text at Pi's line and byte limits and tells the agent how to continue", async () => {
@@ -791,6 +842,130 @@ test("saves opt-in truncated output and reads the temporary protocol without pre
     expect(remainder.details).toMatchObject({ source: temporarySource, resolvedBy: "temp" });
     expect(presenterCalls).toBe(1);
     expect(preReadCalls).toBe(1);
+  } finally {
+    await read.dispose();
+  }
+});
+
+test("a Read that another tool issued returns its whole text and keeps window notices", async () => {
+  const lines = Array.from({ length: DEFAULT_MAX_LINES + 500 }, (_, index) => `line ${index + 1}`);
+  const read = createReadTool(undefined, "compact", undefined, (id) => id.startsWith("codemode/"));
+  const limits: (string | undefined)[] = [];
+  read.registerContributions("dynamic-plugin", {
+    resolvers: [{ resolver: textResolver(lines.join("\n")), preserveTruncatedOutput: true }],
+    handlers: [
+      {
+        stage: "post-read",
+        handler(context) {
+          limits.push(context.outputLimit);
+          return { kind: "continue", context };
+        },
+      },
+    ],
+  });
+  const execute = (id: string, request: { path: string; offset?: number; limit?: number }) =>
+    read.tool.execute(id, request, undefined, undefined, { cwd: "/workspace" } as never);
+
+  try {
+    const nested = await execute("codemode/1", { path: "dynamic:report" });
+    expect(nested.content).toEqual([{ type: "text", text: lines.join("\n") }]);
+    expect(nested.details.temporarySource).toBeUndefined();
+    const page = await execute("codemode/2", { path: "dynamic:report", offset: 1, limit: 2 });
+    expect(page.content).toEqual([
+      {
+        type: "text",
+        text: `line 1\nline 2\n\n[${lines.length - 2} more lines in source. Read "dynamic:report" with offset=3 to continue.]`,
+      },
+    ]);
+    const direct = await execute("model-call", { path: "dynamic:report" });
+    const block = direct.content[0];
+    if (block?.type !== "text") throw new Error("Expected text");
+    expect(block.text).not.toContain(lines.at(-1));
+    expect(direct.details.temporarySource).toMatch(/^temp:/u);
+    expect(limits).toEqual(["none", "none", "model"]);
+  } finally {
+    await read.dispose();
+  }
+});
+
+test("a Read that another tool issued keeps complete data with its exact text", async () => {
+  const lines = Array.from({ length: 2500 }, (_, index) => `line ${index + 1}`);
+  const source = `${lines.join("\n")}\n`;
+  const read = createReadTool(undefined, "compact", undefined, (id) => id.startsWith("codemode/"));
+  read.registerContributions("dynamic-plugin", {
+    resolvers: [{ resolver: textResolver(source), preserveTruncatedOutput: true }],
+  });
+  const execute = (id: string, request: { path: string; offset?: number; limit?: number }) =>
+    read.tool.execute(id, request, undefined, undefined, { cwd: "/workspace" } as never);
+  const data = (result: { structuredContent?: unknown }) =>
+    (result.structuredContent as { data: Record<string, unknown> }).data;
+
+  try {
+    const whole = data(await execute("codemode/1", { path: "dynamic:report" }));
+    expect(whole.text).toBe(source);
+    expect(whole.lines).toHaveLength(2500);
+    expect(whole.truncated).toBe(false);
+    const page = data(await execute("codemode/2", { path: "dynamic:report", offset: 2, limit: 2 }));
+    expect(page.text).toBe("line 2\nline 3\n");
+    const direct = data(await execute("model-call", { path: "dynamic:report" }));
+    expect(direct.text).toBeUndefined();
+    expect(direct.lines).toHaveLength(2000);
+  } finally {
+    await read.dispose();
+  }
+});
+
+test("an array path reads each source on its own and keeps the failures", async () => {
+  const read = createReadTool();
+  read.registerContributions("dynamic-plugin", {
+    resolvers: [
+      {
+        resolver: {
+          id: "fixture-list",
+          async tryResolve(source) {
+            if (source.endsWith("missing"))
+              return { kind: "failed", error: new Error("Source not found.") };
+            return {
+              kind: "resolved",
+              resource: { source, read: async () => [{ type: "text", text: `${source}\n` }] },
+            };
+          },
+        },
+        preserveTruncatedOutput: true,
+      },
+    ],
+  });
+  const execute = (path: string[]) =>
+    read.tool.execute("list-read", { path }, undefined, undefined, {
+      cwd: "/workspace",
+    } as never);
+
+  try {
+    const partial = await execute(["dynamic:a", "dynamic:missing", "dynamic:b"]);
+    expect(partial.isError).toBe(true);
+    expect(partial.structuredContent).toMatchObject({
+      status: "partial",
+      data: {
+        kind: "list",
+        items: [
+          { status: "success", data: { kind: "text", source: "dynamic:a" } },
+          { status: "error" },
+          { status: "success", data: { kind: "text", source: "dynamic:b" } },
+        ],
+      },
+      errors: [{ source: "dynamic:missing" }],
+    });
+    expect(partial.content.map((block) => (block.type === "text" ? block.text : ""))).toEqual([
+      "--- dynamic:a ---",
+      "dynamic:a\n",
+      "--- dynamic:missing ---",
+      expect.stringContaining("Source not found."),
+      "--- dynamic:b ---",
+      "dynamic:b\n",
+    ]);
+    const complete = await execute(["dynamic:a", "dynamic:b"]);
+    expect(complete.isError).toBe(false);
+    expect(complete.structuredContent).toMatchObject({ status: "success", errors: [] });
   } finally {
     await read.dispose();
   }

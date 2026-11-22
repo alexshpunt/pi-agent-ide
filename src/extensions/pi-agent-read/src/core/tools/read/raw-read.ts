@@ -25,15 +25,22 @@ const DISPLAY_BUDGET =
 type RawContext = { cwd: string; signal?: AbortSignal };
 type RawGuard = { readonly registration: ReadResourceGuardRegistration };
 
-/** Read original file or provider bytes, without conversion or source annotations. */
+/**
+ * Read original file or provider bytes, without conversion or source annotations. Script reads,
+ * and reads another tool issued (`outputLimit: "none"`), get every requested byte as data; the
+ * hex view of the latter stays bounded.
+ */
 export async function readRaw(
   request: ReadRequest,
   context: RawContext,
   audience: "agent" | "script",
   guards: readonly RawGuard[] = [],
   resolvers: readonly ResourceResolver[] = [],
+  outputLimit: "model" | "none" = "model",
 ): Promise<ReadToolResult> {
   const requested = request.path ?? "";
+  const complete = audience === "script" || outputLimit === "none";
+  const display = audience === "script" ? undefined : DISPLAY_BUDGET;
   try {
     if ((request.views?.length ?? 0) > 0)
       throw new Error(
@@ -66,12 +73,11 @@ export async function readRaw(
         const blocked = await checkGuards(request, source, context, audience, guards);
         if (blocked) return blocked;
         context.signal?.throwIfAborted();
-        const readLimit =
-          audience === "script" ? limit : Math.min(limit ?? DISPLAY_BUDGET, DISPLAY_BUDGET);
+        const readLimit = complete ? limit : Math.min(limit ?? DISPLAY_BUDGET, DISPLAY_BUDGET);
         const range = await resource.readBytes(offset, readLimit, context);
         context.signal?.throwIfAborted();
         validateByteRange(range, offset, readLimit);
-        return rawResult(source, range, limit);
+        return rawResult(source, range, limit, display);
       }
       throw new Error(`No byte resource resolver handled ${input}`);
     }
@@ -90,8 +96,7 @@ export async function readRaw(
       if (!stat.isFile()) throw new Error("Raw reads require a regular file");
       const start = Math.min(stat.size, Math.max(0, offset < 0 ? stat.size + offset : offset));
       const requestedLength = Math.min(limit ?? stat.size, stat.size - start);
-      const length =
-        audience === "script" ? requestedLength : Math.min(requestedLength, DISPLAY_BUDGET);
+      const length = complete ? requestedLength : Math.min(requestedLength, DISPLAY_BUDGET);
       const buffer = Buffer.alloc(length);
       let count = 0;
       while (count < length) {
@@ -105,6 +110,7 @@ export async function readRaw(
         source,
         { bytes: buffer.subarray(0, count), byteOffset: start, totalBytes: stat.size },
         limit,
+        display,
       );
     } finally {
       await handle.close();
@@ -179,21 +185,24 @@ function validateByteRange(
     throw new Error("Byte resource returned an invalid range");
 }
 
+/** `display` bounds the bytes the hex view shows; the script data keeps every byte read. */
 function rawResult(
   source: string,
   range: ResourceByteRange,
   limit: number | undefined,
+  display?: number,
 ): ReadToolResult {
   const { bytes, byteOffset: start, totalBytes } = range;
   const count = bytes.length;
-  const nextOffset = start + count;
+  const shown = display === undefined ? bytes : bytes.subarray(0, display);
+  const nextOffset = start + shown.length;
   const requestedLength = Math.min(limit ?? totalBytes, totalBytes - start);
   const header = `${source}\nBytes ${start}..${nextOffset} (end exclusive), ${totalBytes} bytes total`;
-  const rows = formatRawBytes(bytes, start);
+  const rows = formatRawBytes(shown, start);
   const continuation =
     nextOffset >= totalBytes
       ? ""
-      : count < requestedLength
+      : shown.length < requestedLength
         ? `\n[Output limited. Read ${JSON.stringify(source)} with offset=${nextOffset} to continue.]`
         : `\nUse offset=${nextOffset} to continue in bytes.`;
   return {

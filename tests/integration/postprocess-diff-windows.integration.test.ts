@@ -62,7 +62,7 @@ test.each([false, true])(
                 name: "replace",
                 arguments: {
                   path: "local.case",
-                  start: `const value${n} = ${n};`,
+                  at: `const value${n} = ${n};`,
                   text: `const value${n} = build(${n});`,
                 },
               }),

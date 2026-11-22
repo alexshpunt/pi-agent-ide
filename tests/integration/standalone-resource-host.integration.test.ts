@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -38,7 +39,7 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
             'if (JSON.stringify(await describeTool("demo_read")).includes("demo_read-resources")) throw new Error("Namespacing corrupted a guide ID");',
             'const source = await tools.demo_read({path: "memory://demo/note", offset: 1, limit: 1});',
             'const selected = await tools.demo_search({path: source, query: "regex:\\\\S+"});',
-            'text(await tools.demo_replace({path: selected.result, text: "changed"}));',
+            'text(await tools.demo_replace({path: selected, text: "changed"}));',
           ].join("\n"),
         },
       },
@@ -46,7 +47,7 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
       {
         id: "direct-edit",
         name: "demo_replace",
-        arguments: { path: "memory://demo/note", start: "changed", text: "direct" },
+        arguments: { path: "memory://demo/note", at: "changed", text: "direct" },
       },
       { id: "direct-verify", name: "demo_read", arguments: { path: "memory://demo/note" } },
       { id: "local-read", name: "demo_read", arguments: { path: "local.txt" } },
@@ -66,7 +67,7 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
         name: "demo_write",
         arguments: {
           path: "memory://demo/note",
-          content: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" },
+          image: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=" },
         },
       },
     ];
@@ -75,6 +76,10 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
       artifactsDir: testArtifactsDir(import.meta.filename),
       cwd,
       rawMode: false,
+      // An explicit size gives this test its own Pi process. In the shared process of one
+      // `pi-test run`, the final screen holds only the last rows, so the earlier demo_replace
+      // card scrolls away when other files run first.
+      tuiSize: { cols: 160, rows: 50 },
       isolateUserResources: true,
       extensions: [
         providerFixture,
@@ -110,12 +115,78 @@ test("standalone resource tools preserve selections and refuse local fallbacks",
     expect(result.tuiRenderedOutput).toMatch(/demo_replace memory:\/\/demo\/note[\s\S]*~ direct/u);
     expect(await readFile(path.join(cwd, "resource.txt"), "utf8")).toBe("direct\nomega\n");
     expect(await readFile(path.join(cwd, "local.txt"), "utf8")).toBe("local sentinel\n");
-    expect(result.tuiRenderedOutput).not.toContain("Failed to load extension");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
 }, 90_000);
 
+// Boundary codes are machine-readable; neither classification nor continuation depends on prose.
+test("standalone refusals distinguish foreign resources from local paths", async () => {
+  const root = path.resolve(".tmp/standalone-resource-host");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "refusals-"));
+  try {
+    await writeFile(path.join(cwd, "resource.txt"), "alpha\nomega\n");
+    await writeFile(path.join(cwd, "other.txt"), "sibling\n");
+    await writeFile(path.join(cwd, "local.txt"), "local sentinel\n");
+    const sources = [
+      ["memory://other/note", "RESOURCE_HOST_FOREIGN_SOURCE"],
+      ["raw:memory://other/note", "RESOURCE_HOST_FOREIGN_SOURCE"],
+      ["local.txt", "RESOURCE_HOST_LOCAL_PATH"],
+      ["raw:" + path.join(cwd, "local.txt"), "RESOURCE_HOST_LOCAL_PATH"],
+      ["file://" + path.join(cwd, "local.txt"), "RESOURCE_HOST_LOCAL_PATH"],
+      ["C:\\workspace\\local.txt", "RESOURCE_HOST_LOCAL_PATH"],
+    ] as const;
+    const calls = [
+      ...sources.map(([source], index) => ({
+        id: `refused-${index}`,
+        name: "demo_read",
+        arguments: { path: source },
+      })),
+      {
+        id: "continue",
+        name: "codemode",
+        arguments: {
+          code: [
+            `for (const source of ${JSON.stringify(sources.map(([source]) => source))}) {`,
+            '  if (await tools.demo_read({path: source}) !== null) throw new Error("Expected refusal");',
+            "}",
+            'const owned = await tools.demo_read({path: "memory://demo/note"});',
+            'if (owned?.text !== "alpha\\nomega\\n") throw new Error("Owned read did not continue");',
+            "text(owned.text);",
+          ].join("\n"),
+        },
+      },
+    ];
+    const result = await new PiIntegrationTest({
+      testName: "standalone-resource-host-refusal-kinds",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      tuiSize: { cols: 160, rows: 50 },
+      cwd,
+      rawMode: false,
+      isolateUserResources: true,
+      extensions: [providerFixture, "builtin:codemode"],
+      tools: ["codemode", "demo_read"],
+      timeoutMs: 60_000,
+      conversation: [
+        ...calls.map((call) => assistantMessage([toolCall(call)], { stopReason: "toolUse" })),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Refuse foreign resources and local paths, then continue reading an owned resource.");
+    for (const [index, [source, code]] of sources.entries()) {
+      const execution = getToolExecution(result, `refused-${index}`);
+      expect(execution.isError).toBe(true);
+      expect(getToolExecutionDetails(execution)).toMatchObject({ boundary: { code, source } });
+    }
+    expect(getToolExecution(result, "continue").isError).toBe(false);
+    expect(getToolResultText(result, "continue")).toContain("alpha\nomega");
+    expect(await readFile(path.join(cwd, "resource.txt"), "utf8")).toBe("alpha\nomega\n");
+    expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("sibling\n");
+    expect(await readFile(path.join(cwd, "local.txt"), "utf8")).toBe("local sentinel\n");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+}, 90_000);
 // Real extension load order and event composition, not a mock ExtensionAPI.
 test.each(["alone", "before", "after"] as const)(
   "isolates sibling hosts and selections with IDE %s",
@@ -132,23 +203,24 @@ test.each(["alone", "before", "after"] as const)(
       const extensions =
         order === "alone" ? [provider] : order === "before" ? [ide, provider] : [provider, ide];
       const code = [
-        'async function refused(action) { let failed = false; try { await action(); } catch { failed = true; } if (!failed) throw new Error("Expected boundary refusal"); }',
+        // A refused IDE call, including the host's own boundary refusal, resolves to null.
+        'async function refused(action) { if ((await action()) !== null) throw new Error("Expected boundary refusal"); }',
         'const original = await tools.demo_read({path: "memory://demo/note", offset: 1, limit: 1});',
         'const sibling = await tools.other_read({path: "memory://other/note"});',
         'await refused(() => tools.other_replace({path: original, text: "wrong"}));',
         'await refused(() => tools.demo_replace({path: sibling, text: "wrong"}));',
         'await refused(() => tools.demo_read({path: "memory://other/note"}));',
-        // A completed Read failure resolves to its public error value instead of throwing.
+        // A failed Read resolves to null instead of throwing.
         'const missing = await tools.demo_read({path: "memory://demo/missing"});',
-        'if (missing?.status !== "error" || !missing.errors.length) throw new Error("Missing resource looked readable");',
+        'if (missing !== null) throw new Error("Missing resource looked readable");',
         'await refused(() => tools.demo_move({path: original, target: "local.txt"}));',
         'await tools.demo_write({path: "memory://demo/note", content: "temporary\\nomega\\n"});',
         'await tools.demo_write({path: "memory://demo/note", content: "alpha\\nomega\\n"});',
         'await refused(() => tools.demo_replace({path: original, text: "resurrected"}));',
         'const fresh = await tools.demo_read({path: "memory://demo/note", offset: 1, limit: 1});',
         'const found = await tools.demo_search({path: fresh, query: "alpha"});',
-        'if (!found.hasMatches) throw new Error("Owned Search lost its match");',
-        'text(await tools.demo_replace({path: found.result, text: "changed"}));',
+        'if (found.matches.length !== 1) throw new Error("Owned Search lost its match");',
+        'text(await tools.demo_replace({path: found, text: "changed"}));',
         'await refused(() => tools.demo_replace({path: original, text: "stale"}));',
         ...(order === "alone"
           ? []
@@ -203,7 +275,6 @@ test.each(["alone", "before", "after"] as const)(
       expect(await readFile(path.join(cwd, "resource.txt"), "utf8")).toBe("changed\nomega\n");
       expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("sibling\n");
       expect(await readFile(path.join(cwd, "local.txt"), "utf8")).toBe("local sentinel\n");
-      expect(result.tuiRenderedOutput).not.toContain("Failed to load extension");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

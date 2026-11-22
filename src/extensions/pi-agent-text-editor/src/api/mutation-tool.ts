@@ -1,12 +1,29 @@
 import type { TextEditIntent } from "#src/api/edit-completion.ts";
+import type { MutationDiffStatus } from "#src/api/mutation-result.ts";
 import type { TextChange, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import type { ImageContent } from "pi-agent-resource";
 import type { TextAnchor } from "pi-agent-text";
 import type { Static, TSchema } from "typebox";
 
+/** A rejected mutation input whose stable code is safe to expose to result renderers. */
+export class TextMutationInputError extends Error {
+  public constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+export interface TextMutationChange extends TextChange {
+  /** Selector fields that define this change when a tool has multiple selection roles. */
+  readonly selectorFields?: readonly string[];
+}
+
 export interface TextMutationEdit {
-  readonly changes: readonly TextChange[];
+  readonly changes: readonly TextMutationChange[];
   readonly action: "edited" | "overwritten";
+  /** Notices from the selectors that produced this edit. */
+  readonly selectorStatuses?: readonly MutationDiffStatus[];
   /** Indices of changes that produce live output targets; omit to select all, or use [] for removals. */
   readonly resultChanges?: readonly number[];
 }
@@ -18,14 +35,28 @@ export interface TextMutation {
   readonly afterWrite?: () => void | Promise<void>;
 }
 
+/** The earliest offset where a paired closing match may begin. */
+export interface PairedAnchorStart {
+  readonly source: string;
+  readonly offset: number;
+}
+
 export interface TextMutationContext {
   readonly cwd: string;
   readonly signal?: AbortSignal;
   readonly sourceDocument: TextChangeDocument;
+  checkSpan?(span: {
+    readonly source: string;
+    readonly from: number;
+    readonly to: number;
+  }): Promise<void>;
   targetDocument(field: string): TextChangeDocument;
   sourceFor(field: string): string;
   documentFor(source: string): TextChangeDocument;
-  resolveAnchors(field: string): Promise<ReadonlyMap<string, TextAnchor>>;
+  resolveAnchors(
+    field: string,
+    start?: PairedAnchorStart,
+  ): Promise<ReadonlyMap<string, TextAnchor>>;
   resolveAnchor(field: string): Promise<TextAnchor>;
 }
 
@@ -45,6 +76,8 @@ export interface TextMutationAnchorField {
   readonly sourceField: string;
   readonly kinds: readonly string[];
   readonly optional?: boolean;
+  /** Resolve only after the first range boundary is known. */
+  readonly pairedEnd?: boolean;
   /** Values handled by the mutation itself instead of an anchor resolver. */
   readonly nonAnchorValues?: readonly string[];
 }
@@ -137,6 +170,8 @@ export interface TextMutationToolRegistration<TParameters extends TSchema = TSch
   readonly source: TextMutationSourceDescriptor;
   readonly anchors?: readonly TextMutationAnchorField[];
   readonly pair?: readonly [string, string];
+  /** Reject invalid combinations before resolving sources or running a semantic edit. */
+  readonly validateInput?: (input: Readonly<Record<string, unknown>>) => void;
   /** Execute a host transaction without opening one primary text resource. */
   readonly direct?: DirectTextMutationHandler;
   /** Whole-file operation used when the invocation contains no text selectors. */

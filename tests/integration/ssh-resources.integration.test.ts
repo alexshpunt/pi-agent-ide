@@ -11,6 +11,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
@@ -156,7 +157,7 @@ test("real Pi reads and edits SSH resources without a separate tool workflow", a
             toolCall({
               id: "edit-note",
               name: "replace",
-              arguments: { path: note, start: "before", text: "after" },
+              arguments: { path: note, at: "before", text: "after" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -166,7 +167,7 @@ test("real Pi reads and edits SSH resources without a separate tool workflow", a
             toolCall({
               id: "edit-conflict",
               name: "replace",
-              arguments: { path: conflict, start: "before", text: "must-not-overwrite" },
+              arguments: { path: conflict, at: "before", text: "must-not-overwrite" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -251,8 +252,8 @@ for (const path of ${JSON.stringify([applyCreated, applyCopy, uploaded, download
       getToolExecution(run, "mixed-transfers").isError,
       getToolResultText(run, "mixed-transfers"),
     ).toBe(false);
-    for (const source of [applyCopy, uploaded, downloaded])
-      expect(getToolResultText(run, "mixed-transfers")).toContain(source);
+    // Copies resolve to an id or null in the script; a failed transfer would be listed here.
+    expect(codemodeFailures(getToolResultText(run, "mixed-transfers"))).toBe("");
     expect(
       getToolExecution(run, "cleanup-transfers").isError,
       getToolResultText(run, "cleanup-transfers"),

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,10 +10,14 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "pi-coding-agent-test";
+} from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { afterEach, expect, test } from "vitest";
 
 const workspaces: string[] = [];
+
+const issuedReferenceProvider = path.resolve(
+  "tests/integration/fixtures/issued-reference-provider.ts",
+);
 
 afterEach(async () => {
   await Promise.all(
@@ -21,15 +25,112 @@ afterEach(async () => {
   );
 });
 
+test.each(["numbered", "all"] as const)(
+  "edits every repeated line after compact Search using %s references",
+  async (selection) => {
+    const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-compaction-edit-"));
+    workspaces.push(cwd);
+    await mkdir(path.join(cwd, ".pi-agent"));
+    await writeFile(path.join(cwd, "task.txt"), "keep1\nOLD\nkeep2\nOLD\nkeep3\nOLD\n");
+
+    const result = await new PiIntegrationTest({
+      testName: `search-compaction-edit-${selection}`,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
+      extensions: [issuedReferenceProvider, path.resolve("src/pi-agent-ide.ts")],
+      tools: ["search", "insert"],
+      conversation: [
+        assistantMessage(
+          [
+            toolCall({
+              id: "compact",
+              name: "search",
+              arguments: { query: "OLD", path: "task.txt", limit: 1 },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        ...(selection === "numbered"
+          ? [
+              assistantMessage(
+                [
+                  toolCall({
+                    id: "details",
+                    name: "search",
+                    arguments: { query: "OLD", path: "task.txt", limit: 3 },
+                  }),
+                ],
+                { stopReason: "toolUse" },
+              ),
+            ]
+          : []),
+        assistantMessage(
+          (selection === "numbered" ? [1, 2, 3] : ["all"]).map((index) =>
+            toolCall({
+              id: `insert-${index}`,
+              name: "insert",
+              arguments: {
+                path:
+                  selection === "numbered"
+                    ? `$issued-search:details:${index}`
+                    : "$issued-searchallline:compact",
+                text: "ADDED\n",
+              },
+            }),
+          ),
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Insert ADDED after every OLD line using the issued Search selections");
+
+    expect(getToolExecutionDetails(getToolExecution(result, "compact"))).toMatchObject({
+      payload: {
+        matchCount: 3,
+        complete: true,
+        storedFiles: [
+          { matchCount: 3, uniqueLineCount: 1, groups: [{ matchCount: 3 }], lines: [] },
+        ],
+      },
+    });
+    if (selection === "numbered") {
+      expect(getToolExecutionDetails(getToolExecution(result, "details"))).toMatchObject({
+        payload: {
+          matchCount: 3,
+          complete: true,
+          storedFiles: [
+            {
+              lines: [
+                [2, expect.anything(), [{ from: 0, to: 3 }]],
+                [4, expect.anything(), [{ from: 0, to: 3 }]],
+                [6, expect.anything(), [{ from: 0, to: 3 }]],
+              ],
+            },
+          ],
+        },
+      });
+    }
+    for (const index of selection === "numbered" ? [1, 2, 3] : ["all"]) {
+      expect(getToolExecution(result, `insert-${index}`).isError).toBe(false);
+    }
+    expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
+      "keep1\nOLD\nADDED\nkeep2\nOLD\nADDED\nkeep3\nOLD\nADDED\n",
+    );
+  },
+);
 test("text search keeps a complete selection while compacting repeated details", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-compaction-"));
   workspaces.push(cwd);
+  await mkdir(path.join(cwd, ".pi-agent"));
   await writeFile(path.join(cwd, "large.txt"), "same needle\n".repeat(100));
 
   const result = await new PiIntegrationTest({
     testName: "search-compaction",
+    rawMode: false,
     artifactsDir: testArtifactsDir(import.meta.filename),
     cwd,
+    environment: { PI_CODING_AGENT_DIR: path.join(cwd, ".pi-agent") },
     extensions: [path.resolve("src/pi-agent-ide.ts")],
     tools: ["search"],
     conversation: [

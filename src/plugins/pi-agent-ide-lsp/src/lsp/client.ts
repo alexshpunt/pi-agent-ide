@@ -20,9 +20,15 @@ import { URI } from "vscode-uri";
 import type { LspDiagnostic } from "./types.ts";
 
 import { LspFileWatchers, type LspFileWatcherSubscriptions } from "./file-watchers.ts";
-import { configurationItems } from "./server-request-handlers.mjs";
+import {
+  configurationItems,
+  SHARED_DIAGNOSTICS_SUPERSEDED,
+  SHARED_SOURCE_CHANGED,
+} from "./server-request-handlers.mjs";
+import { sourceChanged } from "./source-changes.ts";
 import {
   DEFAULT_SHARED_SERVER_LINGER_MS,
+  sharedServerLingerOverride,
   type LspSharedServer,
   type LspSharedServers,
 } from "./shared-servers.ts";
@@ -31,6 +37,7 @@ import { TransportWriter } from "./transport-writer.ts";
 import { documentUri } from "./document-uri.ts";
 import { delayWithSignal, waitWithSignal } from "./abort.ts";
 import { mapLspUris, type LspOwnerTransport, type LspOwnedProcess } from "./owner-transport.ts";
+import { launchCommand, localXdgConfig } from "./clangd-launch.ts";
 
 /** Latest push observation for an open document, without a completion guarantee. */
 export interface LspDiagnosticPublication {
@@ -72,10 +79,13 @@ export class LspClient {
   private _fileWatcherCleanup: Promise<void> = Promise.resolve();
   private readonly _handlers = new Map<string, ((parameters: unknown) => void)[]>();
   private readonly _documentVersions = new Map<string, number>();
+  // A late notification for a closed shared document must not match a quick reopen.
+  private _lastSharedDocumentVersion = 0;
 
   private readonly _documentContents = new Map<string, string>();
 
   private readonly _diagnosticPublications = new Map<string, LspDiagnosticPublication>();
+  private readonly _supersededDiagnostics = new Set<string>();
   private readonly _pulledReports = new Map<string, LspPulledDiagnosticReport>();
   private _diagnosticMode: "unknown" | "pull" | "push" = "unknown";
   /**
@@ -101,6 +111,8 @@ export class LspClient {
   readonly serverId: string;
   readonly rootUri: string;
   private readonly _command: string[];
+  /** The command that starts the server, which can wrap the configured one. */
+  private readonly _launch: string[];
   private readonly _args: string[];
   private readonly _env: Record<string, string>;
   private readonly _initOptions: Record<string, unknown> | undefined;
@@ -125,7 +137,12 @@ export class LspClient {
     this.serverId = parameters.serverId;
     this.rootUri = parameters.rootUri;
     this._command = parameters.command;
-    this._args = parameters.command.slice(1);
+    // A server on an SSH owner runs on a Linux target.
+    this._launch = launchCommand(
+      parameters.command,
+      parameters.ownerTransport !== undefined || localXdgConfig(),
+    );
+    this._args = this._launch.slice(1);
     this._env = parameters.env ?? {};
     this._initOptions = parameters.initOptions;
     this._settings = parameters.settings;
@@ -253,6 +270,11 @@ export class LspClient {
     return this._diagnosticPublications.get(uri);
   }
 
+  /** The shared host cannot publish diagnostics for the current document version. */
+  diagnosticSuperseded(uri: string): boolean {
+    return this._supersededDiagnostics.has(uri);
+  }
+
   /**
    * The last pulled report of the document's current version. A server that still has the same
    * result answers a pull with its result id as unchanged instead of checking the file again.
@@ -318,7 +340,7 @@ export class LspClient {
     // Shutdown can dispose this client while watcher cleanup is awaited.
     // eslint-disable-next-line typescript/no-unnecessary-condition
     if (this._disposed) throw new Error(`[lsp] ${this.serverId}: disposed`);
-    const bin = requiredValue(this._command[0]);
+    const bin = requiredValue(this._launch[0]);
     const projectRoot = this._ownerTransport
       ? decodeURIComponent(new URL(this.rootUri).pathname)
       : URI.parse(this.rootUri).fsPath;
@@ -368,7 +390,7 @@ export class LspClient {
 
     this._ownedStartup = this._ownerTransport?.start({
       rootUri: this.rootUri,
-      command: this._command,
+      command: this._launch,
       env: this._env,
       signal,
     });
@@ -462,6 +484,7 @@ export class LspClient {
       this._connection?.dispose();
       this._connection = null;
       this._diagnosticPublications.clear();
+      this._supersededDiagnostics.clear();
       this._pulledReports.clear();
       this._activeDiagnosticRequests.clear();
       this._diagnosticMode = "unknown";
@@ -574,6 +597,17 @@ export class LspClient {
       const mapped = owner
         ? mapLspUris(parameters[0], (uri) => owner.fromServerUri(uri))
         : parameters[0];
+      if (method === SHARED_DIAGNOSTICS_SUPERSEDED) {
+        const notice = mapped as { uri?: unknown; version?: unknown } | undefined;
+        if (
+          !this.shared ||
+          typeof notice?.uri !== "string" ||
+          typeof notice.version !== "number" ||
+          notice.version !== this.documentVersion(notice.uri)
+        )
+          return;
+        this._supersededDiagnostics.add(notice.uri);
+      }
       if (method === "textDocument/publishDiagnostics") {
         const publication = mapped as
           | { uri?: unknown; version?: unknown; diagnostics?: unknown }
@@ -596,6 +630,7 @@ export class LspClient {
           (publication.version === undefined ||
             publication.version === this.documentVersion(publication.uri))
         ) {
+          this._supersededDiagnostics.delete(publication.uri);
           this._diagnosticPublications.set(publication.uri, {
             diagnostics: publication.diagnostics as LspDiagnostic[],
             ...(typeof publication.version === "number" && { version: publication.version }),
@@ -609,7 +644,8 @@ export class LspClient {
           ...(typeof status?.message === "string" && { message: status.message }),
         });
       }
-      for (const handler of this._handlers.get(method) ?? []) {
+      // A handler can unsubscribe while other listeners still need this notification.
+      for (const handler of this._handlers.get(method)?.slice() ?? []) {
         handler(mapped);
       }
     });
@@ -680,7 +716,7 @@ export class LspClient {
     try {
       return await this._sharedServers.attach({
         serverId: this.serverId,
-        command: this._command,
+        command: this._launch,
         cwd: projectRoot,
         configuredEnv: this._env,
         env: createConfiguredProcessEnvironment(
@@ -690,7 +726,10 @@ export class LspClient {
         ),
         settings: this._settings,
         initialize,
-        lingerMs: this._idleTimeoutMs ?? DEFAULT_SHARED_SERVER_LINGER_MS,
+        lingerMs:
+          sharedServerLingerOverride(process.env) ??
+          this._idleTimeoutMs ??
+          DEFAULT_SHARED_SERVER_LINGER_MS,
         timeoutMs: this._timeoutMs,
         ...(signal && { signal }),
       });
@@ -754,6 +793,7 @@ export class LspClient {
     this._documentVersions.clear();
     this._documentContents.clear();
     this._diagnosticPublications.clear();
+    this._supersededDiagnostics.clear();
     this._pulledReports.clear();
     this._diagnosticMode = "unknown";
     this._versionedDiagnostics = false;
@@ -781,6 +821,8 @@ export class LspClient {
         try {
           result = await this._sendRequest<T>(method, parameters, signal);
         } catch (error) {
+          if (this.shared && error instanceof ResponseError && error.code === SHARED_SOURCE_CHANGED)
+            throw sourceChanged(error.message);
           const delay = REQUEST_RETRY_DELAYS_MS[attempt];
           if (delay === undefined || !isRetryableCancellation(error)) throw error;
           // The server dropped a stale result; ask again once it has applied the latest text.
@@ -905,18 +947,20 @@ export class LspClient {
     }
 
     this._diagnosticPublications.delete(uri);
+    this._supersededDiagnostics.delete(uri);
     this._pulledReports.delete(uri);
+    const nextVersion = this._sharedDocumentVersion(version);
     this.sendNotification("textDocument/didOpen", {
-      textDocument: { uri, languageId, version, text },
+      textDocument: { uri, languageId, version: nextVersion, text },
     });
-    this._documentVersions.set(uri, version);
+    this._documentVersions.set(uri, nextVersion);
 
     this._documentContents.set(uri, text);
   }
 
   /** Sync content, optionally reporting a completed disk write to servers that request saves. */
   syncDocument(uri: string, text: string, languageId: string, saved = false): void {
-    if (this._documentContents.get(uri) === text) return;
+    if (this._documentContents.get(uri) === text && !this.diagnosticSuperseded(uri)) return;
     const currentVersion = this._documentVersions.get(uri);
 
     if (currentVersion === undefined) {
@@ -962,8 +1006,9 @@ export class LspClient {
 
   changeDocument(uri: string, text: string, version: number): void {
     const currentVersion = this._documentVersions.get(uri);
-    const nextVersion = Math.max(version, (currentVersion ?? 0) + 1);
+    const nextVersion = this._sharedDocumentVersion(Math.max(version, (currentVersion ?? 0) + 1));
     this._diagnosticPublications.delete(uri);
+    this._supersededDiagnostics.delete(uri);
     this._pulledReports.delete(uri);
     this.sendNotification("textDocument/didChange", {
       textDocument: { uri, version: nextVersion },
@@ -974,6 +1019,14 @@ export class LspClient {
     this._documentContents.set(uri, text);
   }
 
+  private _sharedDocumentVersion(version: number): number {
+    if (!this.shared) return version;
+    return (this._lastSharedDocumentVersion = Math.max(
+      version,
+      this._lastSharedDocumentVersion + 1,
+    ));
+  }
+
   closeDocument(uri: string): void {
     this.sendNotification("textDocument/didClose", { textDocument: { uri } });
     this._documentVersions.delete(uri);
@@ -981,6 +1034,7 @@ export class LspClient {
     this._documentContents.delete(uri);
 
     this._diagnosticPublications.delete(uri);
+    this._supersededDiagnostics.delete(uri);
     this._pulledReports.delete(uri);
   }
 
@@ -1039,6 +1093,7 @@ export class LspClient {
     this._documentVersions.clear();
     this._documentContents.clear();
     this._diagnosticPublications.clear();
+    this._supersededDiagnostics.clear();
     this._pulledReports.clear();
     this._diagnosticMode = "unknown";
     this._versionedDiagnostics = false;

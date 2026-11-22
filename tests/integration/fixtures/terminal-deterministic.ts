@@ -13,7 +13,7 @@ export default async function registerDeterministicTerminal(pi: ExtensionAPI): P
     pi,
     manager,
     resolveShellProfile("linux", { SHELL: "/bin/bash" }),
-    { bind() {} },
+    { bind() {}, notifyWaitTransition() {} },
   );
   pi.on("session_shutdown", () => manager.dispose());
 }

@@ -15,7 +15,7 @@ import { createExtensionSet } from "#integration/support/pi-runtime/extension-se
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 const extensions = createExtensionSet();
 const sourceFile = path.resolve(
-  "tests/integration/extensions/pi-agent-text-editor/src/tools/interactive-demos/fixtures/stack-store.ts",
+  "tests/integration/extensions/pi-agent-text-editor/src/tools/interactive-demos/fixtures/stack-store.ts.txt",
 );
 const defaultTextEditorExtension = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/register-extension.ts",
@@ -117,9 +117,10 @@ describe("interactive text editor demos", () => {
       expectedLines.splice(startIndex, endIndex - startIndex + 1, ...replacement.split("\n"));
       const arguments_ = {
         path: demoFileName,
-        start: formatLineHashAnchor(startIndex + 1, lines[startIndex]),
-        end: formatLineHashAnchor(endIndex + 1, lines[endIndex]),
-        text: replacement,
+        from: formatLineHashAnchor(initialSource, startIndex + 1),
+        through: formatLineHashAnchor(initialSource, endIndex + 1),
+        // Line anchors select their lines with their line breaks; the text keeps the last one.
+        text: `${replacement}\n`,
       };
       const callId = "demo-large-range-replace";
       const result = await new PiIntegrationTest({

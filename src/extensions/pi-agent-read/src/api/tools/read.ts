@@ -51,6 +51,8 @@ export interface ReadFailure {
   readonly stage?: ReadPipelineStage;
   readonly message: string;
   readonly cause?: unknown;
+  /** A next Read call for this failure, offered without executing it. */
+  readonly retry?: ReadRequest;
   /** Ranked exact paths offered as hints, never read automatically. */
   readonly candidates?: readonly { readonly path: string }[];
 }
@@ -92,7 +94,12 @@ export interface ReadFragmentContext {
 export type ReadFragmentResolution =
   | { readonly kind: "resolved"; readonly originLine: number }
   | { readonly kind: "not-handled" }
-  | { readonly kind: "failed"; readonly message: string };
+  | {
+      readonly kind: "failed";
+      readonly message: string;
+      /** Suggested source or source#anchor to read with the anchors view. */
+      readonly retryPath?: string;
+    };
 
 export interface FragmentResolverRegistration {
   readonly id: string;
@@ -129,6 +136,8 @@ export type ReadTextSnapshot = TextDocument;
 interface ReadStateBase {
   readonly source: string;
   readonly resolvedBy: string;
+  /** Entry names of a directory listing; directory names end with `/`. */
+  readonly entries?: readonly string[];
   readonly preserveTruncatedOutput: boolean;
   readonly textMode: "final" | "normal";
 }
@@ -156,6 +165,11 @@ export interface ReadPipelineContext {
   readonly sourceTarget?: string;
   /** Data execution keeps full requested content; presentation handlers must not compact it. */
   readonly audience?: "agent" | "script";
+  /**
+   * `none` when another tool, such as a Codemode script, issued the call: its text stays whole
+   * instead of fitting the model's output budget, so handlers must not compact it.
+   */
+  readonly outputLimit?: "model" | "none";
   readonly request: ReadRequest;
   readonly resolverContext: ResourceResolverContext;
   readonly state?: ReadState;
@@ -198,6 +212,8 @@ export interface ReadResultDetails extends UnsupportedContentDetails {
   /** Exact appended notice, outside the useful-output budget. */
   readonly outputNotice?: string;
   readonly lines?: readonly ReadTextLine[];
+  /** The text ends with the display marker line of a source without a final line break. */
+  readonly noFinalLineBreak?: boolean;
   /** Requested view names that no registration backed; they were ignored. */
   readonly ignoredViews?: readonly string[];
   /** Situational presentation messages, kept outside source lines and script data. */
@@ -218,10 +234,17 @@ export type ReadScriptData =
     }
   | {
       readonly kind: "text";
+      /** Digest of the raw file snapshot from which this selection was taken. Not published. */
+      readonly fileDigest?: string;
       /** Strict source-window handle, independent of preview truncation. */
       readonly target?: string;
       readonly source: string;
+      /** Original text of the selected lines, including every line ending. */
       readonly content: string;
+      /** The selected lines as the requested views present them; absent without a presentation. */
+      readonly presented?: string;
+      /** Entry names of a directory listing; directory names end with `/`. */
+      readonly entries?: readonly string[];
       readonly lines: readonly ReadTextLine[];
       readonly startLine: number;
       readonly endLine: number;
@@ -335,6 +358,13 @@ export interface ReadToolPluginApi {
   saveTemporary(text: string): Promise<string>;
   /** Sets the saver used before the shared text budget truncates a Read result. */
   setOutputSaver(saver: (text: string) => Promise<string>): void;
+  /** Run a focused operation through the Read pipeline without advertising a Read source. */
+  readWith(
+    resolver: ResourceResolver,
+    request: ReadRequest,
+    context: ResourceResolverContext,
+    audience?: "agent" | "script",
+  ): Promise<ReadToolResult>;
   /** Executes the shared pipeline; script results are not clipped to the agent output budget. */
   read(
     request: ReadRequest,
@@ -457,7 +487,12 @@ export function isReadFragmentResolution(value: unknown): value is ReadFragmentR
   }
 
   if (value.kind === "failed") {
-    return typeof value.message === "string" && value.message.length > 0;
+    return (
+      typeof value.message === "string" &&
+      value.message.length > 0 &&
+      (value.retryPath === undefined ||
+        (typeof value.retryPath === "string" && value.retryPath.length > 0))
+    );
   }
 
   return value.kind === "resolved" && typeof value.originLine === "number";
@@ -467,7 +502,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export { readParameters } from "#src/api/read-parameters.ts";
+export { readParameters, readRequestOf } from "#src/api/read-parameters.ts";
+export { createReadResultTargetHandler } from "#src/core/tools/read/result-target.ts";
 export {
   readDataSchema,
   readOutputSchema,

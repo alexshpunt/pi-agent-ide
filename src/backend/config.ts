@@ -15,6 +15,7 @@ const settingsSchema = Type.Object(
           host: Type.String(),
           workspace: Type.String(),
           configFile: Type.Optional(Type.String({ minLength: 1 })),
+          os: Type.Optional(Type.Union([Type.Literal("linux"), Type.Literal("windows")])),
         },
         { additionalProperties: false },
       ),
@@ -75,6 +76,7 @@ function validateScope(
       id: target.id,
       host: target.host,
       workspace: target.workspace,
+      ...(target.os === undefined ? {} : { os: target.os }),
       ...(target.configFile === undefined
         ? {}
         : { configFile: path.resolve(path.dirname(filename), target.configFile) }),

@@ -1,4 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 
 /** Starts history checks through Pi's normal session replacement path. */
 export default function restoreToolHistory(pi: ExtensionAPI): void {
@@ -9,6 +11,13 @@ export default function restoreToolHistory(pi: ExtensionAPI): void {
       if (session === undefined) throw new Error("Missing test session path");
       await ctx.switchSession(session, {
         async withSession(current) {
+          const probe = process.env.IDE_RESTORE_PROBE;
+          if (probe !== undefined) {
+            await writeFile(
+              path.resolve(current.cwd, probe),
+              JSON.stringify(current.sessionManager.getBranch()),
+            );
+          }
           if (process.env.IDE_RESTORE_TREE_ROOT === "1") {
             const root = current.sessionManager.getBranch().find((entry) => entry.type === "message" && entry.message.role === "user");
             if (root === undefined) throw new Error("Missing user root");

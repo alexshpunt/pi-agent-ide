@@ -3,6 +3,7 @@ import {
   isTextAnchorResolver,
   type TextAnchorResolver,
   type TextPresenterRegistration,
+  type TextEditRun,
   type TextTargetResolutionAttempt,
   type TextTargetResolver,
 } from "pi-agent-text";
@@ -43,10 +44,14 @@ export type {
   FileTransferEndpoint,
   FileTransferGuard,
 } from "#src/api/file-transfers.ts";
-export { localFileTransferAccess, snapshotLocalObjects } from "#src/api/native-files.ts";
+export {
+  localFileTransferAccess,
+  localObjectMode,
+  snapshotLocalObjects,
+} from "#src/api/native-files.ts";
 export const TEXT_EDITOR_PROTOCOL = "pi-agent-text-editor";
 
-export const TEXT_EDITOR_API_VERSION = 32;
+export const TEXT_EDITOR_API_VERSION = 33;
 
 export const TEXT_POSITION_ANCHOR_KIND = "pi-agent-text-editor/position";
 
@@ -70,6 +75,8 @@ export type TextAnchorType = "major" | "auxiliary" | "constant";
 export interface TextAnchorResourceResolverContext {
   readonly cwd: string;
   readonly signal?: AbortSignal;
+  /** Set while an edit resolves its targets: the same object across that edit's retries. */
+  readonly edit?: TextEditRun;
 }
 
 export type TextAnchorResourceResolutionAttempt = TextTargetResolutionAttempt;

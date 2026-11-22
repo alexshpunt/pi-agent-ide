@@ -14,3 +14,4 @@ node_modules/
 # Local session-runtime artifacts from agent tooling (never publishable).
 .linear-project
 .mesh/
+__pycache__/

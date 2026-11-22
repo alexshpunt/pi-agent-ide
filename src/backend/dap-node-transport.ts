@@ -1,9 +1,11 @@
-import { readFile } from "node:fs/promises";
 import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
 import type { OwnedDebugAdapter } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { startSshDapTransport, type SshDapTransport } from "./dap-transport.ts";
+import { packagedSource } from "./packaged-source.ts";
+
+const unixWorker = packagedSource(new URL("./dap-unix-worker.py", import.meta.url));
 
 /** Keep Node parent and reverse child connections on one exact target-owned Unix server. */
 export async function prepareSshNodeDebugger(
@@ -58,7 +60,7 @@ export async function prepareSshNodeDebugger(
     return stopping;
   };
   try {
-    const worker = await readFile(new URL("./dap-unix-worker.py", import.meta.url), "utf8");
+    const worker = await unixWorker;
     server = await startSshDapTransport(registry, cwd, {
       command: "python3",
       args: [

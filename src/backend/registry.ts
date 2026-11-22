@@ -1,5 +1,6 @@
-import { resolveRemoteLocation, type RemoteLocation } from "./identity.ts";
+import { resolveRemoteLocation, type RemoteLocation, type SshTargetOs } from "./identity.ts";
 import { SshBackend, SshBackendError, type SshTarget } from "./ssh.ts";
+import { targetOs } from "./ssh-transport.ts";
 
 /** A canonical remote source and the explicitly configured transport that owns it. */
 export interface ResolvedSshSource {
@@ -18,9 +19,18 @@ export class SshBackendRegistry {
     }
   }
 
+  /** True when at least one configured target declares this OS. */
+  hasTargetOs(os: SshTargetOs): boolean {
+    return [...this.#backends.values()].some((backend) => targetOs(backend.target) === os);
+  }
+
   /** Claim SSH resources, reject unknown targets, and leave local/protocol sources alone. */
   resolve(source: string, cwd?: string): ResolvedSshSource | undefined {
-    const location = resolveRemoteLocation(source, cwd);
+    const location = resolveRemoteLocation(
+      source,
+      cwd,
+      (target) => this.#backends.get(target)?.target.os,
+    );
     if (!location) return undefined;
     const backend = this.#backends.get(location.target);
     if (!backend) throw new SshBackendError("UNKNOWN_TARGET", location.source, "not-applied");

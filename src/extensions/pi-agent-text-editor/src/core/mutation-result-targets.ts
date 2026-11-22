@@ -8,7 +8,8 @@ import { createTextDocument } from "pi-agent-text";
 import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import type { TextMutation, TextMutationEdit } from "#src/api/mutation-tool.ts";
 import { applyTextChanges } from "./text-change-engine.ts";
-import { attachFileMutationTargets } from "./file-result-targets.ts";
+import { isAlreadyDone } from "./already-done.ts";
+import { attachFileMutationTargets, NO_TEXT_TARGET } from "./file-result-targets.ts";
 
 import type { TextEditorCore } from "./text-editor-core.ts";
 
@@ -63,8 +64,8 @@ export interface OwnedMutationChanges {
   readonly edits: ReadonlyMap<string, TextMutationEdit>;
 }
 
-/** Find Copy destinations with identical text and no secondary resource action. */
-export function unchangedCopySources(
+/** Find edited sources whose every target already has its text and that have no secondary action. */
+export function unchangedSources(
   mutation: TextMutation,
   snapshots: ReadonlyMap<string, string>,
 ): ReadonlySet<string> {
@@ -76,13 +77,20 @@ export function unchangedCopySources(
         return (
           before !== undefined &&
           edit.changes.length > 0 &&
-          edit.changes.every(
-            (change) =>
-              change.allowUnchanged && before.slice(change.from, change.to) === change.insert,
-          )
+          edit.changes.every((change) => isAlreadyDone(before, change))
         );
       })
       .map(([source]) => source),
+  );
+}
+
+/** Whether every edited source of the mutation already has its text, so nothing is written. */
+export function isAlreadyDoneMutation(
+  mutation: TextMutation,
+  snapshots: ReadonlyMap<string, string>,
+): boolean {
+  return (
+    mutation.edits.size > 0 && unchangedSources(mutation, snapshots).size === mutation.edits.size
   );
 }
 /** Map final resource snapshots and unchanged Copy ranges; verify before publishing. */
@@ -117,17 +125,10 @@ export function committedMutationTargets(
       .sort((left, right) => left.from - right.from);
     const before = completion?.before.content ?? unchangedSnapshots.get(source);
     if (before === undefined) continue;
-    if (
-      !completion &&
-      changes.some(
-        (change) =>
-          !change.allowUnchanged || before.slice(change.from, change.to) !== change.insert,
-      )
-    )
-      continue;
+    if (!completion && changes.some((change) => !isAlreadyDone(before, change))) continue;
     const after = completion?.after.content ?? before;
     const resourceSource = completion?.resourceSource ?? source;
-    if (applyTextChanges(before, changes, completion?.existed === false).content !== after)
+    if (applyTextChanges(before, changes).content !== after)
       throw new Error("Mutation targets cannot be mapped to the actual written snapshot.");
     const starts = [0];
     for (const line of createTextDocument(resourceSource, after).lines)
@@ -175,10 +176,15 @@ export function committedMutationTargets(
 export function describeUnavailableCopyTarget(
   result: AgentToolResult<FileMutationBatchResult>,
 ): AgentToolResult<FileMutationBatchResult> {
-  const notice = "No verified text selection. Read the destination before further edits.";
+  const reason = result.details.metadata?.targetUnavailable;
+  // A destination without text needs no reading advice; the plain reason is the whole notice.
+  const notice =
+    reason === NO_TEXT_TARGET
+      ? `No verified text selection. ${NO_TEXT_TARGET}`
+      : "No verified text selection. Read the destination before further edits.";
   if (
     result.isError ||
-    typeof result.details.metadata?.targetUnavailable !== "string" ||
+    typeof reason !== "string" ||
     result.content.some((block) => block.type === "text" && block.text === notice)
   )
     return result;
@@ -217,7 +223,7 @@ export async function attachWriteTarget(
     return result;
   try {
     const content = file.afterContent;
-    const lines = content.split(/\r\n|\r|\n/u);
+    const lines = content.split("\n");
     const targets: ResultSourceTarget[] = [
       {
         source: file.path.startsWith("ssh://")
@@ -273,6 +279,7 @@ export async function attachCommittedMutationTarget(
 ): Promise<AgentToolResult<FileMutationBatchResult>> {
   if (
     result.isError ||
+    result.details.results?.some((item) => !item.data.ok) ||
     typeof result.details.metadata?.resultTarget === "string" ||
     completions.some(
       (completion) =>

@@ -47,12 +47,12 @@ for (const mode of ["default", "config", "flags"] as const) {
         cwd,
         extensions,
         ...(mode === "flags" ? { piCommand: wrapper } : {}),
-        tools: ["read", "replace", "runtime_options_probe"],
+        tools: ["diagnostics", "read", "replace", "runtime_options_probe"],
         rawMode: false,
         conversation: [
-          call("edit", "replace", { path: "example.fixture", start: "old", text: "new   " }),
+          call("edit", "replace", { path: "example.fixture", at: "old", text: "new   " }),
           call("before", "runtime_options_probe", {}),
-          call("diagnostics", "read", { path: "diagnostics:example.fixture" }),
+          call("diagnostics", "diagnostics", { path: "example.fixture" }),
           call("after", "runtime_options_probe", {}),
           call("anchors", "read", { path: "example.fixture", views: ["anchors"] }),
           call("removed-view", "read", { path: "example.fixture", views: ["lines"] }),
@@ -90,7 +90,7 @@ for (const mode of ["default", "config", "flags"] as const) {
       });
       expect(getToolExecution(result, "anchors").isError).toBe(false);
 
-      expect(getToolResultText(result, "anchors")).toMatch(/1#[A-Z0-9]+\|new/u);
+      expect(getToolResultText(result, "anchors")).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|new/u);
       // Save the real effective prompt for human review; do not assert its prose.
       await writeFile(
         path.join(result.artifacts.directory, "system-prompt.txt"),

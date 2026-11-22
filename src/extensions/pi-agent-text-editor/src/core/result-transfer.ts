@@ -4,19 +4,25 @@ import type {
   TextMutationContext,
   TextMutationEdit,
 } from "#src/api/mutation-tool.ts";
-import { TextChangeDocument, type TextChange } from "./text-change-engine.ts";
-import { anchorSpanRange, insertionAfterAnchor } from "#src/tools/text-selection.ts";
+import { TextChangeDocument, type TextChange, type TextSpan } from "./text-change-engine.ts";
+import {
+  resolveTextSpan,
+  transferToTextSelector,
+  selectionRange,
+  selectionSpan,
+} from "#src/tools/text-selection.ts";
+import { sourceTextSelector, targetTextSelector } from "#src/api/text-selector-fields.ts";
 import { wholeFileResultSource } from "./result-input.ts";
+import { resolveResultScope } from "./result-scope.ts";
+import { SOURCE_CHANGED } from "./source-change-retry.ts";
 
 /** Distinguish structured source authority from ordinary paths and legacy anchors. */
 export function isResultInput(value: unknown): boolean {
   return value !== undefined && (typeof value !== "string" || value.startsWith("RESULT#"));
 }
 
-interface TransferSpan {
+interface TransferSpan extends TextSpan {
   readonly source: string;
-  readonly from: number;
-  readonly to: number;
 }
 
 interface PreparedTransfer {
@@ -37,29 +43,42 @@ export async function prepareResultTransfer(
   signal?: AbortSignal,
 ): Promise<PreparedTransfer> {
   const input = { ...parameters };
-  const resolve = async (field: "path" | "target", start: string, end: string) => {
+  /** One handle per selected range, in declared order, so every attempt can resolve them again. */
+  const handles = new Map<"path" | "target", readonly string[]>();
+  const sourceSelector = sourceTextSelector(input);
+  const targetSelector = targetTextSelector(input);
+  const resolve = (field: "path" | "target", hasSelector: boolean) => {
     if (!isResultInput(input[field])) return undefined;
-    if (input[start] !== undefined || input[end] !== undefined)
-      throw new Error(`Do not combine structured ${field} with ${start}/${end}.`);
+    if (hasSelector) {
+      // The anchors select the text, inside the result's selection: the result is their scope.
+      const scope = resolveResultScope(store, input[field], cwd);
+      if (!scope.complete)
+        throw new Error(
+          "Incomplete result targets cannot establish a complete transfer. Run Search again with a higher limit or a narrower query, then use the complete result.",
+        );
+      if (scope.targets.length === 0) throw new Error("Empty result target set.");
+      input[field] = store.register(scope.targets, cwd);
+      return undefined;
+    }
     const selected = store.resolveOrdered(input[field], cwd);
     if (!selected.complete)
       throw new Error(
         "Incomplete result targets cannot establish a complete transfer. Run Search again with a higher limit or a narrower query, then use the complete result.",
       );
-    await store.verify(selected, signal);
     input[field] = store.register(selected.targets, cwd);
+    handles.set(
+      field,
+      selected.targets.map((target) => store.register([target], cwd)),
+    );
     return selected;
   };
-  const source = await resolve("path", "start", "end");
-  const destination = await resolve("target", "targetStart", "targetEnd");
+  const source = resolve("path", sourceSelector !== undefined);
+  const destination = resolve("target", targetSelector !== undefined);
   if (source === undefined && destination === undefined) return { input, empty: false };
-  if (
-    source !== undefined &&
-    destination === undefined &&
-    input.targetStart === undefined &&
-    input.targetEnd === undefined
-  ) {
+  if (source !== undefined && destination === undefined && targetSelector === undefined) {
     // A structured source may use the byte-preserving file operation only when it really selects a whole file.
+    // A file operation uses the selected file right away, so its text is checked here.
+    await store.verify(source, signal);
     input.path = wholeFileResultSource(store.resolve(parameters.path, cwd));
     return { input, empty: false, verifyFileSource: () => store.verify(source, signal) };
   }
@@ -90,6 +109,9 @@ export async function prepareResultTransfer(
     const sources = spans(source);
     const destinations = spans(destination);
     if ([...sources, ...destinations].every((span) => span.from === span.to)) {
+      // Nothing is written, so the positions are checked against the file here.
+      await store.verify(source, signal);
+      await store.verify(destination, signal);
       assertMoveTargets(sources, destinations);
       return { input, empty: false, noOpTarget: store.register(destination.targets, cwd) };
     }
@@ -98,38 +120,41 @@ export async function prepareResultTransfer(
     input,
     empty,
     async mutate(context) {
+      // Each attempt takes the selections as the store has them now: moved to the file's current
+      // text when another process wrote it, or refused with their current lines when their own
+      // text changed.
+      const current = (field: "path" | "target"): ResolvedResultTargets => ({
+        targets: (handles.get(field) ?? []).flatMap((handle) => store.resolve(handle, cwd).targets),
+        complete: true,
+      });
       const spans = (selected: ResolvedResultTargets): TransferSpan[] =>
         selected.targets.map((target) => {
           const document = context.documentFor(target.source);
           if (document.content !== target.expectedContent)
-            throw new Error("Transfer result target is stale; repeat Read/Search.");
+            throw Object.assign(
+              new Error("The selected text's file changed before the transfer; run it again."),
+              { code: SOURCE_CHANGED },
+            );
           const range = target.ranges[0];
           if (range === undefined) throw new Error("Transfer selection has no range.");
-          return {
-            source: target.source,
-            ...document.range(
-              range.start.lineNumber,
-              range.start.column,
-              range.end.lineNumber,
-              range.end.column,
-            ),
-          };
+          selectionRange(context, target.source, range);
+          return { source: target.source, ...selectionSpan(document, range) };
         });
       const sources =
         source === undefined
           ? [
-              input.start === undefined
-                ? { source: context.sourceFor("path"), from: 0, to: context.sourceDocument.length }
-                : anchorSpanRange(
-                    context,
-                    await context.resolveAnchors("start"),
-                    input.end === undefined ? undefined : await context.resolveAnchors("end"),
-                    "start",
-                    "end",
-                  ),
+              sourceSelector === undefined
+                ? {
+                    source: context.sourceFor("path"),
+                    ...context.sourceDocument.charSpan({
+                      from: 0,
+                      to: context.sourceDocument.length,
+                    }),
+                  }
+                : await resolveTextSpan(context, sourceSelector),
             ]
-          : spans(source);
-      const destinations = destination === undefined ? undefined : spans(destination);
+          : spans(current("path"));
+      const destinations = destination === undefined ? undefined : spans(current("target"));
       if (sources.length !== (destinations?.length ?? 1))
         throw new Error(
           "Transfer source and destination selection counts must match; no broadcast or concatenation.",
@@ -146,50 +171,42 @@ export async function prepareResultTransfer(
       };
       const planned: { target: TransferSpan; change: TextChange }[] = [];
       for (const [index, span] of sources.entries()) {
-        const copied = context.documentFor(span.source).text(span);
+        const copied = context.documentFor(span.source).transfer(span);
         const destinationSpan = destinations?.[index];
         if (destinationSpan !== undefined) {
           planned.push({
             target: destinationSpan,
-            change: { from: destinationSpan.from, to: destinationSpan.to, insert: copied },
+            change: context.documentFor(destinationSpan.source).replace(destinationSpan, copied),
           });
           continue;
         }
-        const starts = await context.resolveAnchors("targetStart");
-        if (input.targetEnd === undefined) {
-          const [target, change] = insertionAfterAnchor(context, starts, "targetStart", copied);
-          planned.push({
-            target: { source: target, from: change.from, to: change.to },
-            change,
-          });
-        } else {
-          const target = anchorSpanRange(
-            context,
-            starts,
-            await context.resolveAnchors("targetEnd"),
-            "targetStart",
-            "targetEnd",
-          );
-          planned.push({
-            target,
-            change: { from: target.from, to: target.to, insert: copied },
-          });
-        }
+        const [target, change] = await transferToTextSelector(context, copied, targetSelector);
+        planned.push({ target, change });
       }
       if (operation === "move") {
+        const spansBySource = new Map<string, TransferSpan[]>();
+        for (const span of sources) {
+          const group = spansBySource.get(span.source);
+          if (group === undefined) spansBySource.set(span.source, [span]);
+          else group.push(span);
+        }
+        const deletions = [...spansBySource].flatMap(([source, spans]) =>
+          context
+            .documentFor(source)
+            .deleteSpans(spans)
+            .map((change) => ({ source, ...change })),
+        );
         assertMoveTargets(
           sources,
-          planned.map((transfer) => transfer.target),
+          planned.map(({ target }) => target),
         );
-        for (const span of sources)
-          append(span, { from: span.from, to: span.to, insert: "" }, false);
+        assertMoveTargets(
+          deletions,
+          planned.map(({ target, change }) => ({ source: target.source, ...change })),
+        );
+        for (const deletion of deletions) append(deletion, deletion, false);
       }
-      for (const transfer of planned)
-        append(
-          transfer.target,
-          operation === "copy" ? { ...transfer.change, allowUnchanged: true } : transfer.change,
-          true,
-        );
+      for (const transfer of planned) append(transfer.target, transfer.change, true);
       return { edits };
     },
   };

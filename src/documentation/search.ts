@@ -29,11 +29,6 @@ export function createDocumentationSearchResolver(
           kind: "failed",
           error: new Error("File include/exclude globs do not apply to docs: resources."),
         };
-      if (/^(?:files|ast|symbols|process):/u.test(request.query))
-        return {
-          kind: "failed",
-          error: new Error("Use a text or regex: query for docs: resources."),
-        };
       const id = source.slice("docs:".length);
       if (id.length === 0)
         return {
@@ -158,9 +153,8 @@ function matchRow(match: SearchSelectionMatch): string {
 function searchPattern(request: SearchRequest): RegExp {
   if (/\r|\n/u.test(request.query)) throw new Error("Search supports one-line patterns only.");
   const query = request.query;
-  const literal = query.startsWith('"') && query.endsWith('"') ? query.slice(1, -1) : query;
   const pattern = query.startsWith("regex:")
     ? query.slice(6)
-    : literal.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    : query.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   return new RegExp(pattern, request.caseSensitive === true ? "gu" : "giu");
 }

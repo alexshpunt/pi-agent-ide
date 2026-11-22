@@ -146,6 +146,13 @@ function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
+/** Snapshot the fixture's commit and index entries.
+ * Worktree bytes are compared by validateFiles, so cases may change tracked files on purpose.
+ */
+export function gitState(cwd: string): string {
+  return git(cwd, ["rev-parse", "HEAD"]) + git(cwd, ["ls-files", "--stage", "-z"]);
+}
+
 /** Freeze current source and dependencies in a disposable clone; never reset the development checkout. */
 export async function snapshotSource(
   repository: string,
@@ -153,10 +160,16 @@ export async function snapshotSource(
 ): Promise<{ source: string; revision: string; digest: string }> {
   const source = path.join(container, "source");
   const revision = git(repository, ["rev-parse", "HEAD"]).trim();
+  // Local trial clones copy object files directly. The freeze commit must not start
+  // detached maintenance that repacks or removes those files after this returns.
   const cloned = await runProcess("git", [
     "clone",
     "--quiet",
     "--no-hardlinks",
+    "--config",
+    "gc.auto=0",
+    "--config",
+    "maintenance.auto=false",
     repository,
     source,
   ]);
@@ -218,7 +231,13 @@ export async function prepareTrial(
   parent: string,
   source: string,
   task: CapabilityCase,
-): Promise<{ root: string; cwd: string; state: string; initial: Record<string, Buffer> }> {
+): Promise<{
+  root: string;
+  cwd: string;
+  state: string;
+  initial: Record<string, Buffer>;
+  git?: string;
+}> {
   const root = await mkdtemp(path.join(parent, "trial-"));
   try {
     const workspace = path.join(root, "workspace");
@@ -315,7 +334,7 @@ export async function prepareTrial(
       await symlink("missing", path.join(cwd, "broken-link"));
     }
     const initial = await fixtureFiles(cwd, "", task.setup === "semantic-vera" ? "" : undefined);
-    return { root, cwd, state, initial };
+    return { root, cwd, state, initial, ...(task.git ? { git: gitState(cwd) } : {}) };
   } catch (error) {
     await cleanupTrial(parent, root);
     throw error;
@@ -331,7 +350,7 @@ export async function fixtureFiles(
   const entries: Record<string, Buffer> = {};
   for (const entry of await readdir(path.join(root, prefix), { withFileTypes: true })) {
     if ([".git", ".pi", "node_modules"].includes(entry.name)) continue;
-    if (veraIndexPrefix === prefix && entry.name === ".vera") continue;
+    if (veraIndexPrefix === prefix && [".vera", ".vera.lock"].includes(entry.name)) continue;
     const file = path.join(prefix, entry.name);
     if (entry.isDirectory())
       Object.assign(entries, await fixtureFiles(root, file, veraIndexPrefix));

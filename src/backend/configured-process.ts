@@ -45,6 +45,7 @@ export function createSshConfiguredProcessAccess(
           timeoutMs: config.timeoutMs ?? 30_000,
           maxBytes: 20 * 1024 * 1024,
           closeInput: true,
+          ...(context.input === undefined ? {} : { input: Buffer.from(context.input) }),
           effect: "unknown",
         },
       );

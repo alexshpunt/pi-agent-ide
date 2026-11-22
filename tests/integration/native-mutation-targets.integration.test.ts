@@ -10,6 +10,7 @@ import {
   toolCall,
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 test("pending native results gain exact authority only after their original-snapshot batch commits", async () => {
@@ -39,14 +40,14 @@ test("pending native results gain exact authority only after their original-snap
             arguments: {
               code: `
 text(await tools.read({path:"note.txt"}));
-const first = await tools.replace({path:"note.txt",start:"alpha",text:"first\\nalpha"});
-const second = await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+const first = await tools.replace({path:"note.txt",at:"alpha",text:"first\\r\\nalpha"});
+const second = await tools.replace({path:"note.txt",at:"beta",text:"BETA"});
 
 if(typeof first!=="string" || typeof second!=="string") throw Error("Accepted edits need public result handles");
-const found=await tools.search({path:second,query:"BETA"}).then(value => value.result);
-if(!found.includes("BETA") || !found.includes(":2:12-16")) throw Error("Batch-peer shifts lost: "+found);
-const outside=await tools.search({path:first,query:"café"}).then(value => value.result);
-if(!outside.includes("No matches found")) throw Error("Peer target widened");
+const found=await tools.search({path:second,query:"BETA"});
+if(found.matches.length!==1 || found.matches[0].text!=="BETA" || found.matches[0].line!==2) throw Error("Batch-peer shifts lost: "+JSON.stringify(found));
+const outside=await tools.search({path:first,query:"café"});
+if(outside.matches.length!==0 || outside.complete!==true) throw Error("Peer target widened");
 const next=await tools.replace({path:found,text:"READY"});
 text({first,second,found,outside,next});
 `,
@@ -94,7 +95,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
             id: "cancel",
             name: "codemode",
             arguments: {
-              code: '// @options: {"timeout_ms":2000}\nconst accepted = await tools.replace({path:"note.txt",start:"alpha",text:"PENDING"}); if(typeof accepted !== "string" || !accepted.includes("<uuid>")) throw Error("No public reserved result"); text(accepted); while(true) {}',
+              code: '// @options: {"timeout_ms":2000}\nconst accepted = await tools.replace({path:"note.txt",at:"alpha",text:"PENDING"}); if(typeof accepted !== "string" || !accepted.startsWith("RESULT#")) throw Error("No public reserved result"); text(accepted); while(true) {}',
             },
           }),
         ]),
@@ -103,7 +104,7 @@ test("cancelled pending results are rejected rather than becoming editable autho
             id: "rejected",
             name: "codemode",
             arguments: {
-              code: 'const target = "owned-cancelled-target"; const failure = await tools.read({path:target}); const rejected = failure?.status === "error" ? failure.errors.map((error) => error.message).join("\\n") : undefined; if(!rejected || !rejected.includes("interrupted before writing")) throw Error("Cancelled result gained authority or lost its rejection reason: "+JSON.stringify(failure)); text(rejected);',
+              code: 'const target = "owned-cancelled-target"; const failure = await tools.read({path:target}); if(failure !== null) throw Error("Cancelled result gained authority: "+JSON.stringify(failure)); text("rejected");',
             },
           }),
         ]),
@@ -113,6 +114,10 @@ test("cancelled pending results are rejected rather than becoming editable autho
     expect(getToolExecution(run, "cancel").isError).toBe(true);
     expect(getToolExecution(run, "rejected").isError, getToolResultText(run, "rejected")).toBe(
       false,
+    );
+    // The rejected Read resolves to null; its reason ends the Codemode result.
+    expect(codemodeFailures(getToolResultText(run, "rejected"))).toContain(
+      "interrupted before writing",
     );
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha café\n");
   });

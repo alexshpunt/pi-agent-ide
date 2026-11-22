@@ -9,6 +9,7 @@ import {
   text,
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { capabilityCases } from "#capabilities/cases.ts";
 import { parseEvents, resultText, validateRoute } from "#capabilities/validation.ts";
@@ -16,9 +17,7 @@ import { expect, test } from "vitest";
 
 test("the structured capability case proves real alias receipts without exposing its nonce in summary text", async () => {
   await withTempWorkspace(async (cwd) => {
-    const task = capabilityCases.find(
-      (candidate) => candidate.id === "semantic-local-alias-receipts",
-    );
+    const task = capabilityCases.find((candidate) => candidate.id === "semantic-script-receipts");
     if (!task) throw new Error("Missing structured receipt capability case");
     const textTask = capabilityCases.find(
       (candidate) => candidate.id === "semantic-write-receipts",
@@ -46,7 +45,7 @@ test("the structured capability case proves real alias receipts without exposing
               id: "receipts",
               name: "codemode",
               arguments: {
-                code: 'for (const effect of ["applied","not-applied","unknown"]) { const receipt = await tools.mcp__agent_ide__insert({path:"fixture:semantic-script/"+effect,text:"probe"}); text(receipt); } for (const effect of ["applied","not-applied","unknown"]) { try { const receipt = await tools.write({path:"fixture:semantic/"+effect,content:"probe"}); text({legacyKind:typeof receipt}); } catch { text({legacyRefused:effect}); } }',
+                code: 'for (const effect of ["applied","not-applied","unknown"]) { const receipt = await tools.mcp__agent_ide__insert({path:"fixture:semantic-script/"+effect,text:"probe"}); text(receipt); } for (const effect of ["applied","not-applied","unknown"]) { const receipt = await tools.write({path:"fixture:semantic/"+effect,content:"probe"}); text(receipt === null ? {legacyNull:effect} : {legacyKind:typeof receipt}); }',
               },
             }),
           ],
@@ -67,7 +66,8 @@ test("the structured capability case proves real alias receipts without exposing
       passed: true,
       reasons: [],
     });
-    expect(getToolResultText(run, "receipts")).toContain('"legacyKind":"string"');
+    // A provider Write without a script value selects no text, so even the applied one is null.
+    expect(getToolResultText(run, "receipts")).toContain('"legacyNull":"applied"');
     const sourceResults = events.filter(
       (event) => event.type === "tool_execution_end" && event.toolName === "insert",
     );
@@ -88,7 +88,20 @@ test("the structured capability case proves real alias receipts without exposing
       (event) => event.type === "tool_execution_end" && event.toolName === "write",
     );
     expect(textResults).toHaveLength(3);
-    expect(textResults.every((event) => event.result?.structuredContent === undefined)).toBe(true);
+    // Text receipts carry no structured receipt: the applied write selects no text and the
+    // refused or uncertain writes failed, so all three resolve to null.
+    expect(
+      textResults.map((event) => {
+        const value = event.result?.structuredContent;
+        return value === null ? "null" : typeof value;
+      }),
+    ).toEqual(["null", "null", "null"]);
+    expect(getToolResultText(run, "receipts")).toContain('"legacyNull":"not-applied"');
+    expect(getToolResultText(run, "receipts")).toContain('"legacyNull":"unknown"');
+    const failures = codemodeFailures(getToolResultText(run, "receipts"));
+    expect(failures).not.toContain("- write fixture:semantic/applied\n");
+    expect(failures).toContain("- write fixture:semantic/not-applied\n");
+    expect(failures).toContain("- write fixture:semantic/unknown\n");
     expect(await readFile(path.join(cwd, "attempts.jsonl"), "utf8")).toBe(
       [task.expected?.["attempts.jsonl"], textTask.expected?.["attempts.jsonl"]].join(""),
     );

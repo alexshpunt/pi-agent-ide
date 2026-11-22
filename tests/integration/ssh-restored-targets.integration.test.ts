@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 
@@ -73,36 +74,35 @@ test("whole-file transfers and last text undo publish only present native destin
             arguments: {
               code: `
 const source = await tools.read({path:${JSON.stringify(local)}});
-let transferRefusal;
-try { await tools.copy({path:source,target:${JSON.stringify(copied)}}); } catch(error) { transferRefusal = String(error); }
-if (!transferRefusal?.includes("no reusable text selection")) throw Error("BOM conversion must not grant source coordinates: " + transferRefusal);
+// The text is the file's exact content: the UTF-8 BOM stays its first character.
+if (source.text !== ${JSON.stringify(original)}) throw Error("Read changed the BOM file: " + JSON.stringify(source.text));
 const copied = await tools.copy({path:${JSON.stringify(local)},target:${JSON.stringify(copied)}});
 const copiedBytes = await tools.read({path:${JSON.stringify("raw:" + copied)},limit:3});
-if (!copiedBytes.includes("ef bb bf")) throw Error("Copy lost the UTF-8 BOM: " + copiedBytes);
-const copiedText = await tools.search({path:copied,query:"café"}).then(value => value.result);
-if (!copiedText.includes("café")) throw Error(copiedText);
+// "77u/" is the base64 of the UTF-8 BOM, ef bb bf.
+if (copiedBytes?.bytes !== "77u/") throw Error("Copy lost the UTF-8 BOM: " + JSON.stringify(copiedBytes));
+const copiedText = await tools.search({path:copied,query:"café"});
+if (copiedText.matches.length !== 1 || copiedText.matches[0].text !== "café") throw Error(JSON.stringify(copiedText));
 const moved = await tools.move({path:copied,target:${JSON.stringify(moved)}});
 const movedBytes = await tools.read({path:${JSON.stringify("raw:" + moved)},limit:3});
-if (!movedBytes.includes("ef bb bf")) throw Error("Move lost the UTF-8 BOM: " + movedBytes);
-const movedText = await tools.search({path:moved,query:"café"}).then(value => value.result);
-if (!movedText.includes(${JSON.stringify(moved)})) throw Error(movedText);
+if (movedBytes?.bytes !== "77u/") throw Error("Move lost the UTF-8 BOM: " + JSON.stringify(movedBytes));
+const movedText = await tools.search({path:moved,query:"café"});
+if (movedText.matches.length !== 1 || movedText.matches[0].path !== ${JSON.stringify(moved)}) throw Error(JSON.stringify(movedText));
 const written = await tools.write({path:moved,content:"changed café\\r\\n"});
-text(await tools.read({path:written}));
+text((await tools.read({path:written})).text);
 const saved = await tools.read({path:${JSON.stringify(moved)}});
 const restored = await tools.undo({file:saved,change:"last"});
-const found = await tools.search({path:restored,query:"prior"}).then(value => value.result);
-if (!found.includes("prior") || !found.includes(${JSON.stringify(moved)})) throw Error(found);
+const found = await tools.search({path:restored,query:"prior"});
+if (found.matches.length !== 1 || found.matches[0].text !== "prior" || found.matches[0].path !== ${JSON.stringify(moved)}) throw Error(JSON.stringify(found));
 text({copied,moved,restored,found});
 const created = await tools.write({path:${JSON.stringify(created)},content:"created café"});
 const cleared = await tools.delete({path:created});
 const emptyFile = await tools.read({path:${JSON.stringify(created)}});
-if (!emptyFile.includes("Empty source")) throw Error("Deleting a selection must leave the file present: " + emptyFile);
+if (emptyFile?.text !== "") throw Error("Deleting a selection must leave the file present: " + JSON.stringify(emptyFile));
+// Delete leaves no text to select: both the cleared selection and the removed file are null.
+if (cleared !== null) throw Error("Deleted text granted a selection: " + cleared);
 const removed = await tools.delete({path:${JSON.stringify(created)}});
-text(cleared);
-let refusal;
-try { await tools.read({path:removed}); } catch(error) { refusal = String(error); }
-if (!refusal) throw Error("Restored absence must not grant text authority");
-text({removed,refusal});
+if (removed !== null) throw Error("Restored absence must not grant text authority: " + removed);
+text({removed});
 `,
             },
           }),
@@ -114,9 +114,9 @@ text({removed,refusal});
     }).run("Keep whole-file transfer bytes and restored source authority on their native owners.");
     for (const id of ["transfers"])
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
-    // Last text undo restores decoded text, not the BOM consumed by the text converter.
+    // Last text undo restores the exact prior text, BOM included.
     expect((await backend.read(`${fixture.workspace}/moved.txt`)).bytes.toString("utf8")).toBe(
-      original.slice(1),
+      original,
     );
     await expect(backend.read(`${fixture.workspace}/copied.txt`)).rejects.toMatchObject({
       code: "ENOENT",
@@ -126,7 +126,8 @@ text({removed,refusal});
     });
     expect(await readFile(local, "utf8")).toBe(original);
     expect(getToolResultText(run, "transfers")).toContain("prior");
-    expect(getToolResultText(run, "transfers")).toContain("refusal");
+    expect(getToolResultText(run, "transfers")).toContain('"removed":null');
+    expect(codemodeFailures(getToolResultText(run, "transfers"))).toBe("");
     expect(run.tuiRenderedOutput).toContain(root);
   } finally {
     await fixture.stop();

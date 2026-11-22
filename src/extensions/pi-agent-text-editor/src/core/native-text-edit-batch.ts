@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { withTextEditOrigin } from "./text-edit-origin.ts";
+import { TextAnchorResourceResolutionError } from "./text-anchor-registry.ts";
+import { localSnapshotSource } from "./native-snapshot-source.ts";
 import path from "node:path";
 import { requiredValue } from "pi-agent-invariant";
 import { fileURLToPath } from "node:url";
@@ -15,36 +17,70 @@ import type { FileMutationBatchResult, FileMutationResult } from "#src/api/mutat
 import type { TextBatchEntry } from "./text-edit-batch.ts";
 import type { TextEditCompletion } from "#src/api/edit-completion.ts";
 import type { TextEditorCore, TextResourceEditRequest } from "./text-editor-core.ts";
-import { BatchExecutionJournal } from "./text-edit-batch-execution.ts";
+import {
+  BatchExecutionJournal,
+  type BatchCallExecutionEntry,
+} from "./text-edit-batch-execution.ts";
 import {
   executeRegisteredTextBatch,
   planRegisteredTextBatch,
   type PlannedTextBatch,
 } from "./text-edit-batch-registrar.ts";
-import { buildFailedTextMutationResult, mutationSources } from "./text-mutation.ts";
+import {
+  allMatchesRetry,
+  buildFailedTextMutationResult,
+  captureScriptMutation,
+  implicitSourceAnchor,
+  mutationSources,
+} from "./text-mutation.ts";
 import { isWholeFileInvocation } from "./file-operation-tools.ts";
 import { isResultInput } from "./result-transfer.ts";
+import { resolveResultScope } from "./result-scope.ts";
 import { FileMutationAgentResult } from "./mutation-result/file-mutation-agent-result.ts";
 import { writeProblemNotices } from "./write-agent-result.ts";
 import {
+  EDIT_EXECUTION_TIMEOUT_MS,
+  EDIT_WAIT_TIMEOUT_MS,
   ResourceScheduler,
+  ResourceError,
+  ToolDeadlineError,
   resourceAccesses,
   connectResultTargets,
   resultError,
+  runWithinToolDeadline,
   type ResultTargetStore,
   type StructuredResult,
 } from "pi-agent-resource";
 import { createPostEditScope } from "./post-edit-scope.ts";
-import { committedMutationTargets, unchangedCopySources } from "./mutation-result-targets.ts";
+import {
+  committedMutationTargets,
+  isAlreadyDoneMutation,
+  unchangedSources,
+} from "./mutation-result-targets.ts";
+import { ALREADY_DONE_TEXT, alreadyDoneToolResult } from "./already-done.ts";
 import { FileMutationResult as MutationPresentation } from "./mutation-result/file-mutation-result.ts";
 import { isFormattingContribution, isDiffStatusContribution } from "#src/api/post-edit.ts";
-import { captureScriptMutation } from "./text-mutation.ts";
+import {
+  TextMutationAnchorAggregateError,
+  TextMutationAnchorResolutionError,
+} from "./text-mutation-anchor-error.ts";
 import {
   NATIVE_EDIT_BATCH_EVENT,
   type NativeEditBatchEvent,
 } from "#src/api/native-edit-batch-event.ts";
 import { mutationOutcome, type MutationData, type BatchMutationData } from "./structured-result.ts";
 
+/** Read-only selections stay tool boundaries; preflight must not verify or retire them. */
+function isReadOnlyResult(store: ResultTargetStore, value: string, cwd: string): boolean {
+  if (!value.startsWith("RESULT#")) return false;
+  try {
+    store.resolve(value, cwd, { forScope: true });
+    return false;
+  } catch (error) {
+    // Other failures still go through the ordinary resolver and its error handling.
+    return error instanceof ResourceError && error.code === "NO_EDITABLE_TEXT";
+  }
+}
 /** A confirmed whole-file write can finish formatting after its child tool has returned. */
 function appliedFileAction(
   result: AgentToolResult<FileMutationBatchResult>,
@@ -88,6 +124,8 @@ interface ScriptBatch {
   tail: Promise<void>;
   readonly scheduler: ResourceScheduler;
   readonly callOrder: Map<string, number>;
+  /** One-based position of every child tool call, as the script made them. */
+  readonly ordinals: Map<string, number>;
   readonly unfinishedCalls: Map<string, string>;
   pending: PendingBatch;
   closed: boolean;
@@ -155,6 +193,63 @@ function receiptStatus(errors: readonly unknown[], operations: BatchMutationData
       : ("error" as const);
 }
 
+/** One line naming each anchor that failed, or the first line of another error. */
+function failureReason(error: unknown): string {
+  const anchors =
+    error instanceof TextMutationAnchorAggregateError
+      ? error.failures
+      : error instanceof TextMutationAnchorResolutionError
+        ? [error]
+        : [];
+  if (anchors.length > 0)
+    return anchors
+      .map((failure) => {
+        const [first = ""] = failure.anchor.split("\n");
+        const shown =
+          first.length > 60 || first !== failure.anchor ? `${first.slice(0, 60)}…` : first;
+        return `${failure.field} ${JSON.stringify(shown)}: ${failure.resolution.message}`;
+      })
+      .join("; ");
+  const message = resultError(error).message;
+  return (
+    message
+      .split("\n")
+      .find((line) => line.trim().length > 0)
+      ?.trim() ?? ""
+  );
+}
+
+/** Say which calls of a failed commit wrote nothing, so the agent redoes only those. */
+function failedBatchSummary(
+  calls: readonly BatchCallExecutionEntry[],
+  entries: readonly TextBatchEntry[],
+  ordinals: ReadonlyMap<string, number>,
+): string {
+  const written = calls.filter(
+    (call) => call.state === "completed" || call.state === "failed-applied",
+  ).length;
+  const unknown = calls.some((call) => call.state === "failed-unknown" || call.state === "running");
+  const header = unknown
+    ? "Editor batch failed with unknown file effects. Read the affected files before retrying."
+    : written === 0
+      ? "Editor batch not applied: no file was changed."
+      : `Editor batch partly applied: ${written} of ${calls.length} calls written. Redo only the calls below.`;
+  const lines = calls
+    .filter((call) => call.state !== "completed")
+    .map((call) => {
+      const operation = entries.find((entry) => entry.callId === call.callId)?.op ?? "edit";
+      const outcome =
+        call.state === "failed-applied"
+          ? "was applied, but its final processing failed"
+          : call.state === "failed-unknown" || call.state === "running"
+            ? "has an unknown effect"
+            : "was not applied";
+      const reason = call.failure === undefined ? "" : failureReason(call.failure.error);
+      return `Call ${ordinals.get(call.callId) ?? "?"} (${operation}) ${outcome}${reason ? `: ${reason}` : "."}`;
+    });
+  return [header, ...lines].join("\n");
+}
+
 function assertOpen(script: ScriptBatch): void {
   if (script.closed) throw new Error("Codemode editor batch is closed.");
 }
@@ -178,7 +273,8 @@ function isBatchable(
     registration.direct?.matches(input) ||
     registration.intent === "restore" ||
     isWholeFileInvocation(registration.wholeFileOperation, input) ||
-    core.getSemanticMutationHandler(registration.name, input)
+    core.getSemanticMutationHandler(registration.name, input) ||
+    core.hasMatchingPreEditHandler(registration.name, input)
   )
     return false;
   const fields = [
@@ -202,9 +298,19 @@ function isBatchable(
 
 class NativeTextEditBatchCoordinator {
   private readonly scripts = new Map<string, ScriptBatch>();
-  private readonly invocations = new Map<string, ScriptBatch>();
+  private readonly invocations = new Map<
+    string,
+    {
+      readonly script: ScriptBatch;
+      readonly input: Readonly<Record<string, unknown>>;
+      readonly implicitAnchors: Readonly<Record<string, string>>;
+      readonly scopedSources: Readonly<Record<string, string>>;
+    }
+  >();
   private readonly scopedInvocations = new Map<string, ScriptBatch>();
   private readonly resultTargets: ResultTargetStore;
+  /** Only completed Read/Search results may contribute local snapshot selections. */
+  private readonly snapshotResults = new Set<string>();
 
   constructor(
     private readonly core: TextEditorCore,
@@ -228,6 +334,7 @@ class NativeTextEditBatchCoordinator {
           tail: Promise.resolve(),
           scheduler: new ResourceScheduler(),
           callOrder: new Map(),
+          ordinals: new Map(),
           unfinishedCalls: new Map(),
           pending: pendingBatch(),
           closed: false,
@@ -237,6 +344,7 @@ class NativeTextEditBatchCoordinator {
       const script =
         event.parentToolCallId === undefined ? undefined : this.scripts.get(event.parentToolCallId);
       if (!script) return;
+      script.ordinals.set(event.toolCallId, script.ordinals.size + 1);
       const registration = this.core
         .getMutationTools()
         .find((tool) => tool.name === event.toolName);
@@ -249,53 +357,185 @@ class NativeTextEditBatchCoordinator {
           typeof source === "string" && !isResultInput(source) ? source : "",
         );
       }
-      let ownsSource = false;
-      if (registration && !isWholeFileInvocation(registration.wholeFileOperation, input)) {
-        const resolverContext = {
-          cwd: context.cwd,
-          ...(context.signal !== undefined && { signal: context.signal }),
-        };
-        for (const descriptor of [registration.source, ...(registration.source.targets ?? [])]) {
-          const value = input[descriptor.field];
-          if (typeof value === "string" && value.length > 0) {
-            if (
-              ["replace", "write", "copy", "move", "delete", "undo", "insert"].includes(
-                registration.name,
-              ) &&
-              value.startsWith("RESULT#")
-            ) {
-              // The executor validates result handles and returns a structured rejection.
-              ownsSource = true;
-              continue;
-            }
-            const result = await this.core.textTargetResolver().tryResolve(value, resolverContext);
-            if (result.kind !== "not-handled") ownsSource = true;
-          }
+      // Result transfers own pairing, destination replacement and zero-width no-op semantics.
+      // Keep them on the same preparation path as direct calls.
+      let ownsSource =
+        (registration !== undefined &&
+          this.core.hasMatchingPreEditHandler(registration.name, input)) ||
+        ((registration?.name === "copy" || registration?.name === "move") &&
+          (isResultInput(input.path) || isResultInput(input.target)));
+      // Do not replace an invalid explicit selector with an inferred one. Validation and
+      // presentation of rejected calls belong to the tool.
+      try {
+        registration?.validateInput?.(input);
+      } catch {
+        ownsSource = true;
+      }
+      // Only local, single-source Read/Search references can share immutable batch snapshots.
+      // Keep the caller's input intact for every boundary call.
+      const candidate = { ...input };
+      const implicitAnchors: Record<string, string> = {};
+      const scopedSources: Record<string, string> = {};
+      const inferred = new Map<string, string>();
+      try {
+        if (
+          registration &&
+          !ownsSource &&
+          !isWholeFileInvocation(registration.wholeFileOperation, input)
+        ) {
+          const target = input[registration.source.field];
+          await runWithinToolDeadline(
+            event.toolName,
+            typeof target === "string" && target.length > 0 ? target : context.cwd,
+            EDIT_EXECUTION_TIMEOUT_MS,
+            context.signal,
+            "not-applied",
+            async (signal) => {
+              const resolverContext = { cwd: context.cwd, signal };
+              for (const descriptor of [
+                registration.source,
+                ...(registration.source.targets ?? []),
+              ]) {
+                const value = input[descriptor.field];
+                if (typeof value !== "string" || value.length === 0) continue;
+                if (
+                  value.startsWith("RESULT#") &&
+                  !this.snapshotResults.has(value) &&
+                  !this.resultTargets.referenceName(value).startsWith("SEARCH#")
+                ) {
+                  // Pending edit results and other resource-owned selections remain boundaries.
+                  ownsSource = true;
+                  continue;
+                }
+                if (isReadOnlyResult(this.resultTargets, value, context.cwd)) {
+                  ownsSource = true;
+                  continue;
+                }
+                const result = await this.core
+                  .textTargetResolver()
+                  .tryResolve(value, resolverContext);
+                signal.throwIfAborted();
+                if (result.kind === "not-handled") continue;
+                const source =
+                  result.kind === "resolved"
+                    ? localSnapshotSource(
+                        this.resultTargets.referenceName(value),
+                        result.targets,
+                        this.snapshotResults,
+                      )
+                    : undefined;
+                const firstAnchor = implicitSourceAnchor(registration, descriptor.field, input);
+                if (source === undefined || firstAnchor === undefined) {
+                  ownsSource = true;
+                  continue;
+                }
+                candidate[descriptor.field] = source;
+                // RESULT sources constrain explicit endpoints; textual Search sources also
+                // contribute their implicit selection. Retain references for each replan.
+                if (
+                  value.startsWith("RESULT#") &&
+                  (registration.anchors ?? []).some(
+                    (anchor) =>
+                      anchor.sourceField === descriptor.field &&
+                      isMutationAnchorValue(anchor, input[anchor.field]),
+                  )
+                ) {
+                  const scope = resolveResultScope(this.resultTargets, value, context.cwd);
+                  if (!scope.complete) {
+                    ownsSource = true;
+                    continue;
+                  }
+                  scopedSources[descriptor.field] = this.resultTargets.register(
+                    scope.targets,
+                    context.cwd,
+                  );
+                } else if (isMutationAnchorValue(firstAnchor, input[firstAnchor.field]))
+                  implicitAnchors[firstAnchor.field] = value;
+                else candidate[firstAnchor.field] = value;
+              }
+              for (const anchor of registration.anchors ?? []) {
+                const value = input[anchor.field];
+                if (!isMutationAnchorValue(anchor, value)) continue;
+                if (
+                  value.startsWith("RESULT#") &&
+                  !this.snapshotResults.has(value) &&
+                  !this.resultTargets.referenceName(value).startsWith("SEARCH#")
+                ) {
+                  ownsSource = true;
+                  continue;
+                }
+                if (isReadOnlyResult(this.resultTargets, value, context.cwd)) {
+                  ownsSource = true;
+                  continue;
+                }
+                const targets = await this.core.resolveTextAnchorResources(
+                  value,
+                  anchor.kinds,
+                  resolverContext,
+                );
+                signal.throwIfAborted();
+                if (targets === undefined) continue;
+                const source = localSnapshotSource(
+                  this.resultTargets.referenceName(value),
+                  targets,
+                  this.snapshotResults,
+                );
+                if (source === undefined) {
+                  ownsSource = true;
+                  continue;
+                }
+                const previous = inferred.get(anchor.sourceField);
+                if (previous !== undefined && previous !== source) ownsSource = true;
+                inferred.set(anchor.sourceField, source);
+                if (!candidate[anchor.sourceField]) candidate[anchor.sourceField] = source;
+              }
+              if (
+                registration.source.inherited &&
+                !candidate[registration.source.field] &&
+                !ownsSource
+              ) {
+                const source =
+                  script.pending.entries.at(-1)?.path ?? getLastResolvedResource(pi)?.source;
+                if (source !== undefined) candidate[registration.source.field] = source;
+              }
+            },
+            (error) => {
+              throw error;
+            },
+          );
         }
-        for (const anchor of registration.anchors ?? []) {
-          const value = input[anchor.field];
-          if (
-            isMutationAnchorValue(anchor, value) &&
-            (await this.core.resolveTextAnchorResources(value, anchor.kinds, resolverContext)) !==
-              undefined
-          )
-            ownsSource = true;
-        }
-        if (registration.source.inherited && !input[registration.source.field] && !ownsSource) {
-          const source = script.pending.entries.at(-1)?.path ?? getLastResolvedResource(pi)?.source;
-          if (source !== undefined) input[registration.source.field] = source;
-        }
+      } catch (error) {
+        context.signal?.throwIfAborted();
+        if (error instanceof ToolDeadlineError) return { block: true, reason: error.message };
+        if (!(error instanceof TextAnchorResourceResolutionError)) throw error;
+        // Classification is only an optimization. Let the tool handle rejected references
+        // so a failed child call keeps its normal result and the script can continue.
+        ownsSource = true;
       }
       if (
         registration &&
         !ownsSource &&
         !script.context.cwd.startsWith("ssh://") &&
-        isBatchable(this.core, registration, input)
+        isBatchable(this.core, registration, candidate)
       ) {
-        this.invocations.set(event.toolCallId, script);
+        Object.assign(input, candidate);
+        this.invocations.set(event.toolCallId, {
+          script,
+          input: candidate,
+          implicitAnchors,
+          scopedSources,
+        });
         return;
       }
-      const work = script.scheduler.run(undefined, () => this.commit(script));
+      const work = script.scheduler.run(
+        undefined,
+        () => this.commit(script),
+        script.cancellation.signal,
+        {
+          waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+          waitFor: "the preceding editor batch",
+        },
+      );
       script.tail = work.then(
         () => undefined,
         () => undefined,
@@ -309,6 +549,42 @@ class NativeTextEditBatchCoordinator {
       return;
     });
     pi.on("tool_result", async (event) => {
+      // Read issues trusted text selections; non-text and multi-source results stay boundaries.
+      if (event.toolName === "read" && !event.isError) {
+        const outcome = event.structuredContent;
+        if (
+          outcome !== null &&
+          typeof outcome === "object" &&
+          "status" in outcome &&
+          outcome.status === "success" &&
+          "data" in outcome
+        ) {
+          const data = outcome.data;
+          if (
+            data !== null &&
+            typeof data === "object" &&
+            "kind" in data &&
+            data.kind === "text" &&
+            "target" in data &&
+            typeof data.target === "string"
+          )
+            this.snapshotResults.add(data.target);
+        }
+      }
+      // These handles come from the Search owner, never from caller-supplied coordinates.
+      if (event.toolName === "search" && !event.isError) {
+        const details = event.details;
+        const payload =
+          details !== null && typeof details === "object" && "payload" in details
+            ? details.payload
+            : undefined;
+        if (payload !== null && typeof payload === "object" && "target" in payload) {
+          if (typeof payload.target === "string") this.snapshotResults.add(payload.target);
+          if ("matchTargets" in payload && Array.isArray(payload.matchTargets))
+            for (const target of payload.matchTargets)
+              if (typeof target === "string") this.snapshotResults.add(target);
+        }
+      }
       this.scopedInvocations.get(event.toolCallId)?.unfinishedCalls.delete(event.toolCallId);
       this.invocations.delete(event.toolCallId);
       this.scopedInvocations.delete(event.toolCallId);
@@ -361,11 +637,19 @@ class NativeTextEditBatchCoordinator {
             "The operation was interrupted before writing. No file was changed.",
             "CANCELLED",
           );
+          const registrations = new Map(
+            this.core.getMutationTools().map((tool) => [tool.name, tool]),
+          );
           const operations = script.pending.entries.map((entry) => ({
             id: entry.callId,
             operation: entry.op,
             effect: "not-applied" as const,
             errors: [error],
+            files: mergedFiles(
+              [...mutationSources(requiredValue(registrations.get(entry.op)), entry).values()].map(
+                (source) => ({ source, effect: "not-applied" as const }),
+              ),
+            ),
           }));
           script.reports.push({
             status: "error",
@@ -471,10 +755,17 @@ class NativeTextEditBatchCoordinator {
                   formatting: outcome.postEditContributions
                     .map((item) => item.data)
                     .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
-                  diffStatuses: outcome.postEditContributions
-                    .map((item) => item.data)
-                    .filter(isDiffStatusContribution)
-                    .flatMap((item) => item.diffStatuses),
+                  // Statuses of the edit itself, such as a symbol text fallback, stay beside
+                  // the final post-edit ones; the script result is where the model reads them.
+                  diffStatuses: [
+                    ...(previous.diffStatuses ?? []).filter(
+                      (status) => status.origin === "pre-edit",
+                    ),
+                    ...outcome.postEditContributions
+                      .map((item) => item.data)
+                      .filter(isDiffStatusContribution)
+                      .flatMap((item) => item.diffStatuses),
+                  ],
                 });
                 replaceScriptResult(script, requiredValue(script.results[index]), updated);
               },
@@ -554,8 +845,9 @@ class NativeTextEditBatchCoordinator {
         .filter((result) => result.ok && script.completedWrites.has(result))
         .flatMap(completedWriteNotices);
       if (writeNotices.length > 0) content.push({ type: "text", text: writeNotices.join("\n") });
-      if (parentResults.length > 0)
+      if (parentResults.length > 0) {
         content.push(new FileMutationAgentResult(parentResults).toTextContent());
+      }
       const details =
         typeof event.details === "object" && event.details !== null ? event.details : {};
       return {
@@ -582,6 +874,8 @@ class NativeTextEditBatchCoordinator {
     };
     pi.on("agent_end", clear);
     pi.on("session_shutdown", clear);
+    pi.on("session_start", () => this.snapshotResults.clear());
+    pi.on("session_shutdown", () => this.snapshotResults.clear());
   }
 
   /** Share post-edit state while allowing Write to finish its own processing immediately. */
@@ -618,8 +912,10 @@ class NativeTextEditBatchCoordinator {
     signal: AbortSignal | undefined,
     context: ExtensionContext,
   ): Promise<AgentToolResult<FileMutationBatchResult>> | undefined {
-    const script = this.invocations.get(id);
-    if (!script) return undefined;
+    const invocation = this.invocations.get(id);
+    if (!invocation) return undefined;
+    const { script, implicitAnchors, scopedSources } = invocation;
+    input = invocation.input;
     script.callOrder.set(id, script.callOrder.size);
     const sources = [...mutationSources(registration, input).values()].map((source) =>
       source.startsWith("file://")
@@ -634,8 +930,19 @@ class NativeTextEditBatchCoordinator {
       Promise.all(sources.map((source) => resourceAccesses(source, context.cwd, "write"))).then(
         (sets) => sets.flat(),
       ),
-      () => this.accept(script, id, registration, input, effectiveSignal, context),
+      () =>
+        this.accept(
+          script,
+          id,
+          registration,
+          input,
+          effectiveSignal,
+          context,
+          implicitAnchors,
+          scopedSources,
+        ),
       effectiveSignal,
+      { waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS, waitFor: sources.join(", ") || "the editor batch" },
     );
     script.tail = Promise.allSettled([script.tail, work]).then(() => undefined);
     return work;
@@ -648,6 +955,8 @@ class NativeTextEditBatchCoordinator {
     input: Readonly<Record<string, unknown>>,
     signal: AbortSignal | undefined,
     context: ExtensionContext,
+    implicitAnchors: Readonly<Record<string, string>>,
+    scopedSources: Readonly<Record<string, string>>,
   ): Promise<AgentToolResult<FileMutationBatchResult>> {
     signal?.throwIfAborted();
     assertOpen(script);
@@ -661,12 +970,15 @@ class NativeTextEditBatchCoordinator {
     }
     const entry: TextBatchEntry = {
       ...normalized,
+      implicitAnchors,
+      scopedSources,
       callId: id,
       op: registration.name,
       path: String(normalized[registration.source.field]),
     };
     const batch = script.pending;
-    const requests = new Map<string, TextResourceEditRequest>();
+    // Read every file of the batch: a change by another writer replans earlier calls too.
+    const requests = new Map(batch.requests);
     for (const source of mutationSources(registration, entry).values())
       requests.set(source, {
         source,
@@ -674,25 +986,48 @@ class NativeTextEditBatchCoordinator {
         ...(registration.name === "write" && { allowReadFailure: true }),
         ...(batch.existence.has(source) && { expectedExistence: batch.existence.get(source) }),
       });
-    const planning: { plan?: PlannedTextBatch; cause?: unknown } = {};
+    const order = (left: { callId: string }, right: { callId: string }) =>
+      requiredValue(script.callOrder.get(left.callId)) -
+      requiredValue(script.callOrder.get(right.callId));
+    const planning: { plan?: PlannedTextBatch; replanned?: boolean; cause?: unknown } = {};
     const preview = await this.core.previewTexts(
       [...requests.values()],
       { cwd: context.cwd, ...(signal !== undefined && { signal }) },
       async (texts, resolveAnchor) => {
         try {
-          for (const [source, expected] of batch.snapshots)
-            if (requests.has(source) && texts.get(source) !== expected)
-              throw new Error(`Snapshot source ${source} changed before the edit batch.`);
-          planning.plan = await planRegisteredTextBatch(
-            new Map([[registration.name, registration]]),
-            { edits: [entry], failureMode: "abort" },
-            texts,
-            resolveAnchor,
-            context,
-            signal,
-            () => {},
-            new Map([...batch.plan.changes].filter(([source]) => requests.has(source))),
+          const changed = [...batch.snapshots].some(
+            ([source, expected]) => texts.get(source) !== expected,
           );
+          if (changed) {
+            // Another writer changed a file of the batch. Content anchors find their text in the
+            // current file; a call whose anchor is gone stays accepted and fails at commit alone.
+            const plan = await planRegisteredTextBatch(
+              new Map(this.core.getMutationTools().map((tool) => [tool.name, tool])),
+              { edits: [...batch.entries, entry].sort(order) },
+              texts,
+              resolveAnchor,
+              context,
+              signal,
+              () => {},
+              undefined,
+              this.core.checkSpan,
+            );
+            const own = plan.failures.find((failure) => failure.callId === id);
+            if (own !== undefined) throw own.error;
+            planning.plan = plan;
+            planning.replanned = true;
+          } else
+            planning.plan = await planRegisteredTextBatch(
+              new Map([[registration.name, registration]]),
+              { edits: [entry], failureMode: "abort" },
+              texts,
+              resolveAnchor,
+              context,
+              signal,
+              () => {},
+              batch.plan,
+              this.core.checkSpan,
+            );
           return { changes: planning.plan.changes, result: planning.plan };
         } catch (error) {
           planning.cause = error;
@@ -710,6 +1045,8 @@ class NativeTextEditBatchCoordinator {
           cause: planning.cause,
         },
         context,
+        "not-applied",
+        allMatchesRetry(registration.name, input, this.resultTargets),
       );
       return { ...result, isError: true };
     }
@@ -722,26 +1059,21 @@ class NativeTextEditBatchCoordinator {
     }
     for (const [source, request] of requests) batch.requests.set(source, request);
     batch.entries.push(entry);
-    const order = (left: { callId: string }, right: { callId: string }) =>
-      requiredValue(script.callOrder.get(left.callId)) -
-      requiredValue(script.callOrder.get(right.callId));
     batch.entries.sort(order);
-    batch.plan = {
-      changes: new Map([...batch.plan.changes, ...planning.plan.changes]),
-      mutations: [...batch.plan.mutations, ...planning.plan.mutations].sort(order),
-      failures: [...batch.plan.failures, ...planning.plan.failures],
-    };
+    batch.plan = planning.replanned
+      ? planning.plan
+      : {
+          changes: new Map([...batch.plan.changes, ...planning.plan.changes]),
+          mutations: [...batch.plan.mutations, ...planning.plan.mutations].sort(order),
+          failures: [...batch.plan.failures, ...planning.plan.failures],
+        };
     const target = ["replace", "insert", "write", "copy", "move"].includes(registration.name)
       ? this.resultTargets.reserve(context.cwd)
       : undefined;
     if (target) script.targets.set(id, target);
-    const unchangedCopy =
-      registration.name === "copy" &&
-      planning.plan.mutations.every(
-        ({ mutation }) =>
-          mutation.edits.size > 0 &&
-          unchangedCopySources(mutation, batch.snapshots).size === mutation.edits.size,
-      );
+    const unchanged = planning.plan.mutations
+      .filter((planned) => planned.callId === id)
+      .every(({ mutation }) => isAlreadyDoneMutation(mutation, batch.snapshots));
     const details = {
       results: [],
       source: entry.path,
@@ -753,11 +1085,10 @@ class NativeTextEditBatchCoordinator {
       content: [
         {
           type: "text",
-          text:
-            registration.name === "copy"
-              ? unchangedCopy
-                ? "No changes: destination already has this text."
-                : `Copy destination: ${typeof normalized.target === "string" ? normalized.target : entry.path}`
+          text: unchanged
+            ? ALREADY_DONE_TEXT
+            : registration.name === "copy"
+              ? `Copy destination: ${typeof normalized.target === "string" ? normalized.target : entry.path}`
               : `Accepted ${registration.name} for ${entry.path}. Check the final Codemode result for applied changes.`,
         },
       ],
@@ -801,6 +1132,7 @@ class NativeTextEditBatchCoordinator {
       }
       try {
         await this.resultTargets.verify({ targets, complete: true }, signal);
+        signal.throwIfAborted();
         this.resultTargets.confirm(reference, targets, script.context.cwd);
       } catch (error) {
         this.resultTargets.reject(
@@ -821,17 +1153,17 @@ class NativeTextEditBatchCoordinator {
       script.context.signal === undefined
         ? script.cancellation.signal
         : AbortSignal.any([script.context.signal, script.cancellation.signal]);
-    const unchangedCopies = new Map(
-      batch.plan.mutations
-        .filter(({ mutation }) => mutation.operation === "copy")
-        .map(({ callId, mutation }) => {
-          const sources = unchangedCopySources(mutation, batch.snapshots);
+    const callsUnchanged = () =>
+      new Map(
+        batch.plan.mutations.map(({ callId, mutation }) => {
+          const sources = unchangedSources(mutation, batch.snapshots);
           return [
             callId,
             { sources, all: sources.size > 0 && sources.size === mutation.edits.size },
           ] as const;
         }),
-    );
+      );
+    let unchangedCalls = callsUnchanged();
     let observedSources: string[] = [];
     const record = (
       outcome: StructuredResult<MutationData>,
@@ -849,11 +1181,11 @@ class NativeTextEditBatchCoordinator {
         ]),
       );
       const calls = journal.snapshot();
-      const operations = calls.map((call) => ({
+      const effects = calls.map((call) => ({
         id: call.callId,
         operation: requiredValue(batch.entries.find((entry) => entry.callId === call.callId)).op,
         effect:
-          call.state === "completed" && unchangedCopies.get(call.callId)?.all
+          call.state === "completed" && unchangedCalls.get(call.callId)?.all
             ? ("not-applied" as const)
             : call.state === "completed" || call.state === "failed-applied"
               ? ("applied" as const)
@@ -862,28 +1194,45 @@ class NativeTextEditBatchCoordinator {
                 : ("not-applied" as const),
         errors: call.failure === undefined ? [] : [resultError(call.failure.error)],
       }));
-      const files = mergedFiles([
-        ...operations.flatMap((operation) => {
+      // The files of each call with the call's own effect; a file it left unchanged is not-applied.
+      const plannedFiles = new Map(
+        effects.map((operation) => {
           const entry = requiredValue(batch.entries.find((entry) => entry.callId === operation.id));
           const registration = requiredValue(registrations.get(entry.op));
           const mutation = batch.plan.mutations.find(
             (item) => item.callId === operation.id,
           )?.mutation;
-          return [...mutationSources(registration, entry).values()].map((source) => ({
-            source,
-            effect:
-              mutation?.edits.has(source) === false ||
-              unchangedCopies.get(operation.id)?.sources.has(source) === true
-                ? ("not-applied" as const)
-                : operation.effect,
-          }));
+          return [
+            operation.id,
+            [...mutationSources(registration, entry).values()].map((source) => ({
+              source,
+              effect:
+                mutation?.edits.has(source) === false ||
+                unchangedCalls.get(operation.id)?.sources.has(source) === true
+                  ? ("not-applied" as const)
+                  : operation.effect,
+            })),
+          ] as const;
         }),
-        ...observedSources.map((source) => ({ source, effect: "applied" as const })),
-      ]).map((file) =>
+      );
+      // A written file is applied and rollback evidence replaces the journal's effect.
+      const withEvidence = (file: MutationData["files"][number]) =>
         observedSources.includes(file.source)
           ? { ...file, effect: "applied" as const }
-          : (reportedFiles.get(file.source) ?? file),
-      );
+          : (reportedFiles.get(file.source) ?? file);
+      const operations = effects.map((operation) => ({
+        ...operation,
+        // A call that changed no file keeps that, even when a peer wrote the same file.
+        files: mergedFiles(
+          requiredValue(plannedFiles.get(operation.id)).map((file) =>
+            file.effect === "not-applied" ? file : withEvidence(file),
+          ),
+        ),
+      }));
+      const files = mergedFiles([
+        ...[...plannedFiles.values()].flat(),
+        ...observedSources.map((source) => ({ source, effect: "applied" as const })),
+      ]).map(withEvidence);
       const errors = [
         ...new Map(
           [...outcome.errors, ...operations.flatMap((operation) => operation.errors)].map(
@@ -911,58 +1260,82 @@ class NativeTextEditBatchCoordinator {
           operations.some((operation) => operation.effect === "applied") ||
           observedSources.length > 0,
       });
-      if (!completed)
-        script.errors.push(
-          "Editor batch failed; inspect its final file results. Accepted edits were not replayed.",
-        );
-      return completed;
+      if (!completed) script.errors.push(failedBatchSummary(calls, batch.entries, script.ordinals));
+      else if (outcome.status === "error")
+        script.errors.push(...outcome.errors.map(({ message }) => message));
+      return completed && outcome.status !== "error";
     };
     try {
       signal.throwIfAborted();
-      const captured = await withTextEditOrigin(this.core, script.id, () =>
-        script.postEdits.run(() =>
-          captureScriptMutation(this.core, () =>
-            executeRegisteredTextBatch(
-              this.core,
-              registrations,
-              {
-                edits: batch.entries,
-                expectedContent: batch.snapshots,
-                expectedExistence: batch.existence,
-              },
-              signal,
-              undefined,
-              script.context,
-              journal.reporter(),
-              () => {},
-              batch.plan,
+      const captured = await runWithinToolDeadline(
+        "editor batch",
+        [...batch.requests.keys()].join(", "),
+        EDIT_EXECUTION_TIMEOUT_MS,
+        signal,
+        "not-applied",
+        async (deadlineSignal) => {
+          const result = await withTextEditOrigin(this.core, script.id, () =>
+            script.postEdits.run(() =>
+              captureScriptMutation(this.core, () =>
+                executeRegisteredTextBatch(
+                  this.core,
+                  registrations,
+                  { edits: batch.entries, expectedExistence: batch.existence },
+                  deadlineSignal,
+                  undefined,
+                  script.context,
+                  journal.reporter(),
+                  () => {},
+                  // Results and targets describe what was written: the plan of the last attempt.
+                  (plan, snapshots) => {
+                    batch.plan = plan;
+                    batch.snapshots.clear();
+                    for (const [source, content] of snapshots) batch.snapshots.set(source, content);
+                    unchangedCalls = callsUnchanged();
+                  },
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+          deadlineSignal.throwIfAborted();
+          observedSources = result.completions.map((completion) => completion.resourceSource);
+          if (result.kind === "failed") throw result.error;
+          await this.settleTargets(script, batch, journal, result.completions, deadlineSignal);
+          return result;
+        },
+        (error) => {
+          throw error;
+        },
       );
-      observedSources = captured.completions.map((completion) => completion.resourceSource);
-      if (captured.kind === "failed") throw captured.error;
-      const value =
+      const alreadyDone =
         captured.completions.length === 0 &&
         journal
           .snapshot()
-          .every((call) => call.state === "completed" && unchangedCopies.get(call.callId)?.all)
-          ? {
+          .every((call) => call.state === "completed" && unchangedCalls.get(call.callId)?.all)
+          ? alreadyDoneToolResult(
+              batch.plan.mutations.map(({ mutation }) => mutation),
+              batch.snapshots,
+            )
+          : undefined;
+      const value =
+        alreadyDone === undefined
+          ? captured.value
+          : {
               ...captured.value,
-              content: [
-                { type: "text" as const, text: "No changes: destination already has this text." },
-              ],
-              details: { ...captured.value.details, effect: "not-applied" as const },
-            }
-          : captured.value;
+              content: alreadyDone.content,
+              details: {
+                ...captured.value.details,
+                effect: "not-applied" as const,
+                results: alreadyDone.details.results,
+              },
+            };
       script.results.push(...(value.details.results ?? []));
-      await this.settleTargets(script, batch, journal, captured.completions, signal);
       const presentation = {
         parentToolCallId: script.id,
         calls: batch.entries.map((entry) => entry.callId),
-        unchangedCopyCalls: journal
+        unchangedCalls: journal
           .snapshot()
-          .filter((call) => call.state === "completed" && unchangedCopies.get(call.callId)?.all)
+          .filter((call) => call.state === "completed" && unchangedCalls.get(call.callId)?.all)
           .map((call) => call.callId),
         ...(value.details.mutationResults === undefined
           ? {}
@@ -977,8 +1350,13 @@ class NativeTextEditBatchCoordinator {
       );
     } catch (error) {
       journal.markRunningUnknown(error);
-      await this.settleTargets(script, batch, journal, [], signal);
-      return record({ status: "error", errors: [resultError(error)] });
+      const problem = resultError(error);
+      // Verification may be what timed out. Retire pending handles without doing more I/O.
+      for (const entry of batch.entries) {
+        const reference = script.targets.get(entry.callId);
+        if (reference) this.resultTargets.reject(reference, problem.message);
+      }
+      return record({ status: "error", errors: [problem] });
     }
   }
 }

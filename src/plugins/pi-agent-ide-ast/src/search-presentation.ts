@@ -54,7 +54,8 @@ function createFilePresentation(
     { text: string; ranges: SearchResultRange[]; logicalMatchIds: string[] }
   >();
   matches.forEach((match, matchIndex) => {
-    const texts = match.lines.replace(/\r/gu, "").split("\n");
+    // Only LF ends a line. A CR stays in its line, so highlight columns keep matching its text.
+    const texts = match.lines.split("\n");
     if (texts.at(-1) === "") texts.pop();
     const logicalId = `${file}:${String(matchIndex)}`;
     texts.forEach((text, index) => {

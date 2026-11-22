@@ -5,31 +5,26 @@ import {
   sourceRangeProperties,
 } from "#src/tools/text-tool-schema-properties.ts";
 
-import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import {
-  anchorSpanRange,
-  deleteAnchorSpan,
-  selectionChanges,
-  textSelections,
-} from "#src/tools/text-selection.ts";
+  sourceSelectors,
+  sourceTextSelector,
+  textSelectorAnchors,
+} from "#src/api/text-selector-fields.ts";
+import { resolveTextSpan, selectionChanges, textSelections } from "#src/tools/text-selection.ts";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 
 export const deleteSchema = Type.Object(
   {
     path: resultSourceProperty(
-      "Path, unchanged Read/Search result or its UUID, or an array of them. A path without start deletes the file or directory (a symlink only as a link); a result removes only its selected text. Omit to use the file of the start anchor.",
+      "Source selection to remove, or a path with no text selectors to delete the file, directory or symlink itself. Omit to use the selector’s file.",
     ),
-    ...sourceRangeProperties(),
+    ...sourceRangeProperties(
+      "Remove only this selection. Do not combine with range boundaries. Omit all selectors when path selects the intended text.",
+    ),
   },
   { additionalProperties: false },
 );
-interface DeleteParameters {
-  readonly path?: unknown;
-  readonly start?: string;
-  readonly end?: string;
-}
-
 export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchema> = {
   name: "delete",
   wholeFileOperation: "delete",
@@ -40,25 +35,13 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
     "Delete files or selected text, terminate terminal or debugger sessions, or remove debugger breakpoints",
   parameters: deleteSchema,
   source: { field: "path", inherited: true },
-  anchors: [
-    {
-      field: "start",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-      optional: true,
-    },
-    {
-      field: "end",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-      optional: true,
-    },
-  ],
-  pair: ["start", "end"],
-  mutate: async (context, parameters: DeleteParameters) => {
-    const starts = await context.resolveAnchors("start");
-    const selections = textSelections(starts, "start");
-    if (parameters.end === undefined && selections !== undefined) {
+  anchors: textSelectorAnchors("path", sourceSelectors, ["through", "before"]),
+  validateInput: sourceTextSelector,
+  mutate: async (context, parameters) => {
+    const selector = sourceTextSelector(parameters) ?? { kind: "single", first: "at" };
+    const starts = await context.resolveAnchors(selector.first);
+    const selections = textSelections(starts, selector.first);
+    if (selector.kind === "single" && selections !== undefined) {
       const changes = selectionChanges(context, selections, "");
       return {
         edits: new Map(
@@ -70,10 +53,14 @@ export const deleteMutationTool: TextMutationToolRegistration<typeof deleteSchem
       };
     }
 
-    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const span = anchorSpanRange(context, starts, ends, "start", "end");
+    const span = await resolveTextSpan(context, selector, starts);
     return {
-      edits: new Map([[span.source, { changes: [deleteAnchorSpan(span)], action: "edited" }]]),
+      edits: new Map([
+        [
+          span.source,
+          { changes: [context.documentFor(span.source).delete(span)], action: "edited" },
+        ],
+      ]),
     };
   },
 };

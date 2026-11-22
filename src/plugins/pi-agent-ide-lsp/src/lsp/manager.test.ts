@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,6 +9,9 @@ import { LspServerRegistry } from "./registry.ts";
 import { LspSharedServers } from "./shared-servers.ts";
 import { searchSymbols } from "./symbol-search.ts";
 
+/** Startup timeout of a server that exits during startup; reporting the exit must not wait for it. */
+const STARTUP_TIMEOUT_MS = 10_000;
+
 const directories: string[] = [];
 afterEach(async () => {
   await LspManager.resetForTest();
@@ -17,6 +20,66 @@ afterEach(async () => {
     directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
+
+test("a source written while its snapshot is read is reported as a changed source, so the request runs again", async () => {
+  const root = path.resolve(".agents/tmp/lsp-source-snapshot");
+  await mkdir(root, { recursive: true });
+  const cwd = await mkdtemp(path.join(root, "case-"));
+  directories.push(cwd);
+  const source = path.join(cwd, "main.cpp");
+  await writeFile(source, "int a;\n");
+  const manager = LspManager.init(LspServerRegistry.fromConfig({ version: 1, servers: {} }, cwd));
+  const read = manager.readSourceText.bind(manager);
+  vi.spyOn(manager, "readSourceText").mockImplementation(async (file, signal) => {
+    const content = await read(file, signal);
+    // Another session appends a line while the snapshot is being read.
+    await writeFile(source, "int a;\nint b;\n");
+    return content;
+  });
+  await expect(manager.readSourceSnapshot(source)).rejects.toMatchObject({
+    code: "SOURCE_CHANGED",
+  });
+});
+
+// A kernel before 6.13 advances file timestamps every few milliseconds, so a same-size write within
+// one tick keeps the stamp. A fine-grained kernel cannot produce that on demand, so the manager reads
+// the real file with pinned timestamps.
+test.each([
+  { changed: "just now", ageNs: 0n, reported: true },
+  { changed: "long ago", ageNs: 10_000_000_123n, reported: false },
+])(
+  "a same-size source write during the snapshot read of a file that changed $changed is reported only when its timestamps cannot tell",
+  async ({ ageNs, reported }) => {
+    const root = path.resolve(".agents/tmp/lsp-source-snapshot");
+    await mkdir(root, { recursive: true });
+    const cwd = await mkdtemp(path.join(root, "case-"));
+    directories.push(cwd);
+    const source = path.join(cwd, "main.cpp");
+    await writeFile(source, "int a;\n");
+    const changedNs = BigInt(Date.now()) * 1_000_000n - ageNs;
+    const manager = LspManager.init(
+      LspServerRegistry.fromConfig({ version: 1, servers: {} }, cwd),
+      undefined,
+      {
+        fileGeneration: async (file) => {
+          const { dev, ino, mode, size } = await stat(file, { bigint: true });
+          return { dev, ino, mode, size, mtimeNs: changedNs, ctimeNs: changedNs };
+        },
+      },
+    );
+    const read = manager.readSourceText.bind(manager);
+    let reads = 0;
+    vi.spyOn(manager, "readSourceText").mockImplementation(async (file, signal) => {
+      const content = await read(file, signal);
+      // Another session rewrites the file with text of the same size during the first read.
+      if (reads++ === 0) await writeFile(source, "int b;\n");
+      return content;
+    });
+    const snapshot = manager.readSourceSnapshot(source);
+    if (reported) await expect(snapshot).rejects.toMatchObject({ code: "SOURCE_CHANGED" });
+    else await expect(snapshot).resolves.toMatchObject({ content: "int a;\n" });
+  },
+);
 
 test.each([false, true])(
   "workspace symbols start only servers for present source files (source=%s)",
@@ -73,6 +136,7 @@ test.each([
   expect(clients.map((client) => client.serverId)).toEqual(["typescript"]);
   await expect(searchSymbols("value", cwd, 100, undefined, {}, manager)).resolves.toEqual({
     hits: [],
+    contents: new Map(),
     complete: true,
   });
   await expect(
@@ -123,6 +187,7 @@ test.each([false, true])(
           servers: {
             fixture: {
               command: [process.execPath, proxy],
+              timeoutMs: STARTUP_TIMEOUT_MS,
               rootMarkers: [],
               languages: { fixture: { extensions: [".fx"] } },
               capabilities: ["diagnostics"],
@@ -139,12 +204,15 @@ test.each([false, true])(
     await expect(manager.getOrStart(".fx", cwd, "symbols")).rejects.toThrow(
       "[lsp] fixture exited during startup with code 1: error: Unknown binary 'fixture-server' in official toolchain",
     );
-    expect(Date.now() - started).toBeLessThan(1000);
+    // Starting the process (and the shared host) can take seconds on a busy machine; the exit must
+    // still be reported well before the startup timeout would end the wait.
+    expect(Date.now() - started).toBeLessThan(STARTUP_TIMEOUT_MS / 2);
 
     await writeFile(installed, "");
     const client = await manager.getOrStart(".fx", cwd, "symbols");
     expect(client?.ready).toBe(true);
   },
+  STARTUP_TIMEOUT_MS * 2,
 );
 
 test.each([false, true])(
@@ -204,6 +272,8 @@ test.each([false, true])(
         "[lsp] stuck is still loading the project (Loading); its results would be incomplete. Try again later.",
     });
   },
+  // The wait for the stuck server alone takes its 3 s timeout, after two server starts.
+  20_000,
 );
 
 async function workspaceProviderFixture(

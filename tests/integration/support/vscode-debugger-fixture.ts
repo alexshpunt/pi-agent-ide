@@ -89,7 +89,10 @@ export default function vscodeDebuggerFixture(pi: ExtensionAPI): void {
         steps.vscodeWithBreakpoint = await vscodeState();
         steps.started = await call("insert", { path: session, text: "start" });
         steps.vscodeStopped = await vscodeState();
-        steps.evaluated = await call("insert", { path: session, text: `evaluate ${expression}` });
+        steps.evaluated = await call("insert", {
+          path: session,
+          text: `evaluate ${expression}`,
+        });
         steps.stepped = await call("insert", { path: session, text: "step over" });
         steps.read = await call("read", { path: session });
         const breakpoint = /debug:[a-f\d]{12}\/breakpoint\/[a-f\d]{10}/u.exec(

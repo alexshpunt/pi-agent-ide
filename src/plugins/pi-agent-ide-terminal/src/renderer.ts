@@ -23,9 +23,10 @@ export function renderRunCall(
   cwd: string,
   profile: ShellProfile,
   theme: TerminalTheme,
+  name?: string,
 ): Component {
   const mode = background ? "background" : "wait";
-  const heading = `${theme.fg("toolTitle", profile.displayName.toLocaleLowerCase())} ${theme.fg("muted", `· ${shortCwd(cwd)} · ${mode}`)}`;
+  const heading = `${theme.fg("toolTitle", profile.displayName.toLocaleLowerCase())}${nameLabel(name, theme)} ${theme.fg("muted", `· ${shortCwd(cwd)} · ${mode}`)}`;
   return new Text(
     `${heading}\n${theme.fg("accent", promptMarker(profile.family))} ${command}`,
     0,
@@ -60,12 +61,15 @@ export function renderTerminalAction(
 /** Render a bounded pseudo-terminal card; complete output stays available through its log file. */
 export function renderTerminalResult(
   snapshot: Partial<TerminalSessionSnapshot>,
-  _expanded: boolean,
+  expanded: boolean,
   theme: TerminalTheme,
   action?: string,
 ): Component {
   const lines = terminalCardLines(snapshot, COMPACT_READ_ROWS, theme);
   if (action !== undefined) lines.splice(1, 1, theme.fg("accent", action));
+  // A stored card keeps only the end of the output; the expanded card points to the full log.
+  if (expanded && snapshot.truncated === true && snapshot.fullOutputPath !== undefined)
+    lines.push(theme.fg("muted", `full output: ${snapshot.fullOutputPath}`));
   return new Text(lines.join("\n"), 0, 0);
 }
 
@@ -115,7 +119,7 @@ export function renderActiveTerminal(
   theme?: TerminalTheme,
 ): string {
   const color = (name: ThemeColor, text: string): string => theme?.fg(name, text) ?? text;
-  const heading = `${color("accent", snapshot.shell.toLocaleLowerCase())} ${color("muted", `· ${shortCwd(snapshot.cwd)} · ${snapshot.background ? "background" : "wait"}`)}`;
+  const heading = `${color("accent", snapshot.shell.toLocaleLowerCase())}${snapshot.name === undefined ? "" : ` ${color("toolTitle", snapshot.name)}`} ${color("muted", `· ${shortCwd(snapshot.cwd)} · ${snapshot.background ? "background" : "wait"}`)}`;
   const lines = [
     heading,
     `${color("accent", promptMarker(snapshot.shellFamily))} ${oneLine(snapshot.command, 84)}`,
@@ -137,11 +141,14 @@ export function terminalCardLines(
   const cwd = snapshot.cwd === undefined ? "workspace" : shortCwd(snapshot.cwd);
   const family = snapshot.shellFamily ?? "posix";
   const lines = [
-    `${theme.fg("accent", shell)} ${theme.fg("muted", `· ${cwd} · ${mode}`)}`,
+    `${theme.fg("accent", shell)}${nameLabel(snapshot.name, theme)} ${theme.fg("muted", `· ${cwd} · ${mode}`)}`,
     `${theme.fg("accent", promptMarker(family))} ${snapshot.command ?? ""}`,
   ];
   const window = outputWindow(snapshot.output ?? "", outputLines);
-  if (window.omission !== undefined) lines.push(`  ${theme.fg("muted", window.omission)}`);
+  // A truncated snapshot starts after earlier output, even when its excerpt fits the card.
+  const omission =
+    window.omission ?? (snapshot.truncated === true ? "… earlier output omitted" : undefined);
+  if (omission !== undefined) lines.push(`  ${theme.fg("muted", omission)}`);
   if (window.lines.length > 0)
     lines.push(...window.lines.map((line) => `  ${theme.fg("dim", line)}`));
   lines.push(statusLine(snapshot, (name, text) => theme.fg(name, text)));
@@ -208,7 +215,12 @@ function terminalIdentity(
   const cwd = snapshot.cwd === undefined ? "workspace" : shortCwd(snapshot.cwd);
   const mode = snapshot.background === true ? "background" : "wait";
   const command = oneLine(snapshot.command ?? "process", 48);
-  return `${theme.fg("toolTitle", shell)} ${theme.fg("muted", `· ${cwd} · ${mode} · ${command}`)}`;
+  return `${theme.fg("toolTitle", shell)}${nameLabel(snapshot.name, theme)} ${theme.fg("muted", `· ${cwd} · ${mode} · ${command}`)}`;
+}
+
+/** Show an agent-chosen session name beside the shell; generated IDs stay hidden. */
+function nameLabel(name: string | undefined, theme: TerminalTheme): string {
+  return name === undefined ? "" : ` ${theme.fg("accent", name)}`;
 }
 function shortCwd(cwd: string): string {
   const home = process.env.HOME;

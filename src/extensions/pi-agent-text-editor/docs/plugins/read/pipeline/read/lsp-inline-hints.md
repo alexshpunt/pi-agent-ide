@@ -50,7 +50,7 @@ The plugin may obtain diagnostics, type information, inlay hints, or other LSP m
 A renderer may display them as inline comments, for example:
 
 ```text
-12#ABCD|const value = config.timeout;  <!-- lsp: type is number | TS2322 -->
+K7M2QX4|const value = config.timeout;  <!-- lsp: type is number | TS2322 -->
 ```
 
 The exact comment syntax is a rendering concern. Structured hint data must remain available independently of the formatted text.

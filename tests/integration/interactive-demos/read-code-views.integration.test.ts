@@ -44,7 +44,7 @@ test("shows the AST outline and lsp_search declaration and call views on a produ
       testName: "interactive-demo-read-code-views",
       cwd: directory,
       extensions: generatedExtensions.paths,
-      tools: ["read", "lsp_search"],
+      tools: ["read", "outline", "lsp_search"],
       rawMode: false,
       timeoutMs: 180_000,
       conversation: [
@@ -52,8 +52,8 @@ test("shows the AST outline and lsp_search declaration and call views on a produ
           [
             toolCall({
               id: "demo-read-ast",
-              name: "read",
-              arguments: { path: `ast:${fileName}`, views: ["anchors"] },
+              name: "outline",
+              arguments: { path: fileName },
               ...interactivePacing,
             }),
           ],
@@ -98,7 +98,7 @@ test("shows the AST outline and lsp_search declaration and call views on a produ
 
     const ast = getToolResultText(result, "demo-read-ast");
     expect(ast).toContain("export function parseCodeViewReference");
-    expect(ast).toMatch(/\d+#[A-F0-9]{4}\|export function parseCodeViewReference/u);
+    expect(ast).toMatch(/[0-9A-HJKMNP-TV-Z]{7}\|export function parseCodeViewReference/u);
     expect(ast).not.toContain("const value = source.slice");
 
     const symbol = getToolResultText(result, "demo-read-symbol");

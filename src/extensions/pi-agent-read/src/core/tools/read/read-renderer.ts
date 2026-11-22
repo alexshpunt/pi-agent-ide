@@ -107,8 +107,21 @@ export function renderReadCall(
   if (typeof arguments_.path === "string" && arguments_.path.startsWith("shell:")) {
     return new Container();
   }
-  const path = typeof arguments_.path === "string" ? arguments_.path : "inherited source";
-  const window = readWindowPresentation(path, arguments_.offset, arguments_.limit);
+  // A Read of several paths names them all; each gets the same window.
+  const listed = Array.isArray(arguments_.path)
+    ? arguments_.path.filter((source): source is string => typeof source === "string")
+    : [];
+  const named = typeof arguments_.path === "string" ? arguments_.path : listed.join(", ");
+  const path = named === "" ? "inherited source" : named;
+  const presented = readWindowPresentation(listed[0] ?? path, arguments_.offset, arguments_.limit);
+  const window =
+    listed.length > 0 && presented.pathSuffix !== ""
+      ? {
+          pathSuffix: "",
+          qualifiers: [{ text: `lines ${presented.pathSuffix.slice(1)}` }],
+          details: presented.details,
+        }
+      : presented;
   const views = Array.isArray(arguments_.views)
     ? arguments_.views.filter((view): view is string => typeof view === "string")
     : [];
@@ -117,7 +130,7 @@ export function renderReadCall(
     ...(views.length === 0 ? [] : [{ text: `views ${views.join(",")}` }]),
   ];
   const details = [
-    ...(typeof arguments_.path === "string" ? [{ label: "path", value: arguments_.path }] : []),
+    ...(named === "" ? [] : [{ label: "path", value: named }]),
     ...window.details,
     ...(views.length === 0 ? [] : [{ label: "views", value: views.join(",") }]),
   ];

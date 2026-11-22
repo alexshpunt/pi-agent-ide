@@ -8,6 +8,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "@earendil-works/pi-coding-
 import {
   assistantMessage,
   getToolCallNames,
+  getToolExecution,
   getToolResultMessage,
   getToolResultText,
   PiIntegrationTest,
@@ -222,8 +223,6 @@ test.each([undefined, 0, 1, 1999, 2000, 2001, 1000000])(
             /\n\n\[(?:Showing lines|Output truncated|Output line|Line |First output line|No lines selected|Offset |\d+ more)/u,
           )[0] ?? "";
         expectBounded(body);
-        if (entry.name === "diff" && (limit === undefined || limit >= 100))
-          expect(output).toContain("Diff output is truncated");
         if (entry.name === "read" && entry.limit !== undefined && entry.args.path === "large.ts")
           expect((body.match(/row_\d+/gu) ?? []).length).toBeLessThanOrEqual(
             Math.max(0, entry.limit),
@@ -333,7 +332,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
                 id: "scoped-search",
                 name: "codemode",
                 arguments: {
-                  code: 'const tail = await tools.read({path:"regression/1724-"+ "long-path-".repeat(8)+".txt"}); text(await tools.search({ query: "needle", path: tail, limit: 1 }).then(value => value.result));',
+                  code: 'const tail = await tools.read({path:"regression/1724-"+ "long-path-".repeat(8)+".txt"}); const found = await tools.search({ query: "needle", path: tail, limit: 1 }); text("matches:" + found.matches.length + " complete:" + found.complete); text(JSON.stringify(found));',
                 },
               }),
             ],
@@ -349,11 +348,12 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
         const output = getToolResultText(result, `search-${index}`);
         expectBounded(output);
         if (args.query === "needle" || args.query === "regex:needle") {
-          expect(output).toContain(
-            args.path === "regression"
-              ? "10114 matches in 1725 files"
-              : "2048 matches in 256 files",
-          );
+          expect(getToolResultMessage(result, `search-${index}`).details).toMatchObject({
+            payload:
+              args.path === "regression"
+                ? { matchCount: 10114, fileCount: 1725 }
+                : { matchCount: 2048, fileCount: 256 },
+          });
           // Every displayed item carries a reference, including each compacted file's first line.
           const items = (output.match(/:line SEARCH#[A-F\d]+:\d+:match/gu) ?? []).length;
           expect(items).toBeLessThanOrEqual(Number(args.limit ?? 50));
@@ -362,7 +362,8 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
       }
       const result = resultFor(cases.length);
       expect(getToolResultMessage(result, "scoped-search").isError).toBe(false);
-      expect(getToolResultText(result, "scoped-search")).toContain("5 matches");
+      // Display limit 1 bounds the readable result only; the script value lists every match.
+      expect(getToolResultText(result, "scoped-search")).toContain("matches:5 complete:true");
       expect(getToolResultText(result, "scoped-search")).toContain("1724-");
       expectBounded(getToolResultText(result, "scoped-search"));
     } finally {
@@ -371,7 +372,7 @@ test.each([undefined, 1, 2, 79, 80, 81, 1000])(
   },
   210000,
 );
-test("stresses write-result scopes, verified anchors and annotation views without widening limits", async () => {
+test("stresses write-result scopes, verified anchors and annotation views without widening explicit limits", async () => {
   const cwd = await workspace();
   try {
     for (const name of ["a", "b"])
@@ -388,20 +389,22 @@ test("stresses write-result scopes, verified anchors and annotation views withou
       const b = await tools.write({path:"b.ts",content:source("b")});
       if (source("a").length <= 51200) throw new Error("Scope fixture is too small");
       let checked = 0;
-      const verify = (value, limit, resources) => {
-        const body = value.replace(/^<system-result[^\\n]*>\\n/u,"").split("\\n\\n[Output truncated:")[0];
-        const bytes = [...body].reduce((sum,char) => { const point=char.codePointAt(0); return sum+(point<=127?1:point<=2047?2:point<=65535?3:4); },0);
-        if (bytes > 51200 || body.split("\\n").length > 2000) throw new Error("Useful output overflow");
-        if ((body.match(/needle_[ab]_\\d+/gu)??[]).length > limit*resources) throw new Error("Explicit range overflow");
+      const verify = (value, limit, resources, whole = false) => {
+        // Scripts get the whole requested text; only explicit ranges bound it.
+        if (/\\[Output truncated:|Showing lines|Code overview/u.test(value.text)) throw new Error("Script text was cut");
+        const body = value.text;
+        const needles = (body.match(/needle_[ab]_\\d+/gu)??[]).length;
+        if (needles > limit*resources) throw new Error("Explicit range overflow");
+        if (whole && needles < 300) throw new Error("Script text is incomplete");
         checked++;
       };
       for (const offset of [-1,1,2]) for (const limit of [0,1,1000000]) {
         for (const views of [["anchors"],["ast"],["anchors","ast"],["diagnostics"],["breakpoints"]]) {
-          for (const source of [a,b]) verify(await tools.read({path:source,offset,limit,views}),limit,1);
+          for (const source of [a,b]) verify(await tools.read({path:source,offset,limit,views}),limit,1,offset===1&&limit===1000000);
         }
       }
       const selected = await tools.read({path:"a.ts",offset:299,limit:1,views:["anchors"]});
-      const anchor = /299#[A-F\\d]+/u.exec(selected)?.[0];
+      const anchor = /^([A-Z\\d]+)\\|const needle_a_298 /mu.exec(selected.text)?.[1];
       if (!anchor) throw new Error("Verified source anchor is missing");
       for (const offset of [-1,0,1,2]) for (const limit of [0,1,1000000]) {
         verify(await tools.read({path:"a.ts#"+anchor,offset,limit,views:["anchors","ast"]}),limit,1);
@@ -435,7 +438,7 @@ test("stresses write-result scopes, verified anchors and annotation views withou
 test("bounds terminal images and maximum-length sequences even with non-cropping offsets", async () => {
   const cwd = await workspace();
   const scripts = [
-    'const launched = await tools.bash({command:"printf budget-frame; sleep 60",background:true,cols:300,rows:120}); const source=/session: (shell:[a-f\\d]+)/u.exec(launched)?.[1]; if (!source) throw new Error("Missing terminal source"); store("terminal",source); text(source);',
+    'const launched = await tools.bash({command:"printf budget-frame; sleep 60",background:true,cols:300,rows:120}); const source=launched.session; if (!source) throw new Error("Missing terminal source"); store("terminal",source); text(source);',
     'text(await tools.read({path:load("terminal"),views:["image:scale=1"],offset:0,limit:1}));',
     'text(await tools.read({path:load("terminal"),views:["sequence:duration=0.019,interval=0.001,scale=1"],offset:0,limit:1}));',
     'text(await tools.delete({path:load("terminal")}));',
@@ -525,7 +528,7 @@ test("bounds Git change views and keeps large stage, unstage and undo effects co
               id: "git-calls",
               name: "codemode",
               arguments: {
-                code: 'for (const name of ["stage","unstage","undo"]) { const current=await tools.read({path:"tracked.txt",views:["changes","anchors"],limit:1}); const change=/CHANGE#[A-F\\d]+/u.exec(current)?.[0]; if (!change) throw new Error("No change anchor"); text(await tools[name]({file:"tracked.txt",change})); }',
+                code: 'for (const name of ["stage","unstage","undo"]) { const current=await tools.read({path:"tracked.txt",views:["changes","anchors"],limit:1}); const change=/CHANGE#[A-F\\d]+/u.exec(current.text)?.[0]; if (!change) throw new Error("No change anchor"); text(await tools[name]({file:"tracked.txt",change})); }',
               },
             }),
           ],
@@ -556,7 +559,7 @@ test("keeps full mutation effects and selections behind bounded useful previews"
     'const value = await tools.write({path:"large.txt",content:Array.from({length:4000}, (_,index)=>`row_${index}: ${"content ".repeat(12)}`).join("\\n")}); store("written",value); text(value);',
     'text(await tools.read({path:load("written"), offset:4000, limit:1}));',
     'text(await tools.copy({path:"large.txt",target:"copy.txt"})); text(await tools.move({path:"copy.txt",target:"moved.txt"}));',
-    'const replaced=await tools.replace({path:"moved.txt",start:"row_3999:",text:"last_row:"}); text(await tools.read({path:replaced,limit:1})); text(await tools.insert({path:"moved.txt",anchor:"last_row:",text:"inserted"}));',
+    'const replaced=await tools.replace({path:"moved.txt",at:"row_3999:",text:"last_row:"}); text(await tools.read({path:replaced,limit:1})); text(await tools.insert({path:"moved.txt",after:"last_row:",text:"inserted"}));',
     'text(await tools.undo({file:"moved.txt",change:"last"})); text(await tools.diff({before:"large.txt",after:"moved.txt"})); text(await tools.delete({path:"moved.txt"}));',
     'text(await tools.read({path:"large.txt",limit:1000000})); text(await tools.read({path:"large.txt",limit:1000000}));',
   ];
@@ -604,7 +607,6 @@ test("keeps full mutation effects and selections behind bounded useful previews"
       expectBounded(getToolResultText(result, `success-${index}`));
     }
     expect(getToolResultText(result, "success-1")).toContain("row_3999:");
-    expect(getToolResultText(result, "success-5")).toContain("Output truncated:");
     expect((await readFile(path.join(cwd, "large.txt"), "utf8")) === source).toBe(true);
     await expect(readFile(path.join(cwd, "copy.txt"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(path.join(cwd, "moved.txt"))).rejects.toMatchObject({ code: "ENOENT" });
@@ -679,7 +681,6 @@ test("bounds real Read images and Codemode's aggregate forwarded media", async (
       expectBounded(getToolResultText(result, id));
     }
     expect(getToolResultText(result, "images")).toContain("All image reads finished.");
-    expect(getToolResultText(result, "images")).toContain("5 images omitted");
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
@@ -755,7 +756,7 @@ test("bounds LSP symbol discovery and reference navigation limits", async () => 
       const result = resultFor(index);
       const output = getToolResultText(result, `symbol-${index}`);
       expect(getToolResultMessage(result, `symbol-${index}`).isError, output).toBe(false);
-      expect(output).not.toContain("No symbols found");
+      expect(output).toContain(prefix);
       expectBounded(output);
       expect((output.match(/SEARCH#[^\n]*:\d+:match /gu) ?? []).length).toBeLessThanOrEqual(
         args.limit,
@@ -834,13 +835,17 @@ test("stresses limits on HTTP text and terminal search", async () => {
               name: "codemode",
               arguments: {
                 code: `const started = await tools.bash({command:"for i in $(seq 1 4000); do echo needle-$i; done",timeoutSeconds:10});
-          const source = /shell:[a-f\\d]+/.exec(started)?.[0];
-          if (!source) throw new Error(started);
+          const source = started.session;
+          if (!source) throw new Error(JSON.stringify(started));
           for (const limit of [1,80,1000]) {
-            const result = await tools.search({query:"needle",path:source,limit}).then(value => value.result);
-            const count = /(\\d+)\\+? match(?:es)? in/.exec(result)?.[1];
-            if (count === undefined || Number(count) > limit) throw new Error(result);
-            text(result);
+            // Terminal output has no text selection, so its matches carry no ids.
+            const result = await tools.search({query:"needle",path:source,limit});
+            const shown = JSON.stringify(result).slice(0, 400);
+            if (result === null || typeof result !== "object" || "id" in result) throw new Error("Expected a match list without an id: " + shown);
+            const count = result.matches.length;
+            if (count === 0 || count > limit) throw new Error(shown);
+            if (!result.matches.every((match) => match.text === "needle" && !("id" in match))) throw new Error(shown);
+            text(limit + ": " + count + " matches");
           }
           await tools.delete({path:source});`,
               },
@@ -927,9 +932,11 @@ for (const nested of [false, true]) {
       file_search: { pattern: "needle", path: hugePath },
       ast_search: { pattern: "needle($A)", path: hugePath },
       lsp_search: { declaration: `${hugePath}#needle` },
+      diagnostics: { path: hugePath },
+      outline: { path: hugePath },
       write: { path: hugePath, content: "new" },
-      replace: { path: hugePath, start: "needle", text: "new" },
-      insert: { path: hugePath, anchor: "needle", text: "new" },
+      replace: { path: hugePath, at: "needle", text: "new" },
+      insert: { path: hugePath, after: "needle", text: "new" },
       delete: { path: hugePath },
       copy: { path: hugePath, target: "copy.txt" },
       move: { path: hugePath, target: "moved.txt" },
@@ -979,8 +986,11 @@ for (const nested of [false, true]) {
         const result = resultFor(index);
         const output = getToolResultText(result, `budget-${name}`);
         expect(output.length).toBeGreaterThan(0);
-        expect(output).not.toContain("Tool codemode not found");
-        expect(getToolCallNames(result)).toContain(name);
+        // Invalid edit arguments can be rejected before the tool_call approval hook.
+        expect(getToolExecution(result, `budget-${name}`).toolName).toBe(
+          nested ? "codemode" : name,
+        );
+        if (nested) expect(getToolCallNames(result)).toContain(name);
         if (nested)
           expect(getToolResultMessage(result, `budget-${name}`).isError, name).toBe(false);
         expectBounded(output);

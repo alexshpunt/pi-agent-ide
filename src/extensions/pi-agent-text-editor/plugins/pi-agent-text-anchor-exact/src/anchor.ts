@@ -1,5 +1,9 @@
 import {
+  SEARCH_HIGHLIGHT_CLOSE,
+  SEARCH_HIGHLIGHT_OPEN,
+  stripSearchHighlights,
   type TextAnchorRecoveryCandidateRange,
+  type TextAnchorRejection,
   type TextAnchorResolutionAttempt,
   type TextAnchorResolver,
   type TextAnchorResolverContext,
@@ -9,21 +13,14 @@ import {
   type TextSelectionPosition,
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
+import { quoteAnchorExcerpt } from "pi-agent-text-editor/api/anchor-excerpt";
+import { AnchoredLiteralView } from "./anchored-literal-view.ts";
 import type { ExactTextRecoveryConfig } from "./config.ts";
+import { literalCandidates, matchLiteral, type LiteralSpan } from "./literal-match.ts";
 import { recoverExactText } from "./recovery.ts";
 
-/** Text with CRLF and CR line breaks normalized to LF, and a map back to source offsets. */
-interface NormalizedText {
-  readonly text: string;
-  /** Maps an offset in `text` to the matching offset in the source. */
-  readonly sourceOffset: (offset: number) => number;
-}
-
 /** Creates the catch-all resolver for unique exact text spans. */
-export function createExactTextAnchorResolver(
-  config: ExactTextRecoveryConfig,
-  requiresAnchor: (source: string, cwd: string) => boolean = () => false,
-): TextAnchorResolver {
+export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): TextAnchorResolver {
   return {
     id: "exact-text",
     description:
@@ -35,22 +32,21 @@ export function createExactTextAnchorResolver(
       return "selected text";
     },
     tryResolve(value, context) {
-      return Promise.resolve(
-        requiresAnchor(context.source, context.cwd)
-          ? rejected(
-              "invalid",
-              "Exact-text editing is blocked for this file; use a current returned anchor for the next edit.",
-            )
-          : resolveExactTextAnchor(value, context),
-      );
+      return Promise.resolve(resolveExactTextAnchor(value, context));
     },
     recover(value, context) {
-      return recoverExactText(value, context, config);
+      return recoverExactText(context.rejection.searchHighlightRetry ?? value, context, config);
     },
   };
 }
 
-/** Resolves a unique EOL-normalized text value without changing the source. */
+/**
+ * Resolves the one place the literal `value` selects, matching the way Pi's edit matches
+ * `oldText`: exact characters first, then without the BOM and with CRLF and CR as LF, then
+ * fuzzily, then as a copy from the current Read anchors view. If the supplied literal is absent,
+ * retry without Search highlight delimiters. Every selector must match uniquely; the second
+ * boundary of a pair counts only the matches from its paired start on.
+ */
 export function resolveExactTextAnchor(
   value: string,
   context: TextAnchorResolverContext,
@@ -59,203 +55,208 @@ export function resolveExactTextAnchor(
     return rejected("invalid", "exact text anchor must be non-empty");
   }
 
-  const source = normalizeText(stripInitialBom(context.content));
-  const query = normalizeText(stripInitialBom(value)).text;
-  const matches = overlappingMatches(source.text, query, 2);
+  const content = context.content;
+  const inScope = scopeFilter(context);
+  const anchored = new AnchoredLiteralView(context.source, content);
+  const match = matchLiteral(content, value, anchored, inScope, context.endAfter);
 
-  if (matches.length === 0) {
-    return rejected("missing", "exact text anchor was not found");
+  if (match.kind === "missing") {
+    const outsideScope =
+      inScope !== undefined && matchLiteral(content, value, anchored).kind !== "missing";
+    const plain = stripSearchHighlights(value);
+    if (!outsideScope && plain !== value) {
+      const markers = `${SEARCH_HIGHLIGHT_OPEN} ${SEARCH_HIGHLIGHT_CLOSE}`;
+      const retry =
+        plain.length === 0
+          ? { kind: "missing" as const }
+          : matchLiteral(content, plain, anchored, inScope, context.endAfter);
+      if (
+        retry.kind === "unique" &&
+        (context.endAfter === undefined || retry.span.from >= context.endAfter)
+      ) {
+        return {
+          ...resolved(value, context, retry.span),
+          notice: `Removed Search highlight markers ${markers}`,
+        };
+      }
+      const code = retry.kind === "unique" ? "before-start" : retry.kind;
+      const reason =
+        code === "ambiguous"
+          ? "the selector without them matches more than once"
+          : code === "before-start"
+            ? "the selector without them only matches before the end of the start selection"
+            : plain.length === 0
+              ? "removing them leaves an empty selector"
+              : "the selector without them did not match within the requested text";
+      return {
+        kind: "rejected",
+        rejection: {
+          code,
+          reason: `The selector contains Search highlight markers ${markers}; ${reason}`,
+          searchHighlightRetry: plain,
+        },
+      };
+    }
+    // Interpret only single backslash control escapes, and only to explain a refusal.
+    // Never resolve or edit the decoded candidate, or reinterpret escaped backslashes.
+    const decoded = value.replace(/(?<!\\)\\[nrt]/gu, (escape) =>
+      escape === "\\n" ? "\n" : escape === "\\r" ? "\r" : "\t",
+    );
+    if (
+      !outsideScope &&
+      decoded !== value &&
+      matchLiteral(content, decoded, anchored, inScope).kind !== "missing"
+    ) {
+      return rejected(
+        "missing",
+        `Exact-text selector ${quoteAnchorExcerpt(value)} contains literal backslash escapes; the character form ${quoteAnchorExcerpt(decoded)} matches text inside the ${inScope === undefined ? "file" : "selection"}. Pass actual newline, carriage-return and tab characters in exact-text selectors, not literal backslash escapes. No decoding or edit was applied.`,
+      );
+    }
+    return rejected(
+      outsideScope ? "outside-scope" : "missing",
+      inScope === undefined
+        ? "exact text anchor was not found"
+        : "exact text anchor was not found inside the selection",
+    );
   }
 
-  if (matches.length > 1) {
-    return rejected("ambiguous", "exact text anchor matched more than once");
+  if (match.kind === "ambiguous") {
+    return rejected(
+      "ambiguous",
+      (inScope === undefined
+        ? "exact text anchor matched more than once"
+        : "exact text anchor matched more than once inside the selection") +
+        (context.endAfter === undefined ? "" : " after the start selector"),
+    );
   }
 
-  const normalizedStart = matches[0];
-  if (normalizedStart === undefined) {
-    return { kind: "failed", error: new Error("Exact match index is missing") };
+  if (match.kind === "before-start") {
+    return rejected("before-start", "all matches start before the end of the start selection");
   }
 
-  const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
-  const startOffset = bomOffset + source.sourceOffset(normalizedStart);
-  const endOffset = bomOffset + source.sourceOffset(normalizedStart + query.length);
+  return resolved(value, context, match.span);
+}
 
-  const linewise = isWholeLineMatch(context.content, startOffset, endOffset);
-  const selectionEndOffset =
-    linewise && !query.endsWith("\n")
-      ? includeTrailingLineBreak(context.content, endOffset)
-      : endOffset;
-  const range = {
-    start: positionAt(context.content, startOffset),
-    end: positionAt(context.content, selectionEndOffset),
-    ...(linewise && { linewise: true }),
-  };
+function resolved(
+  value: string,
+  { source, content }: TextAnchorResolverContext,
+  span: LiteralSpan,
+): Extract<TextAnchorResolutionAttempt, { kind: "resolved" }> {
+  // Literal text selects exactly the characters it matched, even when they form complete lines.
   return {
     kind: "resolved",
-    anchor: new TextSelectionAnchor(
-      value,
-      context.source,
-      [range],
-      [{ start: range.start, end: positionAt(context.content, endOffset) }],
-    ),
+    anchor: new TextSelectionAnchor(value, source, [
+      { start: positionAt(content, span.from), end: positionAt(content, span.to) },
+    ]),
   };
 }
 
-/** Finds exact matches and maps their spans to the original source positions. */
+/** Finds the matches of the literal and returns their source positions. */
 export function findExactTextMatches(
   value: string,
   context: TextAnchorResolverContext,
   limit: number,
-): { readonly ranges: readonly TextAnchorRecoveryCandidateRange[]; readonly total: number } {
-  const source = normalizeText(stripInitialBom(context.content));
-  const query = normalizeText(stripInitialBom(value)).text;
-  if (query.length === 0) {
-    return { ranges: [], total: 0 };
-  }
-  const matches = scanMatches(source.text, query, limit);
-  const bomOffset = context.content.startsWith("\uFEFF") ? 1 : 0;
+): {
+  readonly ranges: readonly TextAnchorRecoveryCandidateRange[];
+  readonly total: number;
+  readonly allMatches?: readonly TextAnchorRecoveryCandidateRange[];
+} {
+  const { content, source } = context;
+  const inScope = scopeFilter(context);
+  const { endAfter } = context;
+  // The second boundary of a pair chooses among the matches from the first boundary on.
+  const spans = literalCandidates(
+    content,
+    value,
+    new AnchoredLiteralView(source, content),
+    endAfter === undefined
+      ? inScope
+      : (span) => span.from >= endAfter && (inScope === undefined || inScope(span)),
+  );
+  const disjoint =
+    spans.length > 1 &&
+    spans.every(({ from, to }, index) => from < to && (spans[index - 1]?.to ?? 0) <= from);
+  // For a disjoint selection, both endpoints progress in source order. Walk the lines once,
+  // even when there are many more matches than will be shown.
+  let lineStart = 0;
+  let lineNumber = 1;
+  let nextBreak = content.indexOf("\n");
+  const orderedPosition = (offset: number): TextSelectionPosition => {
+    while (nextBreak !== -1 && nextBreak < offset) {
+      lineStart = nextBreak + 1;
+      lineNumber++;
+      nextBreak = content.indexOf("\n", lineStart);
+    }
+    return { lineNumber, column: offset - lineStart };
+  };
+  const allMatches = disjoint
+    ? spans.map(({ from, to }) => ({
+        start: orderedPosition(from),
+        end: orderedPosition(to),
+      }))
+    : undefined;
   return {
-    total: matches.total,
-    ranges: matches.starts.map((start) => ({
-      start: positionAt(context.content, bomOffset + source.sourceOffset(start)),
-      end: positionAt(context.content, bomOffset + source.sourceOffset(start + query.length)),
-    })),
+    total: spans.length,
+    ranges:
+      allMatches?.slice(0, limit) ??
+      spans.slice(0, limit).map(({ from, to }) => ({
+        start: positionAt(content, from),
+        end: positionAt(content, to),
+      })),
+    ...(allMatches !== undefined && { allMatches }),
   };
 }
 
-function isWholeLineMatch(content: string, start: number, end: number): boolean {
-  const startsAtLineBoundary =
-    start === 0 || content[start - 1] === "\n" || content[start - 1] === "\r";
-  const endsAtLineBoundary =
-    end === content.length ||
-    content[end] === "\n" ||
-    content[end] === "\r" ||
-    content[end - 1] === "\n" ||
-    content[end - 1] === "\r";
-  return startsAtLineBoundary && endsAtLineBoundary;
+/** Only spans wholly inside one selected range count for matching and recovery. */
+function scopeFilter(
+  context: TextAnchorResolverContext,
+): ((span: LiteralSpan) => boolean) | undefined {
+  const scope = context.scope?.map((range) => scopeOffsets(context.content, range));
+  return scope === undefined
+    ? undefined
+    : (span) => scope.some((range) => span.from >= range.from && span.to <= range.to);
 }
 
-function includeTrailingLineBreak(content: string, end: number): number {
-  if (content[end] === "\r" && content[end + 1] === "\n") {
-    return end + 2;
-  }
-  return content[end] === "\r" || content[end] === "\n" ? end + 1 : end;
-}
-function rejected(
-  code: "invalid" | "missing" | "ambiguous",
-  reason: string,
-): TextAnchorResolutionAttempt {
+function rejected(code: TextAnchorRejection["code"], reason: string): TextAnchorResolutionAttempt {
   return { kind: "rejected", rejection: { code, reason } };
 }
 
-function stripInitialBom(value: string): string {
-  return value.startsWith("\uFEFF") ? value.slice(1) : value;
-}
-
-function normalizeText(value: string): NormalizedText {
-  if (!value.includes("\r")) {
-    return { text: value, sourceOffset: (offset) => checkedOffset(offset, value.length) };
-  }
-
-  // Each CRLF becomes one LF, so a normalized offset maps back by adding the CRLFs before it.
-  const collapsed: number[] = [];
-  let removed = 0;
-  for (let crlf = value.indexOf("\r\n"); crlf !== -1; crlf = value.indexOf("\r\n", crlf + 2)) {
-    collapsed.push(crlf - removed);
-    removed += 1;
-  }
-  const text = value.replace(/\r\n?/gu, "\n");
-  return {
-    text,
-    sourceOffset: (offset) => checkedOffset(offset, text.length) + countBefore(collapsed, offset),
-  };
-}
-
-function checkedOffset(offset: number, length: number): number {
-  if (offset < 0 || offset > length) {
-    throw new RangeError("Exact text match is outside normalized source boundaries");
-  }
-  return offset;
-}
-
-/** Counts sorted positions lower than `offset`. */
-function countBefore(positions: readonly number[], offset: number): number {
-  let low = 0;
-  let high = positions.length;
-  while (low < high) {
-    const middle = (low + high) >>> 1;
-    if ((positions[middle] ?? Infinity) < offset) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  return low;
-}
-
-function overlappingMatches(content: string, query: string, limit: number): number[] {
-  if (query.length === 0) {
-    return [];
-  }
-  const starts: number[] = [];
-  let from = 0;
-  while (starts.length < limit && from <= content.length - query.length) {
-    const match = content.indexOf(query, from);
-    if (match === -1) {
-      break;
-    }
-    starts.push(match);
-    from = match + 1;
-  }
-  return starts;
-}
-
-function scanMatches(
+/**
+ * Source offsets of a scope range. A range that ends at the end of a line also covers that line's
+ * LF, or the CRLF when it stops before a CRLF line's CR, so text that ends with the break still
+ * counts as inside. A lone CR is ordinary text.
+ */
+function scopeOffsets(
   content: string,
-  query: string,
-  limit: number,
-): { readonly starts: number[]; readonly total: number } {
-  if (query.length === 0) {
-    return { starts: [], total: 0 };
-  }
-  const starts: number[] = [];
-  let total = 0;
-  let from = 0;
-  while (from <= content.length - query.length) {
-    const match = content.indexOf(query, from);
-    if (match === -1) {
-      break;
-    }
-    total += 1;
-    if (starts.length < limit) {
-      starts.push(match);
-    }
-    from = match + 1;
-  }
-  return { starts, total };
+  range: TextAnchorRecoveryCandidateRange,
+): { readonly from: number; readonly to: number } {
+  const to = offsetAt(content, range.end);
+  const lineBreak = content.startsWith("\r\n", to) ? 2 : content[to] === "\n" ? 1 : 0;
+  return { from: offsetAt(content, range.start), to: to + lineBreak };
 }
 
+/** The offset of a position. Only LF ends a line; CR is an ordinary character. */
+function offsetAt(content: string, position: TextSelectionPosition): number {
+  let offset = 0;
+  for (let line = 1; line < position.lineNumber; line++) {
+    const next = content.indexOf("\n", offset);
+    if (next === -1) return content.length;
+    offset = next + 1;
+  }
+  return Math.min(content.length, offset + position.column);
+}
+
+/** The position of an offset. Only LF ends a line; CR is an ordinary character. */
 function positionAt(content: string, offset: number): TextSelectionPosition {
   let lineNumber = 1;
   let lineStart = 0;
-  let nextCr = content.indexOf("\r");
-  let nextLf = content.indexOf("\n");
-  for (;;) {
-    const lineBreak = nextCr === -1 ? nextLf : nextLf === -1 ? nextCr : Math.min(nextCr, nextLf);
-    if (lineBreak === -1 || lineBreak >= offset) {
-      break;
-    }
-    lineStart =
-      content[lineBreak] === "\r" && content[lineBreak + 1] === "\n"
-        ? lineBreak + 2
-        : lineBreak + 1;
+  for (
+    let lineBreak = content.indexOf("\n");
+    lineBreak !== -1 && lineBreak < offset;
+    lineBreak = content.indexOf("\n", lineStart)
+  ) {
+    lineStart = lineBreak + 1;
     lineNumber += 1;
-    if (nextCr !== -1 && nextCr < lineStart) {
-      nextCr = content.indexOf("\r", lineStart);
-    }
-    if (nextLf !== -1 && nextLf < lineStart) {
-      nextLf = content.indexOf("\n", lineStart);
-    }
   }
-  return { lineNumber, column: Math.max(0, offset - lineStart) };
+  return { lineNumber, column: offset - lineStart };
 }

@@ -62,7 +62,7 @@ test("uses a search resource in path as a multi-file delete target", async () =>
       expect(finalState).toContain(value);
     }
     expect(finalState).not.toMatch(/^[+ -]\|/mu);
-    expect(finalState).not.toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
+    expect(finalState).not.toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|/mu);
     expect(finalState).not.toContain("SEARCH#");
     await expect(readFile(first, "utf8")).resolves.toBe("keep first\n");
     await expect(readFile(second, "utf8")).resolves.toBe("keep second\n");
@@ -74,8 +74,8 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
     const first = path.join(directory, "first.txt");
     const second = path.join(directory, "second.txt");
     const header = "header line\n";
-    await writeFile(first, `${header}needle first\ntail one\n`, "utf8");
-    await writeFile(second, `${header}needle second\ntail two\n`, "utf8");
+    await writeFile(first, `${header}needle first\nkeep one\ntail one\n`, "utf8");
+    await writeFile(second, `${header}needle second\nkeep two\ntail two\n`, "utf8");
     const result = await new PiIntegrationTest({
       testName: "search-anchor-compatible-union",
       cwd: directory,
@@ -103,7 +103,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
               name: "replace",
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
-                start: "LINE#RUNTIME:1",
+                at: "LINE#RUNTIME:1",
                 text: "changed",
               },
             }),
@@ -111,7 +111,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "search-first", name: "search", arguments: { query: "first" } })],
+          [toolCall({ id: "search-first", name: "search", arguments: { query: "keep one" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
@@ -119,13 +119,13 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-begin",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:2:all:match", start: "begin", text: "top" },
+              arguments: { path: "SEARCH#RUNTIME:2:all:match", at: "begin", text: "top" },
             }),
           ],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "search-second", name: "search", arguments: { query: "second" } })],
+          [toolCall({ id: "search-second", name: "search", arguments: { query: "keep two" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage(
@@ -133,7 +133,7 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
             toolCall({
               id: "replace-end",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:3:all:match", start: "end", text: "bottom" },
+              arguments: { path: "SEARCH#RUNTIME:3:all:match", at: "end", text: "bottom" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -145,8 +145,12 @@ test("unions path-resource ranges with an explicit compatible anchor", async () 
     expect(getToolExecution(result, "replace-union").isError).toBe(false);
     expect(getToolExecution(result, "replace-begin").isError).toBe(false);
     expect(getToolExecution(result, "replace-end").isError).toBe(false);
-    await expect(readFile(first, "utf8")).resolves.toBe("top\nchanged top\ntail one\n");
-    await expect(readFile(second, "utf8")).resolves.toBe("changed\nchanged bottom\nbottom\n");
+    // One text replaces every selected range: the content of a selected line, which keeps its
+    // line break, and only the characters of a match.
+    await expect(readFile(first, "utf8")).resolves.toBe("top\nchanged first\ntop\ntail one\n");
+    await expect(readFile(second, "utf8")).resolves.toBe(
+      "changed\nchanged second\nbottom\nbottom\n",
+    );
   });
 }, 180_000);
 
@@ -179,7 +183,8 @@ test("deletes a final no-LF line through a path resource", async () => {
     }).run("Delete the final line through a search path resource");
 
     expect(getToolExecution(result, "delete-final").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    // The deleted last line has no line break, so the one before it goes too.
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -218,7 +223,7 @@ test("deletes a final no-LF match through an all-match path resource", async () 
     }).run("Delete the final match through an all-match search path resource");
 
     expect(getToolExecution(result, "delete-final-match").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -335,11 +340,12 @@ test("deletes only the final line while preserving preceding content", async () 
     }).run("Delete only the final matching line through its per-result line path");
 
     expect(getToolExecution(result, "delete-final-line-only").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\nneedle\n");
+    // The deleted last line has no line break, so the one before it goes too.
+    await expect(readFile(source, "utf8")).resolves.toBe("header\nneedle");
   });
 }, 180_000);
 
-test("deletes all non-linewise matches while preserving separators", async () => {
+test("deletes adjacent exact matches that cover complete lines", async () => {
   await withTempWorkspace(async (directory) => {
     const source = path.join(directory, "adjacent-match-delete.txt");
     await writeFile(source, "needle\nneedle", "utf8");
@@ -371,10 +377,10 @@ test("deletes all non-linewise matches while preserving separators", async () =>
         ),
         assistantMessage([text("done")]),
       ],
-    }).run("Delete both exact matches while preserving their line separator");
+    }).run("Delete both exact matches with their line separator");
 
     expect(getToolExecution(result, "delete-adjacent-match").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("");
   });
 }, 180_000);
 
@@ -413,7 +419,7 @@ test("deletes a final no-LF per-result match through a path resource", async () 
     }).run("Delete one final search match through its per-result path resource");
 
     expect(getToolExecution(result, "delete-final-result").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -436,7 +442,7 @@ test("deletes a final no-LF line from a position-anchor union", async () => {
             toolCall({
               id: "delete-union-final",
               name: "delete",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", at: "end" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -446,7 +452,7 @@ test("deletes a final no-LF line from a position-anchor union", async () => {
     }).run("Delete a final line using a path and end anchor");
 
     expect(getToolExecution(result, "delete-union-final").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -469,7 +475,7 @@ test("inserts after a final no-LF end anchor with a path union", async () => {
             toolCall({
               id: "insert-final",
               name: "insert",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", anchor: "end", text: "inserted" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", after: "end", text: "inserted\n" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -502,7 +508,7 @@ test("deduplicates a final no-LF linewise target with end", async () => {
             toolCall({
               id: "replace-final",
               name: "replace",
-              arguments: { path: "SEARCH#RUNTIME:1:all:line", start: "end", text: "changed" },
+              arguments: { path: "SEARCH#RUNTIME:1:all:line", at: "end", text: "changed" },
             }),
           ],
           { stopReason: "toolUse" },
@@ -543,7 +549,7 @@ test("deletes a final no-LF line when exact and linewise endpoints merge", async
               name: "delete",
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:line",
-                start: "needle",
+                at: "needle",
               },
             }),
           ],
@@ -554,7 +560,7 @@ test("deletes a final no-LF line when exact and linewise endpoints merge", async
     }).run("Delete a final line by merging an exact anchor with a linewise search path");
 
     expect(getToolExecution(result, "delete-final-exact").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("header\n");
+    await expect(readFile(source, "utf8")).resolves.toBe("header");
   });
 }, 180_000);
 
@@ -584,9 +590,9 @@ test("inserts after a final no-LF line when exact and linewise endpoints merge",
               id: "insert-final-exact",
               name: "insert",
               arguments: {
-                anchor: "needle",
+                after: "needle",
                 path: "SEARCH#RUNTIME:1:all:line",
-                text: "inserted",
+                text: "inserted\n",
               },
             }),
           ],
@@ -657,8 +663,8 @@ test("accepts search anchors in both replace span endpoints", async () => {
               id: "replace-span",
               name: "replace",
               arguments: {
-                start: "SEARCH#RUNTIME:1:1:match",
-                end: "SEARCH#RUNTIME:1:2:match",
+                from: "SEARCH#RUNTIME:1:1:match",
+                through: "SEARCH#RUNTIME:1:2:match",
                 text: "merged",
               },
             }),
@@ -703,7 +709,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target",
+                targetAfter: "target\n",
               },
             }),
           ],
@@ -715,7 +721,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
 
     expect(getToolExecution(copyResult, "copy-search-range").isError).toBe(false);
     await expect(readFile(source, "utf8")).resolves.toBe("copy me\n");
-    await expect(readFile(target, "utf8")).resolves.toBe("target\ncopy me");
+    await expect(readFile(target, "utf8")).resolves.toBe("target\ncopy me\n");
     await writeFile(source, "move me\n", "utf8");
     await writeFile(target, "target\n", "utf8");
     const moveResult = await new PiIntegrationTest({
@@ -746,7 +752,7 @@ test("copies and moves ranges selected by per-result search anchors", async () =
               arguments: {
                 path: "SEARCH#RUNTIME:1:all:match",
                 target: "target.txt",
-                targetStart: "target",
+                targetAfter: "target\n",
               },
             }),
           ],
@@ -757,8 +763,8 @@ test("copies and moves ranges selected by per-result search anchors", async () =
     }).run("Search a source and target, then move the source range after the target anchor");
 
     expect(getToolExecution(moveResult, "move-search-range").isError).toBe(false);
-    await expect(readFile(source, "utf8")).resolves.toBe("\n");
-    await expect(readFile(target, "utf8")).resolves.toBe("target\nmove me");
+    await expect(readFile(source, "utf8")).resolves.toBe("");
+    await expect(readFile(target, "utf8")).resolves.toBe("target\nmove me\n");
   });
 }, 180_000);
 
@@ -818,7 +824,7 @@ test("mutates the complete selection retained by compacted search results", asyn
               id: "replace-incomplete",
               name: "replace",
               arguments: {
-                start: "SEARCH#RUNTIME:1:all:match",
+                at: "SEARCH#RUNTIME:1:all:match",
                 text: "changed",
               },
             }),
@@ -832,4 +838,258 @@ test("mutates the complete selection retained by compacted search results", asyn
     expect(getToolExecution(result, "replace-incomplete").isError).toBe(false);
     await expect(readFile(source, "utf8")).resolves.toBe("changed one\nchanged two\n");
   });
+}, 180_000);
+
+test("replaces a list of match anchors from different searches in one call", async () => {
+  await withTempWorkspace(async (directory) => {
+    const first = path.join(directory, "first.txt");
+    const second = path.join(directory, "second.txt");
+    await writeFile(first, "alpha one\nalpha two\nalpha three\n", "utf8");
+    await writeFile(second, "beta one\n", "utf8");
+    const result = await new PiIntegrationTest({
+      testName: "search-anchor-replace-list",
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", "replace"],
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "search-alpha", name: "search", arguments: { query: "alpha" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [toolCall({ id: "search-beta", name: "search", arguments: { query: "beta" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-list",
+              name: "replace",
+              arguments: {
+                path: [
+                  "SEARCH#RUNTIME:1:1:match",
+                  "SEARCH#RUNTIME:1:3:match",
+                  "SEARCH#RUNTIME:2:1:match",
+                ],
+                text: "gamma",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("done")]),
+      ],
+    }).run("Search two words, then replace chosen matches from both results in one call");
+
+    expect(getToolExecution(result, "replace-list").isError).toBe(false);
+    await expect(readFile(first, "utf8")).resolves.toBe("gamma one\nalpha two\ngamma three\n");
+    await expect(readFile(second, "utf8")).resolves.toBe("gamma one\n");
+  });
+}, 180_000);
+
+test("rejects a whole anchor list without changes and names the unknown anchor", async () => {
+  await withTempWorkspace(async (directory) => {
+    const source = path.join(directory, "source.txt");
+    await writeFile(source, "alpha one\nalpha two\n", "utf8");
+    const result = await new PiIntegrationTest({
+      testName: "search-anchor-replace-list-unknown",
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", "replace"],
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "search", name: "search", arguments: { query: "alpha" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-unknown",
+              name: "replace",
+              arguments: {
+                path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#FFFF:1:match"],
+                text: "gamma",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("done")]),
+      ],
+    }).run("Replace a list that holds one anchor that was never issued");
+
+    expect(getToolExecution(result, "replace-unknown").isError).toBe(true);
+    expect(getToolResultText(result, "replace-unknown")).toContain("SEARCH#FFFF:1:match");
+    await expect(readFile(source, "utf8")).resolves.toBe("alpha one\nalpha two\n");
+  });
+}, 180_000);
+
+test("rejects a whole anchor list without changes when one search result is stale", async () => {
+  await withTempWorkspace(async (directory) => {
+    const first = path.join(directory, "first.txt");
+    const second = path.join(directory, "second.txt");
+    await writeFile(first, "alpha one\n", "utf8");
+    await writeFile(second, "beta one\n", "utf8");
+    const result = await new PiIntegrationTest({
+      testName: "search-anchor-replace-list-stale",
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", "replace"],
+      conversation: [
+        assistantMessage(
+          [toolCall({ id: "search-alpha", name: "search", arguments: { query: "alpha" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [toolCall({ id: "search-beta", name: "search", arguments: { query: "beta" } })],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "change-second",
+              name: "replace",
+              arguments: { path: "SEARCH#RUNTIME:2:1:match", text: "delta" },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "replace-stale",
+              name: "replace",
+              arguments: {
+                path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#RUNTIME:2:1:match"],
+                text: "gamma",
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
+        assistantMessage([text("done")]),
+      ],
+    }).run("Replace a list after one of its source files changed");
+
+    expect(getToolExecution(result, "change-second").isError).toBe(false);
+    expect(getToolExecution(result, "replace-stale").isError).toBe(true);
+    await expect(readFile(first, "utf8")).resolves.toBe("alpha one\n");
+    await expect(readFile(second, "utf8")).resolves.toBe("delta one\n");
+  });
+}, 180_000);
+
+async function runReferenceList(
+  name: string,
+  files: Record<string, string>,
+  queries: readonly string[],
+  tool: string,
+  tools: readonly string[],
+  args: Record<string, unknown>,
+) {
+  return withTempWorkspace(async (directory) => {
+    for (const [file, content] of Object.entries(files))
+      await writeFile(path.join(directory, file), content, "utf8");
+    const result = await new PiIntegrationTest({
+      testName: name,
+      cwd: directory,
+      extensions: [...extensions.paths, runtimeAnchorExtension],
+      tools: ["search", ...tools],
+      conversation: [
+        ...queries.map((query, index) =>
+          assistantMessage(
+            [toolCall({ id: `search-${index}`, name: "search", arguments: { query } })],
+            { stopReason: "toolUse" },
+          ),
+        ),
+        assistantMessage([toolCall({ id: "act", name: tool, arguments: args })], {
+          stopReason: "toolUse",
+        }),
+        assistantMessage([text("done")]),
+      ],
+    }).run(`Search, then ${tool} a list of references`);
+    const contents: Record<string, string> = {};
+    for (const file of Object.keys(files))
+      contents[file] = await readFile(path.join(directory, file), "utf8");
+    return {
+      failed: getToolExecution(result, "act").isError,
+      text: getToolResultText(result, "act"),
+      contents,
+    };
+  });
+}
+
+test("inserts after every reference of a list from different searches", async () => {
+  const run = await runReferenceList(
+    "reference-list-insert",
+    { "a.txt": "one\nneedle\n", "b.txt": "pin\n" },
+    ["needle", "pin"],
+    "insert",
+    ["insert"],
+    {
+      path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#RUNTIME:2:1:line"],
+      text: "added\n",
+    },
+  );
+  expect(run.failed).toBe(false);
+  // A file that ends with a line break keeps one after the inserted line.
+  expect(run.contents).toEqual({ "a.txt": "one\nneedle\nadded\n", "b.txt": "pin\nadded\n" });
+}, 180_000);
+
+test("deletes every reference of a list from different searches", async () => {
+  const run = await runReferenceList(
+    "reference-list-delete",
+    { "a.txt": "one\nneedle\ntwo\n", "b.txt": "pin\nkeep\n" },
+    ["needle", "pin"],
+    "delete",
+    ["delete"],
+    { path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#RUNTIME:2:1:line"] },
+  );
+  expect(run.failed).toBe(false);
+  expect(run.contents).toEqual({ "a.txt": "one\ntwo\n", "b.txt": "keep\n" });
+}, 180_000);
+
+test("copies each referenced source into the matching referenced target", async () => {
+  const run = await runReferenceList(
+    "reference-list-copy",
+    { "src.txt": "AAA BBB\n", "dst.txt": "x1 x2\n" },
+    ["AAA", "BBB", "x1", "x2"],
+    "copy",
+    ["copy"],
+    {
+      path: ["SEARCH#RUNTIME:1:1:match", "SEARCH#RUNTIME:2:1:match"],
+      target: ["SEARCH#RUNTIME:3:1:match", "SEARCH#RUNTIME:4:1:match"],
+    },
+  );
+  expect(run.failed, run.text).toBe(false);
+  expect(run.contents["src.txt"]).toBe("AAA BBB\n");
+  expect(run.contents["dst.txt"]).toBe("AAA BBB\n");
+}, 180_000);
+
+test("rejects a plain path in a reference list and names it", async () => {
+  const run = await runReferenceList(
+    "reference-list-plain-path",
+    { "a.txt": "needle\n" },
+    ["needle"],
+    "replace",
+    ["replace"],
+    { path: ["SEARCH#RUNTIME:1:1:match", "a.txt"], text: "x" },
+  );
+  expect(run.failed).toBe(true);
+  expect(run.text).toContain("Reference a.txt cannot be used");
+  expect(run.text).not.toContain("Unsupported result input");
+  expect(run.contents["a.txt"]).toBe("needle\n");
+}, 180_000);
+
+test("rejects an unknown reference in a delete list without changes", async () => {
+  const run = await runReferenceList(
+    "reference-list-delete-unknown",
+    { "a.txt": "needle\nkeep\n" },
+    ["needle"],
+    "delete",
+    ["delete"],
+    { path: ["SEARCH#RUNTIME:1:1:line", "SEARCH#FFFF:1:line"] },
+  );
+  expect(run.failed).toBe(true);
+  expect(run.text).toContain("SEARCH#FFFF:1:line");
+  expect(run.contents["a.txt"]).toBe("needle\nkeep\n");
 }, 180_000);

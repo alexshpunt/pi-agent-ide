@@ -70,21 +70,32 @@ function resolveFilesystemSource(
       return false;
     }
   })();
-  let sourceBytes: Uint8Array | undefined;
+  // undefined is unread; null is an observed absence.
+  let sourceBytes: Uint8Array | null | undefined;
+  let entries: readonly string[] | undefined;
   const read = async ({ signal }: { readonly signal?: AbortSignal }) => {
     sourceBytes = undefined;
-    return isDirectory
-      ? readDirectoryContent(filePath, signal)
-      : readFilesystemContent(filePath, contentHost, signal, (bytes) => {
-          sourceBytes = bytes;
-        });
+    entries = undefined;
+    if (isDirectory)
+      return readDirectoryContent(filePath, signal, (names) => {
+        entries = names;
+      });
+    return readFilesystemContent(filePath, contentHost, signal, (bytes) => {
+      sourceBytes = bytes;
+    }).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") sourceBytes = null;
+      throw error;
+    });
   };
   const resource = {
     source: filePath,
     link,
     read,
     get sourceBytes() {
-      return sourceBytes;
+      return sourceBytes ?? undefined;
+    },
+    get entries() {
+      return entries;
     },
   };
 
@@ -97,7 +108,7 @@ function resolveFilesystemSource(
     resource: {
       ...resource,
       get sourceBytes() {
-        return sourceBytes;
+        return sourceBytes ?? undefined;
       },
       async write(content, operationContext) {
         throwIfAborted(operationContext.signal);
@@ -113,7 +124,7 @@ function resolveFilesystemSource(
               if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
               throw error;
             });
-            if (current === undefined || !current.equals(expected))
+            if (expected === null ? current !== undefined : !current?.equals(expected))
               throw new ResourceError("RESOURCE_CHANGED", filePath, "not-applied");
           }
           const bytes = Buffer.from(text, "utf8");
@@ -125,7 +136,11 @@ function resolveFilesystemSource(
   };
 }
 
-function readDirectoryContent(filePath: string, signal: AbortSignal | undefined) {
+function readDirectoryContent(
+  filePath: string,
+  signal: AbortSignal | undefined,
+  capture: (entries: readonly string[]) => void,
+) {
   throwIfAborted(signal);
 
   const entries = readdirSync(filePath, { withFileTypes: true });
@@ -140,6 +155,7 @@ function readDirectoryContent(filePath: string, signal: AbortSignal | undefined)
     lines.push(`  ${icon} ${entry.name}`);
   }
 
+  capture(entries.map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name)));
   return [{ type: "text" as const, text: lines.join("\n") }] as const;
 }
 

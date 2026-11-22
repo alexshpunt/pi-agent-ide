@@ -9,6 +9,7 @@ import {
   type AgentDocumentation,
 } from "#src/api/documentation.ts";
 import { AgentDocumentationRegistry } from "#src/documentation/registry.ts";
+import { guideAttachmentPrefix } from "#src/documentation/attachment.ts";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import { createDocumentationSearchResolver } from "#src/documentation/search.ts";
@@ -44,6 +45,10 @@ export default async function registerProgressiveDocumentation(
     registry.register(value.documents);
   });
   pi.on("session_shutdown", unsubscribe);
+  pi.on("before_agent_start", (event) => {
+    const section = history.recordType?.replaceAll("/", "_") ?? "ide_documentation";
+    event.systemPromptOptions.sections[section] = renderPromptGuideline(registry.list()) ?? "";
+  });
 
   await connectReadPlugin(pi, {
     protocol: READ_PROTOCOL,
@@ -81,7 +86,6 @@ export default async function registerProgressiveDocumentation(
             ? undefined
             : "docs: — list of guides; docs:<id> — one guide.",
       });
-      api.addPromptGuideline(() => renderPromptGuideline(registry.list()));
     },
   });
 
@@ -156,7 +160,7 @@ export default async function registerProgressiveDocumentation(
         ...event.content,
         ...documents.map((document) => ({
           type: "text" as const,
-          text: `\n\n---\n\n# Guide: ${document.id}\n\n${document.markdown.trim()}`,
+          text: guideAttachmentPrefix(document.id) + document.markdown.trim(),
         })),
       ],
       structuredContent: event.structuredContent,

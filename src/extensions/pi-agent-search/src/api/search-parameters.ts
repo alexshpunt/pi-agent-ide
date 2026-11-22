@@ -1,5 +1,9 @@
-import { Type } from "typebox";
+import { type TSchema, Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
+
+/** Core text of the path field; plugin source descriptions follow it. */
+export const searchPathDescription =
+  "File, directory, URL (no read needed first), docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/edit result or its UUID, or an array of file and directory paths or of results. Use literal text or regex: for docs: sources. Results select only their registered ranges.";
 
 /** Canonical arguments shared by standalone and composed operations. */
 export const searchSchema = Type.Object(
@@ -7,12 +11,11 @@ export const searchSchema = Type.Object(
     query: Type.String({
       minLength: 1,
       description:
-        "Text to find or a Boolean expression. Quote text to keep it literal. Use regex:<pattern> for regular expressions.",
+        "Text to find, matched literally, quotes included. Uppercase AND, OR, NOT, || or a spaced | make it a Boolean expression, where quotes group literal text. Use regex:<pattern> for regular expressions.",
     }),
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
-        description:
-          "File, directory, URL (no read needed first), docs:all for all packaged guide bodies, docs:<id> for one guide, unchanged Read/Search/edit result, its UUID, or an array of such results. Use literal text or regex: for docs: sources. Results select only their registered ranges.",
+        description: searchPathDescription,
       }),
     ),
     include: Type.Optional(
@@ -39,3 +42,22 @@ export const searchSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+/** Build a fresh Search schema snapshot whose path text ends with plugin source descriptions. */
+export function describeSearchParameters(descriptions: readonly string[]): typeof searchSchema {
+  const lines = [...new Set(descriptions.flatMap((text) => text.split("\n")))].filter(
+    (line) => line.trim() !== "",
+  );
+  if (lines.length === 0) return searchSchema;
+  const describe = <Schema extends TSchema>(schema: Schema): Schema => ({
+    ...schema,
+    description: [searchPathDescription, ...lines].join("\n"),
+  });
+  return {
+    ...searchSchema,
+    properties: {
+      ...searchSchema.properties,
+      path: describe(searchSchema.properties.path),
+    },
+  };
+}

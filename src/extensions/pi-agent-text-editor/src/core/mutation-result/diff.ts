@@ -1,4 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
+import { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 import { type Change, diffLines, formatPatch, type StructuredPatchHunk } from "diff";
 
 export interface DiffStats {
@@ -213,7 +214,7 @@ function patchHunks(
 
   for (const hunk of hunks) {
     hunk.lines = hunk.lines.flatMap((line) =>
-      line.endsWith("\n") ? [line.slice(0, -1)] : [line, "\\ No newline at end of file"],
+      line.endsWith("\n") ? [line.slice(0, -1)] : [line, NO_FINAL_LINE_BREAK],
     );
   }
   return hunks;

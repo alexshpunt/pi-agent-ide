@@ -1,4 +1,5 @@
-import { describe, expect, test } from "vitest";
+import os from "node:os";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   resolveShellProfile,
@@ -6,6 +7,8 @@ import {
 } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 
 describe("terminal shell profile", () => {
+  afterEach(() => vi.restoreAllMocks());
+
   test("uses the configured Unix shell and describes its syntax", () => {
     const profile = resolveShellProfile("linux", { SHELL: "/custom/bin/bash" });
 
@@ -16,6 +19,15 @@ describe("terminal shell profile", () => {
     });
     expect(profile.commandArgs("printf ok")).toEqual(["-c", "printf ok"]);
     expect(shellSyntaxGuidance(profile)).toContain("Bash syntax");
+  });
+
+  test("falls back to /bin/sh when the account entry of the user is missing", () => {
+    vi.spyOn(os, "userInfo").mockImplementation(() => {
+      throw new Error("A system error occurred: uv_os_get_passwd returned ENOENT");
+    });
+
+    expect(resolveShellProfile("linux", {}).executable).toBe("/bin/sh");
+    expect(resolveShellProfile("linux", { SHELL: "/bin/zsh" }).executable).toBe("/bin/zsh");
   });
 
   test("uses PowerShell on Windows unless the user configured another shell", () => {

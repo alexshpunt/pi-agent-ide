@@ -4,9 +4,21 @@ import type { FileObjectSnapshot } from "pi-agent-text-editor/api/plugin-protoco
 import { Type, type Static, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 
-import { remoteLocation } from "./identity.ts";
-import type { SshProcessChannel, SshProcessContext } from "./ssh-channel.ts";
-import { sshWorkerProgram, validateSshTarget } from "./ssh-transport.ts";
+import { remoteLocation, type SshTargetOs } from "./identity.ts";
+// Static imports: a running Pi keeps the code it loaded. A lazy import after the checkout or
+// package changes could pair a newer module with this one and the workers it already read.
+import { runOwnedSshCommand } from "./owned-command.ts";
+import { startSshProcess, type SshProcessChannel, type SshProcessContext } from "./ssh-channel.ts";
+import { describeSshConnectionLoss, type SshConnectionLoss } from "./ssh-connection-loss.ts";
+import { readSshFileStream } from "./ssh-file-stream.ts";
+import {
+  neutralDirectory,
+  remotePython,
+  sshWorkerBundle,
+  targetOs,
+  validateSshTarget,
+  type SshCommand,
+} from "./ssh-transport.ts";
 
 /** One explicitly configured host alias. Authentication stays in the user's OpenSSH environment. */
 export interface SshTarget {
@@ -14,6 +26,8 @@ export interface SshTarget {
   readonly host: string;
   readonly workspace: string;
   readonly configFile?: string;
+  /** Target operating system family; Linux when omitted. */
+  readonly os?: SshTargetOs;
 }
 
 /** The expected Git entry and HEAD used to guard one index publication. */
@@ -36,15 +50,22 @@ export interface BackendOperationContext {
 
 /** A transport-safe failure. Never retains raw SSH diagnostics or configuration paths. */
 export class SshBackendError extends ResourceError {
+  /** Classified facts about a lost connection; the message ends with their description. */
+  readonly connection?: SshConnectionLoss;
+
   constructor(
     code: string,
     source: string,
     effect: "not-applied" | "applied" | "unknown",
     /** Preserve only another sanitized backend failure, never raw transport diagnostics. */
-    options?: { readonly cause: SshBackendError },
+    options?: { readonly cause?: SshBackendError; readonly connection?: SshConnectionLoss },
   ) {
-    super(code, source, effect, options);
+    super(code, source, effect, options?.cause ? { cause: options.cause } : undefined);
     this.name = code === "CANCELLED" ? "AbortError" : "SshBackendError";
+    if (options?.connection) {
+      this.connection = options.connection;
+      this.message = `${this.message}: ${describeSshConnectionLoss(options.connection)}`;
+    }
   }
 }
 
@@ -58,12 +79,6 @@ const journalSchema = Type.Object({
   revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
   sourceRevision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
   sha256: Type.String({ pattern: "^[a-f0-9]{64}$" }),
-});
-const rangeSchema = Type.Object({
-  revision: Type.String({ pattern: "^[a-f0-9]{64}$" }),
-  bytes: Type.String(),
-  offset: Type.Integer({ minimum: 0 }),
-  totalBytes: Type.Integer({ minimum: 0 }),
 });
 const entriesSchema = Type.Array(
   Type.Object({
@@ -130,7 +145,9 @@ export class SshBackend {
 
   constructor(target: SshTarget) {
     validateSshTarget(target);
-    this.target = { ...target };
+    // Windows workspaces become `/C:/...` once, so every later path uses one form.
+    const workspace = remoteLocation(target.id, target.workspace, targetOs(target)).path;
+    this.target = { ...target, workspace };
   }
 
   /** Inspect remote type and permissions without downloading content. */
@@ -179,19 +196,27 @@ export class SshBackend {
     return data;
   }
 
-  /** Create a missing directory, or verify an existing native directory, after host transfer policy. */
+  /** Create a missing directory, or verify an existing native directory, after host transfer policy.
+   * Returns the directory's identity, read right after creation.
+   */
   async ensureObjectDirectory(
     filePath: string,
     mode: number,
     revision: string | null,
     context: BackendOperationContext = {},
-  ): Promise<void> {
+  ): Promise<{ readonly device: string; readonly inode: string }> {
     const data = await this.request(
       { operation: "mkdir-object", path: filePath, mode, revision },
       true,
       context,
     );
-    this.checked(Type.Null(), data, filePath, true);
+    this.checked(
+      Type.Object({ device: Type.String(), inode: Type.String() }),
+      data,
+      filePath,
+      true,
+    );
+    return data;
   }
 
   /** Create a missing link with its original native bytes; never follow or replace a destination link. */
@@ -270,27 +295,52 @@ export class SshBackend {
     return { bytes: Buffer.from(data.bytes, "base64"), version: data.version };
   }
 
-  /** Read original bytes; revision fingerprints inode/metadata, not a guarded write snapshot. */
+  /** Read an original byte window through one stream; the file must keep its revision meanwhile.
+   * A negative offset counts from the end, both clamp to the file, and an omitted limit reads to
+   * the end. The revision fingerprints inode and metadata, not a guarded write snapshot.
+   * `context.timeoutMs` (default 30 s) bounds startup and each wait for the target's bytes.
+   */
   async readRange(
     filePath: string,
     offset: number,
-    limit: number,
+    limit: number | undefined,
     context: BackendOperationContext = {},
   ) {
-    if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(limit) || limit < 0)
+    if (
+      !Number.isSafeInteger(offset) ||
+      (limit !== undefined && !(Number.isSafeInteger(limit) && limit >= 0))
+    )
       throw new TypeError("Byte offset and limit must be safe integers; limit must be nonnegative");
-    const data = await this.request(
-      { operation: "range", path: filePath, offset, limit },
-      false,
+    const chunks: Buffer[] = [];
+    const window = await readSshFileStream(
+      this.target,
+      filePath,
+      { offset, limit, idleMs: context.timeoutMs ?? 30_000 },
+      async (bytes) => {
+        chunks.push(bytes);
+      },
       context,
     );
-    this.checked(rangeSchema, data, filePath, false);
     return {
-      bytes: Buffer.from(data.bytes, "base64"),
-      offset: data.offset,
-      totalBytes: data.totalBytes,
-      revision: data.revision,
+      bytes: Buffer.concat(chunks, window.length),
+      offset: window.offset,
+      totalBytes: window.size,
+      revision: window.revision,
     };
+  }
+
+  /** Stream a whole regular file through one channel while it keeps an lstat `revision`.
+   * `consume` gets ordered chunks and paces the stream. Only startup has a deadline; callers
+   * that need to detect a stalled transfer abort through `context.signal`.
+   */
+  async readStream(
+    filePath: string,
+    revision: string,
+    consume: (bytes: Buffer) => Promise<void>,
+    context: BackendOperationContext = {},
+  ): Promise<{ readonly totalBytes: number; readonly sha256: string }> {
+    const sent = await readSshFileStream(this.target, filePath, { revision }, consume, context);
+    return { totalBytes: sent.length, sha256: sent.sha256 };
   }
 
   /** List directory entries without following symlinks or losing their names. */
@@ -505,12 +555,11 @@ export class SshBackend {
    * Nonzero program exits are results; interrupted commands may already have changed files.
    */
   async execute(
-    command: string,
+    command: SshCommand,
     args: readonly string[],
     cwd: string,
     context: BackendOperationContext = {},
   ) {
-    const { runOwnedSshCommand } = await import("./owned-command.ts");
     return runOwnedSshCommand(
       { ...this.target, workspace: cwd },
       command,
@@ -529,12 +578,11 @@ export class SshBackend {
 
   /** Open remote service stdio with ordered input, bounded buffers and owned-process cleanup. */
   async startProcess(
-    command: string,
+    command: SshCommand,
     args: readonly string[],
     cwd: string,
     context: SshProcessContext = {},
   ): Promise<SshProcessChannel> {
-    const { startSshProcess } = await import("./ssh-channel.ts");
     return startSshProcess(this.target, command, args, cwd, context);
   }
 
@@ -568,14 +616,14 @@ export class SshBackend {
     if (!Number.isFinite(deadline) || deadline <= 0)
       throw new TypeError("SSH operation deadline must be positive");
     context.signal?.throwIfAborted();
-    const { runOwnedSshCommand } = await import("./owned-command.ts");
-    const program = await sshWorkerProgram(new URL("./ssh-worker.py", import.meta.url));
+    const program = await sshWorkerBundle(targetOs(this.target), "file");
     // Filesystem operands are absolute. A neutral existing cwd must not turn the workspace
     // into a sandbox or prevent creation beneath a missing parent.
+    const neutral = neutralDirectory(this.target);
     const result = await runOwnedSshCommand(
-      { ...this.target, workspace: input.operation === "gitIndex" ? filePath : "/" },
-      "python3",
-      ["-c", program],
+      { ...this.target, workspace: input.operation === "gitIndex" ? filePath : neutral },
+      remotePython(program),
+      [],
       source,
       {
         signal: context.signal,

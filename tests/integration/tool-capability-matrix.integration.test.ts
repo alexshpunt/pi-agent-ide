@@ -15,6 +15,76 @@ import { parseEvents, validateRoute, type RunEvent } from "#capabilities/validat
 import { capabilityCases } from "#capabilities/cases.ts";
 
 test.each(["direct", "codemode"] as const)(
+  "literal whole-line routes match exact selectors and real edit bytes (%s)",
+  async (mode) => {
+    await withTempWorkspace(async (cwd) => {
+      const files = {
+        "insert.txt": "first\nmiddle\nlast\n",
+        "replace.txt": "first\nmiddle\nlast\n",
+        "delete.txt": "first\nmiddle\nlast\n",
+      };
+      for (const [file, content] of Object.entries(files))
+        await writeFile(path.join(cwd, file), content);
+      // A literal selects only its characters, so a whole line includes its line break.
+      const steps = [
+        { tool: "insert", args: { path: "insert.txt", after: "middle\n", text: "NEW\n" } },
+        { tool: "replace", args: { path: "replace.txt", at: "middle\n", text: "NEW\n" } },
+        { tool: "delete", args: { path: "delete.txt", at: "middle\n" } },
+      ];
+      const requests =
+        mode === "direct"
+          ? steps.map((step, index) =>
+              assistantMessage(
+                [toolCall({ id: `edit-${index}`, name: step.tool, arguments: step.args })],
+                { stopReason: "toolUse" },
+              ),
+            )
+          : [
+              assistantMessage(
+                [
+                  toolCall({
+                    id: "edits",
+                    name: "codemode",
+                    arguments: {
+                      code: `await Promise.all(${JSON.stringify(steps)}.map(step => tools[step.tool](step.args)));`,
+                    },
+                  }),
+                ],
+                { stopReason: "toolUse" },
+              ),
+            ];
+      const run = await new PiIntegrationTest({
+        testName: `capability-literal-line-equivalence-${mode}`,
+        transport: "rpc",
+        artifactsDir: testArtifactsDir(import.meta.filename),
+        rawMode: false,
+        cwd,
+        extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+        tools: ["insert", "replace", "delete", "codemode"],
+        conversation: [...requests, assistantMessage([text("Done")])],
+      }).run("Apply the whole-line edits and preserve every other byte");
+      for (const [file, content] of Object.entries({
+        "insert.txt": "first\nmiddle\nNEW\nlast\n",
+        "replace.txt": "first\nNEW\nlast\n",
+        "delete.txt": "first\nlast\n",
+      }))
+        expect(await readFile(path.join(cwd, file), "utf8")).toBe(content);
+      const events = run.traceEvents.flatMap((entry) =>
+        "event" in entry && entry.event && typeof entry.event === "object"
+          ? [entry.event as RunEvent]
+          : [],
+      );
+      expect(validateRoute({ files, steps }, events, mode)).toEqual({ passed: true, reasons: [] });
+      // The same calls without the line break would select only "middle", a different edit.
+      const stripped = JSON.parse(
+        JSON.stringify(events).replaceAll("middle\\n", "middle"),
+      ) as RunEvent[];
+      expect(validateRoute({ files, steps }, stripped, mode).passed).toBe(false);
+    });
+  },
+);
+
+test.each(["direct", "codemode"] as const)(
   "the capability validator preserves declared provider failures (%s)",
   async (mode) => {
     await withTempWorkspace(async (cwd) => {
@@ -77,7 +147,7 @@ test.each(["direct", "codemode"] as const)(
     });
   },
 );
-test("the capability validator checks Search facts and unchanged result provenance", async () => {
+test("the capability validator checks Search values and unchanged result provenance", async () => {
   await withTempWorkspace(async (cwd) => {
     const task = capabilityCases.find((candidate) => candidate.id === "search-script-facts");
     const contents = task?.files?.["task.txt"];
@@ -102,16 +172,20 @@ test("the capability validator checks Search facts and unchanged result provenan
               name: "codemode",
               arguments: {
                 code: `const empty = await tools.search({path:"task.txt",query:"regex:^ABSENT$"});
-if (empty.hasMatches !== false || empty.complete !== true) throw Error("Empty facts missing");
+if (empty.matches.length !== 0 || empty.complete !== true) throw Error("Empty value missing");
+if (await tools.replace({path:empty,text:"BAD"}) === null) throw Error("Empty no-op failed");
 const limited = await tools.ast_search({path:"scope.ts",pattern:"probe($ARG)",limit:1});
-if (limited.hasMatches !== true || limited.complete !== false) throw Error("Incomplete facts missing");
-let failed = false;
-try { await tools.search({path:"task.txt",query:"regex:("}); } catch { failed = true; }
-if (!failed) throw Error("Invalid Search did not reject");
+if (limited.matches.length !== 1 || limited.complete !== false) throw Error("Incomplete value missing");
+const zero = await tools.search({path:limited,query:"regex:^ABSENT$"});
+if (zero.matches.length !== 0 || zero.complete !== false) throw Error("Incomplete empty value missing");
+if (await tools.replace({path:zero,text:"BAD"}) !== null) throw Error("Incomplete result accepted");
+if (await tools.replace({path:"task.txt",at:empty.id,text:"BAD"}) !== null) throw Error("Empty endpoint accepted");
+const failed = (await tools.search({path:"task.txt",query:"regex:("})) === null;
+if (!failed) throw Error("Invalid Search did not fail");
 const found = await tools.search({path:"task.txt",query:"OLD",limit:1000});
-if (found.hasMatches !== true || found.complete !== true || typeof found.result !== "string") throw Error("Complete facts missing");
-await tools.replace({path:found.result,text:"NEW"});
-text("Search facts verified");`,
+if (found.matches.length !== 2 || found.complete !== true) throw Error("Complete value missing");
+await tools.replace({path:found,text:"NEW"});
+text("Search values verified");`,
               },
             }),
           ],
@@ -169,7 +243,7 @@ test("the native TUI public event mirror is usable by the unchanged capability v
               id: "mirror-compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches.result,text:"NEW"}));',
+                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
               },
             }),
           ],
@@ -236,7 +310,7 @@ test("the AST boundary case produces usable scope anchors from its fixture", asy
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.match(/scope-begin-[A-F0-9]+/)[0]; const end = source.match(/scope-end-[A-F0-9]+/)[0]; text(await tools.replace({path:"task.ts", start, end, text:"function renamed() { return 8; }"}));',
+                code: 'const source = await tools.read({path:"task.ts", views:["ast"]}); const start = source.text.match(/scope-begin-[0-9A-Z]+/)[0]; const end = source.text.match(/scope-end-[0-9A-Z]+/)[0]; text(await tools.replace({path:"task.ts", from: start, through: end, text:"function renamed() { return 8; }\\n"}));',
               },
             }),
           ],
@@ -278,7 +352,7 @@ test("the capability validator preserves real IDE provenance through a transpare
               id: "compose-alias",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.mcp__fixture__read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches.result,text:"NEW"}));',
+                code: 'const source = await tools.mcp__fixture__read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
               },
             }),
           ],
@@ -333,7 +407,7 @@ test("the capability validator follows real nested tool results instead of names
               id: "compose",
               name: "codemode",
               arguments: {
-                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches.result,text:"NEW"}));',
+                code: 'const source = await tools.read({path:"task.txt"}); const matches = await tools.search({path:source,query:"OLD"}); text(await tools.replace({path:matches,text:"NEW"}));',
               },
             }),
           ],

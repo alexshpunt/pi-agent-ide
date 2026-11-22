@@ -1,6 +1,5 @@
 import { type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 
 import { hideBuiltinEdit } from "./src/core/builtin-edit.ts";
 import registerTextEditorCore from "./src/core/extension.ts";
@@ -10,15 +9,6 @@ import { registerTextEditorTools } from "./src/tools/extension.ts";
 
 export default async function registerTextEditor(pi: ExtensionAPI): Promise<void> {
   registerOperationApproval(pi);
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "editing",
-      description: "Precise standalone text and file edits",
-      triggers: ["write", "replace", "insert", "delete", "copy", "move", "diff"].map((tool) => ({
-        tool,
-      })),
-    }),
-  ]);
   const core = await registerTextEditorCore(pi);
   hideBuiltinEdit(pi);
 

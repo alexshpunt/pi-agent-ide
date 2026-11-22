@@ -118,9 +118,9 @@ export default async function notes(pi: ExtensionAPI): Promise<void> {
 }
 ```
 
-Discover `notes` through `tool_search`. The deferred tools are `notes_read`, `notes_search`, `notes_write`, `notes_replace`, `notes_insert`, `notes_delete`, `notes_copy`, `notes_move` and `notes_diff`. Set `tools`, such as `["read", "search", "replace"]`, to expose a smaller subset. A namespace must be a unique lowercase identifier starting with a letter; digits and underscores are allowed after it.
+For direct calls, discover `notes` through `tool_search`. In Codemode, call known `notes` tools through `tools` or look them up with `searchTools(query, { namespace: "notes" })`. The deferred tools are `notes_read`, `notes_search`, `notes_write`, `notes_replace`, `notes_insert`, `notes_delete`, `notes_copy`, `notes_move` and `notes_diff`. Set `tools`, such as `["read", "search", "replace"]`, to expose a smaller subset. A namespace must be a unique lowercase identifier starting with a letter; digits and underscores are allowed after it.
 
-Read a text window, pass its unchanged result to Search to narrow it, then pass the Search result to an editor. Native Codemode uses the same contracts: Search returns `{ result, hasMatches, complete }`, and `result` is the reusable source string. Result scopes and provenance stay private to the host; another host or the full IDE cannot reuse them. Changed snapshots and reloads retire references. Known host edits retire old URI snapshots even when later edits restore the same text. Your provider still owns concurrency checks and evidence for changes made outside the host.
+Read a text window, pass its unchanged result to Search to narrow it, then pass the Search result to an editor. Native Codemode uses the same contracts: Read returns `{ text, id }` and Search returns `{ id, complete, matches }`; each value, a Search match or an `id` is a reusable source. A resource that reads a directory listing can set `entries` to its entry names, with `/` after directory names, so scripts get `{ entries }`. Result scopes and provenance stay private to the host; another host or the full IDE cannot reuse them. Changed snapshots and reloads retire references. Known host edits retire old URI snapshots even when later edits restore the same text. Your provider still owns concurrency checks and evidence for changes made outside the host.
 
 The built-in text and regex Search resolvers search issued scopes only. Register a Search resolver on `host.api` for provider discovery or searches by URI. Package guides with `connectAgentDocumentation(host.api, documents)` to expose them through `notes_read` and `notes_search` on `docs:` sources.
 
@@ -266,6 +266,8 @@ export default function register(pi: ExtensionAPI): void | Promise<void> {
 
 The search core validates the plugin and owns resolver ordering. Keep network clients and source-specific formatting inside your plugin.
 
+`api.describe()` adds one short description of the plugin's sources to the description of the search `path` field, after the core text. It appears only while the plugin is active. Say which sources the plugin searches and what to pass; explain a specific situation in the result instead.
+
 ## Read plugin
 
 A read plugin usually contributes a `ResourceResolver`. The resolver recognizes a source and returns a Resource with explicit capabilities.
@@ -346,7 +348,7 @@ An editor anchor registration can expose the same resolver through its `resource
 
 ## Anchor plugin
 
-Anchor resolvers recognize opaque values against the current text snapshot. This example adds a constant `middle` position.
+Anchor resolvers recognize opaque values against the current text snapshot. Resolve only in `context.content`, the text the caller reads and edits; do not read the source again, because another process may write it in between. A resolver that holds ranges of an earlier or later text of the source places them in `context.content` with `rangesInText` from `pi-agent-ide/api/resource`, and rejects the anchor as stale when that returns `undefined`. A Resource target in `resources` carries the text it was resolved on as `expectedContent`; when the edit finds a different text, it runs again and resolves the value anew. This example adds a constant `middle` position.
 
 ```ts
 import { TextAnchor, type TextAnchorResolver } from "pi-agent-ide/api/text";
@@ -461,7 +463,7 @@ Honor cancellation and never apply fixes from a diagnostic source. The core reje
 
 `api.readDiagnostics(filePath, { cwd })` returns `{ filePath, content, results }`. It detects external text changes, reuses completed current checks, and waits at most five seconds for pending checks. Results still running have `status: "pending"`. Each background check has a thirty-second deadline; an individual provider may have a shorter timeout. Missing and failed sources remain explicit.
 
-Changed per-file counts from nonempty reports immediately send a hidden custom session message and appear in a separate chat summary. Pending, unavailable, and empty sources are excluded from both. Empty updates still clear cached findings without sending a notification, and a later recurrence can notify again. Delivery is serialized and duplicate reports stay silent. Messages contain counts rather than diagnostic details. They start a turn when the agent is idle and use Pi's steering queue during an active run. Session shutdown cancels pending checks and delivery. The `diagnostics:` protocol and `diagnostics` view expose details when the agent requests them. Neither replaces project builds or tests.
+Changed per-file counts from nonempty reports immediately send a hidden custom session message and appear in a separate chat summary. Pending, unavailable, and empty sources are excluded from both. Empty updates still clear cached findings without sending a notification, and a later recurrence can notify again. Delivery is serialized and duplicate reports stay silent. Messages contain counts rather than diagnostic details. They start a turn when the agent is idle and use Pi's steering queue during an active run. Session shutdown cancels pending checks and delivery. The `diagnostics` tool and Read diagnostics view expose details when the agent requests them. Neither replaces project builds or tests.
 
 ## Doctor plugin
 

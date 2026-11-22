@@ -58,12 +58,24 @@ test.each(["direct", "codemode"])(
         route: { passed: boolean; reasons: string[] };
         errors: string[];
         rejectedCount: number;
+        refusals: {
+          errors: { path: string; code: string; reason: string }[];
+          effect: string;
+          text: string;
+        }[];
         unchangedAfterRejection: boolean;
         renameModes: string[];
       };
       expect(result.route, execution.stdout).toEqual({ passed: true, reasons: [] });
       expect(result.errors).toEqual([]);
-      expect(result.rejectedCount).toBe(1);
+      expect(result.rejectedCount).toBe(4);
+      for (const refusal of result.refusals) {
+        expect(refusal.effect).toBe("not-applied");
+        expect(refusal.errors).toHaveLength(1);
+        expect(refusal.errors[0]?.code).toBe("INVALID_REQUEST");
+        expect(refusal.errors[0]?.path).toBe("/workspace/fixture/task.ts");
+        expect(refusal.text).toContain("task.ts");
+      }
       expect(result.unchangedAfterRejection).toBe(true);
       expect(result.renameModes).toEqual(["lsp-rename"]);
       expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([]);

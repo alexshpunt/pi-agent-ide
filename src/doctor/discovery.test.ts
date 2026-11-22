@@ -44,7 +44,16 @@ it("treats managed tool mappings as project evidence", async () => {
       JSON.stringify({ version: 1, linters: { eslint: {} } }),
       "utf8",
     );
-    await writeFile(path.join(cwd, "node_modules", ".bin", "eslint"), "fixture", { mode: 0o755 });
+    await writeFile(
+      path.join(
+        cwd,
+        "node_modules",
+        ".bin",
+        process.platform === "win32" ? "eslint.cmd" : "eslint",
+      ),
+      "fixture",
+      { mode: 0o755 },
+    );
     const recipe: ToolRecipe = {
       id: "eslint",
       name: "ESLint",

@@ -5,6 +5,8 @@ import type { LspClient } from "./client.ts";
 
 import { completedDiagnosticAdapter } from "./diagnostic-adapters.ts";
 import { isMethodNotFound } from "./errors.ts";
+import { SHARED_DIAGNOSTICS_SUPERSEDED } from "./server-request-handlers.mjs";
+import { sourceChanged } from "./source-changes.ts";
 import type { Diagnostic } from "pi-agent-ide/api/toolchain";
 
 /** LSP diagnostics do not reliably distinguish parser errors from type errors. */
@@ -110,7 +112,7 @@ async function requestCurrentDiagnostics(
   client.beginDiagnosticRequest(uri);
   try {
     return await new Promise<LspDiagnosticResult>((resolve, reject) => {
-      const expectedVersion = client.documentVersion(uri) ?? 1;
+      let expectedVersion = client.documentVersion(uri);
       const receive = (parameters: unknown) => {
         const notification = parameters as {
           uri?: unknown;
@@ -126,19 +128,36 @@ async function requestCurrentDiagnostics(
         );
       };
       const unsubscribe = client.onNotification("textDocument/publishDiagnostics", receive);
+      const superseded = () => {
+        cleanup();
+        reject(
+          sourceChanged(
+            "The language server has newer file text; resync before checking diagnostics.",
+          ),
+        );
+      };
+      const stopWatching = client.shared
+        ? client.onNotification(SHARED_DIAGNOSTICS_SUPERSEDED, (parameters) => {
+            const notice = parameters as { uri: string; version: number };
+            if (notice.uri === uri && notice.version === expectedVersion) superseded();
+          })
+        : undefined;
       const onAbort = () => {
         cleanup();
         reject(signal.reason);
       };
       function cleanup(): void {
         unsubscribe();
+        stopWatching?.();
         signal.removeEventListener("abort", onAbort);
       }
       signal.addEventListener("abort", onAbort, { once: true });
       try {
         if (!opened) client.syncDocument(uri, text ?? "", languageId ?? "plaintext");
+        expectedVersion = client.documentVersion(uri);
         const cached = client.diagnosticPublication(uri);
         if (cached) receive({ uri, ...cached });
+        else if (client.diagnosticSuperseded(uri)) superseded();
       } catch (error) {
         cleanup();
         reject(error);

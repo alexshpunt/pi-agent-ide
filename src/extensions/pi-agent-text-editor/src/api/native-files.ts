@@ -28,6 +28,20 @@ function revision(stat: Stats): string {
     stat.mode,
   ]);
 }
+/** POSIX permission bits for a local object. Windows reports 0666 for every writable file and
+ * directory, which would publish world-writable files and untraversable directories on a POSIX
+ * target; use the usual defaults there and keep read-only files read-only.
+ */
+export function localObjectMode(
+  stat: { readonly mode: number | bigint; isDirectory(): boolean },
+  platform: NodeJS.Platform = process.platform,
+): number {
+  const mode = Number(stat.mode);
+  if (platform !== "win32") return mode;
+  const type = mode & ~0o7777;
+  if (stat.isDirectory()) return type | 0o755;
+  return type | ((mode & 0o200) === 0 ? 0o444 : 0o644);
+}
 async function optionalStat(source: string) {
   return lstat(source).catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return undefined;
@@ -66,7 +80,7 @@ export async function snapshotLocalObjects(
       kind: kind(stat),
       revision: revision(stat),
       identity: { device: String(stat.dev), inode: String(stat.ino) },
-      mode: stat.mode,
+      mode: localObjectMode(stat),
       ...(stat.isSymbolicLink()
         ? { link: (await readlink(file, { encoding: "buffer" })).toString("base64") }
         : {}),
@@ -106,7 +120,7 @@ export const localFileTransferAccess: FileTransferAccess = {
       kind: kind(stat),
       revision: revision(stat),
       identity: { device: String(stat.dev), inode: String(stat.ino) },
-      mode: stat.mode,
+      mode: localObjectMode(stat),
     };
   },
   read: (source) => readFile(source, "utf8"),

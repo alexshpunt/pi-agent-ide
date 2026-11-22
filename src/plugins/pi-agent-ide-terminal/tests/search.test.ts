@@ -67,3 +67,13 @@ test("searches all retained terminal output with normal text options", () => {
     }),
   ).toHaveLength(1);
 });
+test("searches retained terminal output with a regex query", () => {
+  expect(findTerminalMatches(snapshot, { query: "regex:ne+dle$" })).toMatchObject([
+    { lineNumber: 1, startColumn: 13, endColumn: 19, matchedText: "needle" },
+  ]);
+  expect(
+    findTerminalMatches(snapshot, { query: "regex:needle", caseSensitive: true }),
+  ).toHaveLength(1);
+  expect(findTerminalMatches(snapshot, { query: "regex:nothing-here" })).toEqual([]);
+  expect(() => findTerminalMatches(snapshot, { query: "regex:(" })).toThrow(SyntaxError);
+});

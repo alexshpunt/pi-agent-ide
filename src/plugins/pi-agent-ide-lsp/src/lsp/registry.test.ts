@@ -116,7 +116,10 @@ test("external-project mode rejects an available unevidenced LSP server", async 
   const project = await temporaryDirectory("lsp-external-unevidenced-");
   process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("lsp-external-agent-");
   const bin = path.join(project, "node_modules", ".bin");
-  const executable = path.join(bin, "typescript-language-server");
+  const executable = path.join(
+    bin,
+    process.platform === "win32" ? "typescript-language-server.cmd" : "typescript-language-server",
+  );
   await mkdir(bin, { recursive: true });
   await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
   await chmod(executable, 0o755);
@@ -134,7 +137,10 @@ test("selects an available project-local shipped LSP server", async () => {
   const project = await temporaryDirectory("lsp-available-project-");
   process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("lsp-available-agent-");
   const bin = path.join(project, "node_modules", ".bin");
-  const executable = path.join(bin, "typescript-language-server");
+  const executable = path.join(
+    bin,
+    process.platform === "win32" ? "typescript-language-server.cmd" : "typescript-language-server",
+  );
   await mkdir(bin, { recursive: true });
   await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
   await chmod(executable, 0o755);
@@ -160,8 +166,9 @@ test.each([
   process.env.PI_CODING_AGENT_DIR = await temporaryDirectory("lsp-python-agent-");
   const bin = await temporaryDirectory("lsp-python-bin-");
   for (const name of executables) {
-    await writeFile(path.join(bin, name), "#!/bin/sh\nexit 0\n", "utf8");
-    await chmod(path.join(bin, name), 0o755);
+    const executable = path.join(bin, `${name}${process.platform === "win32" ? ".cmd" : ""}`);
+    await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
+    await chmod(executable, 0o755);
   }
 
   const registry = await LspServerRegistry.fromPackageDir(project, {

@@ -5,7 +5,6 @@ import {
   type ToolRenderResultOptions,
 } from "@earendil-works/pi-coding-agent";
 import { type Component, Text } from "@earendil-works/pi-tui";
-import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
 import {
   ResultPanel,
   toolCallHeader,
@@ -28,15 +27,23 @@ import {
   SEARCH_PROTOCOL,
 } from "#src/api/plugin-protocol.ts";
 import { createSearchCore } from "#src/core/search-core.ts";
+import { describePathArgument, plainPathList } from "#src/api/path-list.ts";
+import { markNullFields, nullFieldsMessage } from "#src/api/null-fields.ts";
 
 import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
 import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
+import { configureSearchDeadline } from "pi-agent-resource";
 
-import type { SearchToolDetails } from "#src/api/search.ts";
+import { searchCallPolicy, type SearchToolDetails } from "#src/api/search.ts";
 
-import { searchSchema } from "#src/api/search-parameters.ts";
+import { describeSearchParameters, searchSchema } from "#src/api/search-parameters.ts";
 import { searchOutputSchema, searchDataSchema } from "#src/api/structured-result.ts";
-import { connectResultTargets, resultError, withStructuredResult } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  resultError,
+  trackScriptCalls,
+  withStructuredResult,
+} from "pi-agent-resource";
 
 /** Arguments accepted by the search tool. */
 export type SearchParameters = Static<typeof searchSchema>;
@@ -51,7 +58,7 @@ export function searchCallModel(
       ? []
       : [
           {
-            text: typeof arguments_.path === "string" ? `in ${arguments_.path}` : "in result scope",
+            text: `in ${describePathArgument(arguments_.path)}`,
             color: "accent" as const,
             underline: true,
             truncate: "start" as const,
@@ -85,13 +92,6 @@ export default async function registerSearchCore(
   context?: { readonly preferences: Readonly<Record<string, string>> },
 ): Promise<void> {
   const presentation = () => parsePresentation(context?.preferences["ui.search"]);
-  connectAgentDocumentation(pi, [
-    await loadPackagedAgentGuide({
-      id: "search",
-      description: "Text and regex search in files, guides, web pages and terminal output",
-      triggers: [{ tool: "search" }],
-    }),
-  ]);
   const targets = connectResultTargets(pi);
   const core = createSearchCore(targets);
   const interceptionRendering = new ToolCallInterceptionRenderStore();
@@ -103,6 +103,8 @@ export default async function registerSearchCore(
     request.accept(core.registerPlugin(request.plugin));
   });
   pi.on("session_shutdown", unsubscribe);
+  // A call from a script, such as Codemode, gets every match with its whole text.
+  const scriptCall = trackScriptCalls(pi, "search");
   pi.registerTool(
     withToolCallInterceptionRendering(
       {
@@ -124,8 +126,12 @@ export default async function registerSearchCore(
         get promptGuidelines(): string[] {
           return [...core.renderPromptGuidelines()];
         },
-        parameters: searchSchema,
+        get parameters() {
+          return describeSearchParameters(core.renderDescriptions());
+        },
         outputSchema: searchOutputSchema,
+        prepareArguments: (arguments_) =>
+          markNullFields(arguments_, searchSchema) as SearchParameters,
         renderCall(arguments_, theme, renderContext): Component {
           const mode = renderContext.expanded ? "full" : presentation();
           if (mode === "disabled") return new Text(theme.fg("toolTitle", "search"), 0, 0);
@@ -157,39 +163,70 @@ export default async function registerSearchCore(
           return fallbackResult(result, options, theme);
         },
         async execute(
-          _id,
+          id,
           parameters: SearchParameters,
           signal,
           onUpdate,
           context,
         ): Promise<AgentToolResult<SearchToolDetails>> {
+          const nulls = nullFieldsMessage(parameters);
+          if (nulls !== undefined) {
+            return withStructuredResult(
+              {
+                content: [{ type: "text", text: nulls }],
+                details: { failure: { code: "INVALID_REQUEST", message: nulls } },
+              },
+              searchDataSchema,
+              {
+                status: "error",
+                errors: [resultError(new Error(nulls), "SEARCH_FAILED")],
+              },
+            );
+          }
           try {
             const config = await loadSearchConfig(
               resolveSearchConfigPaths(process.env, os.homedir(), context.cwd),
             );
-            return await runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
-              await core.waitForPendingPlugins();
-              const scoped =
-                parameters.path !== undefined &&
-                (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
-              const scope = scoped ? targets.resolve(parameters.path, context.cwd) : undefined;
-              if (scope !== undefined) {
-                await targets.verify(scope, operationSignal);
-              }
-              return core.execute(
-                {
-                  ...parameters,
-                  path:
-                    typeof parameters.path === "string" && !scoped ? parameters.path : undefined,
-                },
-                {
-                  cwd: context.cwd,
-                  ...(scope === undefined ? {} : { scope }),
-                  ...(operationSignal !== undefined && { signal: operationSignal }),
-                  ...(onUpdate !== undefined && { onUpdate }),
-                },
-              );
-            });
+            const standaloneTimeout = configureSearchDeadline(config.timeoutMs)
+              ? null
+              : config.timeoutMs;
+            return await runWithSearchTimeout(
+              standaloneTimeout,
+              signal,
+              async (operationSignal) => {
+                await core.waitForPendingPlugins();
+                // A list of plain paths goes to the core as it is; a list of results is a scope.
+                const pathList =
+                  Array.isArray(parameters.path) && plainPathList(parameters.path) !== undefined;
+                const scoped =
+                  parameters.path !== undefined &&
+                  !pathList &&
+                  (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
+                // Search only reads, so a result whose lines changed still selects the same region.
+                const rescope = scoped
+                  ? (signal?: AbortSignal) =>
+                      targets.resolveCurrent(parameters.path, context.cwd, signal)
+                  : undefined;
+                const scope = rescope === undefined ? undefined : await rescope(operationSignal);
+                return core.execute(
+                  {
+                    ...parameters,
+                    path:
+                      pathList || (typeof parameters.path === "string" && !scoped)
+                        ? parameters.path
+                        : undefined,
+                  },
+                  {
+                    cwd: context.cwd,
+                    ...(scope === undefined || rescope === undefined ? {} : { scope, rescope }),
+                    ...(operationSignal !== undefined && { signal: operationSignal }),
+                    ...(onUpdate !== undefined && { onUpdate }),
+                  },
+                  // Text Search uses limit as a display budget, not a match cap.
+                  searchCallPolicy(parameters.limit, scriptCall(id), "presentation").audience,
+                );
+              },
+            );
           } catch (error) {
             if (signal?.aborted) throw error;
             const message = error instanceof Error ? error.message : String(error);
@@ -222,11 +259,7 @@ function searchCallDetails(arguments_: SearchParameters): ToolCallHeaderDetail[]
     { label: "query", value: JSON.stringify(arguments_.query) },
     ...optionalDetail(
       "path",
-      arguments_.path === undefined
-        ? undefined
-        : typeof arguments_.path === "string"
-          ? arguments_.path
-          : "result scope",
+      arguments_.path === undefined ? undefined : describePathArgument(arguments_.path),
     ),
     ...optionalDetail("include", arguments_.include),
     ...optionalDetail("exclude", arguments_.exclude),

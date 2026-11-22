@@ -59,13 +59,7 @@ function completion(before: string, after: string, resolvedBy = "filesystem"): T
     intent: "edit",
   };
 }
-function mutation(
-  callId: string,
-  from: number,
-  to: number,
-  insert: string,
-  allowUnchanged?: true,
-): OwnedMutationChanges {
+function mutation(callId: string, from: number, to: number, insert: string): OwnedMutationChanges {
   return {
     callId,
     edits: new Map([
@@ -73,7 +67,7 @@ function mutation(
         "/workspace/note.txt",
         {
           action: "edited",
-          changes: [{ from, to, insert, ...(allowUnchanged ? { allowUnchanged } : {}) }],
+          changes: [{ from, to, insert }],
         },
       ],
     ]),
@@ -146,11 +140,11 @@ test("move outputs omit removals but include their shifts in destination coordin
   ]);
 });
 
-test("unchanged Copy uses a guarded snapshot without inventing a write completion", () => {
+test("an already-done edit uses a guarded snapshot without inventing a write completion", () => {
   const source = "/workspace/note.txt";
   const before = "😀 alpha\r\nalpha outside";
   const snapshots = new Map([[source, before]]);
-  const copied = mutation("copy", 3, 8, "alpha", true);
+  const copied = mutation("copy", 3, 8, "alpha");
   expect(committedMutationTargets([copied], [], snapshots).get("copy")).toEqual([
     {
       source,
@@ -159,12 +153,10 @@ test("unchanged Copy uses a guarded snapshot without inventing a write completio
     },
   ]);
   expect(committedMutationTargets([copied], []).size).toBe(0);
-  expect(committedMutationTargets([mutation("replace", 3, 8, "alpha")], [], snapshots).size).toBe(
-    0,
-  );
-  expect(committedMutationTargets([mutation("copy", 3, 8, "beta", true)], [], snapshots).size).toBe(
-    0,
-  );
+  expect(
+    committedMutationTargets([mutation("replace", 3, 8, "alpha")], [], snapshots).get("replace"),
+  ).toEqual(committedMutationTargets([copied], [], snapshots).get("copy"));
+  expect(committedMutationTargets([mutation("copy", 3, 8, "beta")], [], snapshots).size).toBe(0);
   expect(
     committedMutationTargets([copied], [completion(before, before, "custom")], snapshots).size,
   ).toBe(0);

@@ -40,7 +40,11 @@ describe("text editor diff presentation preference", () => {
       expect(execution.isError).toBe(false);
       expect(await readFile(path.join(directory, fileName), "utf8")).toBe(expectedAfter);
 
-      expect(readableTerminal(result)).toContain("lines omitted");
+      const visibleRows = Array.from({ length: SWAPPED_ROWS }, (_, index) =>
+        swappedLine(index + 1),
+      ).filter((line) => result.tuiRenderedOutput.includes(line));
+      expect(visibleRows.length).toBeGreaterThan(0);
+      expect(visibleRows.length).toBeLessThan(SWAPPED_ROWS);
     });
   }, 120_000);
 
@@ -63,18 +67,9 @@ describe("text editor diff presentation preference", () => {
       const screen = result.tuiRenderedOutput;
       for (let index = 1; index <= SWAPPED_ROWS; index++)
         expect(screen, `missing swapped row ${index}`).toContain(swappedLine(index));
-      expect(readableTerminal(result)).not.toContain("lines omitted");
     });
   }, 120_000);
 });
-
-/** Strips ANSI escape sequences so streamed terminal output can be asserted. */
-function readableTerminal(result: { readonly terminalOutput: string }): string {
-  return result.terminalOutput.replace(
-    /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\u0007]*\u0007|\x1b[()][0-9A-B]/g,
-    "",
-  );
-}
 
 async function seedFile(
   directory: string,
@@ -95,13 +90,12 @@ async function seedFile(
 }
 
 function replaceArguments(fileName: string, content: string) {
-  const lines = content.split("\n");
   const startIndex = 9;
   const endIndex = startIndex + SWAPPED_ROWS - 1;
   return {
     path: fileName,
-    start: formatLineHashAnchor(startIndex + 1, lines[startIndex]),
-    end: formatLineHashAnchor(endIndex + 1, lines[endIndex]),
+    from: formatLineHashAnchor(content, startIndex + 1),
+    through: formatLineHashAnchor(content, endIndex + 1),
     text: replacement,
   };
 }
@@ -116,12 +110,22 @@ async function runReplace(
     testName: `diff-view-config-${fileName}`,
     cwd: directory,
     extensions: [unifiedExtension],
-    tools: ["replace"],
+    tools: ["read", "replace"],
     rawMode: false,
     timeoutMs: 120_000,
     isolateUserResources: true,
     environment: { PI_SKIP_VERSION_CHECK: "1", PI_INTEGRATION_TEST_LIVE: "1" },
     conversation: [
+      assistantMessage(
+        [
+          toolCall({
+            id: "diff-view-read",
+            name: "read",
+            arguments: { path: fileName, views: ["anchors"] },
+          }),
+        ],
+        { stopReason: "toolUse" },
+      ),
       assistantMessage(
         [
           toolCall({

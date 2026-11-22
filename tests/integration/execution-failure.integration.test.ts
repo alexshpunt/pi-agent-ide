@@ -12,15 +12,17 @@ import {
 } from "pi-coding-agent-test";
 import { expect, test } from "vitest";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 
 for (const mode of ["standalone", "codemode"] as const) {
   test.each([
-    // Presenters run only for results that show fresh LINE#HASH anchors.
+    // Presenters run only for results that show fresh line anchors.
     {
       name: "presenter.txt",
       tool: "replace",
-      edit: { start: formatLineHashAnchor(1, "before"), text: "changed" },
+      // A line anchor selects the line with its line break; the text keeps it.
+      edit: { at: formatLineHashAnchor("before\n", 1), text: "changed\n" },
       effect: "applied",
       status: "Saved · post-write step failed",
     },
@@ -59,7 +61,7 @@ for (const mode of ["standalone", "codemode"] as const) {
                 // Script edits commit after the script, so only Write fails inside it.
                 code:
                   fixture.tool === "write"
-                    ? `try { await tools.write(${JSON.stringify({ path: source, ...fixture.edit })}); throw Error("Unsafe success"); } catch(error) { if (String(error).includes("Unsafe success")) throw error; text(String(error)); }`
+                    ? `if ((await tools.write(${JSON.stringify({ path: source, ...fixture.edit })})) !== null) throw Error("Unsafe success"); text("write failed");`
                     : `await tools.${fixture.tool}(${JSON.stringify({ path: source, ...fixture.edit })});`,
               },
             });
@@ -79,7 +81,7 @@ for (const mode of ["standalone", "codemode"] as const) {
           assistantMessage([text("Failure observed.")]),
         ],
       }).run("Keep confirmed writes separate from unconfirmed execution effects");
-      // A script that catches the Write failure succeeds; a failed script edit batch fails it.
+      // A Write failure resolves to null and the script succeeds; a failed script edit batch fails it.
       expect(getToolExecution(run, "failed").isError).toBe(
         mode === "standalone" || fixture.tool !== "write",
       );
@@ -103,6 +105,10 @@ for (const mode of ["standalone", "codemode"] as const) {
         expect(getToolExecutionDetails(getToolExecution(run, "failed"))).toMatchObject({
           effect: fixture.effect,
         });
+      if (mode === "codemode" && fixture.tool === "write")
+        expect(codemodeFailures(getToolResultText(run, "failed"))).toMatch(
+          /^1 of 1 IDE call failed:\n- write \.tmp\/execution-failure\/post-handler\.txt\n {2}.*Do not repeat this edit blindly/u,
+        );
       expect(getToolResultText(run, "failed")).not.toContain("No file was changed.");
       expect(getToolResultText(run, "failed")).not.toContain("Failed: INVALID_REQUEST");
       expect(run.tuiRenderedOutput).toContain(fixture.status);

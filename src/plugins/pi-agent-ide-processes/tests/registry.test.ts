@@ -175,6 +175,78 @@ describe("Agent IDE process registry", () => {
     ui.dispose();
     vi.useRealTimers();
   });
+  test("closes the overlay on a left press outside it, without stopping anything", async () => {
+    let commandHandler: ((args: string, context: never) => Promise<void>) | undefined;
+    const stop = vi.fn(async () => undefined);
+    const registry = new AgentIdeProcessRegistry();
+    registry.add({
+      id: "terminal",
+      list: () => [{ ...processWithDetail("shell:one", "detail"), stop }],
+      onDidChange: () => () => undefined,
+    });
+    const ui = new AgentIdeProcessesUi(registry, "off", {
+      registerCommand: (_name: string, command: { handler: typeof commandHandler }) => {
+        commandHandler = command.handler;
+      },
+    } as never);
+    const originalDispatch = vi.fn((event: { x: number }) => ({ hit: event.x >= 10 }));
+    const tui: {
+      requestRender(): void;
+      dispatchMouseToOverlay?: (event: never) => { hit: boolean };
+    } = { requestRender() {}, dispatchMouseToOverlay: originalDispatch };
+    let focused = true;
+    let overlay: Component | undefined;
+    const context = {
+      mode: "tui",
+      hasUI: true,
+      ui: {
+        notify: vi.fn(),
+        setWidget: vi.fn(),
+        setStatus: vi.fn(),
+        custom: vi.fn(
+          (
+            factory: (
+              tui: unknown,
+              theme: unknown,
+              keys: unknown,
+              done: (v: null) => void,
+            ) => Component,
+            options: { onHandle?: (handle: { isFocused(): boolean }) => void },
+          ) =>
+            new Promise<null>((resolve) => {
+              overlay = factory(tui, theme(), undefined, resolve);
+              options.onHandle?.({ isFocused: () => focused });
+            }),
+        ),
+      },
+    };
+    const mouse = (type: string, button: string, x: number) => ({ type, button, x }) as never;
+
+    const running = commandHandler?.("", context as never);
+    overlay?.handleInput?.("\r");
+    overlay?.handleInput?.("d");
+    expect(overlay?.render(80).join("\n")).toContain("Stop this process?");
+    const dispatch = tui.dispatchMouseToOverlay;
+
+    expect(dispatch?.(mouse("press", "left", 20))).toEqual({ hit: true });
+    expect(dispatch?.(mouse("press", "right", 1))).toEqual({ hit: false });
+    expect(dispatch?.(mouse("click", "left", 1))).toEqual({ hit: false });
+    focused = false;
+    expect(dispatch?.(mouse("press", "left", 1))).toEqual({ hit: false });
+    focused = true;
+    let settled = false;
+    void running?.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    expect(dispatch?.(mouse("press", "left", 1))).toEqual({ hit: true });
+    await running;
+    expect(stop).not.toHaveBeenCalled();
+    expect(tui.dispatchMouseToOverlay).toBe(originalDispatch);
+    ui.dispose();
+  });
   test.each([
     [1, "shell:first"],
     [2, "shell:first"],
@@ -258,6 +330,44 @@ describe("Agent IDE process registry", () => {
     expect(text).toContain("2 active");
     expect(text).toContain("terminal · shell:one");
     expect(text).toContain("debugger · debug:one");
+  });
+});
+
+describe("process list after compaction", () => {
+  test("lists active processes of the current Pi session and those without a known owner", () => {
+    const registry = new AgentIdeProcessRegistry();
+    registry.add({
+      id: "terminal",
+      compactionGuidance: "terminal-guidance",
+      list: () => [
+        { ...process("shell:own", "terminal"), sessionId: "current" },
+        { ...process("shell:other", "terminal"), sessionId: "previous" },
+      ],
+      onDidChange: () => () => undefined,
+    });
+    registry.add({
+      id: "debugger",
+      list: () => [process("debug:one", "debugger")],
+      onDidChange: () => () => undefined,
+    });
+
+    const notice = registry.compactionNotice("current") ?? "";
+    expect(notice).toContain("shell:own");
+    expect(notice).toContain("debug:one");
+    expect(notice).toContain("terminal-guidance");
+    expect(notice).not.toContain("shell:other");
+  });
+
+  test("stays silent when the current Pi session has no active process", () => {
+    const registry = new AgentIdeProcessRegistry();
+    registry.add({
+      id: "terminal",
+      compactionGuidance: "terminal-guidance",
+      list: () => [{ ...process("shell:other", "terminal"), sessionId: "previous" }],
+      onDidChange: () => () => undefined,
+    });
+
+    expect(registry.compactionNotice("current")).toBeUndefined();
   });
 });
 

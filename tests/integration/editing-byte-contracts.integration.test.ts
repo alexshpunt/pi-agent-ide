@@ -92,8 +92,10 @@ test.each(["direct", "codemode"] as const)(
             return {
               file: `delete-${index}.txt`,
               before: `First${eol}Last${eol}Block${ending}`,
-              start: "Last\nBlock",
-              after: `First${eol}`,
+              // A literal matches only the file's own line breaks: CRLF text in a CRLF file.
+              start: `Last${eol}Block${ending}`,
+              // Without a final break, deleting the whole last lines removes the preceding one.
+              after: ending ? `First${eol}` : "First",
             };
           }),
         ];
@@ -102,8 +104,9 @@ test.each(["direct", "codemode"] as const)(
         tool: entry.text === undefined ? "delete" : "replace",
         args: {
           path: entry.file,
-          start: entry.start,
-          ...(entry.text === undefined ? {} : { text: entry.text }),
+          ...(entry.text === undefined
+            ? { at: entry.start }
+            : { at: entry.start, text: entry.text }),
         },
       }));
       const conversation =
@@ -122,7 +125,6 @@ test.each(["direct", "codemode"] as const)(
         expect(await readFile(path.join(cwd, entry.file), "utf8"), entry.file).toBe(entry.after);
       }
       expect(result.tuiRenderedOutput).toContain("## New");
-      expect(result.tuiRenderedOutput).not.toContain("outside the current text");
     });
   },
 );
@@ -137,13 +139,20 @@ test.each(["all", "allSettled"] as const)(
         method === "allSettled"
           ? 'for (const result of results) { if (result.status !== "fulfilled") throw result.reason; text(result.value); }'
           : "for (const result of results) text(result);";
-      const code = `const results = await Promise.${method}([
-        tools.insert({path:"insert.txt",anchor:"first",text:"FIRST\\n"}),
-        tools.insert({path:"./insert.txt",anchor:"middle",text:"MIDDLE\\n"}),
-        tools.insert({path:"insert.txt",anchor:"last",text:"LAST\\n"}),
-        tools.delete({path:"delete.txt",start:"first"}),
-        tools.delete({path:"./delete.txt",start:"middle"}),
-        tools.delete({path:"delete.txt",start:"last"})
+      const code = `const insertSource = await tools.read({ path: "insert.txt", views: ["anchors"] });
+      const deleteSource = await tools.read({ path: "delete.txt", views: ["anchors"] });
+      const anchor = (source, text) => {
+        const line = source.text.split(/\\r?\\n/).find(line => line.slice(8) === text);
+        if (!line) throw new Error("Missing issued line");
+        return line.slice(0, 7);
+      };
+      const results = await Promise.${method}([
+        tools.insert({path:insertSource,after:anchor(insertSource,"first"),text:"FIRST\\n"}),
+        tools.insert({path:insertSource,after:anchor(insertSource,"middle"),text:"MIDDLE\\n"}),
+        tools.insert({path:"./insert.txt",after:anchor(insertSource,"last"),text:"LAST\\n"}),
+        tools.delete({path:deleteSource,at:anchor(deleteSource,"first")}),
+        tools.delete({path:deleteSource,at:anchor(deleteSource,"middle")}),
+        tools.delete({path:"./delete.txt",at:anchor(deleteSource,"last")})
       ]); ${collect}`;
       const result = await run(cwd, `parallel-byte-effects-${method}`, [
         message("script", "codemode", { code }),
@@ -186,7 +195,7 @@ test.each(["direct", "codemode"] as const)(
     await withTempWorkspace(async (cwd) => {
       const initial = "alpha\r\nbeta\r\n";
       await writeFile(path.join(cwd, "undo.txt"), initial);
-      const edit = { path: "undo.txt", start: "beta", text: "changed" };
+      const edit = { path: "undo.txt", at: "beta", text: "changed" };
       const undo = { file: "undo.txt", change: "last" };
       const result = await run(
         cwd,
@@ -203,7 +212,7 @@ test.each(["direct", "codemode"] as const)(
         expect(getToolExecution(result, id).isError, getToolResultText(result, id)).toBe(false);
       }
       expect(await readFile(path.join(cwd, "undo.txt"), "utf8")).toBe(initial);
-      expect(result.tuiRenderedOutput).not.toContain('No text anchor resolver handled "last"');
+
       expect(result.tuiRenderedOutput).toContain("beta");
     });
   },

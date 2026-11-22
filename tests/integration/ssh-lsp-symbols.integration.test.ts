@@ -8,7 +8,8 @@ import { LspManager } from "#src/plugins/pi-agent-ide-lsp/src/lsp/manager.ts";
 import { searchSymbols } from "#src/plugins/pi-agent-ide-lsp/src/lsp/symbol-search.ts";
 
 test("owned symbol search includes references and never treats a server error as empty", async () => {
-  const fixture = await startSshFixture();
+  // Five symbol searches make about 40 remote operations; reuse one SSH connection for them.
+  const fixture = await startSshFixture({}, {}, undefined, { multiplex: true });
   const root = `ssh://fixture${fixture.workspace}`;
   const registry = new SshBackendRegistry([
     { id: "fixture", host: "fixture", workspace: fixture.workspace, configFile: fixture.config },
@@ -98,4 +99,6 @@ test("owned symbol search includes references and never treats a server error as
     await manager.shutdownAll();
     await fixture.stop();
   }
-}, 30000);
+  // Measured at load average 37 with another integration suite running: 40-45 s. The cap is only
+  // there to stop a hung remote call.
+}, 120_000);

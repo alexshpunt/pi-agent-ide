@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
+import { parseArguments } from "./options.ts";
 import { capabilityCases } from "./cases.ts";
+import { capabilityPrompt } from "./prompts.ts";
 import { capabilityMatrix } from "./matrix.ts";
 import {
   connectorCatalog,
@@ -30,7 +32,8 @@ import {
   TUI_HISTORY_SESSION,
   reopenTuiHistory,
 } from "./tui.ts";
-import { accountStopReason } from "./run-policy.ts";
+import { accountStopReason, capabilityExcludedTools, capabilitySettings } from "./run-policy.ts";
+import { schedule } from "./scheduler.ts";
 import { assertPreflightInvocation, runConnectorPreflight } from "./preflight.ts";
 import {
   AuthenticationUnavailable,
@@ -41,6 +44,7 @@ import {
 } from "./auth.ts";
 import {
   cleanupTrial,
+  gitState,
   prepareTrial,
   runProcess,
   sandboxArgs,
@@ -48,6 +52,12 @@ import {
   validateFiles,
   fixtureFiles,
 } from "./sandbox.ts";
+
+/**
+ * Each attempt starts with an empty home. ColGREP uses installed read-only CPU assets;
+ * its index and configuration remain private to the trial.
+ */
+const PREREQUISITE_TIMEOUT_MS = 120_000;
 
 interface Profile {
   id: string;
@@ -87,44 +97,7 @@ function connectorEvidence(run: ConnectorRun | undefined): unknown {
 }
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const repository = findRepositoryRoot(import.meta.url);
-const args = process.argv.slice(2).filter((arg) => arg !== "--");
-const flags = new Set([
-  "--help",
-  "--list",
-  "--list-connectors",
-  "--check",
-  "--record-contracts",
-  "--preflight",
-  "--run",
-  "--tui",
-  "--tui-history",
-  "--dedicated-auth",
-]);
-const options = new Set([
-  "--model",
-  "--case",
-  "--mode",
-  "--attempts",
-  "--timeout",
-  "--results",
-  "--pi",
-  "--auth-dir",
-  "--connector",
-  "--connector-root",
-  "--claude-state",
-  "--claude-executable",
-]);
-for (let index = 0; index < args.length; index++) {
-  const arg = args[index] ?? "";
-  if (flags.has(arg)) continue;
-  if (!options.has(arg) || !args[index + 1] || args[index + 1]?.startsWith("--"))
-    throw Error(`Unknown or incomplete option: ${arg}`);
-  index++;
-}
-const value = (flag: string, fallback?: string): string | undefined => {
-  const index = args.indexOf(flag);
-  return index < 0 ? fallback : args[index + 1];
-};
+const { args, value } = parseArguments(process.argv.slice(2));
 const json = async (file: string, data: unknown) => {
   await writeFile(file, JSON.stringify(data, null, 2) + "\n");
 };
@@ -148,10 +121,6 @@ async function coverage(command: string): Promise<Inventory> {
     `Coverage: ${live.tools.length} live IDE tools, ${capabilityMatrix.length} capabilities, ${capabilityCases.length} cases. No model calls.`,
   );
   return live;
-}
-
-function prompt(task: CapabilityCase, mode: string): string {
-  return `This is a small tool capability check in a disposable fixture.\n${task.prompt}\nRequired execution route (in order; extra inspection is allowed): ${task.steps.map((step) => step.tool).join(" → ")}.\n${mode === "codemode" ? "Perform every requested IDE operation inside native Codemode. Keep tool results unchanged when passing them between calls." : "Use direct tool calls for the requested IDE operations, not Codemode."}\nUse the requested route, not shell/file-editing substitutes. Extra inspection is allowed. Do not modify unrelated files. Finish with a short factual answer.\n`;
 }
 
 function finalText(events: RunEvent[]): string {
@@ -291,6 +260,17 @@ async function attempt(
       ].join(path.delimiter),
       PYTHONUSERBASE: path.join(os.homedir(), ".local"),
       HOME: "/state/home",
+      ...(task.resource === "colgrep"
+        ? {
+            ORT_DYLIB_PATH: "/state/colgrep-runtime/lib/libonnxruntime.so",
+            COLGREP_FORCE_CPU: "1",
+            RAYON_NUM_THREADS: "4",
+            CAPABILITY_COLGREP_ASSETS: path.join(
+              os.homedir(),
+              ".local/lib/pi-capability-assets/colgrep-1.8.5",
+            ),
+          }
+        : {}),
       PI_CODING_AGENT_DIR: "/state/agent",
       PI_OFFLINE: "1",
       PI_SKIP_VERSION_CHECK: "1",
@@ -300,16 +280,35 @@ async function attempt(
       ...authentication.environment,
       CAPABILITY_AUTH_POLICY: "/state/auth-policy.json",
       CAPABILITY_TUI: terminal ? "1" : "0",
+      CAPABILITY_CASE: task.id,
+      CAPABILITY_MODE: mode,
     };
     if (task.prerequisite) {
+      const started = new Date().toISOString();
       const prerequisite = await runProcess(
         "bwrap",
         [...bwrap, "/bin/bash", "-lc", task.prerequisite],
-        { env, timeoutMs: 15000, signal },
+        { env, timeoutMs: PREREQUISITE_TIMEOUT_MS, signal },
       );
-      if (prerequisite.code !== 0) {
+      await authentication.refreshSecrets?.();
+      await json(path.join(artifacts, "prerequisite.json"), {
+        command: task.prerequisite,
+        timeoutMs: PREREQUISITE_TIMEOUT_MS,
+        started,
+        finished: new Date().toISOString(),
+        ...prerequisite,
+        stdout: authentication.redact(prerequisite.stdout),
+        stderr: authentication.redact(prerequisite.stderr),
+      });
+      // A timed-out child can handle SIGTERM and exit zero; it still did not finish in time.
+      if (prerequisite.timedOut || prerequisite.code !== 0) {
         result.status = "unavailable";
-        result.reasons.push(`Missing prerequisite: ${task.prerequisite}`, prerequisite.stderr);
+        result.reasons.push(
+          prerequisite.timedOut
+            ? `Prerequisite timed out after ${PREREQUISITE_TIMEOUT_MS / 1000} s: ${task.prerequisite}`
+            : `Missing prerequisite: ${task.prerequisite}`,
+          prerequisite.stderr,
+        );
         return result;
       }
     }
@@ -318,29 +317,17 @@ async function attempt(
         askClaude: { enabled: false },
         provider: { strictMcpConfig: true, pathToClaudeCodeExecutable: "/tools/claude" },
       });
-    await json(path.join(prepared.state, "agent/settings.json"), {
-      codemode: { mode: "on" },
-      defaultTools: [
-        "read",
-        "write",
-        "bash",
-        "search",
-        "replace",
-        "insert",
-        "delete",
-        "copy",
-        "move",
-        "diff",
-        "undo",
-        "codemode",
-        "tool_search",
-        ...(task.id === "semantic-code-search" || task.setup === "semantic-vera"
+    await json(
+      path.join(prepared.state, "agent/settings.json"),
+      capabilitySettings(
+        mode,
+        ["semantic-code-search", "semantic-script-files"].includes(task.id) ||
+          task.setup === "semantic-vera"
           ? ["semantic_search"]
-          : []),
-      ],
-      retry: { enabled: false, maxRetries: 0 },
-    });
-    const taskPrompt = prompt(task, mode);
+          : [],
+      ),
+    );
+    const taskPrompt = capabilityPrompt(task, mode);
     await writeFile(path.join(artifacts, "prompt.txt"), taskPrompt);
     const cli = await piRuntime(command);
     const piArgs = [
@@ -367,8 +354,8 @@ async function attempt(
       "--thinking",
       profile.thinking,
       "--exclude-tools",
-      `edit,grep,find,ls${mode === "direct" ? ",codemode" : ""}`,
-      ...(task.setup === "standalone-resource"
+      capabilityExcludedTools(mode).join(","),
+      ...(task.setup === "standalone-resource" || task.postProcessing
         ? []
         : ["--pi-agent-ide-no-post-processing", "true"]),
     ];
@@ -376,10 +363,14 @@ async function attempt(
     if (connector) piArgs.push("--provider", connector.definition.provider);
     if (task.setup === "semantic-write")
       piArgs.push("-e", "/source/benchmarks/tool-capabilities/semantic-write-fixture.ts");
+    if (task.setup === "parallel-provider-writes")
+      piArgs.push("-e", "/source/tests/integration/fixtures/slow-provider-writes.ts");
     if (task.setup === "write-effects")
       piArgs.push("-e", "/source/tests/integration/support/write-saved-mismatch-resource.ts");
     if (task.setup === "write-hook")
       piArgs.push("-e", "/source/tests/integration/support/user-hooks-extension.ts");
+    if (task.setup === "native-search-batch")
+      piArgs.push("-e", "/source/benchmarks/tool-capabilities/native-search-batch-fixture.ts");
     if (task.setup === "move-rollback")
       piArgs.push("-e", "/source/benchmarks/tool-capabilities/move-rollback-fixture.ts");
     if (task.setup === "move-effects")
@@ -490,6 +481,9 @@ async function attempt(
     });
     try {
       const runtimeText = await readFile(path.join(prepared.state, "runtime.json"), "utf8");
+      const effectivePrompt = await readFile(path.join(prepared.state, "prompt.txt"), "utf8");
+      if (authentication.containsSecret(effectivePrompt)) suppressedSecret = true;
+      await writeFile(path.join(artifacts, "prompt.txt"), authentication.redact(effectivePrompt));
       if (authentication.containsSecret(runtimeText)) suppressedSecret = true;
       await writeFile(path.join(artifacts, "runtime.json"), authentication.redact(runtimeText));
     } catch {
@@ -564,9 +558,14 @@ async function attempt(
     }
     const runtime = JSON.parse(
       await readFile(path.join(prepared.state, "runtime.json"), "utf8"),
-    ) as { model: string; thinking: string; aliases?: Record<string, string> };
+    ) as { model: string; modelApi?: string; thinking: string; aliases?: Record<string, string> };
     if (runtime.model !== profile.model || runtime.thinking !== profile.thinking) {
       result.reasons.push("Selected runtime model/thinking differs from the requested profile");
+      return result;
+    }
+    const effectivePrompt = await readFile(path.join(prepared.state, "prompt.txt"), "utf8");
+    if (effectivePrompt !== capabilityPrompt(task, mode, runtime.modelApi)) {
+      result.reasons.push("Captured case prompt differs from the selected runtime API");
       return result;
     }
     if (identity.reasons.length) {
@@ -593,11 +592,8 @@ async function attempt(
         outcomes.push(`Unexpected file outside the fixture: ${file}`);
     if (task.answer && !finalText(events).includes(task.answer))
       outcomes.push("Final answer does not contain the requested observed value");
-    if (
-      task.git &&
-      execFileSync("git", ["status", "--porcelain"], { cwd: prepared.cwd, encoding: "utf8" }).trim()
-    )
-      outcomes.push("Git source/index are not clean");
+    if (prepared.git !== undefined && gitState(prepared.cwd) !== prepared.git)
+      outcomes.push("Git commit or index changed");
     result.reasons.push(...route.reasons, ...outcomes);
     result.status = !route.passed ? "route_failed" : outcomes.length ? "outcome_failed" : "pass";
     await json(
@@ -630,7 +626,7 @@ async function attempt(
 async function main(): Promise<void> {
   if (args.includes("--help") || !args.length) {
     console.log(
-      "Tool capability matrix (Linux/WSL, Bubblewrap)\n\nFree: --list | --list-connectors | --check | --record-contracts (after reviewing changed tools) | --preflight --connector ID --connector-root PRESTAGED_PREFIX [--claude-executable FILE]\nPaid: --run --model PROFILE_ID[,PROFILE_ID] [--case ID[,ID]] [--mode direct|codemode] [--attempts N] [--timeout SECONDS] [--tui [--tui-history]] [--results NEW_DIR] [--pi COMMAND] [--auth-dir DIR] [--dedicated-auth] [--connector ID --connector-root PRESTAGED_PREFIX --claude-executable FILE --claude-state DEDICATED_DIR]\nNo model calls occur without --run and an explicit model selection.",
+      "Tool capability matrix (Linux/WSL, Bubblewrap)\n\nFree: --list | --list-connectors | --check | --record-contracts (after reviewing changed tools) | --preflight --connector ID --connector-root PRESTAGED_PREFIX [--claude-executable FILE]\nPaid: --run --model PROFILE_ID[,PROFILE_ID] [--case ID[,ID]] [--mode direct|codemode] [--attempts N] [--concurrency N] [--timeout SECONDS] [--tui [--tui-history]] [--results NEW_DIR] [--pi COMMAND] [--auth-dir DIR] [--dedicated-auth] [--connector ID --connector-root PRESTAGED_PREFIX --claude-executable FILE --claude-state DEDICATED_DIR]\nNo model calls occur without --run and an explicit model selection.",
     );
     return;
   }
@@ -688,8 +684,6 @@ async function main(): Promise<void> {
     ["--connector-root", "--claude-state", "--claude-executable"].some((flag) => value(flag))
   )
     throw Error("Connector-specific options require --connector");
-  if (args.filter((arg) => arg === "--connector").length > 1)
-    throw Error("Select exactly one connector per invocation");
   if (args.includes("--list")) {
     for (const task of capabilityCases)
       console.log(`${task.id} [${task.modes.join(",")}] ${task.capabilities.join(", ")}`);
@@ -725,6 +719,8 @@ async function main(): Promise<void> {
   };
   const selected = value("--model")?.split(",");
   if (!selected?.length) throw Error("--run requires an explicit --model profile selection");
+  if (new Set(selected).size !== selected.length)
+    throw Error("Duplicate model profiles are not supported");
   const profiles = selected.map((id) => {
     const profile = roster.models.find((model) => model.id === id);
     if (!profile) throw Error(`Unknown profile: ${id}`);
@@ -771,6 +767,14 @@ async function main(): Promise<void> {
   if (terminal && !tasks.every((task) => task.modes.includes(mode ?? "")))
     throw Error("The selected TUI case does not support this --mode");
   const attemptsCount = Number(value("--attempts", "1"));
+  const concurrency = Number(value("--concurrency", "1"));
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1)
+    throw Error("Concurrency must be a positive safe integer");
+  if (
+    concurrency > 1 &&
+    (terminal || dedicatedAuth || connectorRun?.prepared?.definition.claudeFileAuth)
+  )
+    throw Error("TUI and mutable dedicated authentication require concurrency 1");
   const timeoutMs = Number(value("--timeout", "180")) * 1000;
   if (
     !Number.isSafeInteger(attemptsCount) ||
@@ -791,7 +795,8 @@ async function main(): Promise<void> {
   );
   await mkdir(path.dirname(root), { recursive: true });
   await mkdir(root);
-  const parent = await mkdtemp(path.join(repository, ".tmp/capability-run-"));
+  let temporary: string | undefined;
+  const runState = { attemptsStarted: false };
   const attempts: Attempt[] = [];
   const abort = new AbortController();
   const stop = () => abort.abort();
@@ -821,9 +826,13 @@ async function main(): Promise<void> {
     started: new Date().toISOString(),
     cases: tasks.map((task) => task.id),
     attempts: attemptsCount,
+    concurrency,
     timeoutMs,
   };
   try {
+    await mkdir(path.join(repository, ".tmp"), { recursive: true });
+    const parent = await mkdtemp(path.join(repository, ".tmp/capability-run-"));
+    temporary = parent;
     if (connectorRun?.prepared && !connectorRun.unavailable) {
       try {
         const connector = connectorRun.prepared;
@@ -862,46 +871,72 @@ async function main(): Promise<void> {
       sourceDigest: snapshot.digest,
     };
     await report(root, profiles, attempts, manifest);
-    runAttempts: for (const profile of profiles)
-      for (const task of tasks)
-        for (const route of task.modes.filter((candidate) => !mode || candidate === mode))
-          for (let n = 1; n <= attemptsCount && !abort.signal.aborted; n++) {
-            console.log(`Running ${profile.id} / ${task.id} / ${route} / attempt ${n}`);
-            const result = await attempt(
-              snapshot.source,
-              parent,
-              root,
-              task,
+    const work = profiles.flatMap((profile) =>
+      tasks.flatMap((task) =>
+        task.modes
+          .filter((candidate) => !mode || candidate === mode)
+          .flatMap((route) =>
+            Array.from({ length: attemptsCount }, (_, index) => ({
               profile,
+              task,
               route,
-              n,
-              command,
-              value("--auth-dir") ?? "",
-              timeoutMs,
-              abort.signal,
-              connectorRun,
-              terminal,
-              dedicatedAuth,
-              args.includes("--tui-history"),
-            );
-            attempts.push(result);
-            console.log(
-              `${result.status}: ${task.id} / ${route}${result.reasons.length ? " — " + result.reasons.join("; ") : ""}`,
-            );
-            await report(root, profiles, attempts, manifest);
-            const stoppedFor = accountStopReason(result);
-            if (stoppedFor) {
-              manifest = { ...(manifest as object), stoppedFor, stoppedAfter: result.evidence };
-              await report(root, profiles, attempts, manifest);
-              break runAttempts;
-            }
-          }
+              n: index + 1,
+            })),
+          ),
+      ),
+    );
+    await schedule(work, concurrency, abort, {
+      resource: ({ task }) => task.resource,
+      stopReason: accountStopReason,
+      run: async ({ profile, task, route, n }, signal) => {
+        runState.attemptsStarted = true;
+        console.log(`Running ${profile.id} / ${task.id} / ${route} / attempt ${n}`);
+        const result = await attempt(
+          snapshot.source,
+          parent,
+          root,
+          task,
+          profile,
+          route,
+          n,
+          command,
+          value("--auth-dir") ?? "",
+          timeoutMs,
+          signal,
+          connectorRun,
+          terminal,
+          dedicatedAuth,
+          args.includes("--tui-history"),
+        );
+        console.log(
+          `${result.status}: ${task.id} / ${route}${result.reasons.length ? " — " + result.reasons.join("; ") : ""}`,
+        );
+        return result;
+      },
+      publish: async (results, stopped) => {
+        attempts.splice(0, attempts.length, ...results);
+        if (stopped)
+          manifest = {
+            ...(manifest as object),
+            stoppedFor: stopped.reason,
+            stoppedAfter: stopped.result.evidence,
+          };
+        await report(root, profiles, attempts, manifest);
+      },
+    });
   } finally {
-    await report(root, profiles, attempts, manifest);
-    await rm(parent, { recursive: true, force: true });
-    process.removeListener("SIGINT", stop);
-    process.removeListener("SIGTERM", stop);
-    console.log(`Evidence: ${root}/matrix.md`);
+    try {
+      if (runState.attemptsStarted) await report(root, profiles, attempts, manifest);
+      else await rm(root, { recursive: true, force: true });
+    } finally {
+      try {
+        if (temporary) await rm(temporary, { recursive: true, force: true });
+      } finally {
+        process.removeListener("SIGINT", stop);
+        process.removeListener("SIGTERM", stop);
+      }
+      if (runState.attemptsStarted) console.log(`Evidence: ${root}/matrix.md`);
+    }
   }
   if (abort.signal.aborted || attempts.some((result) => result.status !== "pass"))
     process.exitCode = 1;

@@ -15,7 +15,7 @@ import { createExtensionSet } from "#integration/support/pi-runtime/extension-se
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 const extensions = createExtensionSet();
 const sourceFile = path.resolve(
-  "tests/integration/extensions/pi-agent-text-editor/src/tools/interactive-demos/fixtures/stack-store.ts",
+  "tests/integration/extensions/pi-agent-text-editor/src/tools/interactive-demos/fixtures/stack-store.ts.txt",
 );
 const defaultTextEditorExtension = path.resolve(
   "tests/integration/extensions/pi-agent-text-editor/register-extension.ts",
@@ -34,6 +34,7 @@ afterAll(() => extensions.dispose());
 interface EditPlan {
   readonly arguments: Readonly<Record<string, unknown>>;
   readonly after: string;
+  readonly inspection: { readonly offset: number; readonly limit: number };
 }
 
 const searchMethods = [
@@ -288,8 +289,8 @@ describe("interactive text editor demos", () => {
         exportedUtilities,
         demoFile,
       );
-      // The final insert does not request a trailing newline at EOF.
-      const expected = applyFinalBatch(batchSource).slice(0, -1);
+      // Inserting whole lines preserves the destination file's final line ending.
+      const expected = applyFinalBatch(batchSource);
       const callIds = [
         "demo-write-large-file",
         "demo-replace-hash-section",
@@ -299,7 +300,7 @@ describe("interactive text editor demos", () => {
         "demo-batch-insert-imports",
         "demo-batch-replace-view",
         "demo-batch-insert-utilities",
-      ];
+      ] as const;
 
       const result = await new PiIntegrationTest({
         testName: "interactive-demo-large-typescript-editing",
@@ -323,9 +324,15 @@ describe("interactive text editor demos", () => {
             ],
             { stopReason: "toolUse" },
           ),
+          inspectPlan(callIds[1], hashPlan),
           singleCall(callIds[1], "replace", hashPlan.arguments),
+          inspectPlan(callIds[2], searchPlan),
           singleCall(callIds[2], "insert", searchPlan.arguments),
+          inspectPlan(callIds[3], undoPlan),
           singleCall(callIds[3], "replace", undoPlan.arguments),
+          ...[displayPlan, importPlan, viewPlan, utilitiesPlan].map((plan, index) =>
+            inspectPlan(`batch-${index}`, plan),
+          ),
           assistantMessage(
             [
               pacedToolCall(callIds[4], "replace", displayPlan.arguments),
@@ -348,6 +355,18 @@ describe("interactive text editor demos", () => {
   }, 180_000);
 });
 
+function inspectPlan(id: string, plan: EditPlan) {
+  return assistantMessage(
+    [
+      toolCall({
+        id: `${id}-read`,
+        name: "read",
+        arguments: { path: plan.arguments.path, ...plan.inspection, views: ["anchors"] },
+      }),
+    ],
+    { stopReason: "toolUse" },
+  );
+}
 function singleCall(
   id: string,
   name: "replace" | "insert",
@@ -383,11 +402,12 @@ function replaceUntil(
   return {
     arguments: {
       path: file,
-      start: formatLineHashAnchor(startIndex + 1, lines[startIndex]),
-      end: formatLineHashAnchor(endIndex + 1, lines[endIndex]),
+      from: formatLineHashAnchor(source, startIndex + 1),
+      through: formatLineHashAnchor(source, endIndex + 1),
       text: replacement,
     },
     after: afterLines.join("\n"),
+    inspection: { offset: startIndex + 1, limit: endIndex - startIndex + 1 },
   };
 }
 
@@ -405,10 +425,13 @@ function insertAfter(
   return {
     arguments: {
       path: file,
-      anchor: formatLineHashAnchor(anchorIndex + 1, lines[anchorIndex]),
-      text: insertion,
+      after: formatLineHashAnchor(source, anchorIndex + 1),
+      // The first break at each edge of the block is a separator, so a leading empty
+      // insertion line needs its own extra break.
+      text: `\n${insertion}\n`,
     },
     after: afterLines.join("\n"),
+    inspection: { offset: anchorIndex + 1, limit: 1 },
   };
 }
 

@@ -1,6 +1,7 @@
 import { requiredValue } from "pi-agent-invariant";
 import type { ResourceErrorMetadata } from "pi-agent-resource";
 import type { TextAnchorRecoveryCandidateRange, TextDocument } from "pi-agent-text";
+import type { AlreadyDoneTarget } from "#src/core/already-done.ts";
 
 export interface MutationAnchor {
   readonly lineNumber: number;
@@ -18,6 +19,7 @@ export interface MutationFormatting {
     | "disabled"
     | "unavailable"
     | "skipped-syntax"
+    | "skipped-style"
     | "unchanged"
     | "changed"
     | "failed"
@@ -28,8 +30,12 @@ export interface MutationFormatting {
 
 /** Plain-text, per-file status shown beside diff counts and retained in history. */
 export interface MutationDiffStatus {
-  /** Completion-hook feedback stays visible in compact Write receipts, unlike display-only checks. */
-  readonly origin?: "after-edit";
+  /**
+   * Completion-hook feedback (`after-edit`) and statuses of the edit itself (`pre-edit`), such as
+   * a symbol text fallback, stay visible in compact Write receipts and script results, unlike
+   * display-only checks.
+   */
+  readonly origin?: "after-edit" | "pre-edit";
   /** Formatter identity allows multi-file summaries without parsing display text. */
   readonly formatter?: string;
   /** Observed formatter state for this label, kept distinct from file edit counts. */
@@ -75,6 +81,8 @@ export interface FileError {
   reason?: string | undefined;
   /** Editor failure code of the step that failed when `code` is a provider's own code. */
   stage?: string | undefined;
+  /** A failed attempt to match without Search highlight delimiters. */
+  readonly searchHighlightFallback?: true;
   /** Closed provider retry metadata, without private transport diagnostics. */
   readonly metadata?: ResourceErrorMetadata;
 }
@@ -135,17 +143,6 @@ export interface EditDiagnosticLine {
   text: string;
 }
 
-/**
-Detailed stale anchor diagnostic with context.
-*/
-export interface StaleAnchorDiagnostic {
-  lineNumber: number;
-  expected: { lineNumber: number; hash: string; textAvailable: false };
-  current: EditDiagnosticLine;
-  anchorHashChanged: boolean;
-  currentContext: EditDiagnosticLine[];
-}
-
 export type StrictEditErrorCode =
   | "INVALID_ARGUMENT"
   | "INVALID_PATH"
@@ -187,8 +184,6 @@ export interface EditFailureOptions {
   fileChangedStatement?: string;
   editIndex?: number;
   editIndices?: number[];
-
-  staleDiagnostic?: StaleAnchorDiagnostic;
 }
 
 /**
@@ -206,6 +201,8 @@ export interface FileMutationData {
   operations?: readonly MutationOperationReceipt[] | undefined;
   /** Formatter outcome reported by the post-edit integration. */
   formatting?: MutationFormatting | undefined;
+  /** Targets that already had the requested text and were left as they were. */
+  alreadyDone?: readonly AlreadyDoneTarget[] | undefined;
 
   /** Display-only status contributions from post-edit handlers, in registration order. */
   diffStatuses?: readonly MutationDiffStatus[] | undefined;
@@ -243,7 +240,6 @@ export interface FileMutationData {
   editIndex?: number | undefined;
   editIndices?: number[] | undefined;
 
-  staleDiagnostic?: StaleAnchorDiagnostic | undefined;
   fileChangedStatement?: string | undefined;
   /** Failed rollback resources; an empty list means all attempted writes were restored. */
   rollback?:
@@ -472,9 +468,6 @@ export class FileMutationResult {
     return this.data.editIndices;
   }
 
-  get staleDiagnostic(): StaleAnchorDiagnostic | undefined {
-    return this.data.staleDiagnostic;
-  }
   get fileChangedStatement(): string | undefined {
     return this.data.fileChangedStatement;
   }
@@ -540,7 +533,7 @@ export class FileMutationResult {
    * Examples:
    *   "3 files changed, +45/-12 lines"
    *   "Created 2 files"
-   *   "Failed: STALE_ANCHOR — anchor hash mismatch"
+   *   "Failed: STALE_ANCHOR — no line produces the anchor"
    */
   get summary(): string {
     if (!this.ok) {

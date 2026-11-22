@@ -51,7 +51,9 @@ A mutation may read and change more than one Resource. Core expands global ancho
 
 For built-in span mutations, a plain source path only scopes anchor resolution. It never selects the full document by itself. A typed source path can supply the selection ranges, so `replace`, `delete`, and `insert` may omit their source anchor. `copy` and `move` may omit their source start only when the typed path yields one usable span in one Resource.
 
-Supplying both start and end fields selects from the beginning of the start endpoint through the end of the end endpoint. Exact text and SEARCH match endpoints retain their character boundaries; line anchors and SEARCH line endpoints retain whole-line boundaries. Mixed types keep each endpoint's own extent. Each endpoint must resolve uniquely in the same Resource. Reversed endpoints are rejected before writes, not reordered. Without an end field, selections keep their single-selector behavior, including whole-line behavior for complete-line exact matches; supported selection operations may apply independently to several ranges and Resources. Insert uses containing-line boundaries, including for SEARCH match selections, and inserts once per distinct insertion line.
+A pair of inclusive endpoints selects from the beginning of the first endpoint to the farther end of the two. Replace also accepts exclusive boundaries as described in the editing principles. Exact text and SEARCH `:match` mark their character boundaries. Two line endpoints select whole lines; with mixed types, a line endpoint marks its line's content boundary (after a BOM or before the line ending). Both endpoints must resolve in the same Resource. The opening match must be unique; the closing match must be unique among the eligible matches (those that start at or after the opening match, `endAfter` in the resolver context), and several are refused. Reversed endpoints are rejected. Without an end field, supported operations may apply independently to several ranges or Resources. Anchors only locate spans. `TextChangeDocument.replace`, `delete` and `insert` decide how to write them using the [editing principles](/src/extensions/pi-agent-text-editor/docs/editing-principles.md).
+
+Two line-hash endpoints must have been shown together in a retained source window. The current span must match the recorded text, including line endings. An unchanged block can move, but an interior edit makes the pair stale even if both hashes still resolve. If the same pair was shown for conflicting text, select the whole intended span with exact text or a result reference instead.
 
 A mutation may return `afterWrite` when it must update related state only after all Resource writes, post-edit handlers, and final rereads succeed. Direct and batched calls await it before reporting success. If it fails, the tool reports `POST_WRITE_FAILED` with an applied effect because the Resource writes have already completed. Mutation previews do not run it.
 
@@ -69,7 +71,7 @@ When known, `completion.parentToolCallId` identifies the visible tool call that 
 
 A direct mutation produces one completion per changed file. A successful coalesced batch also produces one completion per changed file, with the state before and after the complete batch. A write-phase failure produces no completions, including when rollback is incomplete. Presenters run after notification and do not alter the raw final document seen by listeners.
 
-An edit result shows presenter output only for the lines it displays. The operation selects those lines with `presentedLines`, and presenters receive them as `context.lineNumbers` with purpose `edit-diff`. A presenter may leave other lines unpresented. Without a selection, presenters do not run. Built-in tools select the final-state lines of edits that used `LINE#HASH` anchors, so the result carries fresh anchors for the next edit.
+An edit result shows presenter output only for the lines it displays. The operation selects those lines with `presentedLines`, and presenters receive them as `context.lineNumbers` with purpose `edit-diff`. A presenter may leave other lines unpresented. Without a selection, presenters do not run. Built-in tools select the final-state lines of edits that used line anchors, so the result carries fresh anchors for the next edit.
 
 The editor does not retain completions or provide history. Listener failures do not turn a successful write into a failed tool result.
 
@@ -89,7 +91,7 @@ Core snapshots committed guards once per invocation and runs them after all anch
 
 All Resource resolution, reads, target and anchor checks, change application, and guards finish before the first write. Those failures have no applied effect. If a later Resource write fails, core attempts to restore the failed Resource and every Resource already written, and reports any rollback failures.
 
-`copy` and `move` always need a destination selection. `target` supplies its Resource scope and defaults to the source scope; it does not select a position by itself. `targetStart`, or a typed `target` with an implicit range, supplies the destination selection. Without `targetEnd`, the tools insert after its last containing line. With `targetEnd`, they replace the range from the beginning of `targetStart` through the end of `targetEnd`, preserving each endpoint's exact or whole-line extent. Endpoints must resolve uniquely in the same destination Resource and stay in forward order. The old destination `anchor` field does not exist.
+A text `copy` or `move` needs a destination selection. `target` supplies its Resource scope and defaults to the source scope. A result passed as `target` can also select the span to replace. Otherwise pass `targetAt` for one replacement span, `targetFrom` or `targetAfter` with `targetThrough` or `targetBefore` for a replacement range, or `targetAfter` or `targetBefore` alone for an insertion point. A range resolves in forward order in one Resource within the destination scope.
 
 ## Resource resolvers
 
@@ -117,7 +119,7 @@ interface TextAnchorResolverRegistration {
 
 `resources` is optional. It is the public `TextTargetResolver` contract from `pi-agent-text`. It recognizes the same opaque value before any Resource is read and may return ordered Resource sources with half-open character ranges. `not-handled` leaves normal source resolution unchanged; rejection, failure, or malformed output stops the mutation before writes. The editor validates and uses this typed result. It does not parse the resolver's string format.
 
-The same typed value may appear in an anchor field or in a mutation source field such as `path` or `target`. A source-field result supplies implicit ranges only for that source field's first anchor (start or targetStart), not its end boundary. A sibling anchor may determine the Resource but never contributes its selection to another endpoint. When a compatible explicit anchor is also present, the editor resolves it against every selected Resource and unions its natural range with the implicit ranges. Resource-set mismatches, incompatible selection shapes, ambiguous ranges, and overlaps are rejected before persistence.
+The same typed value may appear in a selector field or in a mutation source field such as `path` or `target`. With no explicit selector, a source-field result supplies the selection. With explicit selectors, the result constrains their scope; it does not supply an omitted boundary. A sibling selector may determine the Resource but never contributes its selection to another endpoint. Resource-set mismatches, incompatible selection shapes, ambiguous ranges, and overlaps are rejected before persistence.
 
 `api.addAnchorResolver()` registers one resolver with presentation metadata:
 
@@ -131,7 +133,7 @@ The resolver owns format recognition, freshness checks, and recovery data. It re
 
 A resolver may return `TextSelectionAnchor` when the editor operation needs exact text instead of whole lines. It carries ordered, non-overlapping ranges for one Resource. Core rejects ranges whose source, lines, or columns do not match the current snapshot.
 
-The optional fourth constructor argument, `endpointRanges`, supplies unexpanded extents for paired range endpoints and defaults to `ranges`. Supply one ordered, non-overlapping endpoint range per selection, wholly contained in its corresponding selection range. The exact-text resolver uses these extents to preserve literal match boundaries in pairs while keeping complete-line single selections linewise.
+The optional fourth constructor argument, `endpointRanges`, supplies unexpanded extents for paired range endpoints and defaults to `ranges`. Supply one ordered, non-overlapping endpoint range per selection, wholly contained in its corresponding selection range. A resolver that widens a single selection, for example to whole lines, uses these extents to keep the narrower boundaries in pairs.
 
 `api.inspectTextAnchors()` resolves and reads the current Resource, then sends each anchor through the same registry path used by direct edits, batches, and recovery. It resolves each value independently. The registry does not define relationships between multiple anchors; the mutation that owns the fields validates any relationship it needs.
 
@@ -160,7 +162,7 @@ Successful results identify the applied operation and the number of text changes
 
 The displayed text is the resulting file region, labelled with its line range. It is not a proposal or a before/after diff. The existing excerpt selection and size remain unchanged.
 
-Post-edit integrations can contribute `formatting: { status, formatter? }`. Status is `disabled`, `unavailable`, `skipped-syntax`, `unchanged`, `changed`, `failed`, or `not-reported`. A missing report remains unknown. Formatter failure does not turn a saved edit into an unapplied edit. Formatting metadata does not claim diagnostics or tests passed.
+Post-edit integrations can contribute `formatting: { status, formatter? }`. Status is `disabled`, `unavailable`, `skipped-syntax`, `skipped-style`, `unchanged`, `changed`, `failed`, `not-reported`, or `deferred`. A missing report remains unknown. Formatter failure does not turn a saved edit into an unapplied edit. Formatting metadata does not claim diagnostics or tests passed.
 
 Formatter status labels retain `formattingStatus` alongside their formatter identity. The result fills this from matching formatting metadata for success/error labels that do not already carry it. This lets the TUI keep changed formatting separate from already-formatted content without parsing display text. The agent gets one report for the selected formatting outcome; other handler messages stay visible. A caught formatter failure without an identity still carries its failed state. These labels do not change saving, rollback or handler execution.
 

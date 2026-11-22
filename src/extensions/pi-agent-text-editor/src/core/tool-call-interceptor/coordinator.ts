@@ -54,6 +54,28 @@ export type ToolCallAnnotationSink = (toolCallId: string, annotation: ToolCallAn
 // The event bus connects guards and renderers even when Pi loads them as separate module instances.
 
 const TOOL_CALL_ANNOTATION_EVENT = "pi-agent-text-editor/tool-call-annotation";
+const GUARDED_ARGUMENT_PREPARATION_EVENT = "pi-agent-text-editor/guarded-argument-preparation";
+
+interface GuardedArgumentPreparationRequest {
+  readonly arguments: unknown;
+  refusal?: AgentToolResult<unknown>;
+}
+
+/** Preserve an early refusal before the host validates an intentionally incomplete prefix. */
+export function assertToolCallArgumentsNotBlocked(
+  events: Pick<ExtensionAPI["events"], "emit"> | undefined,
+  arguments_: unknown,
+): void {
+  const request: GuardedArgumentPreparationRequest = { arguments: arguments_ };
+  events?.emit(GUARDED_ARGUMENT_PREPARATION_EVENT, request);
+  if (request.refusal !== undefined) {
+    throw new Error(
+      request.refusal.content
+        .flatMap((block) => (block.type === "text" ? [block.text] : []))
+        .join("\n"),
+    );
+  }
+}
 const toolCallAnnotationSinkUnsubscribers = new WeakMap<ExtensionAPI, () => void>();
 
 interface ToolCallAnnotationEvent {
@@ -256,8 +278,15 @@ class InterceptorImpl implements ToolCallInterceptor {
     Original streamed arguments and the result returned by a guard.
     */
   private readonly toolCallRecords = new Map<string, GuardCallRecord>();
+  private blockedArguments = new WeakMap<object, AgentToolResult<unknown>>();
   private blockedCallSink: BlockedToolCallSink | undefined;
   constructor(private readonly pi: ExtensionAPI) {
+    pi.events.on(GUARDED_ARGUMENT_PREPARATION_EVENT, (request) => {
+      if (Guard.IsObjectNotArray(request) && Guard.IsObjectNotArray(request.arguments)) {
+        const refusal = this.blockedArguments.get(request.arguments);
+        if (refusal !== undefined) request.refusal = refusal;
+      }
+    });
     pi.on("tool_call", (event) => {
       const record = this.toolCallRecords.get(event.toolCallId);
       const guardResult = record?.blockExecution ? record.guardResult : undefined;
@@ -306,7 +335,17 @@ class InterceptorImpl implements ToolCallInterceptor {
           mutationDataSchema(event.toolName),
           {
             status: "error",
-            errors: [resultError(message, "INTERCEPTED")],
+            errors: [
+              resultError(
+                message,
+                typeof details === "object" &&
+                  details !== null &&
+                  "code" in details &&
+                  typeof details.code === "string"
+                  ? details.code
+                  : "INTERCEPTED",
+              ),
+            ],
             data: { operation: event.toolName, operationId: event.toolCallId, effect, files: [] },
           },
         );
@@ -351,6 +390,16 @@ class InterceptorImpl implements ToolCallInterceptor {
       }
       if (event.message.role !== "assistant") {
         return;
+      }
+
+      // prepareArguments has no call ID. Bind only this finalized call's exact argument object;
+      // unrelated calls with equal values must still undergo ordinary schema validation.
+      for (const block of event.message.content) {
+        if (block.type !== "toolCall") continue;
+        const record = this.toolCallRecords.get(block.id);
+        if (record?.blockExecution && record.guardResult !== undefined) {
+          this.blockedArguments.set(block.arguments, record.guardResult);
+        }
       }
 
       const reason = this.pendingAbortReason;
@@ -937,6 +986,7 @@ class InterceptorImpl implements ToolCallInterceptor {
     this.batchEntryIndexes.clear();
     this.toolCallBatchEntryIndexes.clear();
     this.toolCallRecords.clear();
+    this.blockedArguments = new WeakMap();
     this.completedBatchEntryIndexes.clear();
     this.nextBatchEntryIndex = 0;
     this.abortedContentIndices.clear();

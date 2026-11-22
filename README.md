@@ -58,7 +58,7 @@ For example, this script reads a section, finds a checklist item inside it, and 
 ```js
 const section = await tools.read({ path: "notes.md", offset: 10, limit: 20 });
 const item = await tools.search({ path: section, query: "- [ ] Update docs" });
-text(await tools.replace({ path: item.result, text: "- [x] Update docs" }));
+text(await tools.replace({ at: item.matches[0], text: "- [x] Update docs" }));
 ```
 
 ### Read anything through `read`
@@ -85,7 +85,7 @@ Views change how the same resource is presented. The agent can request source st
 
 Use `/agent-ide-settings` to enable or disable optional semantic search and choose ColGREP (the default) or Vera. Global and Project settings follow the usual scope rules. Engine selection takes effect when saved in the settings menu; enabling or disabling the semantic search module requires a reload. Run `/semantic-index` in the project to prepare the selected engine and create its local index. The first setup may download tools and a model. Each engine has a separate index, and switching engines does not delete the other index. Searches refresh the selected index; an update failure is reported instead of returning stale results.
 
-Once the selected index is usable, `semantic_search` returns ranked files with counts of retrieved candidates, not occurrence counts. Set `path` to a local project directory to narrow the search or to a file for bounded, approximate ranges. Use `include` and `exclude` globs to filter files. ColGREP filters before ranking; Vera's scoped and filtered search can omit relevant results because it may filter a limited candidate pool. Read the source before editing: ranges are hints, not editable selections. Ordinary search does not depend on the index.
+Once the selected index is usable, `semantic_search` returns ranked files with counts of retrieved candidates, not occurrence counts. Set `path` to a local project directory to narrow the search or to a file for bounded, approximate ranges. Use `include` and `exclude` globs to filter files. ColGREP filters before ranking; Vera's scoped and filtered search can omit relevant results because it may filter a limited candidate pool. Read the source before editing: ranges are hints, not editable selections. In Codemode, `semantic_search` resolves to the ranked files as a `string[]`, without ranges. Ordinary search does not depend on the index.
 
 <div align="center">
 
@@ -204,7 +204,7 @@ Pi Agent IDE is experimental and under active development. Interfaces and behavi
 
 ## Installation
 
-Install [Pi](https://pi.dev/) **0.99.1 or newer** first, then install Pi Agent IDE from npm. Development and integration tests use Pi 1.5.0. Older hosts are rejected with an upgrade message.
+Install [Pi](https://pi.dev/) **0.99.1 or newer** first, then install Pi Agent IDE from npm. Development and integration tests use Pi 1.5.2. Older hosts are rejected with an upgrade message.
 
 ```bash
 pi install npm:pi-agent-ide
@@ -223,6 +223,8 @@ pi -e npm:pi-agent-ide
 ```
 
 Pi packages run with your full system permissions. Review the package before installing it.
+
+npm 12 and newer skip the install scripts of dependencies you have not approved and list the skipped packages in an `install-scripts` notice at the end of `pi install`. npm 11.16 and later 11.x releases print the same notice but still run the scripts. All entries in that notice can stay unapproved. AST features load the grammars' bundled WebAssembly files and the prebuilt ast-grep parsers and binary directly, so they do not need the tree-sitter and `@ast-grep/*` scripts. The terminal tool loads the prebuilt `node-pty` binaries for Linux, macOS and Windows on x64 and arm64; the Linux binaries need glibc 2.28 or newer.
 
 ## Check project tools
 

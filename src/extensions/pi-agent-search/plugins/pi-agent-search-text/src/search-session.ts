@@ -1,11 +1,18 @@
 import { requiredValue } from "pi-agent-invariant";
-import type { ResultTargetStore, ResolvedResultTargets } from "pi-agent-resource";
+import {
+  createLineMap,
+  rangesInText,
+  rebaseOrRelocateRange,
+  type ResultTargetStore,
+  type ResolvedResultTargets,
+} from "pi-agent-resource";
 import type {
   SearchSelectionMatch,
   SearchSelectionRegistration,
   SearchContext,
 } from "pi-agent-search/api/search";
 import { createHash } from "node:crypto";
+import { SearchCaptureGuard } from "pi-agent-search/api/search";
 import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
@@ -14,6 +21,7 @@ import {
   createTextDocument,
   type TextAnchorResolutionAttempt,
   type TextAnchorResolver,
+  type TextEditRun,
   type TextTarget,
   type TextTargetResolutionAttempt,
 } from "pi-agent-text";
@@ -23,7 +31,12 @@ import {
 } from "pi-agent-text-editor/api/text-selection-anchor";
 
 import type { TextAnchorResourceResolver } from "pi-agent-text-editor/api/plugin-protocol";
-import { runSearchRecipe, type SearchRecipe } from "#src/search-recipe.ts";
+import {
+  runSearchRecipe,
+  tokenSelectionWarning,
+  wordHintRejection,
+  type SearchRecipe,
+} from "#src/search-recipe.ts";
 
 const searchAnchorPattern = /^SEARCH#([A-F0-9]{4,64}):(all|[1-9]\d*):(line|match)$/u;
 const minimumSearchSessionIdLength = 4;
@@ -41,6 +54,7 @@ export interface TextSearchSession {
 }
 
 interface SearchSnapshot {
+  readonly editWarning?: string;
   readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
   /** Digests, not text: a retained snapshot must not keep a copy of every searched file. */
@@ -60,6 +74,12 @@ interface StoredSearchSession extends TextSearchSession, SearchSnapshot {
   readonly environment?: SearchEnvironment;
   readonly refresh?: SearchSelectionRegistration["refresh"];
   readonly recipe: SearchRecipe;
+  readonly editWarning?: string;
+  /**
+   * Set when the matches are separate-word location hints: no numbered reference can edit them. A
+   * refreshed all-selection carries the same refusal in its `editWarning`.
+   */
+  readonly hintReason?: string;
   readonly snapshotByteBudget?: number;
   readonly cwd: string;
   readonly refreshedComplete?: SearchSnapshot;
@@ -128,7 +148,7 @@ export function createSearchSessionIdentity(
 /** Returns the shortest unused prefix of a complete search identity. */
 export function allocateSearchSessionId(
   identity: string,
-  allocatedIds: ReadonlySet<string>,
+  allocatedIds: { has(id: string): boolean },
 ): string {
   if (!/^[A-F0-9]{64}$/u.test(identity)) {
     throw new Error("Search session identity must be a 64-character uppercase hexadecimal value.");
@@ -146,6 +166,7 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
   return {
     query: recipe.query,
     path: resolveScope(cwd, recipe.path ?? "."),
+    paths: recipe.paths?.map((source) => resolveScope(cwd, source)) ?? [],
     include: recipe.include ?? "",
     exclude: recipe.exclude ?? "",
     caseSensitive: recipe.caseSensitive === true,
@@ -160,9 +181,25 @@ function normalizeRecipe(recipe: SearchRecipe, cwd: string): Record<string, unkn
 
 /** Indicates that search output is still displayable, but no stable anchors can be registered. */
 export class SearchSnapshotChangedError extends Error {
-  public constructor(source: string) {
+  public constructor(readonly source: string) {
     super(`Search result in ${source} changed before its anchors were registered.`);
     this.name = "SearchSnapshotChangedError";
+  }
+}
+
+/**
+ * A repeated search for an all-anchor could not produce current matches. The message names the
+ * cause and the next step. `SOURCE_CHANGED` marks a file another writer changed meanwhile: an
+ * edit retries it on the current text.
+ */
+export class SearchRefreshError extends Error {
+  public constructor(
+    message: string,
+    readonly code: "SOURCE_CHANGED" | "SCOPE_CHANGED" | "REFRESH_FAILED",
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "SearchRefreshError";
   }
 }
 
@@ -170,6 +207,11 @@ export class SearchSnapshotChangedError extends Error {
 export class SearchSessionStore {
   readonly #sessions = new Map<string, StoredSearchSession>();
   readonly #idsByIdentity = new Map<string, string>();
+  /**
+   * The all-selection snapshot each running edit found current, with the text it described, by
+   * search session. It lives only as long as that edit; a session itself keeps no file text.
+   */
+  readonly #confirmed = new WeakMap<TextEditRun, Map<string, CapturedSearchSnapshot>>();
 
   public constructor(
     private readonly createIdentity: typeof createSearchSessionIdentity = createSearchSessionIdentity,
@@ -195,10 +237,17 @@ export class SearchSessionStore {
     refresh?: SearchSelectionRegistration["refresh"],
     snapshotByteBudget?: number,
     environment?: SearchEnvironment,
+    /**
+     * Text of each source as the backend searched it. Captured text is the snapshot, so no second
+     * read can find a file another process wrote in between.
+     */
+    searched?: ReadonlyMap<string, string>,
   ): Promise<TextSearchSession> {
+    const capture = new SearchCaptureGuard();
+    for (const match of sourceMatches) capture.addMatch(match);
     // Sessions live as long as their anchors. A copied match keeps only its own text, not the
     // whole file that its line or match text was cut from.
-    const matches = structuredClone(sourceMatches)
+    let matches = structuredClone(sourceMatches)
       .map((match) => ({ ...match, source: canonicalSource(match.source) }))
       .sort(compareMatches);
     const readSource = this.readSource;
@@ -210,12 +259,27 @@ export class SearchSessionStore {
       snapshotByteBudget,
       environment,
       read,
+      searched === undefined
+        ? undefined
+        : new Map([...searched].map(([source, text]) => [canonicalSource(source), text])),
     );
+    matches = withMultilineContext(matches, contentBySource, capture);
     const identity = this.createIdentity(query, matches, cwd, recipe);
     const knownId = this.#idsByIdentity.get(identity);
-    const id = knownId ?? allocateSearchSessionId(identity, new Set<string>(this.#sessions.keys()));
+    // Ids the result store issued for other references, such as an all-match retry, are taken too.
+    const id =
+      knownId ??
+      allocateSearchSessionId(identity, {
+        has: (candidate) =>
+          this.#sessions.has(candidate) || this.resultTargets?.hasSearchId(candidate) === true,
+      });
+    this.resultTargets?.claimSearchId(id);
+    const editWarning = tokenSelectionWarning(recipe, query, matches.length, complete);
+    const hintReason = wordHintRejection(recipe, query, matches.length);
     const session: StoredSearchSession = {
       id,
+      ...(editWarning === undefined ? {} : { editWarning }),
+      ...(hintReason === undefined ? {} : { hintReason }),
       query,
       matches,
       complete,
@@ -229,6 +293,8 @@ export class SearchSessionStore {
         cwd,
         complete,
         (source, abort) => readOwnedText(source, abort, environment, read),
+        editWarning,
+        hintReason,
       ),
       ...(snapshotByteBudget === undefined ? {} : { snapshotByteBudget }),
       recipe,
@@ -241,7 +307,10 @@ export class SearchSessionStore {
     return session;
   }
 
-  /** Registers anchors when every match still describes the current files. */
+  /**
+   * Registers anchors when every match still describes its text: the `searched` text when it is
+   * given, otherwise the current files.
+   */
   public async registerIfCurrent(
     query: string,
     sourceMatches: readonly TextSearchMatch[],
@@ -252,6 +321,7 @@ export class SearchSessionStore {
     refresh?: SearchSelectionRegistration["refresh"],
     snapshotByteBudget?: number,
     environment?: SearchEnvironment,
+    searched?: ReadonlyMap<string, string>,
   ): Promise<TextSearchSession | undefined> {
     try {
       return await this.register(
@@ -264,6 +334,7 @@ export class SearchSessionStore {
         refresh,
         snapshotByteBudget,
         environment,
+        searched,
       );
     } catch (error) {
       if (error instanceof SearchSnapshotChangedError) return undefined;
@@ -322,6 +393,38 @@ export class SearchSessionStore {
     return observations;
   }
 
+  /**
+   * Reads a source exactly as a registration snapshot does, through the owner Read provides. A
+   * caller that captures text to register with its matches must read it the same way, or its
+   * snapshot would differ from what this store reads later.
+   *
+   * With a byte budget, the reader bounds its reads as a registration with that budget does: all
+   * its reads share the budget, run one at a time, and a source that would exceed what is left
+   * fails without being read whole.
+   */
+  public snapshotReader(
+    cwd: string,
+    environment?: SearchEnvironment,
+    byteBudget?: number,
+  ): (source: string, signal?: AbortSignal) => Promise<string> {
+    const readSource = this.readSource;
+    const read: SnapshotReader | undefined =
+      readSource === undefined ? undefined : (source, abort) => readSource(source, cwd, abort);
+    if (byteBudget === undefined)
+      return (source, signal) => readOwnedText(source, signal, environment, read);
+    let remaining = byteBudget;
+    let previous: Promise<unknown> = Promise.resolve();
+    return (source, signal) => {
+      const next = previous.then(async () => {
+        const content = await readBoundedSnapshot(source, remaining, signal, environment, read);
+        remaining -= Buffer.byteLength(content);
+        return content;
+      });
+      previous = next.catch(() => undefined);
+      return next;
+    };
+  }
+
   public anchorResolver(): TextAnchorResolver {
     return {
       id: "search",
@@ -345,7 +448,8 @@ export class SearchSessionStore {
           ? `match ${String(anchor.selector)}`
           : `line ${String(anchor.selector)}`;
       },
-      tryResolve: (value, context) => this.#resolveAnchor(value, context.source, context.signal),
+      tryResolve: (value, context) =>
+        this.#resolveAnchor(value, context.source, context.content, context.signal),
     };
   }
 
@@ -388,19 +492,31 @@ export class SearchSessionStore {
   public resourceResolver(): TextAnchorResourceResolver {
     return {
       id: "search-targets",
-      tryResolve: (value, context) => this.#resolveResources(value, context.cwd),
+      tryResolve: (value, context) =>
+        this.#resolveResources(value, context.cwd, context.signal, false, context.edit),
     };
   }
 
+  /**
+   * `callerContent` is the text the caller reads and edits. A numbered reference the result store
+   * holds resolves in that text: another session may write the file meanwhile, and a selection
+   * the store already moved to a newer text moves back onto the caller's text through unchanged
+   * lines. Other references compare the owner's current text with the search snapshot.
+   */
   async #resolveAnchor(
     value: string,
     contextSource: string,
+    callerContent: string,
     signal?: AbortSignal,
   ): Promise<TextAnchorResolutionAttempt> {
     const parsed = parseSearchAnchor(value);
     if (parsed === undefined) return { kind: "not-handled" };
     const session = this.#sessions.get(parsed.id);
     if (session === undefined) return staleAnchor();
+    if (parsed.selector !== "all" && session.hintReason !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.hintReason } };
+    if (parsed.selector === "all" && session.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     const source = canonicalSource(contextSource);
     let snapshot: SearchSnapshot = session;
@@ -410,7 +526,7 @@ export class SearchSessionStore {
         snapshot = session.refreshedComplete;
       } else if (session.refreshedComplete !== undefined) {
         ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
-        if (!snapshot.complete) return missingCompleteAnchor();
+        if (!snapshot.complete) return missingCompleteAnchor(true);
       }
     }
     const firstMatch = selectMatches(snapshot, parsed.selector, "match").find(
@@ -422,13 +538,41 @@ export class SearchSessionStore {
         rejection: { code: "missing", reason: "search anchor does not select this resource" },
       };
     }
-    const current = await readCurrent(source, signal, session.environment, session.read);
-    if (current === undefined) return staleAnchor(firstMatch.lineNumber);
+    if (parsed.selector !== "all") {
+      const bound = this.#resolveBound(value, session.cwd);
+      if (bound?.kind === "rejected") return bound;
+      if (bound?.kind === "resolved") {
+        const target = bound.targets.find(
+          (candidate) => canonicalSource(candidate.source) === source,
+        );
+        if (target?.ranges === undefined)
+          return {
+            kind: "rejected",
+            rejection: { code: "missing", reason: "search anchor does not select this resource" },
+          };
+        const ranges =
+          target.expectedContent === callerContent
+            ? target.ranges
+            : target.expectedContent === undefined
+              ? undefined
+              : rangesInText(target.ranges, target.expectedContent, callerContent);
+        if (ranges === undefined)
+          return staleAnchor(target.ranges[0]?.start.lineNumber ?? firstMatch.lineNumber);
+        return {
+          kind: "resolved",
+          anchor: new TextSelectionAnchor(value, source, [...ranges]),
+        };
+      }
+    }
+    // The caller's text, the same text numbered references resolve in above.
+    const current = callerContent;
     const currentDigest = digestContent(current);
     if (parsed.selector === "all" && currentDigest !== snapshot.digestBySource.get(source)) {
       ({ snapshot, contents: refreshedContents } = await this.#refresh(session, signal));
-      if (!snapshot.complete) return missingCompleteAnchor();
+      if (!snapshot.complete) return missingCompleteAnchor(true);
     }
+    if (parsed.selector === "all" && snapshot.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: snapshot.editWarning } };
     const contentOf = (candidate: string) =>
       refreshedContents === undefined
         ? candidate === source
@@ -446,14 +590,18 @@ export class SearchSessionStore {
     }
     if (parsed.selector !== "all" && currentDigest !== session.digestBySource.get(source))
       return staleAnchor(requiredValue(sourceMatches[0]).lineNumber);
-    const document = createTextDocument(source, current);
+    // A search run again here read the file itself; its matches move onto the caller's text.
+    const found = refreshedContents?.get(source) ?? current;
+    const document = createTextDocument(source, found);
+    const ranges = rangesInText(
+      sourceMatches.map((match) => selectionRange(document, match, parsed.mode)),
+      found,
+      current,
+    );
+    if (ranges === undefined) return staleAnchor(requiredValue(sourceMatches[0]).lineNumber);
     return {
       kind: "resolved",
-      anchor: new TextSelectionAnchor(
-        value,
-        source,
-        sourceMatches.map((match) => selectionRange(document, match, parsed.mode)),
-      ),
+      anchor: new TextSelectionAnchor(value, source, ranges),
     };
   }
 
@@ -462,12 +610,21 @@ export class SearchSessionStore {
     cwd: string,
     signal?: AbortSignal,
     allowEmpty = false,
+    edit?: TextEditRun,
   ): Promise<TextTargetResolutionAttempt> {
     const parsed = parseSearchAnchor(value);
     if (parsed === undefined) return { kind: "not-handled" };
     const session = this.#sessions.get(parsed.id);
     if (session === undefined || session.cwd !== canonicalSource(cwd)) return staleAnchor();
+    if (edit !== undefined && parsed.selector !== "all" && session.hintReason !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.hintReason } };
+    if (edit !== undefined && parsed.selector === "all" && session.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
+    if (parsed.selector !== "all") {
+      const bound = this.#resolveBound(value, session.cwd);
+      if (bound !== undefined) return bound;
+    }
     let snapshot: SearchSnapshot = session;
     // Text of every selected source, verified against the snapshot digest or freshly refreshed.
     let contents = new Map<string, string>();
@@ -476,8 +633,10 @@ export class SearchSessionStore {
         snapshot = session.refreshedComplete;
       } else if (session.refreshedComplete !== undefined) {
         ({ snapshot } = await this.#refresh(session, signal));
-        if (!snapshot.complete) return missingCompleteAnchor();
+        if (!snapshot.complete) return missingCompleteAnchor(true);
       }
+      // What an earlier attempt of this edit found current; see `#moveConfirmed`.
+      const confirmed = edit === undefined ? undefined : this.#confirmed.get(edit)?.get(session.id);
       const sources = new Set(
         selectMatches(snapshot, parsed.selector, "match").map((match) => match.source),
       );
@@ -487,13 +646,22 @@ export class SearchSessionStore {
           current === undefined ||
           digestContent(current) !== snapshot.digestBySource.get(source)
         ) {
-          const refreshed = await this.#refresh(session, signal);
-          snapshot = refreshed.snapshot;
-          contents = new Map(refreshed.contents);
-          if (!snapshot.complete) return missingCompleteAnchor();
+          const next =
+            (confirmed === undefined
+              ? undefined
+              : await this.#moveConfirmed(session, confirmed, signal)) ??
+            (await this.#refresh(session, signal));
+          snapshot = next.snapshot;
+          contents = new Map(next.contents);
+          if (!snapshot.complete) return missingCompleteAnchor(true);
           break;
         }
         contents.set(source, current);
+      }
+      if (edit !== undefined) {
+        const bySession = this.#confirmed.get(edit) ?? new Map<string, CapturedSearchSnapshot>();
+        bySession.set(session.id, { snapshot, contents });
+        this.#confirmed.set(edit, bySession);
       }
     } else {
       const first = selectMatches(snapshot, parsed.selector, parsed.mode)[0];
@@ -507,6 +675,8 @@ export class SearchSessionStore {
         contents.set(first.source, current);
       }
     }
+    if (edit !== undefined && parsed.selector === "all" && snapshot.editWarning !== undefined)
+      return { kind: "rejected", rejection: { code: "invalid", reason: snapshot.editWarning } };
     const selected = selectMatches(snapshot, parsed.selector, parsed.mode, (source) =>
       contents.get(source),
     );
@@ -535,32 +705,158 @@ export class SearchSessionStore {
       : { kind: "resolved", targets };
   }
 
+  /**
+   * A numbered reference is bound to the result store when its search registers. The store moves
+   * it through edits elsewhere in the file and says what changed when it cannot. Undefined when
+   * no store owns the reference.
+   */
+  #resolveBound(
+    value: string,
+    cwd: string,
+  ):
+    | { readonly kind: "resolved"; readonly targets: readonly TextTarget[] }
+    | Extract<TextTargetResolutionAttempt, { readonly kind: "rejected" }>
+    | undefined {
+    if (this.resultTargets === undefined) return undefined;
+    try {
+      const resolved = this.resultTargets.resolveSearchReference(value, cwd);
+      if (resolved === undefined) return undefined;
+      return {
+        kind: "resolved",
+        targets: resolved.targets.map((target) => ({
+          source: target.source,
+          ranges: target.ranges,
+          expectedContent: target.expectedContent,
+        })),
+      };
+    } catch (error) {
+      return {
+        kind: "rejected",
+        rejection: {
+          code: "stale",
+          reason: error instanceof Error ? error.message : String(error),
+        },
+      };
+    }
+  }
+
+  /**
+   * A retry of an edit whose file another process changed: move the matches its earlier attempt
+   * found current onto the newer text instead of searching again, which would take long enough
+   * for the next write to come in. Only matches whose lines are all unchanged move, and only
+   * when no added or changed line contains a matched text, so the result is what a new search
+   * would find. Undefined when that cannot be shown; the caller then searches again.
+   */
+  async #moveConfirmed(
+    session: StoredSearchSession,
+    confirmed: CapturedSearchSnapshot,
+    signal?: AbortSignal,
+  ): Promise<CapturedSearchSnapshot | undefined> {
+    const bySource = new Map<string, TextSearchMatch[]>();
+    for (const match of confirmed.snapshot.matches)
+      bySource.set(match.source, [...(bySource.get(match.source) ?? []), match]);
+    const matches: TextSearchMatch[] = [];
+    const contents = new Map<string, string>();
+    for (const [source, sourceMatches] of bySource) {
+      const before = confirmed.contents.get(source);
+      const now = await readCurrent(source, signal, session.environment, session.read);
+      if (before === undefined || now === undefined) return undefined;
+      contents.set(source, now);
+      if (now === before) {
+        matches.push(...sourceMatches);
+        continue;
+      }
+      const moved = moveMatches(source, sourceMatches, before, now);
+      if (moved === undefined) return undefined;
+      matches.push(...moved);
+    }
+    const snapshot: SearchSnapshot = {
+      matches: matches.sort(compareMatches),
+      complete: confirmed.snapshot.complete,
+      digestBySource: digestContents(contents),
+      ...(confirmed.snapshot.editWarning === undefined
+        ? {}
+        : { editWarning: confirmed.snapshot.editWarning }),
+    };
+    this.#sessions.set(session.id, { ...session, refreshedComplete: snapshot });
+    return { snapshot, contents };
+  }
+
   async #refresh(
     session: StoredSearchSession,
     signal?: AbortSignal,
   ): Promise<CapturedSearchSnapshot> {
-    const result =
-      session.refresh === undefined
-        ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
-        : await session.refresh(signal);
-    const matches = result.matches
-      .map((match) => ({ ...match, source: canonicalSource(match.source) }))
-      .sort(compareMatches);
-    const contents = await snapshotContents(
-      matches,
-      signal,
-      session.snapshotByteBudget,
-      session.environment,
-      session.read,
-    );
+    let matches: TextSearchMatch[];
+    let complete: boolean;
+    let contents: ReadonlyMap<string, string>;
+    let editWarning: string | undefined;
+    try {
+      const result =
+        session.refresh === undefined
+          ? await runSearchRecipe(session.recipe, session.cwd, signal, session.environment)
+          : await session.refresh(signal);
+      complete = result.complete;
+      editWarning = tokenSelectionWarning(
+        session.recipe,
+        result.query ?? session.query,
+        result.matches.length,
+        complete,
+      );
+      matches = result.matches
+        .map((match) => ({ ...match, source: canonicalSource(match.source) }))
+        .sort(compareMatches);
+      const searchedBy = (result as { readonly contents?: ReadonlyMap<string, string> }).contents;
+      const searched =
+        searchedBy === undefined
+          ? undefined
+          : new Map([...searchedBy].map(([source, text]) => [canonicalSource(source), text]));
+      contents = await snapshotContents(
+        matches,
+        signal,
+        session.snapshotByteBudget,
+        session.environment,
+        session.read,
+        searched,
+      );
+    } catch (error) {
+      throw refreshFailure(error, signal);
+    }
     const snapshot: SearchSnapshot = {
       matches,
-      complete: result.complete,
+      complete,
+      ...(editWarning === undefined ? {} : { editWarning }),
       digestBySource: digestContents(contents),
     };
     this.#sessions.set(session.id, { ...session, refreshedComplete: snapshot });
     return { snapshot, contents };
   }
+}
+
+// Keep snapshot maps out of register's shared closure context: its readers outlive registration.
+function withMultilineContext(
+  matches: readonly TextSearchMatch[],
+  contentBySource: ReadonlyMap<string, string>,
+  capture: SearchCaptureGuard,
+): TextSearchMatch[] {
+  // Use the selection's snapshot, not a later file read.
+  const documents = new Map<string, ReturnType<typeof createTextDocument>>();
+  return matches.map((match) => {
+    const endLine = match.endLineNumber ?? match.lineNumber;
+    if (endLine === match.lineNumber) return match;
+    let document = documents.get(match.source);
+    if (document === undefined) {
+      document = createTextDocument(match.source, requiredValue(contentBySource.get(match.source)));
+      documents.set(match.source, document);
+    }
+    const lines = document.lines.slice(match.lineNumber - 1, lastContainingLine(match));
+    capture.addText(
+      lines.reduce((size, line) => size + line.content.length + line.lineEnding.length, 0),
+    );
+    const linesText = lines
+      .map((line, index) => line.content + (index === lines.length - 1 ? "" : line.lineEnding))
+      .join("");
+    return { ...match, linesText: structuredClone(linesText) };
+  });
 }
 
 function registerResultReferences(
@@ -571,6 +867,9 @@ function registerResultReferences(
   cwd: string,
   complete: boolean,
   read: SnapshotReader,
+  editWarning?: string,
+  /** Refuses edits through each match's own references too, not just the whole result. */
+  hintReason?: string,
 ): Pick<TextSearchSession, "target" | "matchTargets"> {
   if (store === undefined) return {};
   // Registered targets outlive this call. Their readers come from `sourceReader`, so no closure
@@ -590,7 +889,11 @@ function registerResultReferences(
     ranges: [matchRange(match)],
     readCurrent: sourceReader(read, match.source),
   }));
-  for (const [index, match] of matches.slice(0, 100).entries()) {
+  // Every match gets both references, whatever its number. A reference names exactly one range,
+  // so it is complete for that range even when the search hit its limit; only `target`, which
+  // stands for the whole search, carries the search's own completeness.
+  const matchTargets: string[] = [];
+  for (const [index, match] of matches.entries()) {
     const lineTarget = store.register(
       [
         {
@@ -599,13 +902,15 @@ function registerResultReferences(
         },
       ],
       cwd,
+      true,
+      hintReason,
     );
     store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:line`, lineTarget, cwd);
+    const matchTarget = store.register([requiredValue(targets[index])], cwd, true, hintReason);
+    store.registerSearchReference(`SEARCH#${sessionId}:${index + 1}:match`, matchTarget, cwd);
+    matchTargets.push(matchTarget);
   }
-  return {
-    target: store.register(targets, cwd, complete),
-    matchTargets: targets.slice(0, 100).map((target) => store.register([target], cwd, complete)),
-  };
+  return { target: store.register(targets, cwd, complete, editWarning), matchTargets };
 }
 function parseSearchAnchor(value: string): ParsedSearchAnchor | undefined {
   const match = searchAnchorPattern.exec(value);
@@ -713,6 +1018,52 @@ function matchRange(match: TextSearchMatch): TextSelectionRange {
   };
 }
 
+/**
+ * Matches of one source moved from the text they were found in onto its newer text through
+ * unchanged lines. Undefined when a match cannot move with its exact text, or when an added or
+ * changed line holds a matched text and so may hold a match that searching again would find.
+ */
+function moveMatches(
+  source: string,
+  matches: readonly TextSearchMatch[],
+  before: string,
+  after: string,
+): TextSearchMatch[] | undefined {
+  const map = createLineMap(before, after);
+  if (map === undefined) return undefined;
+  const texts = new Set(matches.map((match) => match.matchedText.split("\n")[0] ?? ""));
+  if (texts.has("")) return undefined;
+  const kept = new Set(map.table);
+  for (let line = 1; line <= map.newLines.length; line += 1) {
+    if (kept.has(line)) continue;
+    const text = map.newLines[line - 1] ?? "";
+    for (const matched of texts) if (text.includes(matched)) return undefined;
+  }
+  const document = createTextDocument(source, after);
+  const moved: TextSearchMatch[] = [];
+  for (const match of matches) {
+    const range = rebaseOrRelocateRange(
+      {
+        start: { lineNumber: match.lineNumber, column: match.startColumn },
+        end: { lineNumber: match.endLineNumber ?? match.lineNumber, column: match.endColumn },
+      },
+      map,
+    );
+    if (range === undefined) return undefined;
+    const next: TextSearchMatch = {
+      ...match,
+      lineNumber: range.start.lineNumber,
+      ...(match.endLineNumber !== undefined && { endLineNumber: range.end.lineNumber }),
+      startColumn: range.start.column,
+      endColumn: range.end.column,
+      lineText: document.lines[range.start.lineNumber - 1]?.content ?? "",
+    };
+    if (matchedSourceText(document, next) !== match.matchedText) return undefined;
+    moved.push(next);
+  }
+  return moved;
+}
+
 function matchedSourceText(
   document: ReturnType<typeof createTextDocument>,
   match: TextSearchMatch,
@@ -733,13 +1084,18 @@ async function snapshotContents(
   byteBudget?: number,
   environment?: SearchEnvironment,
   read?: SnapshotReader,
+  searched?: ReadonlyMap<string, string>,
 ): Promise<ReadonlyMap<string, string>> {
   const sources = [...new Set(matches.map((match) => match.source))];
   if (byteBudget !== undefined) {
     const contents = new Map<string, string>();
     let remaining = byteBudget;
     for (const source of sources) {
-      const content = await readBoundedSnapshot(source, remaining, signal, environment, read);
+      const known = searched?.get(source);
+      if (known !== undefined && Buffer.byteLength(known) > remaining)
+        throw new Error("Candidate snapshot byte budget reached.");
+      const content =
+        known ?? (await readBoundedSnapshot(source, remaining, signal, environment, read));
       remaining -= Buffer.byteLength(content);
       validateSnapshot(source, content, matches);
       contents.set(source, content);
@@ -748,7 +1104,8 @@ async function snapshotContents(
   }
   const snapshots = await Promise.allSettled(
     sources.map(async (source) => {
-      const content = await readOwnedText(source, signal, environment, read);
+      const content =
+        searched?.get(source) ?? (await readOwnedText(source, signal, environment, read));
       validateSnapshot(source, content, matches);
       return [source, content] as const;
     }),
@@ -767,11 +1124,19 @@ function validateSnapshot(
   matches: readonly TextSearchMatch[],
 ): void {
   const document = createTextDocument(source, content);
-  for (const match of matches.filter((candidate) => candidate.source === source)) {
-    const line = document.lines[match.lineNumber - 1]?.content;
-    if (line !== match.lineText || matchedSourceText(document, match) !== match.matchedText)
-      throw new SearchSnapshotChangedError(source);
-  }
+  for (const match of matches.filter((candidate) => candidate.source === source))
+    if (!matchDescribesText(document, match)) throw new SearchSnapshotChangedError(source);
+}
+
+/** Whether a match still names the same line and the same matched text in this document. */
+export function matchDescribesText(
+  document: ReturnType<typeof createTextDocument>,
+  match: TextSearchMatch,
+): boolean {
+  return (
+    document.lines[match.lineNumber - 1]?.content === match.lineText &&
+    matchedSourceText(document, match) === match.matchedText
+  );
 }
 async function readBoundedSnapshot(
   source: string,
@@ -821,7 +1186,8 @@ async function readCurrent(
   }
 }
 
-function canonicalSource(source: string): string {
+/** The key a source is stored under: an absolute path, or an owned URL as it is. */
+export function canonicalSource(source: string): string {
   return source.includes("://") ? source : path.resolve(source);
 }
 function resolveScope(cwd: string, source: string): string {
@@ -855,17 +1221,41 @@ function staleAnchor(
   };
 }
 
-function missingCompleteAnchor(): Extract<
-  TextAnchorResolutionAttempt,
-  { readonly kind: "rejected" }
-> {
+function missingCompleteAnchor(
+  refreshed = false,
+): Extract<TextAnchorResolutionAttempt, { readonly kind: "rejected" }> {
   return {
     kind: "rejected",
     rejection: {
       code: "missing",
-      reason: "search did not register an all anchor because its result was limited",
+      reason: refreshed
+        ? "the file changed and the repeated search found more matches than its limit, so the all anchor no longer selects every match; search again with a higher limit or a narrower path"
+        : "search did not register an all anchor because its result was limited; search again with a higher limit or a narrower path, or pass its numbered anchors",
     },
   };
+}
+
+/**
+ * Names why a repeated search failed and what to do next. Cancellation stays as it is; a file
+ * that changed while the search ran again is a source change, which an edit retries.
+ */
+function refreshFailure(error: unknown, signal: AbortSignal | undefined): unknown {
+  if (signal?.aborted === true || error instanceof SearchRefreshError) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  const code = (error as { code?: unknown } | null)?.code;
+  if (error instanceof SearchSnapshotChangedError || code === "SOURCE_CHANGED")
+    return new SearchRefreshError(
+      `${error instanceof SearchSnapshotChangedError ? error.source : "A searched file"} changed while its search ran again, because another process is writing it. Repeat the search and use its new anchors.`,
+      "SOURCE_CHANGED",
+      { cause: error },
+    );
+  if (code === "SCOPE_CHANGED")
+    return new SearchRefreshError(message, "SCOPE_CHANGED", { cause: error });
+  return new SearchRefreshError(
+    `The search could not run again: ${message}. Repeat the search; if it fails the same way, report it as a tool error.`,
+    "REFRESH_FAILED",
+    { cause: error },
+  );
 }
 
 function commonSourceDirectory(sources: readonly string[]): string {
@@ -898,7 +1288,8 @@ function isWithin(directory: string, source: string): boolean {
   return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-function compareMatches(left: TextSearchMatch, right: TextSearchMatch): number {
+/** The order a registration stores its matches in: by source, then by position. */
+export function compareMatches(left: TextSearchMatch, right: TextSearchMatch): number {
   return (
     left.source.localeCompare(right.source) ||
     left.lineNumber - right.lineNumber ||

@@ -180,3 +180,29 @@ test("raw resources use the owning byte reader and run guards before fetching by
     await read.dispose();
   }
 });
+
+test("a raw Read that another tool issued returns every requested byte as data", async () => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "raw-read-"));
+  const read = createReadTool(undefined, "compact", undefined, (id) => id.startsWith("codemode/"));
+  try {
+    const bytes = Buffer.from(Array.from({ length: 200_000 }, (_, index) => index % 256));
+    await writeFile(path.join(cwd, "large.bin"), bytes);
+    const execute = (id: string) =>
+      read.tool.execute(id, { path: "raw:large.bin", offset: 1 }, undefined, undefined, {
+        cwd,
+      } as never);
+    const nested = await execute("codemode/1");
+    const data = (nested.structuredContent as { data: { bytes: number[] } }).data;
+    expect(Buffer.from(data.bytes).equals(bytes.subarray(1))).toBe(true);
+    const block = nested.content[0];
+    // The hex view stays bounded.
+    expect(block?.type === "text" && block.text.length).toBeLessThan(100_000);
+    const direct = await execute("model-call");
+    expect(
+      (direct.structuredContent as { data: { bytes: number[] } }).data.bytes.length,
+    ).toBeLessThan(bytes.length - 1);
+  } finally {
+    await read.dispose();
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

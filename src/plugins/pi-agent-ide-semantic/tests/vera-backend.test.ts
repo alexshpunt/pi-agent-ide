@@ -114,17 +114,21 @@ test.skipIf(process.platform === "win32")(
       include: "*.ts",
       exclude: "*.test.ts",
     });
-    expect(result.split("\n").filter((x) => x.includes("src with spaces/a.ts"))).toHaveLength(1);
-    expect(result).toMatch(/\b2\b/u);
-    expect(result).not.toContain("a.test.ts");
+    expect(result.text.split("\n").filter((x) => x.includes("src with spaces/a.ts"))).toHaveLength(
+      1,
+    );
+    expect(result.text).toMatch(/\b2\b/u);
+    expect(result.text).not.toContain("a.test.ts");
+    expect(result.files).toEqual(["src with spaces/a.ts"]);
     const args = (await f.history()).find((x) => x.args[0] === "search")?.args;
     expect(args).toContain("--path");
     const file = await searchVeraProject(f.project, "query", {
       env: { ...f.env, TEST_OUTPUT: JSON.stringify(output) },
       path: "src with spaces/a.ts",
     });
-    expect(file).toContain("src with spaces/a.ts:1-3");
-    expect(file).not.toContain("a.test.ts");
+    expect(file.text).toContain("src with spaces/a.ts:1-3");
+    expect(file.text).not.toContain("a.test.ts");
+    expect(file.files).toEqual(["src with spaces/a.ts"]);
   },
 );
 
@@ -168,9 +172,9 @@ test.skipIf(process.platform === "win32")(
       env: { ...f.env, TEST_OUTPUT: JSON.stringify(output) },
       path: "ranges.ts",
     });
-    expect(result).toContain("ranges.ts:15-15");
-    expect(result).not.toContain("ranges.ts:20-20");
-    expect(result).toMatch(/\b5\b/u);
+    expect(result.text).toContain("ranges.ts:15-15");
+    expect(result.text).not.toContain("ranges.ts:20-20");
+    expect(result.text).toMatch(/\b5\b/u);
     const args = (await f.history()).find((x) => x.args[0] === "search")?.args;
     expect(args?.[args.indexOf("--limit") + 1]).toBe("100");
   },
@@ -215,11 +219,13 @@ test.skipIf(process.platform === "win32")(
     const result = await searchVeraProject(f.project, "query", {
       env: { ...f.env, TEST_OUTPUT: JSON.stringify(output) },
     });
-    const lines = result.split("\n");
+    const lines = result.text.split("\n");
     expect(lines.filter((line) => line.includes("src/a.ts"))).toHaveLength(1);
     expect(lines[0]).toContain("src/a.ts");
     expect(lines[0]).toMatch(/\b2\b/u);
     expect(lines[1]).toContain("src/b.ts");
+    // Files keep Vera's rank order and appear once.
+    expect(result.files).toEqual(["src/a.ts", "src/b.ts"]);
     await expect(
       searchVeraProject(f.project, "query", {
         env: {

@@ -86,10 +86,10 @@ test.each([
 
 test.each([false, true])("hidden IDE panels keep errors with caught=%s", async (caught) => {
   await withTempWorkspace(async (cwd) => {
-    // A completed Read failure resolves to { status: "error", errors }; the uncaught variant fails the script on it.
+    // A failed Read resolves to null; the uncaught variant fails the script on it.
     const script = caught
-      ? 'const failure = await tools.read({path:"missing.txt"}); text(failure.status);'
-      : 'const failure = await tools.read({path:"missing.txt"}); if (failure.status === "error") throw Error(failure.errors[0].message);';
+      ? 'const failure = await tools.read({path:"missing.txt"}); text(String(failure));'
+      : 'const failure = await tools.read({path:"missing.txt"}); if (failure === null) throw Error("Read failed");';
     const run = await new PiIntegrationTest({
       testName: `codemode-tool-results-error-${caught}`,
       artifactsDir: testArtifactsDir(import.meta.filename),
@@ -113,6 +113,10 @@ test.each([false, true])("hidden IDE panels keep errors with caught=%s", async (
     }).run("Try a missing nested Read with IDE tool results hidden");
     expect(getToolExecution(run, "parent").isError).toBe(!caught);
     expect(run.tuiRenderedOutput).toContain("✗ read");
-    expect(run.tuiRenderedOutput).toContain("Source not found");
+    expect(getToolResultMessage(run, "parent").nestedCalls).toMatchObject({
+      complete: true,
+      calls: [{ name: "read", arguments: { path: "missing.txt" }, status: "error" }],
+    });
+    expect(run.tuiRenderedOutput).toContain("missing.txt");
   });
 });

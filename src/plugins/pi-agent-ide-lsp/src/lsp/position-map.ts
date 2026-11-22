@@ -1,6 +1,23 @@
 import { diffLines } from "diff";
 
+import { textInRange } from "./corrected-names.ts";
+
 import type { LspRange } from "./types.ts";
+
+/**
+ * `range` moved by `map` into `to`, or undefined when one of its lines changed or the moved range
+ * no longer holds `text` there. A position sent to a server must name the same text in the text
+ * the server holds as in the text it was read from.
+ */
+export function followRange(
+  map: LinePositionMap,
+  range: LspRange,
+  to: string,
+  text: string,
+): LspRange | undefined {
+  const moved = map.mapRange(range);
+  return moved !== undefined && textInRange(to, moved) === text ? moved : undefined;
+}
 
 /** Lines of one text that appear unchanged in another, as `[fromLine, toLine, count]` runs. */
 type UnchangedRuns = readonly (readonly [number, number, number])[];

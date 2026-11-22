@@ -5,6 +5,7 @@ import {
   getToolExecution,
   getToolExecutionDetails,
   getToolExecutionResult,
+  getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
   text,
@@ -12,6 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import {
   enableNativeCodemode,
   withTempWorkspace,
@@ -37,7 +39,7 @@ test.each([false, true])(
           path.resolve("src/pi-agent-ide.ts"),
           path.resolve("tests/integration/support/final-post-edit-extension.ts"),
         ],
-        tools: ["codemode", "read", "write", "replace", "copy", "move", "delete"],
+        tools: ["diagnostics", "codemode", "read", "write", "replace", "copy", "move", "delete"],
         conversation: [
           assistantMessage(
             [
@@ -49,9 +51,9 @@ test.each([false, true])(
 const check = result => { if(typeof result!=="string") throw Error("Expected readable result"); return result; };
 check(await tools.write({path:"a.note",content:"first"}));
 check(await tools.write({path:"b.note",content:"second"}));
-const seen=check(await tools.read({path:"a.note"}));
-if(!seen.endsWith("FIRST")) throw Error("Write was not formatted before returning");
-check(await tools.replace({path:"a.note",start:"FIRST",text:"final"}));
+const seen=(await tools.read({path:"a.note"})).text;
+if(seen!=="FIRST") throw Error("Write was not formatted before returning");
+check(await tools.replace({path:"a.note",at:"FIRST",text:"final"}));
 ${fail ? 'throw new Error("planned failure");' : ""}
 `,
                 },
@@ -60,11 +62,11 @@ ${fail ? 'throw new Error("planned failure");' : ""}
             { stopReason: "toolUse" },
           ),
           assistantMessage(
-            [toolCall({ id: "check-a", name: "read", arguments: { path: "diagnostics:a.note" } })],
+            [toolCall({ id: "check-a", name: "diagnostics", arguments: { path: "a.note" } })],
             { stopReason: "toolUse" },
           ),
           assistantMessage(
-            [toolCall({ id: "check-b", name: "read", arguments: { path: "diagnostics:b.note" } })],
+            [toolCall({ id: "check-b", name: "diagnostics", arguments: { path: "b.note" } })],
             { stopReason: "toolUse" },
           ),
           assistantMessage([text("Done")]),
@@ -121,7 +123,7 @@ test.each(["path", "result"] as const)(
           path.resolve("tests/integration/support/final-post-edit-extension.ts"),
           path.resolve("tests/integration/support/post-edit-external-change.ts"),
         ],
-        tools: ["codemode", "insert", "read", "post_edit_external_change"],
+        tools: ["diagnostics", "codemode", "insert", "read", "post_edit_external_change"],
         conversation: [
           assistantMessage(
             [
@@ -132,8 +134,8 @@ test.each(["path", "result"] as const)(
                   code: `
 ${input === "result" ? 'const selected = await tools.read({path:"a.note",offset:1,limit:1});' : ""}
 await Promise.all([
-  ${input === "result" ? 'tools.insert({path:selected,text:"A"})' : 'tools.insert({path:"a.note",anchor:"anchor",text:"A"})'},
-  tools.insert({path:"b.note",anchor:"anchor",text:"B"})
+  ${input === "result" ? 'tools.insert({path:selected,text:"A\\n"})' : 'tools.insert({path:"a.note",after:"anchor",text:"A\\n"})'},
+  tools.insert({path:"b.note",after:"anchor",text:"B\\n"})
 ]);
 await tools.read({path:"a.note"});
 await tools.post_edit_external_change({path:"a.note",content:"EXTERNAL\\n"});
@@ -213,7 +215,7 @@ test("whole-file operations finalize only surviving text targets and preserve bi
         path.resolve("src/pi-agent-ide.ts"),
         path.resolve("tests/integration/support/final-post-edit-extension.ts"),
       ],
-      tools: ["codemode", "read", "write", "replace", "copy", "move", "delete"],
+      tools: ["diagnostics", "codemode", "read", "write", "replace", "copy", "move", "delete"],
       conversation: [
         assistantMessage(
           [
@@ -222,12 +224,13 @@ test("whole-file operations finalize only surviving text targets and preserve bi
               name: "codemode",
               arguments: {
                 code: `
-const check = result => { if(typeof result!=="string") throw Error("Expected readable result"); return result; };
-check(await tools.copy({path:"source.note",target:"temporary.note"}));
-check(await tools.move({path:"temporary.note",target:"final.note"}));
-check(await tools.copy({path:"source.note",target:"discard.note"}));
-check(await tools.delete({path:"discard.note"}));
-check(await tools.copy({path:"binary.note",target:"binary-copy.note"}));
+const id = result => { if(typeof result!=="string" || !result.startsWith("RESULT#")) throw Error("Expected the id of the new text: "+result); return result; };
+id(await tools.copy({path:"source.note",target:"temporary.note"}));
+id(await tools.move({path:"temporary.note",target:"final.note"}));
+id(await tools.copy({path:"source.note",target:"discard.note"}));
+// Delete and a binary copy select no text; a failure would be listed in the result.
+if((await tools.delete({path:"discard.note"}))!==null) throw Error("Delete must select no text");
+if((await tools.copy({path:"binary.note",target:"binary-copy.note"}))!==null) throw Error("A binary copy must select no text");
 `,
               },
             }),
@@ -235,13 +238,14 @@ check(await tools.copy({path:"binary.note",target:"binary-copy.note"}));
           { stopReason: "toolUse" },
         ),
         assistantMessage(
-          [toolCall({ id: "check", name: "read", arguments: { path: "diagnostics:final.note" } })],
+          [toolCall({ id: "check", name: "diagnostics", arguments: { path: "final.note" } })],
           { stopReason: "toolUse" },
         ),
         assistantMessage([text("Done")]),
       ],
     }).run("Copy and move text and binary files");
     expect(getToolExecution(run, "files").isError).toBe(false);
+    expect(codemodeFailures(getToolResultText(run, "files"))).toBe("");
     expect(await readFile(path.join(cwd, "source.note"), "utf8")).toBe("copied");
     expect(await readFile(path.join(cwd, "final.note"), "utf8")).toBe("COPIED");
     expect(await readFile(path.join(cwd, "binary-copy.note"))).toEqual(binary);

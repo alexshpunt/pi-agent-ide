@@ -1,5 +1,15 @@
-import { describe, expect, test } from "vitest";
-import { ResultTargetStore, type ResultSourceTarget } from "./result-targets.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+  ResultTargetStore,
+  currentResultTargets,
+  describeAdjustedRanges,
+  resultValueReference,
+  type ResultRange,
+  type ResultSourceTarget,
+} from "./result-targets.ts";
 
 const target: ResultSourceTarget = {
   source: "/workspace/a.txt",
@@ -8,40 +18,129 @@ const target: ResultSourceTarget = {
 };
 
 describe("source result targets", () => {
-  test("numbered Search aliases retain registered authority and worktree guards", () => {
-    const store = new ResultTargetStore();
-    const selected = store.register([target], "/workspace");
-    store.registerSearchReference("SEARCH#ABCD:1:line", selected, "/workspace");
-    expect(store.resolve("SEARCH#ABCD:1:line", "/workspace")).toEqual({
-      targets: [target],
-      complete: true,
+  const forms = {
+    prefixed: (id: string) => id,
+    uuid: (id: string) => id.slice("RESULT#".length),
+    value: (id: string) => ({ id, path: "/workspace/wrong.txt", line: 1, text: "preview" }),
+    uuidValue: (id: string) => ({
+      id: id.slice("RESULT#".length),
+      path: "/workspace/wrong.txt",
+      line: 1,
+      text: "preview",
+    }),
+  };
+
+  for (const [form, reference] of Object.entries(forms)) {
+    test(`${form} preserves whole-result, match and capture selections`, () => {
+      const store = new ResultTargetStore();
+      const match = {
+        ...target,
+        ranges: [{ start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 3 } }],
+      };
+      const matchId = store.register([match], "/workspace", false);
+      const captureId = store.register([target], "/workspace");
+      const shown = store.publish(
+        { status: "success", data: { target: matchId } },
+        "Selected match",
+        "/workspace",
+      );
+      const uuid = /<uuid>([a-f\d-]{36})<\/uuid>/u.exec(shown)?.[1];
+      expect(uuid).toBeDefined();
+      for (const [id, expected] of [
+        [`RESULT#${uuid ?? ""}`, { targets: [match], complete: false }],
+        [matchId, { targets: [match], complete: false }],
+        [captureId, { targets: [target], complete: true }],
+      ] as const) {
+        const input = reference(id);
+        expect(store.resolve(input, "/workspace")).toEqual(expected);
+        expect(
+          resultValueReference(
+            store,
+            { id: typeof input === "string" ? input : input.id },
+            "/workspace",
+          ),
+        ).toBe(id === captureId ? captureId : matchId);
+        expect(() => store.resolve(input, "/other-worktree")).toThrow(Error);
+      }
+      store.invalidate(target.source);
+      for (const id of [matchId, captureId, `RESULT#${uuid ?? ""}`])
+        expect(() => store.resolve(reference(id), "/workspace")).toThrow(Error);
+      expect(() =>
+        store.source(reference("RESULT#00000000-0000-4000-8000-000000000000"), "/workspace"),
+      ).toThrow(Error);
     });
-    expect(() => store.resolve("SEARCH#ABCD:1:line", "/other")).toThrow(/another worktree/u);
-    expect(() =>
-      store.registerSearchReference("SEARCH#ABCD:1:line", "SEARCH#ABCD:1:line", "/workspace"),
-    ).toThrow(/registered result target/u);
-    expect(() =>
-      store.registerSearchReference("SEARCH#ABCD:all:line", selected, "/workspace"),
-    ).toThrow(/numbered Search references/u);
-    expect(() =>
-      store.registerSearchReference("SEARCH#ABCD:2:line", "RESULT#missing", "/workspace"),
-    ).toThrow(/registered result target/u);
-    store.invalidate(target.source);
-    expect(() => store.resolve("SEARCH#ABCD:1:line", "/workspace")).toThrow(/expired/u);
-  });
-  test("keeps snapshot authority out of projected JSON and returned coordinates", () => {
+
+    test(`${form} retains pending, rejection and edit-warning guards`, () => {
+      const store = new ResultTargetStore();
+      const pending = store.reserve("/workspace");
+      expect(() => store.resolve(reference(pending), "/workspace")).toThrow(Error);
+      store.reject(pending, "Cancelled operation");
+      expect(() => store.resolve(reference(pending), "/workspace")).toThrow(Error);
+      const unsafe = store.register([target], "/workspace", false, "Unsafe selection");
+      expect(store.resolve(reference(unsafe), "/workspace")).toEqual({
+        targets: [target],
+        complete: false,
+      });
+      expect(() => store.resolve(reference(unsafe), "/workspace", { forEdit: true })).toThrow(
+        Error,
+      );
+    });
+  }
+  test("Search selector values reach their owning resolver just like strings", () => {
     const store = new ResultTargetStore();
-    const reference = store.register([target], "/workspace");
-    const resolved = store.resolve(
-      { target: reference, source: "/workspace/wrong.txt", ranges: [] },
+    for (const selector of ["all:line", "all:match", "1:line", "1:match"]) {
+      const id = `SEARCH#ABCD:${selector}`;
+      const value = { id, path: "/workspace/wrong.txt", line: 1, text: "preview" };
+      expect(store.source(value, "/workspace")).toBe(id);
+      expect(store.source([value, id], "/workspace")).toEqual([id, id]);
+      expect(resultValueReference(store, value, "/workspace")).toBe(id);
+    }
+  });
+  test("an all-match reference looks like a Search reference and never reuses a Search id", () => {
+    const store = new ResultTargetStore();
+    const issued = Array.from({ length: 50 }, () =>
+      store.registerAllMatchesReference(target, "/workspace"),
+    );
+    for (const reference of issued) expect(reference).toMatch(/^SEARCH#[A-F\d]{4}:all:match$/u);
+    expect(new Set(issued).size).toBe(issued.length);
+    for (const reference of issued) {
+      expect(store.hasSearchReference(reference)).toBe(true);
+      expect(store.resolve(reference, "/workspace").targets).toEqual([target]);
+    }
+
+    // Once every four-digit id is used, a longer one is issued instead of a repeated one.
+    for (let id = 0; id < 0x10000; id += 1)
+      store.claimSearchId(id.toString(16).toUpperCase().padStart(4, "0"));
+    const longer = store.registerAllMatchesReference(target, "/workspace");
+    expect(longer).toMatch(/^SEARCH#[A-F\d]{5,}:all:match$/u);
+    expect(store.hasSearchId(/^SEARCH#([A-F\d]+):/u.exec(longer)?.[1] ?? "")).toBe(true);
+  });
+  test("a value with an id passed as a selector becomes one reference", () => {
+    const store = new ResultTargetStore();
+    const one = store.register([target], "/workspace");
+    expect(resultValueReference(store, { id: one, text: "b" }, "/workspace")).toBe(one);
+    expect(resultValueReference(store, "b", "/workspace")).toBe("b");
+    expect(resultValueReference(store, undefined, "/workspace")).toBeUndefined();
+    const other = store.register([{ ...target, source: "/workspace/b.txt" }], "/workspace");
+    const shown = store.publish(
+      { status: "success", data: { kind: "list", items: [{ target: one }, { target: other }] } },
+      "two files",
       "/workspace",
     );
-    expect(resolved.targets).toEqual([target]);
-    Object.assign(resolved.targets[0]?.ranges[0]?.start ?? {}, { column: 0 });
-    expect(store.resolve(reference, "/workspace").targets).toEqual([target]);
+    const uuid = /<uuid>([a-f\d-]+)<\/uuid>/u.exec(shown)?.[1];
+    const both = resultValueReference(store, { id: `RESULT#${uuid ?? ""}` }, "/workspace");
+    expect(both).toMatch(/^RESULT#/u);
+    expect(store.resolve(both, "/workspace").targets.map(({ source }) => source)).toEqual([
+      "/workspace/a.txt",
+      "/workspace/b.txt",
+    ]);
     expect(() =>
-      store.resolve({ source: target.source, ranges: target.ranges }, "/workspace"),
-    ).toThrow("no supported source target");
+      resultValueReference(
+        store,
+        { id: "RESULT#00000000-0000-4000-8000-000000000000" },
+        "/workspace",
+      ),
+    ).toThrow(Error);
   });
 
   test("keeps incomplete source knowledge through subsets and duplicate targets", () => {
@@ -64,16 +163,6 @@ describe("source result targets", () => {
     expect(selected).toEqual({ targets: [target, firstTarget], complete: false });
     Object.assign(selected.targets[0]?.ranges[0]?.start ?? {}, { column: 0 });
     expect(store.resolve(second, "/workspace").targets).toEqual([target]);
-  });
-
-  test("rejects conflicting snapshots, another worktree, and expired handles", () => {
-    const store = new ResultTargetStore();
-    const first = store.register([target], "/workspace");
-    const second = store.register([{ ...target, expectedContent: "changed\n" }], "/workspace");
-    expect(() => store.resolve([first, second], "/workspace")).toThrow("different snapshots");
-    expect(() => store.resolve(first, "/other-worktree")).toThrow("another worktree");
-    store.clear();
-    expect(() => store.resolve(first, "/workspace")).toThrow("expired or unknown");
   });
 
   test("known URI edits retire old selections even when the original text returns", async () => {
@@ -113,7 +202,7 @@ describe("source result targets", () => {
     content = owned.expectedContent;
     store.refresh(owned.source, "/workspace", true);
     for (const reference of [original, derived, published, "SEARCH#ABCD:1:match", changed])
-      expect(() => store.resolve(reference, "/workspace")).toThrow(/expired/u);
+      expect(() => store.resolve(reference, "/workspace")).toThrow(Error);
     expect(store.resolve(sibling, "/workspace").targets[0]?.source).toBe("memory://other/note");
   });
 
@@ -131,6 +220,62 @@ describe("source result targets", () => {
     expect(store.source(debug, "/workspace", "live")).toBe("debug:node-1");
   });
 
+  test("a script value resolves its id like the reference itself and ignores other fields", () => {
+    const store = new ResultTargetStore();
+    const selected = store.register([target], "/workspace");
+    const published = store.publish(
+      { status: "success", data: { target: selected } },
+      "Selected text",
+      "/workspace",
+    );
+    const id = `RESULT#${/<uuid>([a-f\d-]{36})<\/uuid>/u.exec(published)?.[1] ?? ""}`;
+    expect(store.source({ id }, "/workspace")).toBe(selected);
+    expect(store.source({ id, path: "/workspace/b.txt", text: "other" }, "/workspace")).toBe(
+      selected,
+    );
+    expect(store.source([{ id }, published], "/workspace")).toEqual([selected, selected]);
+    expect(store.resolve({ id }, "/workspace")).toEqual(store.resolve(id, "/workspace"));
+    store.registerSearchReference("SEARCH#ABCD:1:match", selected, "/workspace");
+    expect(store.source({ id: "SEARCH#ABCD:1:match" }, "/workspace")).toBe(selected);
+  });
+
+  test("unsupported value fields cannot override or bypass registered selection authority", () => {
+    const store = new ResultTargetStore();
+    const id = store.register([target], "/workspace", false);
+    const other = store.register([{ ...target, source: "/workspace/other.txt" }], "/workspace");
+    const value = {
+      id,
+      target: other,
+      path: "/workspace/other.txt",
+      complete: true,
+      matches: [{ id: other }],
+    };
+    for (const resolve of [
+      () => store.resolve(value, "/workspace"),
+      () => store.resolve([value], "/workspace"),
+      () => resultValueReference(store, value, "/workspace"),
+    ])
+      expect(resolve).toThrow(expect.objectContaining({ code: "INVALID_RESULT_VALUE" }));
+    expect(store.resolve(id, "/workspace")).toEqual({ targets: [target], complete: false });
+  });
+  test("a script value with an id the store did not issue fails like an unknown reference", () => {
+    const store = new ResultTargetStore();
+    for (const id of [
+      "RESULT#00000000-0000-4000-8000-000000000000",
+      "00000000-0000-4000-8000-000000000000",
+      "RESULT#missing",
+      "a.txt",
+      "",
+    ])
+      expect(() => store.source({ id }, "/workspace")).toThrow(Error);
+  });
+
+  test("malformed RESULT references refuse both string and object sources", () => {
+    const store = new ResultTargetStore();
+    for (const id of ["RESULT#missing", "RESULT#", "RESULT#SEARCH#ABCD:all:line"])
+      for (const source of [id, { id }])
+        expect(() => store.source(source, "/workspace")).toThrow(Error);
+  });
   test("a known edit preserves pending output handles and their resulting spans", async () => {
     const store = new ResultTargetStore();
     const owned = {
@@ -146,30 +291,12 @@ describe("source result targets", () => {
       "/workspace",
     );
     store.refresh(owned.source, "/workspace", true);
-    expect(() => store.resolve(old, "/workspace")).toThrow(/expired/u);
+    expect(() => store.resolve(old, "/workspace")).toThrow(Error);
     const committed = { ...owned, expectedContent: "a c\n" };
     store.confirm(pending, [committed], "/workspace");
     const resolved = store.resolve(published, "/workspace");
     expect(resolved.targets).toEqual([committed]);
     await store.verify(resolved);
-  });
-
-  test("confirms pending handles once without rebinding committed snapshots", () => {
-    const store = new ResultTargetStore();
-    const reference = store.reserve("/workspace");
-    expect(() => store.resolve(reference, "/workspace")).toThrow("pending");
-    expect(() => store.confirm(reference, [target], "/other-worktree")).toThrow("this worktree");
-    store.confirm(reference, [target], "/workspace");
-    expect(store.resolve(reference, "/workspace").targets).toEqual([target]);
-    expect(() =>
-      store.confirm(reference, [{ ...target, expectedContent: "new" }], "/workspace"),
-    ).toThrow("Only a pending result");
-    store.reject(reference, "later failure");
-    expect(store.resolve(reference, "/workspace").targets).toEqual([target]);
-    const rejected = store.reserve("/workspace");
-    store.reject(rejected, "Write was cancelled");
-    expect(() => store.resolve(rejected, "/workspace")).toThrow("Write was cancelled");
-    expect(() => store.confirm(rejected, [target], "/workspace")).toThrow("Only a pending result");
   });
 
   test("preserves zero-width positions as targets rather than an empty set", () => {
@@ -180,5 +307,257 @@ describe("source result targets", () => {
     };
     const reference = store.register([position], "/workspace");
     expect(store.resolve(reference, "/workspace").targets).toEqual([position]);
+  });
+});
+
+describe("selections of a local file edited elsewhere", () => {
+  let directory: string;
+  let file: string;
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+  const line = (lineNumber: number): ResultRange => ({
+    start: { lineNumber, column: 0 },
+    end: { lineNumber, column: 3 },
+  });
+  const select = (store: ResultTargetStore, ...ranges: ResultRange[]): string =>
+    store.register([{ source: file, expectedContent: original, ranges }], directory);
+
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "result-targets-"));
+    file = path.join(directory, "a.txt");
+    writeFileSync(file, original);
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function edit(content: string): void {
+    writeFileSync(file, content);
+  }
+
+  test("follow the text when lines were added above", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    const content = `zero\nzero\n${original}`;
+    edit(content);
+    const [moved] = store.resolve(reference, directory).targets;
+    expect(moved).toMatchObject({ source: file, expectedContent: content, ranges: [line(5)] });
+  });
+
+  test("stay in place when lines below changed", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    const content = original.replace("four\nfive", "4\n5\n6");
+    edit(content);
+    const [kept] = store.resolve(reference, directory).targets;
+    expect(kept).toMatchObject({ expectedContent: content, ranges: [line(3)] });
+  });
+
+  test("keep Search references and published results usable", () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(4));
+    store.registerSearchReference("SEARCH#ABCD:1:line", reference, directory);
+    const published = store.publish(
+      { status: "success", data: { target: reference } },
+      "Search result",
+      directory,
+      [file],
+    );
+    edit(`zero\n${original}`);
+    expect(store.resolve("SEARCH#ABCD:1:line", directory).targets[0]?.ranges).toEqual([line(5)]);
+    expect(store.source(published, directory)).toBe(reference);
+  });
+
+  test("verify against the moved text", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, line(3));
+    edit(`zero\n${original}`);
+    await expect(store.verify(store.resolve(reference, directory))).resolves.toBeUndefined();
+  });
+});
+
+describe("selections registered from a text the file no longer has", () => {
+  let directory: string;
+  let file: string;
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+  const line = (lineNumber: number): ResultRange => ({
+    start: { lineNumber, column: 0 },
+    end: { lineNumber, column: 3 },
+  });
+  // A search registers each match separately, always with the text it read.
+  const match = (store: ResultTargetStore, lineNumber: number, content = original): string =>
+    store.register(
+      [{ source: file, expectedContent: content, ranges: [line(lineNumber)] }],
+      directory,
+    );
+
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "result-targets-registered-"));
+    file = path.join(directory, "a.txt");
+    writeFileSync(file, original);
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  test("matches of one search form one set when another session writes while they are registered", async () => {
+    const store = new ResultTargetStore();
+    const before = [1, 2].map((lineNumber) => match(store, lineNumber));
+    const content = `zero\n${original}`;
+    writeFileSync(file, content);
+    const after = [4, 5].map((lineNumber) => match(store, lineNumber));
+    const resolved = store.resolve([...before, ...after], directory);
+    expect(resolved.targets).toEqual([
+      {
+        source: file,
+        expectedContent: content,
+        ranges: [line(2), line(3), line(5), line(6)],
+      },
+    ]);
+    await expect(store.verify(resolved)).resolves.toBeUndefined();
+  });
+
+  test("a search that read the file before it changed combines with a later search", async () => {
+    const store = new ResultTargetStore();
+    const content = `zero\n${original}`;
+    writeFileSync(file, content);
+    const earlier = match(store, 3);
+    const later = match(store, 5, content);
+    const resolved = store.resolve([earlier, later], directory);
+    expect(resolved.targets).toEqual([
+      { source: file, expectedContent: content, ranges: [line(4), line(5)] },
+    ]);
+    await expect(store.verify(resolved)).resolves.toBeUndefined();
+  });
+
+  test("a stale match can be published without suppressing its surviving sibling", () => {
+    const store = new ResultTargetStore();
+    writeFileSync(file, original.replace("three", "thr33"));
+    const changed = match(store, 3);
+    const kept = match(store, 4);
+    store.registerSearchReference("SEARCH#ABCD:1:match", changed, directory);
+    store.registerSearchReference("SEARCH#ABCD:2:match", kept, directory);
+
+    expect(() => store.resolveSearchReference("SEARCH#ABCD:1:match", directory)).toThrow(Error);
+    expect(
+      store.resolveSearchReference("SEARCH#ABCD:2:match", directory)?.targets[0]?.ranges,
+    ).toEqual([line(4)]);
+  });
+
+  test("a match whose own text changed before it was registered is refused with its current line", () => {
+    const store = new ResultTargetStore();
+    writeFileSync(file, original.replace("three", "thr33"));
+    const changed = match(store, 3);
+    const kept = match(store, 4);
+    expect(() => store.resolve(changed, directory)).toThrow(/thr33/u);
+    expect(store.resolve(kept, directory).targets[0]?.ranges).toEqual([line(4)]);
+  });
+});
+
+describe("selections whose own lines were edited, for readers", () => {
+  let directory: string;
+  let file: string;
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+  const block: ResultRange = {
+    start: { lineNumber: 2, column: 0 },
+    end: { lineNumber: 4, column: 4 },
+  };
+  const select = (store: ResultTargetStore, ...ranges: ResultRange[]): string =>
+    store.register([{ source: file, expectedContent: original, ranges }], directory);
+
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(tmpdir(), "result-targets-readers-"));
+    file = path.join(directory, "a.txt");
+    writeFileSync(file, original);
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  test("resolve to the same region of the current text and are marked", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, block);
+    const content = `zero\n${original.replace("three", "THREE")}`;
+    writeFileSync(file, content);
+    const current = await store.resolveCurrent(reference, directory);
+    expect(current.targets).toEqual([
+      {
+        source: file,
+        expectedContent: content,
+        ranges: [
+          {
+            ...block,
+            start: { lineNumber: 3, column: 0 },
+            end: { lineNumber: 5, column: 4 },
+            adjusted: true,
+          },
+        ],
+      },
+    ]);
+    expect(describeAdjustedRanges(current, directory)).toContain("a.txt:3-5");
+  });
+
+  test.each([
+    [0, 3],
+    [2, 4],
+  ])("stale diagnostics respect the exclusive end column %i", (column, last) => {
+    const store = new ResultTargetStore();
+    const reference = select(store, {
+      start: { lineNumber: 1, column: 0 },
+      end: { lineNumber: 4, column },
+    });
+    writeFileSync(file, original.replace("two", "TWO"));
+    expect(() => store.resolve(reference, directory)).toThrow(new RegExp(`1–${last}\\b`, "u"));
+  });
+
+  test("stay usable through later edits, and unchanged ones are not marked", async () => {
+    const store = new ResultTargetStore();
+    const edited = select(store, block);
+    const untouched = select(store, {
+      start: { lineNumber: 5, column: 0 },
+      end: { lineNumber: 5, column: 4 },
+    });
+    writeFileSync(file, original.replace("three", "THREE"));
+    await store.resolveCurrent(edited, directory);
+    writeFileSync(file, `zero\n${original.replace("three", "THREE").replace("four", "4\n4")}`);
+    const current = await store.resolveCurrent(edited, directory);
+    expect(current.targets[0]?.ranges[0]).toMatchObject({
+      start: { lineNumber: 3, column: 0 },
+      end: { lineNumber: 7, column: 0 },
+      adjusted: true,
+    });
+    const moved = await store.resolveCurrent(untouched, directory);
+    expect(moved.targets[0]?.ranges[0]).toEqual({
+      start: { lineNumber: 7, column: 0 },
+      end: { lineNumber: 7, column: 4 },
+    });
+    expect(describeAdjustedRanges(moved, directory)).toBeUndefined();
+  });
+
+  test("follow a write that lands after the result was resolved", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, block);
+    const resolved = store.resolve(reference, directory);
+    const content = `zero\n${original.replace("three", "THREE")}`;
+    writeFileSync(file, content);
+    const current = await currentResultTargets(resolved);
+    expect(current.targets[0]?.expectedContent).toBe(content);
+    expect(current.targets[0]?.ranges[0]).toMatchObject({
+      start: { lineNumber: 3, column: 0 },
+      adjusted: true,
+    });
+  });
+
+  test("keep published results usable for readers", async () => {
+    const store = new ResultTargetStore();
+    const reference = select(store, block);
+    const published = store.publish(
+      { status: "success", data: { target: reference } },
+      "Read",
+      directory,
+      [file],
+    );
+    writeFileSync(file, original.replace("three", "THREE"));
+    const current = await store.resolveCurrent(published, directory);
+    expect(current.targets[0]?.ranges[0]).toMatchObject({ adjusted: true });
   });
 });

@@ -19,6 +19,7 @@ const sourceMatchFields = {
   target: Type.Optional(Type.String()),
   range: position,
   matchedText: Type.Optional(Type.String()),
+  lineText: Type.Optional(Type.String()),
   textTruncated: Type.Optional(Type.Boolean()),
   references: Type.Optional(references),
 };
@@ -38,6 +39,8 @@ const match = Type.Object(
           id: Type.String(),
           name: Type.String(),
           kind: Type.String(),
+          /** Selector segments that name the declaration alone in its file. */
+          selector: Type.Optional(Type.Array(Type.String())),
           source: Type.String(),
           range: position,
         },
@@ -56,6 +59,8 @@ const selectionProperties = {
   matches: Type.Array(match),
   all: Type.Optional(references),
   notices: Type.Optional(Type.Array(Type.String())),
+  editWarning: Type.Optional(Type.String()),
+  fallback: Type.Optional(Type.Union([Type.Literal("regex"), Type.Literal("words")])),
 };
 /** Separate possible-name groups with exact captured ranges and optional Read references. */
 export const fuzzyDataSchema = Type.Object(
@@ -99,7 +104,11 @@ export const searchDataSchema = Type.Union([
 ]);
 export const searchOutputSchema = structuredResultSchema(searchDataSchema);
 
-/** Project a registered selection in its original order. Columns are zero-based UTF-16 offsets. */
+/**
+ * Project a registered selection in its original order, with every match and its whole text, as a
+ * script gets it. Search core keeps only a preview for other callers; see `selectionPreview`.
+ * Columns are zero-based UTF-16 offsets.
+ */
 export function selectionData(
   matches: readonly {
     source: string;
@@ -108,6 +117,8 @@ export function selectionData(
     startColumn: number;
     endColumn: number;
     matchedText: string;
+    lineText?: string;
+    linesText?: string;
   }[],
   complete: boolean,
   sessionId?: string,
@@ -116,33 +127,93 @@ export function selectionData(
   return {
     kind: "matches" as const,
     ...(targets?.target === undefined ? {} : { target: targets.target }),
-    truncated: matches.length > 100,
     complete,
-    matches: matches.slice(0, 100).map((match, index) => ({
-      source: match.source,
-      ...(targets?.matchTargets?.[index] === undefined
-        ? {}
-        : { target: targets.matchTargets[index] }),
-      range: {
-        startLine: match.lineNumber,
-        startColumn: match.startColumn,
-        endLine: match.endLineNumber ?? match.lineNumber,
-        endColumn: match.endColumn,
-      },
-      ...(Buffer.byteLength(match.matchedText) <= 4096
-        ? { matchedText: match.matchedText }
-        : { textTruncated: true }),
-      ...(sessionId === undefined
-        ? {}
-        : {
-            references: {
-              line: `SEARCH#${sessionId}:${index + 1}:line`,
-              match: `SEARCH#${sessionId}:${index + 1}:match`,
-            },
-          }),
-    })),
+    matches: matches.map((match, index) => {
+      const lineText =
+        match.linesText ??
+        ((match.endLineNumber ?? match.lineNumber) === match.lineNumber
+          ? match.lineText
+          : undefined);
+      return {
+        source: match.source,
+        ...(targets?.matchTargets?.[index] === undefined
+          ? {}
+          : { target: targets.matchTargets[index] }),
+        range: {
+          startLine: match.lineNumber,
+          startColumn: match.startColumn,
+          endLine: match.endLineNumber ?? match.lineNumber,
+          endColumn: match.endColumn,
+        },
+        matchedText: match.matchedText,
+        ...(lineText === undefined ? {} : { lineText }),
+        ...(sessionId === undefined
+          ? {}
+          : {
+              references: {
+                line: `SEARCH#${sessionId}:${index + 1}:line`,
+                match: `SEARCH#${sessionId}:${index + 1}:match`,
+              },
+            }),
+      };
+    }),
     ...(complete && sessionId !== undefined
       ? { all: { line: `SEARCH#${sessionId}:all:line`, match: `SEARCH#${sessionId}:all:match` } }
       : {}),
   };
+}
+
+/** Matches a preview keeps, and the longest match text it keeps, in UTF-8 bytes. */
+const preview = { matches: 100, textBytes: 4096 } as const;
+
+/**
+ * The record of a call that does not hand its result to a script: the first 100 matches, each with
+ * its match and line text when each is at most 4 KB. The record of every call must stay within the 1 MiB
+ * limit of structured results, which only a script's call lifts. `truncated` marks a shortened
+ * list and `textTruncated` an omitted text. A resolver's own value, such as an lsp_search call
+ * graph, keeps each list of matches it holds as a preview. Data of other kinds stays as it is.
+ */
+export function selectionPreview(data: unknown): unknown {
+  if (isRecord(data) && data.kind === "custom" && isRecord(data.value))
+    return {
+      ...data,
+      value: Object.fromEntries(
+        Object.entries(data.value).map(([key, item]) => [key, selectionPreview(item)]),
+      ),
+    };
+  if (!isRecord(data) || data.kind !== "matches" || !Array.isArray(data.matches)) return data;
+  const matches: unknown[] = data.matches;
+  return {
+    ...data,
+    ...(matches.length > preview.matches && { truncated: true }),
+    matches: matches.slice(0, preview.matches).map((match) => {
+      if (!isRecord(match)) return match;
+      const captures = isRecord(match.captures)
+        ? Object.fromEntries(
+            Object.entries(match.captures).map(([name, nodes]) => [
+              name,
+              Array.isArray(nodes)
+                ? nodes.map((node: unknown) => (isRecord(node) ? previewText(node) : node))
+                : nodes,
+            ]),
+          )
+        : undefined;
+      return { ...previewText(match), ...(captures !== undefined && { captures }) };
+    }),
+  };
+}
+
+function previewText(match: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...match };
+  for (const key of ["matchedText", "lineText"]) {
+    if (typeof result[key] === "string" && Buffer.byteLength(result[key]) > preview.textBytes) {
+      delete result[key];
+      result.textTruncated = true;
+    }
+  }
+  return result;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

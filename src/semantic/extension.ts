@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { connectTipProvider, TIP_API_VERSION, TIP_PROTOCOL } from "#src/api/tips.ts";
+import type { SemanticSearchResult } from "#src/plugins/pi-agent-ide-semantic/src/backend.ts";
 import { semanticEngine, type SemanticEngine } from "./engine.ts";
 
 /** Backend operations are project scoped; searches update the existing index. */
@@ -12,7 +13,7 @@ export interface SemanticBackend {
     query: string,
     options: { path?: string; include?: string; exclude?: string },
     signal?: AbortSignal,
-  ): Promise<string>;
+  ): Promise<SemanticSearchResult>;
 }
 
 type EnginePreference = string | ((cwd: string) => Promise<string | undefined>);
@@ -95,7 +96,12 @@ function registerWithSelection(
             { path: params.path, include: params.include, exclude: params.exclude },
             signal,
           );
-          return { content: [{ type: "text", text: result }], details: {} };
+          return {
+            content: [{ type: "text", text: result.text }],
+            details: {},
+            // Ranked files for scripts; ranges are approximate hints, not selections.
+            structuredContent: { files: [...result.files] },
+          };
         },
       });
       if (next === "hidden") {

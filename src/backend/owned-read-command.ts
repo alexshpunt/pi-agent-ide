@@ -1,5 +1,6 @@
 import { runOwnedSshCommand } from "./owned-command.ts";
 import type { SshTarget } from "./ssh.ts";
+import type { SshCommand } from "./ssh-transport.ts";
 
 /** Bounds for one owned, buffered read service. Both output streams share the byte budget. */
 export interface OwnedReadCommandOptions {
@@ -11,7 +12,7 @@ export interface OwnedReadCommandOptions {
 /** Run a read-only target service and await native cleanup without changing its execution owner. */
 export async function readOwnedSshCommand(
   target: SshTarget,
-  command: string,
+  command: SshCommand,
   args: readonly string[],
   source: string,
   options: OwnedReadCommandOptions,

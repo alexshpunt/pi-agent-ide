@@ -1,18 +1,27 @@
-import { verifyResultTargets, type ResolvedResultTargets } from "pi-agent-resource";
+import type { ResolvedResultTargets } from "pi-agent-resource";
 import { createTextDocument } from "pi-agent-text";
 import { searchTextContent } from "#src/search-backend.ts";
 import type { TextSearchBackendResult } from "#src/search-backend.ts";
-import type { SearchRecipe } from "#src/search-recipe.ts";
+import { fallbackNotice, type SearchRecipe, type SearchFallback } from "#src/search-recipe.ts";
 import type { TextSearchMatch } from "#src/search-session.ts";
+import { SearchCaptureGuard } from "pi-agent-search/api/search";
 
-/** Run each real source range separately; gaps and neighboring text are never searched. */
+/**
+ * Run each real source range separately; gaps and neighboring text are never searched. The
+ * ranges describe the text in `scope`, which is what is searched; the caller makes the scope
+ * current first, and registering the matches checks them against the file again.
+ */
 export async function runScopedSearch(
   recipe: SearchRecipe,
   scope: ResolvedResultTargets,
   cwd: string,
   signal?: AbortSignal,
 ): Promise<
-  TextSearchBackendResult & { readonly query: string; readonly notices: readonly string[] }
+  TextSearchBackendResult & {
+    readonly query: string;
+    readonly notices: readonly string[];
+    readonly fallback?: SearchFallback["mode"];
+  }
 > {
   if (recipe.include !== undefined || recipe.exclude !== undefined)
     throw new Error(
@@ -24,9 +33,9 @@ export async function runScopedSearch(
   ): Promise<TextSearchBackendResult> => {
     const matches: TextSearchMatch[] = [];
     const seen = new Set<string>();
+    const capture = new SearchCaptureGuard();
     for (const target of scope.targets) {
       signal?.throwIfAborted();
-      await verifyResultTargets({ targets: [target], complete: scope.complete }, signal);
       const document = createTextDocument(target.source, target.expectedContent);
       const starts = [0];
       for (const line of document.lines)
@@ -66,6 +75,7 @@ export async function runScopedSearch(
           ]);
           if (seen.has(key)) continue;
           seen.add(key);
+          capture.addMatch(mapped);
           matches.push(mapped);
         }
       }
@@ -80,6 +90,7 @@ export async function runScopedSearch(
     return { matches, complete: scope.complete };
   };
   let query = recipe.query;
+  let selectedFallback: SearchFallback["mode"] | undefined;
   let result = await search(query);
   const notices: string[] = [];
   for (const fallback of recipe.fallbacks ?? []) {
@@ -87,11 +98,8 @@ export async function runScopedSearch(
     try {
       result = await search(fallback.query, fallback.condition);
       query = fallback.query;
-      notices.push(
-        fallback.mode === "regex"
-          ? "Search fallback: no literal matches; tried unquoted terms as regex."
-          : "Search fallback: no matches in earlier modes; tried separate words. Use these matches as location hints; refine the query before editing.",
-      );
+      selectedFallback = fallback.mode;
+      notices.push(fallbackNotice(fallback.mode));
     } catch (error) {
       if (
         signal?.aborted ||
@@ -103,6 +111,10 @@ export async function runScopedSearch(
       notices.push("Search fallback: invalid regex skipped; literal search found no matches.");
     }
   }
-  await verifyResultTargets(scope, signal);
-  return { ...result, query, notices };
+  return {
+    ...result,
+    query,
+    notices,
+    ...(selectedFallback === undefined ? {} : { fallback: selectedFallback }),
+  };
 }

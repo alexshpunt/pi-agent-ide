@@ -30,6 +30,16 @@ export {
 export { getTextSourceLine, type TextSourceLine, withTextSourceLine } from "./source-line.ts";
 
 export {
+  documentLineAnchors,
+  isLineAnchor,
+  LINE_ANCHOR_PATTERN,
+  lineAnchors,
+  linesWithAnchor,
+  PRESENTED_LINE_ANCHOR_PATTERN,
+  textLineAnchors,
+} from "./line-anchors.ts";
+
+export {
   createTextDocument,
   isTextLinePresenter,
   isTextPresenterRegistration,
@@ -57,6 +67,14 @@ export {
   type TextTargetResolutionAttempt,
   type TextTargetResolver,
   type TextTargetResolverContext,
+  type TextEditRun,
 } from "./text-target.ts";
 
 export { storeText, restoreText, type StoredText } from "./stored-text.ts";
+
+export { endsWithNoFinalLineBreakMarker, NO_FINAL_LINE_BREAK } from "./no-final-line-break.ts";
+export {
+  SEARCH_HIGHLIGHT_OPEN,
+  SEARCH_HIGHLIGHT_CLOSE,
+  stripSearchHighlights,
+} from "./search-highlight.ts";

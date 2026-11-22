@@ -5,11 +5,17 @@ import {
   type AgentToolResult,
   type ExtensionContext,
   type ExtensionAPI,
-  withFileMutationQueue,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
-import { resultError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
+import {
+  EDIT_WAIT_TIMEOUT_MS,
+  resourceAccesses,
+  resourceScheduler,
+  resultError,
+  structuredResultSchema,
+  withStructuredResult,
+} from "pi-agent-resource";
 const indexDataSchema = Type.Object(
   {
     action: Type.Union([Type.Literal("stage"), Type.Literal("unstage")]),
@@ -195,100 +201,104 @@ export function createIndexChangeExecutor(
   ): Promise<AgentToolResult<IndexChangeToolDetails>> => {
     const file = resolveFile(parameters.file, context.cwd);
 
-    return withFileMutationQueue(file, () =>
-      queue.run(async () => {
-        const worktreeText = executor.readText
-          ? await executor.readText(file, signal)
-          : await readFile(file, "utf8");
-        const creation = await ChangeService.create(
-          executor,
-          gitSourceDirectory(file, context.cwd),
-          signal,
-        );
-
-        if (creation.status !== "ready") {
-          throw new Error(
-            action === "stage"
-              ? `Cannot stage ${parameters.file}: ${creation.message}`
-              : creation.message,
+    return resourceScheduler.run(
+      resourceAccesses(file, context.cwd, "write"),
+      () =>
+        queue.run(file, signal, async () => {
+          const worktreeText = executor.readText
+            ? await executor.readText(file, signal)
+            : await readFile(file, "utf8");
+          const creation = await ChangeService.create(
+            executor,
+            gitSourceDirectory(file, context.cwd),
+            signal,
           );
-        }
 
-        const result = await creation.service.changeIndex(
-          {
-            source: file,
-            worktreeText,
-            cwd: context.cwd,
-            ...(signal !== undefined && { signal }),
-          },
-          parameters.change,
-          action,
-        );
+          if (creation.status !== "ready") {
+            throw new Error(
+              action === "stage"
+                ? `Cannot stage ${parameters.file}: ${creation.message}`
+                : creation.message,
+            );
+          }
 
-        if (result.status === "unavailable") {
-          if ("failure" in result && result.failure !== undefined) {
-            if (action === "stage" && result.reason === "index-write-failed") {
-              const failure = resultError(result.failure, "INDEX_CHANGE_FAILED", parameters.file);
+          const result = await creation.service.changeIndex(
+            {
+              source: file,
+              worktreeText,
+              cwd: context.cwd,
+              ...(signal !== undefined && { signal }),
+            },
+            parameters.change,
+            action,
+          );
+
+          if (result.status === "unavailable") {
+            if ("failure" in result && result.failure !== undefined) {
+              if (action === "stage" && result.reason === "index-write-failed") {
+                const failure = resultError(result.failure, "INDEX_CHANGE_FAILED", parameters.file);
+                throw Object.assign(
+                  new Error(
+                    `${failure.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
+                    { cause: result.failure },
+                  ),
+                  { effect: publicationEffect(result.failure) },
+                );
+              }
+              throw result.failure;
+            }
+            if (action === "stage" && result.reason === "stale-selector") {
               throw Object.assign(
                 new Error(
-                  `${failure.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
-                  { cause: result.failure },
+                  `${result.message}. Read ${parameters.file} with views: ["changes"] and use a current CHANGE# anchor.`,
                 ),
-                { effect: publicationEffect(result.failure) },
+                { effect: "not-applied" },
               );
             }
-            throw result.failure;
-          }
-          if (action === "stage" && result.reason === "stale-selector") {
+            if (action === "stage" && result.reason === "index-write-failed" && !signal?.aborted) {
+              throw new Error(
+                `${result.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
+              );
+            }
             throw Object.assign(
               new Error(
-                `${result.message}. Read ${parameters.file} with views: ["changes"] and use a current CHANGE# anchor.`,
+                action === "stage" && result.reason !== "index-write-failed"
+                  ? `Cannot stage ${parameters.file}: ${result.message}`
+                  : result.message,
               ),
               { effect: "not-applied" },
             );
           }
-          if (action === "stage" && result.reason === "index-write-failed" && !signal?.aborted) {
-            throw new Error(
-              `${result.message}\nThe index may have changed. Read ${parameters.file} with views: ["changes"] before retrying.`,
-            );
+
+          if (result.status === "not-applicable") {
+            if (action === "stage") {
+              const reason =
+                result.reason === "clean"
+                  ? "the worktree text matches HEAD"
+                  : "the file is not present in HEAD";
+              throw new Error(`Cannot stage ${parameters.file}: ${reason}.`);
+            }
+            throw new Error(`${action} is not applicable to ${file}: ${result.reason}`);
           }
-          throw Object.assign(
-            new Error(
-              action === "stage" && result.reason !== "index-write-failed"
-                ? `Cannot stage ${parameters.file}: ${result.message}`
-                : result.message,
-            ),
-            { effect: "not-applied" },
-          );
-        }
 
-        if (result.status === "not-applicable") {
-          if (action === "stage") {
-            const reason =
-              result.reason === "clean"
-                ? "the worktree text matches HEAD"
-                : "the file is not present in HEAD";
-            throw new Error(`Cannot stage ${parameters.file}: ${reason}.`);
-          }
-          throw new Error(`${action} is not applicable to ${file}: ${result.reason}`);
-        }
+          const isUnchanged = result.status === "unchanged";
+          const text = isUnchanged
+            ? `${parameters.change} is already ${targetState} in ${parameters.file}.`
+            : `${pastTense} ${parameters.change} in ${parameters.file}.`;
 
-        const isUnchanged = result.status === "unchanged";
-        const text = isUnchanged
-          ? `${parameters.change} is already ${targetState} in ${parameters.file}.`
-          : `${pastTense} ${parameters.change} in ${parameters.file}.`;
-
-        return {
-          content: [{ type: "text", text }],
-          details: {
-            action,
-            change: parameters.change,
-            file,
-            state: targetState,
-            unchanged: isUnchanged,
-          },
-        };
-      }),
+          return {
+            content: [{ type: "text", text }],
+            details: {
+              action,
+              change: parameters.change,
+              file,
+              state: targetState,
+              unchanged: isUnchanged,
+            },
+          };
+        }),
+      signal,
+      { waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS, waitFor: file },
     );
   };
 }

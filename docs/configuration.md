@@ -59,9 +59,11 @@ Tools use fixed native exposure; there are no IDE exposure overrides or named pr
 | `ide_git`      | `stage`, `unstage`               | `deferred` |
 | `ide_debug`    | `debug`                          | `deferred` |
 
+`ide_terminal` also registers `remote_powershell` on Linux and macOS hosts, or `remote_bash` on Windows hosts, when an SSH target of the other OS is configured. It runs only on remote targets; the local tool keeps its name and also covers same-OS targets.
+
 Direct tools keep their normal calls and can also run through Codemode while active. Edits consume the snapshot-bound targets that Read and Search return.
 
-Git staging and debugger tools are not declared ahead of time. Short agent guidance names the enabled capabilities and tells the agent to find them through native `tool_search`. IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
+Git staging and debugger tools are not declared ahead of time. Agent guidance names the enabled capabilities and distinguishes [direct discovery from Codemode](./tools.md#tool-discovery). IDE activates `tool_search` when an enabled deferred capability needs it and the host allows it. Native namespace filtering, BM25 ranking and Codemode declaration budgets apply; workspace `search` still searches workspace content.
 
 Explicit `-name` entries in Pi's `defaultTools` hide matching IDE tools from direct calls, discovery and nested calls. A later `+name` restores the capability and selects it at startup. Pi's CLI allowlist and exclusions still apply: IDE does not restore a tool removed from the host registry. Disabling an IDE module removes its tools rather than leaving a deferred path behind. Discovery guidance omits disabled capabilities.
 
@@ -115,7 +117,7 @@ Configure targets in the current project's `.pi/pi-agent-ide/ssh.json` by defaul
 
 Use `ssh://sandbox/srv/work/file.txt` with the existing read and text mutation tools. Workspace is the remote path base, not an access boundary; the account's permissions control access. Connections use batch mode and strict host-key verification. Python 3 must be available remotely; no permanent helper is installed.
 
-Remote command channels use Linux child-subreaper support and Python's standard `ctypes` module. The kernel keeps orphaned descendants with their owning channel, including children that open new sessions. Cleanup waits for those children to exit and be reaped; it does not scan or signal unrelated processes. A denied signal or a cleanup deadline remains an explicit unknown result, not proof that the whole tree stopped.
+Remote command channels use Linux child-subreaper support and Python's standard `ctypes` module. The kernel keeps orphaned descendants with their owning channel, including children that open new sessions. While the command runs, the channel collects adopted descendants that have exited, so none stays a zombie and a PID-namespace sandbox such as Bubblewrap can finish. Cleanup waits for those children to exit and be reaped; it does not scan or signal unrelated processes. A denied signal or a cleanup deadline remains an explicit unknown result, not proof that the whole tree stopped.
 
 The terminal module reads the same targets. Set `bash`'s `cwd` to `ssh://sandbox/srv/work` to run remote Bash with a PTY. Existing shell resources support input and session cleanup. Remote process identity includes its target; it is never treated as a local PID.
 
@@ -158,13 +160,9 @@ Both default to `false`. A project boolean overrides the global boolean, includi
 
 ## Search timeout
 
-The complete `search` call has a 30-second timeout by default. This covers resolver work and result formatting. When it expires, the active resolver is cancelled and the agent receives this error:
+The `search` tool has a 30-second deadline by default. This includes resolving the scope and formatting results. On timeout, the tool cancels the active resolver and reports the target and elapsed limit. If the search has confirmed matches, it can return them as an incomplete result without editable selections.
 
-```text
-Search timed out after 30 seconds. Try a smaller path scope.
-```
-
-Set a global timeout in `~/.pi/agent/pi-agent-ide/search.json`:
+Set the global deadline in `~/.pi/agent/pi-agent-ide/search.json`:
 
 ```json
 {
@@ -172,13 +170,16 @@ Set a global timeout in `~/.pi/agent/pi-agent-ide/search.json`:
 }
 ```
 
-A project can override it in `<project>/.pi/pi-agent-ide/search.json`. Set `timeoutMs` to `null` at either level to disable the timeout. A project value wins over the global value. Any numeric value must be a positive integer. Invalid search settings reject the search call and name the bad config file.
+A project can override it in `<project>/.pi/pi-agent-ide/search.json`. Give `timeoutMs` a positive integer in milliseconds. Pi Agent IDE caps the deadline at 120 seconds; `null` uses that cap. Invalid settings fail the call and name the config file. This setting does not change the 30-second deadline for `file_search`.
 
 ## Tool configuration
 
 Pi Agent IDE ships formatter, linter, and LSP mappings. You do not need to copy them into each project. Install the tools and their required modules separately. Pi looks in project `node_modules/.bin`, Python `.venv` and `venv` executable directories, `vendor/bin`, and `PATH`. Python environments use `Scripts` on Windows and `bin` elsewhere. Windows command lookup respects `PATHEXT`, including `.cmd` launchers.
 
 Built-in formatters run only when the project contains matching evidence, such as `go.mod`, `Cargo.toml`, `.clang-format`, or a formatter configuration file. An executable being present on the machine and a matching file extension are not enough. Explicit project or global formatter entries remain opt-in configuration and do not require built-in evidence.
+
+Built-in `rustfmt` runs after an edit only if the file's original content already matches `rustfmt` output. This preserves existing formatting elsewhere in the file. It formats only the edited file, leaving child modules untouched. Explicit formatter entries are unaffected.
+
 You can replace built-in entries or add custom entries in either of these directories:
 
 ```text
@@ -199,6 +200,59 @@ Use a global override for a nonstandard command shared by your projects. Use a p
 Use direct argument arrays in tool commands. Available placeholders are `{file}`, `{relativeFile}`, `{fileDir}`, and `{project}`. Formatter output can be `in-place` or `stdout`. Linters have separate `check` and optional `fix` commands. See the [generated tool catalog](./generated/tool-catalog/index.md) for built-in IDs and commands.
 
 When `PI_CODING_AGENT_DIR` is set, the global directory follows it as `<PI_CODING_AGENT_DIR>/extensions/pi-agent-ide/`. Restart Pi or use `/reload` after changing a configuration file.
+
+### Rust diagnostics without compilation
+
+The built-in Rust diagnostics do not compile the workspace. Clippy is disabled by default. The built-in rust-analyzer starts with `checkOnSave: false`, `cargo.buildScripts.enable: false`, and `procMacro.enable: false`, before workspace loading begins. This applies to diagnostic Read views, the `diagnostics` tool, and automatic post-edit diagnostics.
+
+rust-analyzer still loads Cargo metadata and indexes source for native diagnostics and navigation. Loading metadata can create a missing `Cargo.lock`, just as it can in an editor. Large workspaces can still take time and memory to index; these defaults prevent build-backed checks, not all background work. Native diagnostics are less complete than compiler or Clippy results. Generated build-script output and procedural macro expansion are unavailable. Pending or incomplete results are not a clean compiler check.
+
+Build-backed checks are independent opt-ins. To enable Clippy, put this complete entry in `<project>/.pi/pi-agent-ide/linters.json`:
+
+```json
+{
+  "version": 1,
+  "linters": {
+    "clippy": {
+      "enabled": true,
+      "extensions": [".rs"],
+      "check": {
+        "command": ["cargo", "clippy", "--message-format", "short"],
+        "successExitCodes": [0, 1, 101]
+      },
+      "diagnostics": { "format": "gcc" }
+    }
+  }
+}
+```
+
+An explicit linter entry is enabled when `enabled` is omitted. Set `enabled: false` in a complete entry to exclude it from selection and command availability checks. Entries still require valid commands and diagnostic parsers when disabled. Removing the override restores the built-in default.
+
+To enable rust-analyzer's compiler checks, build scripts, and procedural macros, put this complete entry in `<project>/.pi/pi-agent-ide/lsp-servers.json`:
+
+```json
+{
+  "version": 1,
+  "servers": {
+    "rust-analyzer": {
+      "command": ["rust-analyzer"],
+      "transport": "stdio",
+      "rootMarkers": ["Cargo.toml", "rust-project.json"],
+      "languages": { "rust": { "extensions": [".rs"] } },
+      "capabilities": ["diagnostics"],
+      "initializationOptions": {
+        "checkOnSave": true,
+        "cargo": { "buildScripts": { "enable": true } },
+        "procMacro": { "enable": true }
+      }
+    }
+  }
+}
+```
+
+These options can start Cargo compilation during workspace loading, not just after an edit. Enabling procedural macros also enables build scripts in rust-analyzer. Existing custom LSP entries retain their settings and replace the whole built-in entry; omitting these options in a custom entry uses the server's own defaults, which may compile.
+
+Use the global tool configuration directory for a machine-wide opt-in instead. Restart Pi or use `/reload` after changing either file. Remove the overrides to restore the safe defaults. See [rust-analyzer configuration](https://rust-analyzer.github.io/book/configuration.html) for its individual check options.
 
 ### Files without a language extension
 
@@ -322,7 +376,7 @@ Configure this in `<agent-dir>/pi-agent-ide/deletion.json` globally, or `<projec
 
 Relative global paths start at your home directory; relative project paths start at the worktree root, or cwd without Git. Absolute paths and a leading `~/` are supported. Globs and other shell expansion are not supported. Custom roots resolve symlinks; default name matching uses resolved parent paths, not a symlink spelling. Missing configured roots are skipped. Settings are read for each removal and checked again before effects. Invalid settings block directory/symlink removal rather than falling back.
 
-Tracked/staged contents, failed Git checks inside the current project, and protected project/Git/filesystem paths keep their safeguards. Parent links must resolve inside an allowed root or to a path with an eligible name. Unlinking the final symlink leaves its destination alone. Hooks still apply. Move checks its source and any replaced directory separately; a temporary source does not exempt an ordinary destination. Copy still merges directories and keeps destination-only files. Regular-file deletion is unchanged.
+Tracked/staged contents, failed Git checks inside the current project, and protected project/Git/filesystem paths keep their safeguards. Parent links must resolve inside an allowed root or to a path with an eligible name. Unlinking the final symlink leaves its destination alone. Hooks still apply. Move checks its source and any replaced directory separately; a temporary source does not exempt an ordinary destination. Copy still merges directories and keeps destination-only files. Deleting a regular file, tracked or not, never needs this confirmation; see [File hooks](./user-hooks.md).
 
 ### Exact text recovery
 
@@ -403,7 +457,7 @@ Use **Diff presentation** in the Agent IDE settings UI to choose Full, Compact, 
 | ID                        | Contribution                         |
 | ------------------------- | ------------------------------------ |
 | `editor.anchor.constant`  | `begin` and `end` anchors            |
-| `editor.anchor.line-hash` | Snapshot-aware line anchors          |
+| `editor.anchor.line-hash` | Content-derived line anchors         |
 | `editor.anchor.exact`     | Unique exact text spans and recovery |
 | `editor.stale-anchor`     | Stale-anchor recovery behavior       |
 

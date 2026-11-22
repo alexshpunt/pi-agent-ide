@@ -203,6 +203,7 @@ function isTextSourceLine(value: unknown): value is TextSourceLine {
     line.source.length > 0 &&
     Number.isInteger(line.lineNumber) &&
     (line.lineNumber ?? 0) > 0 &&
-    typeof line.content === "string"
+    typeof line.content === "string" &&
+    (line.anchor === undefined || typeof line.anchor === "string")
   );
 }

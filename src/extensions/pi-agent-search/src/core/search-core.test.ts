@@ -1,4 +1,7 @@
-import { describe, expect, test, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
 import { resourceScheduler } from "pi-agent-resource";
 import { createSearchCore } from "#src/core/search-core.ts";
@@ -74,6 +77,64 @@ test.each([false, true])(
     expect(JSON.stringify(denied.content)).toContain("Owned content is blocked");
   },
 );
+test("a script's search keeps structured data above the 1 MiB limit an agent's search has", async () => {
+  const core = createSearchCore();
+  const files = Array.from({ length: 20_000 }, (_, index) => `${"x".repeat(60)}-${String(index)}`);
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "large-files",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "files",
+          tryResolve: () => ({ kind: "resolved", payload: files }),
+          format: () => ({ content: [{ type: "text", text: "20000 files" }], details: {} }),
+          toScriptData: () => ({ kind: "files", files, complete: true }),
+        },
+      });
+    },
+  });
+  const script = await core.execute({ query: "large" }, { cwd: process.cwd() }, "script");
+  expect(script.isError).not.toBe(true);
+  expect(script.structuredContent).toMatchObject({ status: "success", data: { files } });
+  const agent = await core.execute({ query: "large" }, { cwd: process.cwd() });
+  expect(agent.isError).toBe(true);
+  expect(JSON.stringify(agent.content)).toContain("exceeds 1 MiB");
+});
+test("a script's search keeps every match while an agent's record keeps a preview", async () => {
+  const core = createSearchCore();
+  const matches = Array.from({ length: 2000 }, (_, index) => ({
+    source: `/workspace/${"long-directory/".repeat(20)}file.txt`,
+    range: { startLine: index + 1, startColumn: 0, endLine: index + 1, endColumn: 600 },
+    matchedText: "y".repeat(index === 0 ? 5000 : 600),
+  }));
+  await core.registerPlugin({
+    protocol: SEARCH_PROTOCOL,
+    apiVersion: SEARCH_API_VERSION,
+    id: "many-matches",
+    setup(api) {
+      api.addResolver({
+        resolver: {
+          id: "matches",
+          tryResolve: () => ({ kind: "resolved", payload: matches }),
+          format: () => ({ content: [{ type: "text", text: "2000 matches" }], details: {} }),
+          toScriptData: () => ({ kind: "matches", complete: true, matches }),
+        },
+      });
+    },
+  });
+  const script = await core.execute({ query: "many" }, { cwd: process.cwd() }, "script");
+  expect(script.isError).not.toBe(true);
+  expect(script.structuredContent).toMatchObject({ status: "success", data: { matches } });
+  const agent = await core.execute({ query: "many" }, { cwd: process.cwd() });
+  expect(agent.isError, JSON.stringify(agent.content)).not.toBe(true);
+  const data = (agent.structuredContent as { data: { truncated: boolean; matches: unknown[] } })
+    .data;
+  expect(data.truncated).toBe(true);
+  expect(data.matches).toHaveLength(100);
+  expect(data.matches[0]).toMatchObject({ textTruncated: true });
+});
 async function setup(attempt: SearchResolutionAttempt | Error, supportsResultScope = false) {
   const core = createSearchCore();
   const specialized = vi.fn(() => {
@@ -204,13 +265,13 @@ test.each([false, true])("search readers overlap with a declared scope=%s", asyn
 });
 test("script search keeps resolver data and formatted reference data separately", async () => {
   const { core } = await setup({ kind: "resolved", payload: [{ path: "a.ts", line: 4 }] });
-  const result = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() }, "script");
+  const result = await core.execute({ query: "custom:entry" }, { cwd: process.cwd() }, "script");
   expect(result.script).toEqual({
     resolverId: "special",
     data: [{ path: "a.ts", line: 4 }],
     details: {},
   });
-  const ordinary = await core.execute({ query: "symbols:entry" }, { cwd: process.cwd() });
+  const ordinary = await core.execute({ query: "custom:entry" }, { cwd: process.cwd() });
   expect(ordinary.script).toBeUndefined();
 });
 test("scope owner refusal prevents every resolver and failed setup retains no owner", async () => {
@@ -360,26 +421,30 @@ describe("search fallback dispatch", () => {
     expect(fallback.mock.calls[0]?.[0]).toEqual(request);
     expect(JSON.stringify(result.content)).toContain("local hits");
   });
-  test.each(["symbols:", "ast:", "regex:", "files:", "custom:   "])(
-    "routes empty %s straight to local text",
+  test.each(["docs:debugger", "status:", "custom:   "])(
+    "passes colon text %s through normal resolver dispatch without adding a notice",
     async (query) => {
-      const { core, specialized, fallback } = await setup(new Error("service must stay idle"));
+      const { core, specialized, fallback } = await setup({ kind: "not-handled" });
       const request = { query, path: "src", limit: 3, exclude: "*.test.ts" };
       const result = await core.execute(request, { cwd: process.cwd() });
-      expect(specialized).not.toHaveBeenCalled();
+      expect(specialized).toHaveBeenCalledWith(request, { cwd: process.cwd() });
       expect(fallback).toHaveBeenCalledWith(request, { cwd: process.cwd() });
       expect(result.details.resolverId).toBe("text");
-      expect(result.content).toHaveLength(2);
-      expect(result.content[1]).toEqual({ type: "text", text: "local hits" });
-      const notice = result.content[0];
-      if (notice?.type !== "text") throw new Error("Missing fallback notice");
-      expect(notice.text).toContain("fallback");
+      expect(result.content).toEqual([{ type: "text", text: "local hits" }]);
     },
   );
+  test("lets a resolver own a colon query with an empty suffix", async () => {
+    const { core, specialized, fallback } = await setup({ kind: "resolved", payload: [] });
+    const request = { query: "custom:" };
+    const result = await core.execute(request, { cwd: process.cwd() });
+    expect(specialized).toHaveBeenCalledWith(request, { cwd: process.cwd() });
+    expect(result.details.resolverId).toBe("special");
+    expect(fallback).not.toHaveBeenCalled();
+  });
   test("tries specialized resolvers before fallback regardless of numeric priority", async () => {
     const { core, fallback } = await setup({ kind: "resolved", payload: [] });
     expect(
-      (await core.execute({ query: "symbols:missing" }, { cwd: process.cwd() })).details.resolverId,
+      (await core.execute({ query: "custom:missing" }, { cwd: process.cwd() })).details.resolverId,
     ).toBe("special");
     expect(fallback).not.toHaveBeenCalled();
   });
@@ -388,17 +453,13 @@ describe("search fallback dispatch", () => {
     const result = await core.execute({ query: "unknown:needle" }, { cwd: process.cwd() });
     expect(fallback.mock.calls[0]?.[0]).toEqual({ query: "unknown:needle" });
     expect(result.details.resolverId).toBe("text");
-    expect(result.content).toHaveLength(2);
-    expect(result.content[1]).toEqual({ type: "text", text: "local hits" });
-    const notice = result.content[0];
-    if (notice?.type !== "text") throw new Error("Missing fallback notice");
-    expect(notice.text).toContain("fallback");
+    expect(result.content).toEqual([{ type: "text", text: "local hits" }]);
   });
   test.each([new Error("service down"), { kind: "failed", error: new Error("timeout") } as const])(
     "keeps resolver failures visible",
     async (attempt) => {
       const { core, fallback } = await setup(attempt);
-      const result = await core.execute({ query: "symbols:needle" }, { cwd: process.cwd() });
+      const result = await core.execute({ query: "custom:needle" }, { cwd: process.cwd() });
       expect(result.details.failure?.code).toBe("RESOLVE_FAILED");
       expect(result.isError).toBe(true);
       expect(fallback).not.toHaveBeenCalled();
@@ -409,12 +470,18 @@ describe("search fallback dispatch", () => {
     const controller = new AbortController();
     controller.abort();
     const result = await core.execute(
-      { query: "symbols:" },
+      { query: "status:" },
       { cwd: process.cwd(), signal: controller.signal },
     );
     expect(result.details.failure?.code).toBe("RESOLVE_FAILED");
     expect(fallback).not.toHaveBeenCalled();
     expect(specialized).not.toHaveBeenCalled();
+  });
+  test("treats an empty path as an omitted path", async () => {
+    const { core, fallback } = await setup({ kind: "not-handled" });
+    await core.execute({ query: "needle", path: "" }, { cwd: process.cwd() });
+    expect(fallback).toHaveBeenCalledOnce();
+    expect(fallback.mock.calls[0]?.[0]).toHaveProperty("path", undefined);
   });
   test("keeps a completely empty request invalid", async () => {
     const { core, fallback, specialized } = await setup({ kind: "not-handled" });
@@ -423,5 +490,84 @@ describe("search fallback dispatch", () => {
     ).toBe("INVALID_REQUEST");
     expect(fallback).not.toHaveBeenCalled();
     expect(specialized).not.toHaveBeenCalled();
+  });
+});
+
+describe("result scopes whose lines were edited", () => {
+  const original = "one\ntwo\nthree\nfour\nfive\n";
+
+  async function searchChangedScope(edited: string) {
+    const directory = mkdtempSync(path.join(tmpdir(), "search-core-scope-"));
+    onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
+    const file = path.join(directory, "note.txt");
+    writeFileSync(file, original);
+    const targets = new ResultTargetStore();
+    const reference = targets.register(
+      [
+        {
+          source: file,
+          expectedContent: original,
+          ranges: [{ start: { lineNumber: 2, column: 0 }, end: { lineNumber: 5, column: 0 } }],
+        },
+      ],
+      directory,
+    );
+    writeFileSync(file, edited);
+    const core = createSearchCore(targets);
+    const seen: SearchContext[] = [];
+    await core.registerPlugin({
+      protocol: SEARCH_PROTOCOL,
+      apiVersion: SEARCH_API_VERSION,
+      id: "scoped-reader",
+      setup(api) {
+        api.addResolver({
+          resolver: {
+            id: "text",
+            supportsResultScope: true,
+            tryResolve: (_request, context) => {
+              seen.push(context);
+              return { kind: "resolved" as const, payload: [] };
+            },
+            format: () => ({ content: [{ type: "text", text: "No matches found." }], details: {} }),
+            toScriptData: () => ({ kind: "matches", complete: true, matches: [] }),
+          },
+        });
+      },
+    });
+    const result = await core.execute(
+      { query: "x", path: reference },
+      { cwd: directory },
+      "script",
+    );
+    return { result, seen, targets, reference, directory };
+  }
+
+  test("are searched as the current text of their region, and the output says so", async () => {
+    const { result, seen, targets, reference, directory } = await searchChangedScope(
+      `zero\n${original.replace("three", "THREE")}`,
+    );
+    expect(result.isError).not.toBe(true);
+    const range = seen[0]?.scope?.targets[0]?.ranges[0];
+    expect(range).toMatchObject({
+      start: { lineNumber: 3 },
+      end: { lineNumber: 6 },
+      adjusted: true,
+    });
+    expect(seen[0]?.rescope).toBeTypeOf("function");
+    expect(JSON.stringify(result.content)).toContain("note.txt:3-5");
+    // An edit would need the text that was selected.
+    expect(() => targets.resolve(reference, directory)).toThrow(/expired/u);
+  });
+
+  test("say nothing when only lines around the region changed", async () => {
+    const { result, seen } = await searchChangedScope(`zero\n${original}`);
+    expect(seen[0]?.scope?.targets[0]?.ranges[0]?.adjusted).toBeUndefined();
+    expect(JSON.stringify(result.content)).not.toContain("changed after");
+  });
+
+  test("fail when the region is gone", async () => {
+    const { result, seen } = await searchChangedScope("unrelated\n");
+    expect(result.isError).toBe(true);
+    expect(seen).toHaveLength(0);
   });
 });

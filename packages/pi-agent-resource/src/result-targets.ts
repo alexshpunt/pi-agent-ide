@@ -1,16 +1,25 @@
-import { createHash, randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { readFileSync, statSync, type BigIntStats } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createRangeTracker, lastSelectedLine, type RangeTracker } from "./line-map.ts";
+import { isRacyTimestamp } from "./unchanged-read.ts";
+import { ResourceError } from "./resource-error.ts";
 
 /** Serializable source coordinates. Lines are one-based; columns are UTF-16 offsets. */
 export interface ResultRange {
   readonly start: { readonly lineNumber: number; readonly column: number };
   readonly end: { readonly lineNumber: number; readonly column: number };
   readonly linewise?: boolean;
+  /**
+   * The selected lines changed after the result was issued, and this range covers the same region
+   * of the current text. Read-only consumers may search it; anything that edits needs the text
+   * that was selected, so resolving it for an edit fails.
+   */
+  readonly adjusted?: boolean;
 }
 
 /** Backend-owned text targets; never accepted directly from untrusted JSON. */
@@ -28,53 +37,175 @@ export interface ResolvedResultTargets {
   readonly complete: boolean;
 }
 
-/** Public source inputs are paths, unchanged text results, issued IDs or arrays of those strings. */
-export const resultInputSchema = Type.Union([Type.String(), Type.Array(Type.String())]);
+/**
+ * A value that a tool returned to a Codemode script, such as a Read or Search value. Its `id` is the
+ * issued result UUID, `RESULT#` reference, or `SEARCH#` selector. Preview fields never select text.
+ */
+export const resultValueSchema = Type.Object({ id: Type.String() });
+
+/** One source: a path, an unchanged text result, an issued ID, or a value that has an `id`. */
+export const resultSourceSchema = Type.Union([Type.String(), resultValueSchema]);
+
+/** Public source inputs are single sources or arrays of them. */
+export const resultInputSchema = Type.Union([
+  ...resultSourceSchema.anyOf,
+  Type.Array(resultSourceSchema),
+]);
+
+// Metadata carried by public Codemode Read, Search, AST, LSP and edit values. Reject other
+// keys rather than silently discarding a selector that the caller expected to apply.
+const resultValueFields = new Set([
+  "id",
+  "text",
+  "path",
+  "line",
+  "lineText",
+  "complete",
+  "matches",
+  "captures",
+  "incoming",
+  "outgoing",
+  "mode",
+  "fallback",
+  "notices",
+  "editWarning",
+]);
 
 const prefix = "RESULT#";
+/** The UUID that identifies an issued result. */
+const uuidPattern = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u;
 const event = "pi-agent-resource:result-targets";
-const liveResource = /^(?:shell|debug):/u;
+const unknownReference =
+  "Result reference is unknown or no longer available. Run Read/Search again and use the new result.";
+const invalidReference =
+  "Invalid result id. Use an issued UUID, RESULT# reference, or SEARCH# selector.";
 
+/**
+ * The `id` of a value passed as a source, such as a Read or Search value in a Codemode script, or
+ * `undefined` for any other input. An id takes precedence over all other fields.
+ */
+export function resultValueId(input: unknown): string | undefined {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined;
+  if (!("id" in input) || typeof input.id !== "string") return undefined;
+  return input.id;
+}
+/**
+ * The reference of a value with an `id` passed where a single text selection is
+ * expected, such as an edit anchor: the id of a Search match, or of a Read or Search value. A
+ * result of several selections is registered as one. Any other input is returned unchanged.
+ */
+export function resultValueReference(
+  store: ResultTargetStore,
+  input: unknown,
+  cwd: string,
+): unknown {
+  if (resultValueId(input) === undefined) return input;
+  const source = store.source(input, cwd);
+  if (typeof source === "string") return source;
+  const selected = store.resolve(source, cwd);
+  return store.register(selected.targets, cwd, selected.complete);
+}
+/**
+ * Version of the shared store's behavior. Raise it with any change that a store from an older
+ * copy of this package must not provide, such as a new method or different resolution rules.
+ * Extensions bundle their own copy, so one session can load several versions.
+ */
+export const RESULT_TARGET_STORE_VERSION = 12;
+const liveResource = /^(?:shell|debug):/u;
+/** Larger files are never reread on a change; their selections are retired instead. */
+const maxRebasedBytes = 16 * 1024 * 1024;
+/** Reads a file's metadata, throwing when the file is missing. */
+export type FileStatReader = (file: string) => BigIntStats;
+const localStat: FileStatReader = (file) => statSync(file, { bigint: true });
+/** What the store knows about one file of one worktree. */
+interface FileSnapshot {
+  readonly source: string;
+  readonly cwd: string;
+  /** Filesystem generation; `undefined` for a missing file or a source without one. */
+  readonly stamp: string | undefined;
+  /** The file changed within one timestamp tick of `stamp`: a later change may keep the stamp. */
+  readonly racy?: boolean;
+  /** The file's text at `stamp`, once read. Every selection of the file is kept on this text. */
+  content?: string;
+  /** Another string object with the same text as `content`, so repeated comparisons stay cheap. */
+  alias?: string;
+  /** The last older text a new selection came from, with its map onto `content`. */
+  older?: { readonly text: string; readonly tracker: RangeTracker };
+}
 type ResultEntry = { readonly cwd: string } & (
-  | (ResolvedResultTargets & { readonly state: "ready" })
+  | (ResolvedResultTargets & { readonly state: "ready"; readonly lost?: readonly string[] })
   | { readonly state: "pending" }
   | { readonly state: "rejected"; readonly reason: string }
 );
 
 /** Stores immutable source selections for one extension runtime, isolated by worktree. */
 export class ResultTargetStore {
+  /** Behavior version, compared when copies of this package share one store. */
+  public readonly version: number = RESULT_TARGET_STORE_VERSION;
   readonly #entries = new Map<string, ResultEntry>();
   readonly #matchReferences = new Map<string, string>();
-  readonly #snapshots = new Map<
-    string,
-    { source: string; cwd: string; stamp: string | undefined }
-  >();
+  readonly #editWarnings = new Map<string, string>();
+  /** Provider-owned source prohibitions also apply to newly registered Read/Search selections. */
+  readonly #readOnlySources = new Map<string, string>();
+  readonly #referenceNames = new Map<string, string>();
+  /** Ids of Search references in use. Kept when the store clears: sessions outlive its results. */
+  readonly #searchIds = new Set<string>();
+  readonly #snapshots = new Map<string, FileSnapshot>();
   readonly #results = new Map<
     string,
     { cwd: string; digest: string; consumable: boolean; references: string[]; resources: string[] }
   >();
   /** One retained copy of each current source text, shared by every entry that snapshots it. */
   readonly #contents = new Map<string, { identity: string; content: string }>();
+  readonly #stat: FileStatReader;
+
+  /** `stat` reads the metadata that detects file changes; it defaults to the local filesystem. */
+  public constructor(options: { readonly stat?: FileStatReader } = {}) {
+    this.#stat = options.stat ?? localStat;
+  }
 
   /** Forget results when the session closes or the extensions reload. */
   public clear(): void {
     this.#entries.clear();
     this.#matchReferences.clear();
+    this.#editWarnings.clear();
+    this.#readOnlySources.clear();
+    this.#referenceNames.clear();
     this.#snapshots.clear();
     this.#results.clear();
     this.#contents.clear();
   }
 
   /** Register trusted resolver data, not a live Resource or agent-supplied coordinates. */
-  public register(targets: readonly ResultSourceTarget[], cwd: string, complete = true): string {
-    for (const target of targets) this.refresh(target.source, cwd);
+  public register(
+    targets: readonly ResultSourceTarget[],
+    cwd: string,
+    complete = true,
+    editWarning?: string,
+    readOnlyReason?: string,
+  ): string {
+    for (const target of targets) {
+      this.refresh(target.source, cwd);
+      if (readOnlyReason !== undefined)
+        this.#readOnlySources.set(
+          JSON.stringify([path.resolve(cwd), sourcePath(target.source, cwd)]),
+          readOnlyReason,
+        );
+    }
     const reference = `${prefix}${randomUUID()}`;
-    this.#entries.set(reference, {
-      state: "ready",
-      targets: combineTargets(this.#shareContents(targets, cwd)),
-      complete,
-      cwd: path.resolve(cwd),
-    });
+    const aligned = this.#align(targets, cwd);
+    this.#entries.set(
+      reference,
+      aligned.lost.length > 0
+        ? { state: "rejected", cwd: path.resolve(cwd), reason: retiredReason(aligned.lost) }
+        : {
+            state: "ready",
+            targets: combineTargets(this.#shareContents(aligned.targets, cwd)),
+            complete,
+            cwd: path.resolve(cwd),
+          },
+    );
+    if (editWarning !== undefined) this.#editWarnings.set(reference, editWarning);
     return reference;
   }
 
@@ -91,12 +222,18 @@ export class ResultTargetStore {
     if (entry?.state !== "pending" || entry.cwd !== path.resolve(cwd))
       throw new Error("Only a pending result in this worktree can be confirmed.");
     for (const target of targets) this.refresh(target.source, cwd);
-    this.#entries.set(reference, {
-      state: "ready",
-      cwd: entry.cwd,
-      targets: combineTargets(this.#shareContents(targets, cwd)),
-      complete: true,
-    });
+    const aligned = this.#align(targets, cwd);
+    this.#entries.set(
+      reference,
+      aligned.lost.length > 0
+        ? { state: "rejected", cwd: entry.cwd, reason: retiredReason(aligned.lost) }
+        : {
+            state: "ready",
+            cwd: entry.cwd,
+            targets: combineTargets(this.#shareContents(aligned.targets, cwd)),
+            complete: true,
+          },
+    );
   }
 
   /** Failed or cancelled operations cannot turn their reserved handle into live text. */
@@ -107,66 +244,186 @@ export class ResultTargetStore {
   }
 
   /** Traverse supported result shapes and resolve only registered source targets. */
-  public resolve(input: unknown, cwd: string): ResolvedResultTargets {
+  public resolve(
+    input: unknown,
+    cwd: string,
+    options: {
+      readonly allowAdjusted?: boolean;
+      readonly forEdit?: boolean;
+      /** Only bounds independently checked selectors; lost ranges grant no scope authority. */
+      readonly forScope?: boolean;
+    } = {},
+  ): ResolvedResultTargets {
     input = this.source(input, cwd);
     const references = this.#references(input);
+    this.#refreshEntries(references, cwd);
     const targets: ResultSourceTarget[] = [];
     let complete = true;
     for (const reference of references) {
-      const entry = this.#entries.get(reference);
-      if (entry === undefined)
-        throw new Error("Result target expired or unknown; repeat Read/Search.");
-      if (entry.cwd !== path.resolve(cwd))
-        throw new Error("Result target belongs to another worktree.");
-      if (entry.state === "pending")
-        throw new Error("Result target is pending; its write has not been confirmed.");
-      if (entry.state === "rejected") throw new Error(entry.reason);
-      for (const target of entry.targets) this.refresh(target.source, cwd);
-      if (!this.#entries.has(reference))
-        throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
-      complete &&= entry.complete;
-      targets.push(...entry.targets);
+      const current = this.#current(
+        reference,
+        options.allowAdjusted === true,
+        options.forScope === true,
+      );
+      complete &&= current.complete;
+      targets.push(...current.targets);
+    }
+    if (options.forEdit === true || options.forScope === true) {
+      for (const target of targets) {
+        const reason = this.#readOnlySources.get(
+          JSON.stringify([path.resolve(cwd), sourcePath(target.source, cwd)]),
+        );
+        if (reason !== undefined)
+          throw new ResourceError("NO_EDITABLE_TEXT", reason, "not-applied");
+      }
+    }
+    if (options.forEdit === true) {
+      for (const reference of references) {
+        const warning = this.#editWarnings.get(reference);
+        if (warning !== undefined)
+          throw Object.assign(new Error(warning), { code: "UNSAFE_TOKEN_SELECTION" });
+      }
     }
     return { targets: combineTargets(targets), complete };
   }
 
   /** Resolve individual ranges in declared handle order for one-to-one source/destination pairs. */
   public resolveOrdered(input: unknown, cwd: string): ResolvedResultTargets {
-    const resolved = this.resolve(input, cwd);
+    const resolved = this.resolve(input, cwd, { forEdit: true });
     const targets: ResultSourceTarget[] = [];
     const seen = new Set<string>();
+    // The files were refreshed once above; collect without another refresh so a write landing
+    // now cannot put the pairs on two texts.
     for (const reference of new Set(this.#references(this.source(input, cwd)))) {
-      for (const target of this.resolve(reference, cwd).targets) {
+      for (const target of this.#current(reference, false).targets) {
         for (const range of target.ranges) {
           const identity = JSON.stringify([target.source, range]);
           if (seen.has(identity)) continue;
           seen.add(identity);
-          targets.push({ ...target, ranges: [range] });
+          targets.push({ ...target, ranges: [structuredClone(range)] });
         }
       }
     }
     return { targets, complete: resolved.complete };
   }
 
-  /** Reject changed source bytes before a consumer uses a retained selection. */
+  /**
+   * Resolve a result for a consumer that only reads, such as Search. The targets carry the current
+   * text of each source and the regions of it that the result selected, wherever other writers
+   * moved or rewrote them. Fails only when a region cannot be found any more.
+   */
+  public async resolveCurrent(
+    input: unknown,
+    cwd: string,
+    signal?: AbortSignal,
+  ): Promise<ResolvedResultTargets> {
+    return currentResultTargets(this.resolve(input, cwd, { allowAdjusted: true }), signal);
+  }
+
+  /**
+   * Reject changed source bytes before a consumer uses a retained selection. A local file that
+   * changed keeps its selections: the next use moves them to its new text, like any other write.
+   * Selections of a source without a filesystem stamp cannot follow it and are retired.
+   */
   public async verify(result: ResolvedResultTargets, signal?: AbortSignal): Promise<void> {
     try {
       await verifyResultTargets(result, signal);
     } catch (error) {
-      if (!signal?.aborted) for (const target of result.targets) this.invalidate(target.source);
+      if (!signal?.aborted)
+        for (const target of result.targets)
+          if (!followsChanges(target.source)) this.invalidate(target.source);
       throw error;
     }
+  }
+
+  /**
+   * Verify only the selections the store cannot follow: sources without a filesystem stamp. A
+   * local file's selections already follow its changes, so a difference there means another
+   * session wrote it a moment ago, and the edit's own check under the file lock decides.
+   */
+  public async verifyUnfollowed(
+    result: ResolvedResultTargets,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const unfollowed = result.targets.filter((target) => !followsChanges(target.source));
+    if (unfollowed.length > 0) await this.verify({ ...result, targets: unfollowed }, signal);
   }
 
   /** Bind a numbered Search selector to its owner's registered snapshot; all-selectors keep refreshing. */
   public registerSearchReference(reference: string, target: string, cwd: string): void {
     if (!/^SEARCH#[A-F\d]{4,64}:[1-9]\d*:(line|match)$/u.test(reference))
       throw new Error("Only numbered Search references can alias a snapshot.");
-    if (!this.#entries.has(target))
-      throw new Error("A Search reference needs a registered result target.");
-    this.resolve(target, cwd);
-    this.#matchReferences.set(reference, target);
+    const entry = this.#entries.get(target);
+    if (entry === undefined || entry.state === "pending" || entry.cwd !== path.resolve(cwd))
+      throw new Error("A Search reference needs a registered result target from this worktree.");
+    // A writer can change one match before publication. Bind its original target so use of this
+    // selector reports the loss without failing the search or hiding its other matches.
+    this.#bindSearchReference(reference, target);
   }
+
+  /**
+   * Mark a Search id as used, so no all-match reference issued here can shadow the Search session
+   * that owns it, and no later session takes an id this store already issued.
+   */
+  public claimSearchId(id: string): void {
+    this.#searchIds.add(id);
+  }
+
+  /** Whether a Search id is already used by a session or an issued all-match reference. */
+  public hasSearchId(id: string): boolean {
+    return this.#searchIds.has(id);
+  }
+
+  /**
+   * Issue a fixed selection of every match of a rejected literal, not a live Search query. Its id
+   * has the length and format of a Search session id and is unused by any other Search reference.
+   */
+  public registerAllMatchesReference(target: ResultSourceTarget, cwd: string): string {
+    const id = this.#newSearchId();
+    const reference = `SEARCH#${id}:all:match`;
+    this.#bindSearchReference(reference, this.register([target], cwd));
+    return reference;
+  }
+
+  /** A random unused id, as short as a Search session id and longer only when short ones run out. */
+  #newSearchId(): string {
+    for (let length = 4; length < 64; length += 1) {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const id = randomBytes(Math.ceil(length / 2))
+          .toString("hex")
+          .toUpperCase()
+          .slice(0, length);
+        if (this.#searchIds.has(id)) continue;
+        this.#searchIds.add(id);
+        return id;
+      }
+    }
+    throw new Error("Could not allocate a unique search reference id.");
+  }
+
+  #bindSearchReference(reference: string, target: string): void {
+    this.#matchReferences.set(reference, target);
+    this.#referenceNames.set(target, reference);
+  }
+
+  /** Whether a Search reference is bound to a registered snapshot. */
+  public hasSearchReference(reference: string): boolean {
+    return this.#matchReferences.has(reference);
+  }
+
+  /** The Search reference a handle was issued for, so messages name what the agent passed. */
+  public referenceName(handle: string): string {
+    return this.#referenceNames.get(handle) ?? handle;
+  }
+  /**
+   * Targets of a Search reference bound to a snapshot, or `undefined` when none is bound.
+   * A bound reference that cannot be used throws the reason, with current lines.
+   */
+  public resolveSearchReference(reference: string, cwd: string): ResolvedResultTargets | undefined {
+    const target = this.#matchReferences.get(reference);
+    return target === undefined ? undefined : this.resolve(target, cwd);
+  }
+
   /** Register readable output without exposing the stored tool data to the agent. */
   public publish(outcome: unknown, text: string, cwd: string, resources: string[] = []): string {
     const id = randomUUID();
@@ -227,24 +484,39 @@ export class ResultTargetStore {
   /** Resolve only issued result strings or IDs. Preview text never defines source authority. */
   public source(input: unknown, cwd: string, allowResource: boolean | "live" = false): unknown {
     if (Array.isArray(input)) return input.map((item) => this.source(item, cwd, allowResource));
+    const valueId = resultValueId(input);
+    if (valueId !== undefined) {
+      const unsupported = Object.keys(input as object).filter((key) => !resultValueFields.has(key));
+      if (unsupported.length > 0)
+        throw new ResourceError(
+          "INVALID_RESULT_VALUE",
+          `Unsupported result value fields: ${unsupported.join(", ")}. Pass an unchanged issued value or its id; put edit selectors in the tool arguments.`,
+          "not-applied",
+        );
+      // Search owns its selectors; normalize the value exactly as its string form.
+      // An id is never an arbitrary path, even if the value includes preview source fields.
+      const uuid = valueId.startsWith(prefix) ? valueId.slice(prefix.length) : valueId;
+      if (!uuidPattern.test(uuid) && !valueId.startsWith("SEARCH#"))
+        throw new Error(invalidReference);
+      return this.source(valueId, cwd, allowResource);
+    }
     if (typeof input !== "string") return input;
     const matchTarget = this.#matchReferences.get(input);
     if (matchTarget) return this.source(matchTarget, cwd, allowResource);
     const envelope =
       /^<system-result\b[^>]*><uuid>([a-f\d-]{36})<\/uuid><\/system-result>(?:\n|$)/u.exec(input);
     const id = envelope?.[1] ?? (input.startsWith(prefix) ? input.slice(prefix.length) : input);
-    const isId = /^[a-f\d]{8}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{4}-[a-f\d]{12}$/u.test(id);
+    const isId = uuidPattern.test(id);
     if (!envelope && !isId) {
+      if (input.startsWith(prefix)) throw new Error(invalidReference);
       if (input.startsWith("<system-result")) throw new Error("Invalid system result reference.");
       return input;
     }
     const result = this.#results.get(id);
-    // Existing backend selection handles share RESULT# syntax, but never accept an unknown UUID.
-    if (!result && !envelope && input.startsWith(prefix) && this.#entries.has(input)) return input;
-    if (!result)
-      throw new Error(
-        "Result reference expired or unknown. Run Read/Search again and use the new result.",
-      );
+    // Backend selections and published results accept the same UUID forms, but only if issued.
+    const reference = `${prefix}${id}`;
+    if (!result && !envelope && this.#entries.has(reference)) return reference;
+    if (!result) throw new Error(unknownReference);
     if (result.cwd !== path.resolve(cwd)) throw new Error("Result belongs to another worktree.");
     if (envelope && createHash("sha256").update(input).digest("hex") !== result.digest)
       throw new Error("Result text changed; pass the original result or its UUID.");
@@ -273,6 +545,13 @@ export class ResultTargetStore {
   public invalidate(source: string): void {
     for (const [key, shared] of this.#contents)
       if (shared.identity === source) this.#contents.delete(key);
+    for (const [key, snapshot] of this.#snapshots)
+      if (sourcePath(snapshot.source, snapshot.cwd) === source)
+        this.#snapshots.set(key, {
+          source: snapshot.source,
+          cwd: snapshot.cwd,
+          stamp: snapshot.stamp,
+        });
     const removed = new Set<string>();
     for (const [reference, entry] of this.#entries) {
       if (
@@ -280,6 +559,7 @@ export class ResultTargetStore {
         entry.targets.some((target) => sourcePath(target.source, entry.cwd) === source)
       ) {
         this.#entries.delete(reference);
+        this.#editWarnings.delete(reference);
         removed.add(reference);
       }
     }
@@ -297,13 +577,23 @@ export class ResultTargetStore {
    */
   public refresh(source: string, cwd: string, changed = false): void {
     const identity = sourcePath(source, cwd);
-    // Live session results stay current by design, so input sent to them never retires the result.
-    if (changed && !liveResource.test(source)) this.invalidate(identity);
     const key = JSON.stringify([path.resolve(cwd), identity]);
-    const stamp = fileStamp(source, cwd);
+    const observed = fileStamp(source, cwd, this.#stat);
+    const stamp = observed?.stamp;
     const previous = this.#snapshots.get(key);
-    if (previous && previous.stamp !== stamp) this.invalidate(identity);
-    this.#snapshots.set(key, { source, cwd, stamp });
+    // Live session results stay current by design, so input sent to them never retires the result.
+    const edited = changed && !liveResource.test(source);
+    let snapshot: FileSnapshot;
+    if (
+      edited ||
+      (previous && (previous.stamp !== stamp || changedWithinTick(previous, identity)))
+    ) {
+      const content = this.#retire(identity, stamp);
+      snapshot = { source, cwd, stamp, ...(content === undefined ? {} : { content }) };
+    } else snapshot = { ...previous, source, cwd, stamp };
+    // A later change may keep this stamp, so keep the text it is compared with.
+    if (observed?.racy === true) snapshot.content ??= readLocalText(identity);
+    this.#snapshots.set(key, { ...snapshot, racy: observed?.racy === true });
   }
 
   /** Check surviving snapshots at a script boundary, including final formatting. */
@@ -311,6 +601,153 @@ export class ResultTargetStore {
     for (const snapshot of [...this.#snapshots.values()])
       this.refresh(snapshot.source, snapshot.cwd);
   }
+  /**
+   * A source changed. A local file keeps every selection whose lines are all unchanged and moves it
+   * to its new position. A selection with changed lines moves to the same region of the new text and
+   * is marked `adjusted`: Search may use it, an edit may not. It is retired when none of its lines
+   * survive, and so is any selection of another kind of source.
+   */
+  #retire(identity: string, stamp: string | undefined): string | undefined {
+    const next = stamp === undefined ? undefined : readLocalText(identity);
+    if (next === undefined) {
+      this.invalidate(identity);
+      return undefined;
+    }
+    const trackers = new Map<string, RangeTracker>();
+    const rebased = new Set<string>();
+    for (const [reference, entry] of this.#entries) {
+      if (entry.state !== "ready") continue;
+      let touches = false;
+      const lost: string[] = [...(entry.lost ?? [])];
+      const targets: ResultSourceTarget[] = [];
+      for (const target of entry.targets) {
+        if (sourcePath(target.source, entry.cwd) !== identity) {
+          targets.push(target);
+          continue;
+        }
+        touches = true;
+        if (target.expectedContent === next) {
+          targets.push(target);
+          continue;
+        }
+        let tracker = trackers.get(target.expectedContent);
+        if (tracker === undefined) {
+          tracker = createRangeTracker(target.expectedContent, next);
+          trackers.set(target.expectedContent, tracker);
+        }
+        const ranges: ResultRange[] = [];
+        for (const range of target.ranges) {
+          const moved = tracker.move(range, true);
+          if (moved === undefined) lost.push(tracker.describe(range));
+          else ranges.push(moved);
+        }
+        targets.push({ ...target, expectedContent: next, ranges });
+      }
+      if (!touches) continue;
+      // Keep surviving ranges for explicit selector scopes, but never revive lost ranges or
+      // silently shorten a whole-result selection.
+      this.#entries.set(reference, {
+        ...entry,
+        targets: combineTargets(targets),
+        ...(lost.length > 0 ? { lost } : {}),
+      });
+      rebased.add(reference);
+    }
+    for (const [key, shared] of this.#contents)
+      if (shared.identity === identity) this.#contents.set(key, { identity, content: next });
+    for (const [id, result] of this.#results)
+      // A result whose selections moved, or were marked as changed, stays: its next use then
+      // reports exactly what changed.
+      if (
+        result.resources.some((resource) => sourcePath(resource, result.cwd) === identity) &&
+        !result.references.some((reference) => rebased.has(reference))
+      )
+        this.#results.delete(id);
+    return next;
+  }
+
+  /**
+   * Put new selections of a local file on the text its other selections use: the file's text at
+   * its current stamp. A caller may register a selection from a text it read earlier, such as a
+   * search whose matches are registered one by one while another session writes the file. Such a
+   * selection is moved like on a file change; `lost` describes the ranges whose own text changed.
+   */
+  #align(
+    targets: readonly ResultSourceTarget[],
+    cwd: string,
+  ): { readonly targets: ResultSourceTarget[]; readonly lost: string[] } {
+    const lost: string[] = [];
+    const aligned = targets.map((target) => {
+      const identity = sourcePath(target.source, cwd);
+      const snapshot = this.#snapshots.get(JSON.stringify([path.resolve(cwd), identity]));
+      if (snapshot?.stamp === undefined || liveResource.test(target.source)) return target;
+      snapshot.content ??= readLocalText(identity);
+      const current = snapshot.content;
+      if (current === undefined) return target;
+      // Equal strings compare in constant time only when they are the same object.
+      if (target.expectedContent === snapshot.alias || target.expectedContent === current) {
+        snapshot.alias = target.expectedContent;
+        return { ...target, expectedContent: current };
+      }
+      if (snapshot.older?.text !== target.expectedContent)
+        snapshot.older = {
+          text: target.expectedContent,
+          tracker: createRangeTracker(target.expectedContent, current),
+        };
+      const tracker = snapshot.older.tracker;
+      const ranges: ResultRange[] = [];
+      for (const range of target.ranges) {
+        const moved = tracker.move(range, true);
+        if (moved === undefined) lost.push(tracker.describe(range));
+        else ranges.push(moved);
+      }
+      return { ...target, expectedContent: current, ranges };
+    });
+    return { targets: aligned, lost };
+  }
+
+  /**
+   * Check every file of the given entries once, before any of them is read. Refreshing per entry
+   * would let a write that lands between two entries put them on different texts.
+   */
+  #refreshEntries(references: readonly string[], cwd: string): void {
+    const sources = new Set<string>();
+    for (const reference of references) {
+      const entry = this.#entries.get(reference);
+      if (entry === undefined) throw new Error(unknownReference);
+      if (entry.cwd !== path.resolve(cwd))
+        throw new Error("Result target belongs to another worktree.");
+      if (entry.state === "pending")
+        throw new Error("Result target is pending; its write has not been confirmed.");
+      if (entry.state === "rejected") throw new Error(entry.reason);
+      for (const target of entry.targets) sources.add(target.source);
+    }
+    for (const source of sources) this.refresh(source, cwd);
+  }
+
+  /** A refreshed entry; a changed file has moved its selections or retired it. */
+  #current(reference: string, allowAdjusted: boolean, forScope = false): ResolvedResultTargets {
+    const current = this.#entries.get(reference);
+    if (current?.state === "rejected") throw new Error(current.reason);
+    if (current?.state !== "ready")
+      throw new Error("Result target expired after its snapshot changed; repeat Read/Search.");
+    if (current.lost !== undefined && current.lost.length > 0) {
+      const surviving = current.targets.filter((target) => target.ranges.length > 0);
+      if (!forScope || surviving.length === 0) throw new Error(retiredReason(current.lost));
+    }
+    if (!allowAdjusted) {
+      const adjusted = adjustedRegions(current.targets);
+      if (adjusted.length > 0) throw new Error(retiredReason(adjusted));
+    }
+    // Empty ranges must not be interpreted by a consumer as a whole-resource scope.
+    return forScope
+      ? {
+          targets: current.targets.filter((target) => target.ranges.length > 0),
+          complete: current.complete,
+        }
+      : current;
+  }
+
   /** Replace equal snapshot text with the copy already retained, so repeated results add no copy. */
   #shareContents(
     targets: readonly ResultSourceTarget[],
@@ -340,10 +777,45 @@ export class ResultTargetStore {
     if (typeof value.target === "string" && value.target.startsWith(prefix)) return [value.target];
     if (value.kind === "resources" && Array.isArray(value.resources))
       return this.#references(value.resources);
+    // A Read of several paths: the outcome of each path, in order.
+    if (value.kind === "list" && Array.isArray(value.items)) return this.#references(value.items);
     throw new Error(
       "This result has no supported source target; do not use preview text as a source.",
     );
   }
+}
+
+/** One line per range that could not follow its file's change; long lists are cut, never hidden. */
+function retiredReason(lost: readonly string[]): string {
+  const shown = lost.slice(0, 10);
+  const more = lost.length - shown.length;
+  return [
+    `Result target expired after its snapshot changed: ${String(lost.length)} selected range${lost.length === 1 ? "" : "s"} no longer match${lost.length === 1 ? "es" : ""} the file. Repeat Read/Search.`,
+    ...shown.map((item) => `- ${item}`),
+    ...(more > 0 ? [`- and ${String(more)} more`] : []),
+  ].join("\n");
+}
+
+/** Where the text of each adjusted range stands now, for the error of an edit that needs the old text. */
+function adjustedRegions(targets: readonly ResultSourceTarget[]): string[] {
+  return targets.flatMap((target) => {
+    const adjusted = target.ranges.filter((range) => range.adjusted === true);
+    // Splitting a large file costs about a millisecond; most selections are not adjusted.
+    if (adjusted.length === 0) return [];
+    const lines = target.expectedContent.split("\n");
+    return adjusted.map((range) => {
+      const first = (lines[range.start.lineNumber - 1] ?? "").trim();
+      const shown = first.length > 120 ? `${first.slice(0, 120)}…` : first;
+      return `lines ${String(range.start.lineNumber)}–${String(lastSelectedLine(range))} changed: now ${String(range.start.lineNumber)}| ${shown}`;
+    });
+  });
+}
+
+/** Whether the store moves a source's selections when it changes: a local file with a stamp. */
+function followsChanges(source: string): boolean {
+  return (
+    !liveResource.test(source) && fileStamp(source, path.parse(source).root || ".") !== undefined
+  );
 }
 
 function sourcePath(source: string, cwd: string): string {
@@ -358,13 +830,37 @@ function sourcePath(source: string, cwd: string): string {
   }
   return path.resolve(cwd, file);
 }
-function fileStamp(source: string, cwd: string): string | undefined {
+function readLocalText(file: string): string | undefined {
   try {
-    const stat = statSync(sourcePath(source, cwd), { bigint: true });
-    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    if (statSync(file).size > maxRebasedBytes) return undefined;
+    return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(readFileSync(file));
   } catch {
     return undefined;
   }
+}
+/**
+ * A file's generation, and whether it changed so recently that a same-size rewrite in the same
+ * timestamp tick would keep it.
+ */
+function fileStamp(
+  source: string,
+  cwd: string,
+  readStat: FileStatReader = localStat,
+): { readonly stamp: string; readonly racy: boolean } | undefined {
+  let stat;
+  try {
+    stat = readStat(sourcePath(source, cwd));
+  } catch {
+    return undefined;
+  }
+  const changedNs = stat.mtimeNs > stat.ctimeNs ? stat.mtimeNs : stat.ctimeNs;
+  const racy = isRacyTimestamp(changedNs);
+  return { stamp: `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`, racy };
+}
+/** Whether a file whose stamp could not prove it unchanged now holds other text than its snapshot. */
+function changedWithinTick(snapshot: FileSnapshot, identity: string): boolean {
+  if (snapshot.racy !== true || snapshot.content === undefined) return false;
+  return readLocalText(identity) !== snapshot.content;
 }
 /** Verify retained source snapshots for tools and provider refresh operations. */
 export async function verifyResultTargets(
@@ -387,6 +883,88 @@ export async function verifyResultTargets(
       throw new Error("Result target is stale; repeat Read/Search.");
   }
 }
+/**
+ * Align a resolved result with the text its sources have now, for a consumer that only reads. Each
+ * target gets the current text and its ranges moved onto it; a range whose own lines changed keeps
+ * its region and is marked `adjusted`. Fails when a region cannot be found any more.
+ */
+export async function currentResultTargets(
+  result: ResolvedResultTargets,
+  signal?: AbortSignal,
+): Promise<ResolvedResultTargets> {
+  const contents = new Map<string, string>();
+  for (const target of result.targets) {
+    signal?.throwIfAborted();
+    if (contents.has(target.source)) continue;
+    contents.set(
+      target.source,
+      target.readCurrent === undefined
+        ? await readFile(target.source, { encoding: "utf8", signal })
+        : await target.readCurrent(signal),
+    );
+    signal?.throwIfAborted();
+  }
+  return resultTargetsInText(result, contents);
+}
+
+/**
+ * Align a resolved result with texts of its sources that a read-only consumer read itself, such as
+ * a language server client. Like `currentResultTargets`, but for the given texts; sources without
+ * one keep their targets.
+ */
+export function resultTargetsInText(
+  result: ResolvedResultTargets,
+  contents: ReadonlyMap<string, string>,
+): ResolvedResultTargets {
+  const targets: ResultSourceTarget[] = [];
+  for (const target of result.targets) {
+    const current = contents.get(target.source);
+    if (current === undefined || current === target.expectedContent) {
+      targets.push(target);
+      continue;
+    }
+    const tracker = createRangeTracker(target.expectedContent, current);
+    const ranges = target.ranges.map((range) => {
+      const moved = tracker.move(range, true);
+      if (moved === undefined)
+        throw new Error(
+          `The region this result selected can no longer be found in ${target.source}: ${tracker.describe(range)}. Repeat Read/Search.`,
+        );
+      return moved;
+    });
+    targets.push({
+      ...target,
+      expectedContent: current,
+      ranges,
+    });
+  }
+  return { targets: combineTargets(targets), complete: result.complete };
+}
+
+/** Tell a reader that a result's text changed and which regions of the current text were used. */
+export function describeAdjustedRanges(
+  result: ResolvedResultTargets,
+  cwd: string,
+): string | undefined {
+  const regions = result.targets.flatMap((target) =>
+    target.ranges
+      .filter((range) => range.adjusted === true)
+      .map((range) => {
+        const { start } = range;
+        const last = lastSelectedLine(range);
+        const prefix = cwd.endsWith(path.sep) ? cwd : `${cwd}${path.sep}`;
+        const name = target.source.startsWith(prefix)
+          ? target.source.slice(prefix.length)
+          : target.source;
+        return `${name}:${start.lineNumber}-${last}`;
+      }),
+  );
+  if (regions.length === 0) return undefined;
+  const shown = regions.slice(0, 5).join(", ");
+  const more = regions.length > 5 ? ` and ${regions.length - 5} more` : "";
+  return `The result's text changed after it was issued. Searched the current text of the same region (${shown}${more}); matches are anchored to the current file.`;
+}
+
 function combineTargets(targets: readonly ResultSourceTarget[]): ResultSourceTarget[] {
   const grouped = new Map<
     string,
@@ -430,16 +1008,26 @@ function combineTargets(targets: readonly ResultSourceTarget[]): ResultSourceTar
       ),
     }));
 }
-/** Share one backend store through Pi's extension event bus, without process-global state. */
+/**
+ * Share one backend store through Pi's extension event bus, without process-global state.
+ *
+ * Extensions bundle their own copy of this package, and the first copy to load creates the store.
+ * A copy uses an existing store only when it is as new as itself. Otherwise it creates its own and
+ * sends every call of the older stores to it, so all extensions keep sharing one store and older
+ * copies get the newer behavior.
+ */
 export function connectResultTargets(pi: ExtensionAPI): ResultTargetStore {
-  let existing: ResultTargetStore | undefined;
+  const offered: OfferedStore[] = [];
   pi.events.emit(event, {
-    accept: (store: ResultTargetStore) => {
-      existing = store;
+    accept: (store: unknown) => {
+      if (store !== null && typeof store === "object" && !offered.includes(store as OfferedStore))
+        offered.push(store as OfferedStore);
     },
   });
-  if (existing !== undefined) return existing;
+  const current = offered.find(isCurrentStore);
+  if (current !== undefined) return current;
   const store = new ResultTargetStore();
+  for (const older of offered) forwardStore(older, store);
   const unsubscribe = pi.events.on(event, (request) => {
     if (
       request !== null &&
@@ -457,4 +1045,43 @@ export function connectResultTargets(pi: ExtensionAPI): ResultTargetStore {
     unsubscribe();
   });
   return store;
+}
+
+/** A store another copy of this package offered on the event bus; its version is unknown. */
+type OfferedStore = Record<string, unknown>;
+
+/** Methods a shared store must provide; a store from an older copy can lack some of them. */
+function storeMethods(): (keyof ResultTargetStore)[] {
+  return Object.getOwnPropertyNames(ResultTargetStore.prototype).filter(
+    (name): name is keyof ResultTargetStore =>
+      name !== "constructor" &&
+      typeof Object.getOwnPropertyDescriptor(ResultTargetStore.prototype, name)?.value ===
+        "function",
+  );
+}
+
+/** A store, possibly from another copy of this package, that is at least as new as this one. */
+function isCurrentStore(store: OfferedStore): store is OfferedStore & ResultTargetStore {
+  return (
+    typeof store.version === "number" &&
+    store.version >= RESULT_TARGET_STORE_VERSION &&
+    storeMethods().every((name) => typeof store[name] === "function")
+  );
+}
+
+/**
+ * Send the calls of an older store to `store`. Its holders keep their reference, and what they
+ * register or resolve lands in the store every newer copy uses. A method this version does not
+ * have stays as it was.
+ */
+function forwardStore(older: OfferedStore, store: ResultTargetStore): void {
+  for (const name of storeMethods()) {
+    if (typeof older[name] !== "function") continue;
+    const method = store[name] as (...arguments_: unknown[]) => unknown;
+    Object.defineProperty(older, name, {
+      configurable: true,
+      writable: true,
+      value: (...arguments_: unknown[]): unknown => method.apply(store, arguments_),
+    });
+  }
 }

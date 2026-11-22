@@ -1,6 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
-import { connectResultTargets } from "pi-agent-resource";
+import {
+  connectResultTargets,
+  fileTextKeys,
+  FILE_TEXT_VISIBLE_EVENT,
+  trackScriptCalls,
+  type FileTextVisible,
+  type FileTextWindow,
+} from "pi-agent-resource";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
 import {
   READ_API_VERSION,
@@ -23,7 +30,7 @@ import { createFileResolver, createRegexResolver, createTextResolver } from "#sr
 import { SearchSessionStore } from "#src/search-session.ts";
 
 import { compactSearchDetails } from "#src/persisted-result.ts";
-import { isSearchToolDetails } from "#src/search-result.ts";
+import { isSearchToolDetails, type SearchToolDetails } from "#src/search-result.ts";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -77,7 +84,14 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
     const observations = Array.isArray(recorded)
       ? (recorded as Awaited<ReturnType<SearchSessionStore["observeAfterEdit"]>>)
       : await sessions.observeAfterEdit(
-          [event.input.path, event.input.start, event.input.end],
+          [
+            event.input.path,
+            event.input.at,
+            event.input.from,
+            event.input.after,
+            event.input.through,
+            event.input.before,
+          ],
           ctx.signal,
         );
     if (observations.length === 0) return;
@@ -109,11 +123,34 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
     };
   });
 
-  pi.on("tool_result", (event) => {
-    if (event.toolName !== "search" || typeof event.details !== "object" || event.details === null)
+  // A script receives its complete typed matches, not the formatted result preview.
+  const scriptWindows = new WeakMap<SearchToolDetails, readonly FileTextWindow[]>();
+  const scriptCall = trackScriptCalls(pi, "search");
+  const recordScriptWindows = (details: SearchToolDetails, windows: readonly FileTextWindow[]) => {
+    scriptWindows.set(details, windows);
+  };
+  pi.on("tool_result", async (event, ctx) => {
+    if (
+      event.isError ||
+      event.toolName !== "search" ||
+      typeof event.details !== "object" ||
+      event.details === null
+    )
       return;
     const details = event.details as { payload?: unknown };
     if (!isSearchToolDetails(details.payload)) return;
+    const visible = scriptCall(event.toolCallId) ? (scriptWindows.get(details.payload) ?? []) : [];
+    await Promise.all(
+      visible.map(async ({ source, content, ranges }) => {
+        if (source.includes("://") && !source.startsWith("ssh://")) return;
+        const keys = await fileTextKeys(source, ctx.cwd);
+        pi.events.emit(FILE_TEXT_VISIBLE_EVENT, {
+          keys,
+          content,
+          ranges,
+        } satisfies FileTextVisible);
+      }),
+    );
     return {
       details: {
         ...details,
@@ -152,26 +189,31 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
             selection.refresh,
             undefined,
             context.environment,
+            // A backend that returns the text it searched needs no second read, which another
+            // session could write in between.
+            selection.contents,
           ),
         );
         if (includeFilesystem) {
           resolveSearchApi(api);
-          api.addResolver({ resolver: createRegexResolver(sessions), priority: -10 });
-          api.addResolver({ resolver: createTextResolver(sessions), fallback: true });
+          api.addResolver({
+            resolver: createRegexResolver(sessions, false, recordScriptWindows),
+            priority: -10,
+          });
+          api.addResolver({
+            resolver: createTextResolver(sessions, false, recordScriptWindows),
+            fallback: true,
+          });
         } else {
-          api.addResolver({ resolver: createRegexResolver(sessions, true), priority: -10 });
-          api.addResolver({ resolver: createTextResolver(sessions, true), fallback: true });
+          api.addResolver({
+            resolver: createRegexResolver(sessions, true, recordScriptWindows),
+            priority: -10,
+          });
+          api.addResolver({
+            resolver: createTextResolver(sessions, true, recordScriptWindows),
+            fallback: true,
+          });
         }
-        if (includeFilesystem)
-          api.describe(
-            [
-              "Local queries try literal terms first, then unquoted terms as regex when no literal results exist, then separate words for ordinary multi-word queries. Quoted terms stay literal. Boolean conditions stay intact across fallback. Uppercase AND/OR, infix NOT, ||, and space-separated | are Boolean operators; unspaced | and regex groups/classes belong to regex terms. Parentheses containing Boolean operators group Boolean conditions. regex:<pattern> forces regex-only matching.",
-              "After a complete zero result, a single unquoted ASCII identifier may produce separate possible-name groups: naming-style changes, one leading/trailing component, then small typos. Each group reports a verified case-sensitive whole-identifier alternative in the same scope, its count/completeness, and Read references. Budget skips are explicit. A candidate all-reference refreshes that exact alternative, not the fuzzy ranking. Registered local candidate selections also expose strict snapshot targets. Result scopes stay exact and do not run this extra branch.",
-              "The result says when a query was broadened. Empty or unknown prefixes are searched as plain text. A recognized prefixed query returns its own results or error; it does not silently become a text search.",
-              "SEARCH#HASH:N:line selects one containing line; :match selects its exact match. :all:line selects all unique containing lines and :all:match selects all matches. Read returns containing lines for both forms. A SEARCH resource can be used as a read path or mutation path/anchor; omit the file path for an all-selection spanning files.",
-              "Use SEARCH references exactly as returned to select the matching content. A single-result reference becomes stale when its file changes; obtain a fresh result before using it again. An :all reference refreshes the original query when a selected file changes. Search compacts noisy files when the detail limit is exceeded; narrow the query to that file to see individual matches. Compaction does not remove complete :all selections.",
-            ].join("\n"),
-          );
       },
     }),
     connectTextEditorPlugin(pi, {
@@ -193,7 +235,7 @@ async function registerSearch(pi: ExtensionAPI, includeFilesystem: boolean): Pro
               return state;
             const input = state.input as Record<string, unknown>;
             const observations = await sessions.observeAfterEdit(
-              [input.path, input.start, input.end],
+              [input.path, input.at, input.from, input.after, input.through, input.before],
               state.signal,
             );
             return observations.length === 0

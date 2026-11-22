@@ -7,6 +7,16 @@ import {
   type SettingItem,
 } from "@earendil-works/pi-tui";
 
+const MAX_VISIBLE_ENTRIES = 12;
+const MIN_VISIBLE_ENTRIES = 3;
+/** Panel chrome (14 rows), one extra description line and Pi's footer. */
+const RESERVED_ROWS = 18;
+const SAVE_HINTS = [
+  " Tab switch  ·  Enter change  ·  Ctrl+S save  ·  Esc exit ",
+  " Tab · Enter · Ctrl+S save · Esc ",
+  " Ctrl+S save ",
+] as const;
+
 type SettingsTab = "extensions" | "behavior" | "ui";
 type SettingsItems = { modules: SettingItem[]; features: SettingItem[]; ui?: SettingItem[] };
 
@@ -17,6 +27,7 @@ export function createSettingsPanel(
   change: (tab: "modules" | "features" | "ui", id: string, value: string) => void,
   done: (save: boolean) => void,
   scope = "",
+  terminalRows: () => number = () => Number.POSITIVE_INFINITY,
 ) {
   const tabs = ["extensions", "behavior", "ui"] as const;
   let tab: SettingsTab = "extensions";
@@ -24,12 +35,15 @@ export function createSettingsPanel(
     selected === "extensions" ? "modules" : selected === "behavior" ? "features" : "ui";
   const changeKey = (selected: SettingsTab): "modules" | "features" | "ui" =>
     selected === "extensions" ? "modules" : selected === "behavior" ? "features" : "ui";
+  /** Keep the footer on screen: the fixed chrome, a three-line description and Pi's footer need rows too. */
+  const visibleEntries = (): number =>
+    Math.max(MIN_VISIBLE_ENTRIES, Math.min(MAX_VISIBLE_ENTRIES, terminalRows() - RESERVED_ROWS));
   const createList = () => {
     const key = itemKey(tab);
     const entries = items()[key] ?? [];
     return new SettingsList(
       entries,
-      12,
+      visibleEntries(),
       getSettingsListTheme(),
       (id, value) => {
         change(changeKey(tab), id, value);
@@ -76,7 +90,9 @@ export function createSettingsPanel(
         )
         .join(" ");
       const body = list.render(innerWidth).map((line) => row(` ${line} `, panelWidth));
-      const help = theme.fg("dim", " Tab switch  ·  Enter change  ·  Ctrl+S save  ·  Esc exit ");
+      const helpText =
+        SAVE_HINTS.find((hint) => visibleWidth(hint) <= panelWidth - 2) ?? SAVE_HINTS[2];
+      const help = theme.fg("dim", helpText);
       return [
         top,
         row(` ${tabLine} `, panelWidth),

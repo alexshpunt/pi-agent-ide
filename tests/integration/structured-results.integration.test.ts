@@ -15,6 +15,14 @@ import {
 import { PiRun } from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+
+/** Each failed IDE call of a Codemode result: its tool and source line, then its reason. */
+function failedCalls(output: string): string[] {
+  // Guides that a call delivers on first use follow the block; they are not failures.
+  const [block = ""] = codemodeFailures(output).split("\n\n---\n\n# Guide:");
+  return block.split("\n- ").slice(1);
+}
 
 async function runContract(cwd: string, name: string, code: string) {
   await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
@@ -50,13 +58,14 @@ test("native scripts compose Search and Read and keep empty scopes empty", async
       cwd,
       "text-search-read-edit",
       `
-const found=await tools.search({query:"beta",path:"note.txt"}).then(value => value.result);
+const found=await tools.search({query:"beta",path:"note.txt"});
 const shown=await tools.read({path:found});
-if(typeof shown!=="string"||!shown.includes("beta")) throw Error("Selected text missing");
-await tools.replace({path:"note.txt",start:"beta",text:"BETA"});
+if(typeof shown?.text!=="string"||!shown.text.includes("beta")) throw Error("Selected text missing");
+await tools.replace({path:"note.txt",at:"beta",text:"BETA"});
 const after=await tools.read({path:"note.txt"});
-if(!after.includes("BETA")) throw Error("Continued before commit");
-const empty=await tools.search({query:"__nothing__",path:"note.txt"}).then(value => value.result);
+if(after.text!=="alpha\\nBETA\\ngamma\\n") throw Error("Continued before commit");
+const empty=await tools.search({query:"__nothing__",path:"note.txt"});
+if(empty.matches.length!==0||empty.complete!==true) throw Error("Empty search found matches");
 text(await tools.replace({path:empty,text:"BAD"}));
 `,
     );
@@ -77,24 +86,31 @@ test("native text results preserve raw bytes, deliver images, show continuation 
       "text-native-data",
       `
 const bytes=await tools.read({path:"raw:bytes.bin",offset:-2,limit:2});
-if(!bytes.includes("Bytes 2..4")||!bytes.includes("c3 28")) throw Error("Raw bytes altered");
+// "wyg=" is the base64 of the last two bytes, c3 28.
+if(bytes?.bytes!=="wyg=") throw Error("Raw bytes altered");
 text(await tools.read({path:"fixture-image:"}));
 for(const args of [{path:"absent.txt"}]) {
   const failed = await tools.read(args);
-  if(failed.status !== "error" || !failed.errors.length) throw Error("Missing source looked empty");
+  if(failed !== null) throw Error("Missing source looked empty");
 }
-for(const query of ["missing-adapter:value","invalid-adapter:value"]) {
-  let rejected=false; try { await tools.search({query}); } catch(error) { rejected=String(error).length>0; }
-  if(!rejected) throw Error("Invalid adapter accepted");
-}
+for(const query of ["missing-adapter:value","invalid-adapter:value"])
+  if((await tools.search({query})) !== null) throw Error("Invalid adapter accepted");
 const long=await tools.read({path:"long.txt"});
-if(!/offset|temp:/i.test(long)) throw Error("Clipping was hidden");
+if(!long.text.includes("line 2199") || /offset=|temp:/i.test(long.text)) throw Error("A script Read was clipped");
+// A window holds exactly the requested lines; its continuation hint is not part of the value.
+const page=await tools.read({path:"long.txt",limit:2000});
+if(!page.text.includes("line 1999") || page.text.includes("line 2000") || page.text.includes("offset=")) throw Error("Window was not exact");
 const next=await tools.read({path:"long.txt",offset:2001,limit:1});
-if(!next.includes("line 2000")) throw Error("Continuation skipped data");
+if(next.text!=="line 2000\\n") throw Error("Continuation skipped data");
 text(bytes);
 `,
     );
-    expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
+    const output = getToolResultText(run, "script");
+    expect(getToolExecution(run, "script").isError, output).toBe(false);
+    const [missing, ...adapters] = failedCalls(output);
+    expect(missing).toMatch(/^read absent\.txt\n/u);
+    expect(adapters, output).toHaveLength(2);
+    for (const adapter of adapters) expect(adapter).toMatch(/^search\n {2}\S/u);
     expect(
       getToolResultMessage(run, "script").content.some((block) => block.type === "image"),
     ).toBe(true);
@@ -112,8 +128,8 @@ test("a real image larger than the private JSON budget still reaches the native 
       "text-native-large-image",
       String.raw`
 const shown=await tools.read({path:"banner.png"});
-if(shown.type!=="image" || shown.note.includes('"base64"')) throw Error("Image buffer leaked into text");
-text(shown.note);
+if(shown?.type!=="image" || Object.keys(shown).sort().join()!=="data,mimeType,type") throw Error("Image value is not an image block");
+text(shown.mimeType);
 `,
     );
     expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
@@ -134,19 +150,27 @@ test("transformed Read views remain readable but cannot authorize text edits", a
       String.raw`
 for(const args of [{path:"raw:data.json"},{path:"data.json",views:["jq:.value"]},{path:"."},{path:"fixture-image:"}]) {
   const value=await tools.read(args);
-  const shown=typeof value==="string" ? value : value.note;
-  if(typeof shown!=="string") throw Error("View result leaked internals");
-  let rejected=false; try { await tools.replace({path:shown,text:"BAD"}); } catch(error) { rejected=String(error).includes("selection"); }
-  if(!rejected) throw Error("Transformed output gained edit authority: "+shown);
-  const again=await tools.read({path:shown});
-  text(typeof again==="string" ? again : again.note);
+  if(value===null || typeof value!=="object") throw Error("View result leaked internals");
+  // Only a text value has an id; bytes, entries and images cannot name a source at all.
+  if(!("text" in value)) {
+    if("id" in value) throw Error("A non-text value carries an id: "+Object.keys(value));
+    continue;
+  }
+  if((await tools.replace({path:value,text:"BAD"})) !== null) throw Error("Transformed output gained edit authority: "+value.text);
+  const again=await tools.read({path:value});
+  text(again.text);
 }
 const anchored=await tools.read({path:"data.json",views:["anchors"]});
-const selected=(await tools.search({path:anchored,query:"regex:\\S.*\\S"})).result;
+const selected=await tools.search({path:anchored,query:"regex:\\S.*\\S"});
 text(await tools.replace({path:selected,text:'{"value":"changed"}'}));
 `,
     );
-    expect(getToolExecution(run, "script").isError, getToolResultText(run, "script")).toBe(false);
+    const output = getToolResultText(run, "script");
+    expect(getToolExecution(run, "script").isError, output).toBe(false);
+    const refusals = failedCalls(output);
+    // Only the jq view returns a value with an id to pass to Replace.
+    expect(refusals, output).toHaveLength(1);
+    for (const refusal of refusals) expect(refusal).toMatch(/^replace RESULT#[\s\S]*selection/u);
     expect(await readFile(path.join(cwd, "data.json"), "utf8")).toBe('{"value":"changed"}\n');
     expect(
       getToolResultMessage(run, "script").content.some((block) => block.type === "image"),
@@ -163,24 +187,40 @@ test("automatic commits report partial writes and do not replay failed batches",
       `
 await tools.receipt_edit({path:"a.txt",text:"A\\n",fail:true});
 await tools.receipt_edit({path:"b.txt",text:"B\\n"});
-let failed=""; try { await tools.read({path:"a.txt"}); } catch(error) { failed=String(error); }
-if(!failed.includes("Editor batch failed")) throw Error("Failed commit did not block dependent work");
-text(failed);
+if((await tools.read({path:"a.txt"})) !== null) throw Error("Failed commit did not block dependent work");
 text(await tools.read({path:"a.txt"}));
 text(await tools.read({path:"b.txt"}));
 `,
     );
     expect(getToolExecution(run, "script").isError).toBe(true);
     expect(getToolResultText(run, "script")).toContain("Editor batches: 1 committed");
+    expect(codemodeFailures(getToolResultText(run, "script"))).toContain(
+      "- read a.txt\n  Editor batch failed before this tool.",
+    );
     const details = getToolExecutionDetails(getToolExecution(run, "script")) as {
       editorBatchResults: {
         status: string;
-        data: { operation: string; effect: string; files: { source: string; effect: string }[] };
+        data: {
+          operation: string;
+          effect: string;
+          files: { source: string; effect: string }[];
+          operations: { effect: string; files: { source: string; effect: string }[] }[];
+        };
       }[];
     };
     expect(details.editorBatchResults).toHaveLength(1);
     const receipt = details.editorBatchResults[0];
     if (!receipt) throw new Error("Missing automatic commit receipt");
+    // Each edit lists only its own file. The failed edit's effect is unknown, its written file applied.
+    expect(
+      receipt.data.operations.map(({ effect, files }) => ({
+        effect,
+        files: files.map((file) => ({ source: path.basename(file.source), effect: file.effect })),
+      })),
+    ).toEqual([
+      { effect: "unknown", files: [{ source: "a.txt", effect: "applied" }] },
+      { effect: "applied", files: [{ source: "b.txt", effect: "applied" }] },
+    ]);
     expect(receipt.status).toBe("partial");
     expect(receipt.data.operation).toBe("batch");
     expect(receipt.data.effect).toBe("applied");
@@ -258,17 +298,21 @@ test("keeps saved file effects and the custom error panel after a post-write fai
     });
   });
 });
-test("Diff returns readable comparison without publishing its private record", async () => {
+test("Diff shows readable text directly and gives scripts the complete unified diff", async () => {
   await withTempWorkspace(async (cwd) => {
     await writeFile(path.join(cwd, "note.txt"), "alpha\n");
     await writeFile(path.join(cwd, "other.txt"), "beta\n");
+    // Longer than the 2000 lines a direct call shows.
+    const rows = Array.from({ length: 2205 }, (_, index) => `row ${index}\n`).join("");
+    await writeFile(path.join(cwd, "long-before.txt"), "head\n");
+    await writeFile(path.join(cwd, "long-after.txt"), `head\n${rows}`);
     const run = await new PiIntegrationTest({
       testName: "text-diff",
       artifactsDir: testArtifactsDir(import.meta.filename),
       rawMode: false,
       cwd,
-      extensions: [path.resolve("src/pi-agent-ide.ts")],
-      tools: ["diff"],
+      extensions: [path.resolve("src/pi-agent-ide.ts"), "builtin:codemode"],
+      tools: ["diff", "codemode"],
       conversation: [
         assistantMessage(
           [
@@ -280,14 +324,55 @@ test("Diff returns readable comparison without publishing its private record", a
           ],
           { stopReason: "toolUse" },
         ),
+        assistantMessage(
+          [
+            toolCall({
+              id: "script",
+              name: "codemode",
+              arguments: {
+                code: `
+const changed = await tools.diff({ before: "note.txt", after: "other.txt" });
+const equal = await tools.diff({ before: "note.txt", after: { path: "note.txt" } });
+const long = (await tools.diff({ before: "long-before.txt", after: "long-after.txt" })).split("\\n");
+// The script checks the whole diff itself; the Codemode output limit would clip it.
+const rows = long.slice(4);
+const complete = long[3] === " head" && rows.length === 2205 &&
+  rows.every((row, index) => row === "+row " + index);
+text(JSON.stringify({ changed, equal, head: long.slice(0, 3), complete }));
+`,
+              },
+            }),
+          ],
+          { stopReason: "toolUse" },
+        ),
         assistantMessage([text("Done")]),
       ],
     }).run("Compare files without exposing internal records");
     expect(getToolExecution(run, "diff").isError, getToolResultText(run, "diff")).toBe(false);
-    expect(getToolExecutionResult(run, "diff")).not.toHaveProperty("structuredContent");
+    const changed = /^--- \S*note\.txt\n\+\+\+ \S*other\.txt\n@@ [^\n]+ @@\n-alpha\n\+beta$/u;
+    // A direct call keeps its readable text. Its script value replaces the private diff record and
+    // stays out of the session message.
+    expect(getToolResultText(run, "diff")).toContain("-alpha\n+beta");
+    expect(getToolExecutionResult(run, "diff")).toHaveProperty(
+      "structuredContent",
+      expect.stringMatching(changed),
+    );
     expect(getToolResultMessage(run, "diff")).not.toHaveProperty("structuredContent");
-    expect(getToolResultText(run, "diff")).toContain("-alpha");
-    expect(getToolResultText(run, "diff")).toContain("+beta");
+
+    const output = getToolResultText(run, "script");
+    expect(getToolExecution(run, "script").isError, output).toBe(false);
+    const [line = ""] = output.slice(output.indexOf('{"changed"')).split("\n");
+    const values: unknown = JSON.parse(line);
+    expect(values).toEqual({
+      changed: expect.stringMatching(changed) as unknown,
+      equal: "",
+      head: [
+        expect.stringMatching(/^--- \S*long-before\.txt$/u),
+        expect.stringMatching(/^\+\+\+ \S*long-after\.txt$/u),
+        "@@ -1,1 +1,2206 @@",
+      ],
+      complete: true,
+    });
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("alpha\n");
     expect(await readFile(path.join(cwd, "other.txt"), "utf8")).toBe("beta\n");
   });

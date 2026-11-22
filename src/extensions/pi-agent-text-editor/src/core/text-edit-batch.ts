@@ -11,8 +11,6 @@ export interface TextBatchParams {
   readonly edits: readonly TextBatchEntry[];
   /** Backend-owned selections captured before any call in this batch writes. */
   readonly selections?: ReadonlyMap<string, ResultSourceTarget>;
-  /** Optional whole-file revisions that every affected source must still match. */
-  readonly expectedContent?: ReadonlyMap<string, string>;
   /** Reject creation or deletion by another writer while a batch is pending. */
   readonly expectedExistence?: ReadonlyMap<string, boolean>;
   /** Abort the complete plan when any entry is invalid instead of applying valid peers. */
@@ -20,6 +18,10 @@ export interface TextBatchParams {
 }
 
 export interface TextBatchEntry extends Record<string, unknown> {
+  /** Original typed source references that contribute to an explicit endpoint. */
+  readonly implicitAnchors?: Readonly<Record<string, string>>;
+  /** Result source references that constrain explicit anchors to their issued ranges. */
+  readonly scopedSources?: Readonly<Record<string, string>>;
   readonly callId: string;
   readonly op: string;
   readonly path: string;

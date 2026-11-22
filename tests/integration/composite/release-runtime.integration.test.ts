@@ -74,13 +74,13 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
     const calls = [
       { id: "read", name: "read", arguments: { path: "example.ts" } },
       { id: "docs-list", name: "read", arguments: { path: "docs:" } },
-      { id: "docs-guide", name: "read", arguments: { path: "docs:editing" } },
-      { id: "ast", name: "read", arguments: { path: "ast:example.ts" } },
+      { id: "docs-guide", name: "read", arguments: { path: "docs:terminal" } },
+      { id: "ast", name: "outline", arguments: { path: "example.ts" } },
       { id: "search", name: "search", arguments: { query: "startupMarker", path: "example.ts" } },
       {
         id: "edit",
         name: "replace",
-        arguments: { path: "edit.txt", start: "before", text: "after" },
+        arguments: { path: "edit.txt", at: "before", text: "after" },
       },
       { id: "pdf-first", name: "read", arguments: { path: "example.pdf" } },
       { id: "pdf-next", name: "read", arguments: { path: "example.pdf" } },
@@ -101,7 +101,7 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
       cwd: directory,
       extensions: [entry, probe],
       isolateUserResources: true,
-      tools: ["read", "search", "replace", "package_config_probe"],
+      tools: ["read", "outline", "search", "replace", "package_config_probe"],
       conversation: [
         ...calls.map((call) => assistantMessage([toolCall(call)], { stopReason: "toolUse" })),
         assistantMessage([text("Done")]),
@@ -117,7 +117,7 @@ describe.skipIf(installation === undefined)("installed release runtime", () => {
       documentation: { kind: "list" },
     });
     expect(getToolResultMessage(result, "docs-guide").details).toMatchObject({
-      documentation: { kind: "document", id: "editing" },
+      documentation: { kind: "document", id: "terminal" },
     });
     expect(await readFile(path.join(directory, "edit.txt"), "utf8")).toBe("after marker\n");
     for (const id of ["pdf-first", "pdf-next"])

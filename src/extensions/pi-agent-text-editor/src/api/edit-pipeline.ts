@@ -11,18 +11,41 @@ export interface TextEditPlan {
   readonly files: readonly {
     readonly source: string;
     readonly expectedContent: string;
-    readonly changes: readonly {
-      readonly from: number;
-      readonly to: number;
-      readonly insert: string;
-    }[];
+    readonly changes: readonly TextEditPlanChange[];
+    /** Map the same edits onto the transaction's snapshot, or refuse if it is incompatible. */
+    readonly rebase?: (current: string) => readonly TextEditPlanChange[] | undefined;
   }[];
 }
+export interface TextEditPlanChange {
+  readonly from: number;
+  readonly to: number;
+  readonly insert: string;
+}
+
+/**
+ * Supplies native semantic edits. Called at the start of each attempt, including retries after a
+ * snapshot mismatch or a guarded write conflict. A planner may reuse a compatible plan or throw
+ * with code `SOURCE_CHANGED` to request another attempt.
+ */
+export type TextEditPlanner = () => Promise<TextEditPlan>;
+
+/** A semantic planner's recovery schedule after an edit is safely refused. */
+export interface SourceChangeRetryPolicy {
+  /** Jittered pauses before each retry. No attempt starts after the list is spent. */
+  readonly delaysMs: readonly number[];
+  /** Start or return the existing recovery signal. Called only after a retryable refusal. */
+  readonly start: () => AbortSignal;
+  /** Explain what the caller can do after the schedule or deadline is exhausted. */
+  readonly exhaustedMessage: () => string;
+}
+
 export interface TextPreEditState<Input = unknown> {
   readonly cwd: string;
   readonly input: Input;
   /** Optional native semantic edits supplied by the owning plugin, not by tool arguments. */
-  readonly editPlan?: TextEditPlan;
+  readonly planEdit?: TextEditPlanner;
+  /** Optional recovery schedule shared by the planner and the editor's guarded retry loop. */
+  readonly sourceChangeRetry?: SourceChangeRetryPolicy;
   readonly signal?: AbortSignal;
   /** A validated diffStatuses contribution is added to each completed file's presentation. */
   readonly metadata?: Readonly<Record<string, unknown>>;
@@ -39,7 +62,12 @@ export type TextPreEditHandler = (
 export type TextEditHandler = (state: TextEditState) => TextEditState | Promise<TextEditState>;
 
 export type TextEditHandlerRegistration =
-  | { readonly stage: "text-pre-edit"; readonly handler: TextPreEditHandler }
+  | {
+      readonly stage: "text-pre-edit";
+      /** Filter original inputs; matching calls run outside snapshot-only edit batches. */
+      readonly when?: (input: unknown) => boolean;
+      readonly handler: TextPreEditHandler;
+    }
   | { readonly stage: "text-edit"; readonly handler: TextEditHandler }
   | { readonly stage: "text-post-edit"; readonly handler: TextEditHandler };
 
@@ -67,7 +95,11 @@ export type TextEditExecutionOutcome<Input = unknown, Result = unknown> =
 
 const handlerSchema = Type.Function([], Type.Unknown());
 const textEditHandlerRegistrationSchema = Type.Union([
-  Type.Object({ stage: Type.Literal("text-pre-edit"), handler: handlerSchema }),
+  Type.Object({
+    stage: Type.Literal("text-pre-edit"),
+    when: Type.Optional(handlerSchema),
+    handler: handlerSchema,
+  }),
   Type.Object({ stage: Type.Literal("text-edit"), handler: handlerSchema }),
   Type.Object({ stage: Type.Literal("text-post-edit"), handler: handlerSchema }),
 ]);

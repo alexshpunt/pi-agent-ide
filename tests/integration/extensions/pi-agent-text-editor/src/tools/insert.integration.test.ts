@@ -26,8 +26,8 @@ describe("pi-agent-text-editor insert", () => {
         tool: "insert",
         arguments: {
           path: relativeFile,
-          anchor: formatLineHashAnchor(2, "anchor"),
-          text: "inserted",
+          after: formatLineHashAnchor("before\nanchor\nafter\n", 2),
+          text: "inserted\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -56,9 +56,8 @@ describe("pi-agent-text-editor insert", () => {
         tool: "insert",
         arguments: {
           path: relativeFile,
-          anchor: formatLineHashAnchor(2, "anchor"),
-          text: "inserted",
-          before: true,
+          before: formatLineHashAnchor("before\nanchor\nafter\n", 2),
+          text: "inserted\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -87,9 +86,8 @@ describe("pi-agent-text-editor insert", () => {
         tool: "insert",
         arguments: {
           path: relativeFile,
-          anchor: "anchor",
+          before: "anchor",
           text: "inserted",
-          before: true,
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);

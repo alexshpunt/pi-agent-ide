@@ -34,7 +34,8 @@ export interface FuzzyResult {
 export interface FuzzyCandidateData extends FuzzyIdentifier {
   readonly matchCount: number;
   readonly fileCount: number;
-  readonly selection: ReturnType<typeof selectionData>;
+  /** The first matches of the name; `truncated` when the name has more. */
+  readonly selection: ReturnType<typeof selectionData> & { readonly truncated: boolean };
 }
 
 /** Registered or URL candidate groups, without backend state or source previews. */

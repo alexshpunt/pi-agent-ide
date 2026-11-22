@@ -20,8 +20,11 @@ function matchRows(result) {
 }
 function capture(result, name) { return [...result.matchAll(new RegExp("capture " + name + ": (RESULT#[^\\s]+)","g"))].map(hit=>hit[1]); }
 async function rejects(call, pattern) {
- try { await call(); } catch(error) { if(pattern) check(pattern.test(String(error)),"Unexpected refusal: "+error); return String(error); }
- throw Error("Unsafe operation succeeded");
+ // A failed IDE call resolves to null. Its reason is in the Codemode result, not the script.
+ check(pattern === undefined, "Check the refusal reason in the Codemode result's failure block");
+ const value = await call();
+ check(value === null, "Unsafe operation succeeded");
+ return value;
 }
 `;
 

@@ -8,6 +8,17 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
+test("a process with an already-aborted signal is stopped immediately", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const result = await runProcess(process.execPath, ["-e", "setTimeout(() => {}, 5000)"], {
+    signal: controller.signal,
+    timeoutMs: 1000,
+  });
+  expect(result.timedOut).toBe(false);
+  expect(result.code).not.toBe(0);
+});
+
 async function fixture() {
   await mkdir(".tmp", { recursive: true });
   const root = await mkdtemp(path.resolve(".tmp/capability-identity-"));

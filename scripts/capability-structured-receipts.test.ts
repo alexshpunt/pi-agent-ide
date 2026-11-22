@@ -14,7 +14,6 @@ function fixture(effect: "applied" | "not-applied" | "unknown" = "applied") {
     tool: "insert",
     error: isError,
     parentStructuredValue: true,
-    viaLocalAlias: true,
   };
   const events: RunEvent[] = [
     { type: "tool_execution_start", toolCallId: "parent", toolName: "codemode" },
@@ -50,22 +49,9 @@ test.each(["applied", "not-applied", "unknown"] as const)(
     const { events, task } = fixture(effect);
     const original = structuredClone(events);
     expect(validateRoute(task, events, "codemode", aliases).passed).toBe(true);
-    expect(validateRoute(task, events, "codemode").passed).toBe(false);
     expect(events).toEqual(original);
   },
 );
-
-test("a canonical Insert cannot stand in for a required local alias", () => {
-  const { events, task } = fixture();
-  const direct = events
-    .filter((event) => event.toolCallId !== "alias")
-    .map((event) =>
-      event.parentToolCallId === "alias" ? { ...event, parentToolCallId: "parent" } : event,
-    );
-  expect(validateRoute(task, direct, "codemode").passed).toBe(false);
-  const native = { steps: task.steps.map((step) => ({ ...step, viaLocalAlias: false })) };
-  expect(validateRoute(native, direct, "codemode").passed).toBe(true);
-});
 
 test.each(["summary", "quoted-json", "invented-receipt"] as const)(
   "the parent's %s is not the actual structured object",

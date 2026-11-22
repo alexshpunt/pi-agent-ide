@@ -1,5 +1,5 @@
 import { requiredValue } from "pi-agent-invariant";
-import { type PresentedTextRow, renderPresentedTextRows } from "pi-agent-text";
+import { NO_FINAL_LINE_BREAK, type PresentedTextRow, renderPresentedTextRows } from "pi-agent-text";
 
 import { diffTextLines } from "./diff.ts";
 import { formatHint } from "./inline-hints.ts";
@@ -22,6 +22,8 @@ export interface AgentDiffLine {
   readonly beforeLine?: number;
   readonly afterLine?: number;
   readonly positionLine: number;
+  /** The line ends its file without an LF. */
+  readonly noFinalLineBreak?: boolean;
 }
 
 export interface LineRange {
@@ -76,6 +78,7 @@ export function renderAgentDiff(fmr: FileMutationResult, diffPath: string): stri
 
       if (line.kind === "removed") {
         entries.push({ marker: "-", prefix: "|", content: line.text });
+        if (line.noFinalLineBreak === true) entries.push(NO_FINAL_LINE_BREAK);
         continue;
       }
 
@@ -96,6 +99,7 @@ export function renderAgentDiff(fmr: FileMutationResult, diffPath: string): stri
           content: line.text,
           suffix: `${suffix}${metadataSuffix}`,
         });
+        if (line.noFinalLineBreak === true) entries.push(NO_FINAL_LINE_BREAK);
         continue;
       }
 
@@ -114,6 +118,7 @@ export function renderAgentDiff(fmr: FileMutationResult, diffPath: string): stri
         content: line.text,
         suffix,
       });
+      if (line.noFinalLineBreak === true) entries.push(NO_FINAL_LINE_BREAK);
     }
   }
 
@@ -176,16 +181,24 @@ export function buildDiffLines(
   let afterLine = 1;
 
   for (const part of diffTextLines(before, after)) {
-    for (const text of splitPartLines(part.value)) {
+    for (const { text, ended } of splitPartLines(part.value)) {
+      const end = ended ? {} : { noFinalLineBreak: true };
       if (part.added) {
-        result.push({ kind: "added", text, afterLine, positionLine: afterLine });
+        result.push({ kind: "added", text, afterLine, positionLine: afterLine, ...end });
         afterLine += 1;
       } else if (part.removed) {
         const positionLine = Math.max(1, Math.min(afterLine, afterLineCount));
-        result.push({ kind: "removed", text, beforeLine, positionLine });
+        result.push({ kind: "removed", text, beforeLine, positionLine, ...end });
         beforeLine += 1;
       } else {
-        result.push({ kind: "context", text, beforeLine, afterLine, positionLine: afterLine });
+        result.push({
+          kind: "context",
+          text,
+          beforeLine,
+          afterLine,
+          positionLine: afterLine,
+          ...end,
+        });
         beforeLine += 1;
         afterLine += 1;
       }
@@ -328,25 +341,29 @@ function lineAtOffset(content: string, offset: number): number {
   return line;
 }
 
+/**
+ * The lines of a file as every tool counts them: only LF ends a line, and a CRLF line keeps its CR.
+ * A final LF ends the last line; it does not start an empty one.
+ */
 export function splitLines(content: string): string[] {
   if (content.length === 0) {
     return [];
   }
 
-  const normalized = content.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-  return normalized.endsWith("\n") ? normalized.slice(0, -1).split("\n") : normalized.split("\n");
+  return content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
 }
 
-function splitPartLines(content: string): string[] {
+function splitPartLines(content: string): { readonly text: string; readonly ended: boolean }[] {
   if (content.length === 0) {
     return [];
   }
 
-  const normalized = content.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-  const lines = normalized.split("\n");
+  const lines = content.split("\n").map((text) => ({ text, ended: true }));
+  const last = requiredValue(lines.pop());
 
-  if (lines.at(-1) === "") {
-    lines.pop();
+  // Only the end of a file can lack an LF; say so instead of hiding it.
+  if (last.text.length > 0) {
+    lines.push({ text: last.text, ended: false });
   }
 
   return lines;

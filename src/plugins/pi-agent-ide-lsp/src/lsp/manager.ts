@@ -2,15 +2,18 @@ import { createHash } from "node:crypto";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
+import { readUnchanged, type FileGenerationReader } from "pi-agent-resource";
 import { URI } from "vscode-uri";
 
 import { LspClient } from "./client.ts";
 import type { LspSharedServers } from "./shared-servers.ts";
 import { SharedStartup, waitWithSignal } from "./abort.ts";
 import { documentUri } from "./document-uri.ts";
+import { sourceChanged } from "./source-changes.ts";
 import type { LspWorkspaceOwner } from "./workspace-owner.ts";
 import { prepareProjectQuery } from "./project.ts";
 import { retainForCurrentOperation } from "./document-leases.ts";
+import { localFilesContaining } from "./files-containing.ts";
 
 import { resolveInitializationOptions } from "./initialization-options.ts";
 import { toDiagnostic } from "./diagnostics.ts";
@@ -30,11 +33,16 @@ export interface LspPushDiagnosticsEvent {
 
 type PushHandler = (event: LspPushDiagnosticsEvent) => void;
 
+/** Text of a source file, given as an absolute path or, for a remote workspace, its URI. */
+export type SourceTextReader = (source: string) => Promise<string>;
+
 export interface LspManagerOptions {
   /** Stop a server after this long without requests or open operations. Omitted: never. */
   readonly idleTimeoutMs?: number;
   /** Share local servers with other Pi sessions on this machine. Omitted: every server is own. */
   readonly sharedServers?: LspSharedServers;
+  /** Reads file metadata for source snapshots; tests supply the timestamps of a coarse clock. */
+  readonly fileGeneration?: FileGenerationReader;
 }
 
 /**
@@ -282,6 +290,26 @@ export class LspManager {
     return file.isFile();
   }
 
+  /**
+   * Sources under the workspace root of `client` whose text has `word` as a whole word, among
+   * files of the given languages. Undefined when the workspace owner has no text search.
+   */
+  async filesContaining(
+    client: LspClient,
+    word: string,
+    languageIds: ReadonlySet<string>,
+    signal?: AbortSignal,
+  ): Promise<readonly string[] | undefined> {
+    signal?.throwIfAborted();
+    const extensions = [...this._registry.knownExtensions].filter((extension) =>
+      languageIds.has(this._registry.languageId(extension)),
+    );
+    if (extensions.length === 0) return [];
+    if (client.rootUri.startsWith("ssh://"))
+      return this.requireOwner().filesContaining?.(client.rootUri, word, extensions, signal);
+    return localFilesContaining(URI.parse(client.rootUri).fsPath, word, extensions, signal);
+  }
+
   /** Start symbol servers only for language families with files in this workspace. */
   async getWorkspaceClients(
     cwd: string,
@@ -289,6 +317,7 @@ export class LspManager {
     scope = cwd,
     acceptsFile: (source: string) => boolean = () => true,
     signal?: AbortSignal,
+    readText?: SourceTextReader,
   ): Promise<LspClient[]> {
     signal?.throwIfAborted();
     if (cwd.startsWith("ssh://")) {
@@ -311,7 +340,7 @@ export class LspManager {
           } else if (entry.kind === "file") {
             const extension = path.posix.extname(entry.name).toLowerCase();
             if (!remaining.has(extension) || !acceptsFile(uri)) continue;
-            const opened = await this.openFile(uri, cwd, capability, signal);
+            const opened = await this.openFile(uri, cwd, capability, signal, readText);
             if (opened) {
               clients.add(opened.client);
               remaining.delete(extension);
@@ -322,7 +351,7 @@ export class LspManager {
       const selected = documentUri(scope, cwd);
       if (await owner.isFile(selected, signal)) {
         if (!acceptsFile(selected)) return [];
-        const opened = await this.openFile(selected, cwd, capability, signal);
+        const opened = await this.openFile(selected, cwd, capability, signal, readText);
         return opened ? [opened.client] : [];
       }
       await visit(selected);
@@ -372,7 +401,7 @@ export class LspManager {
 
         const filePath = path.join(directory, entry.name);
         if (!acceptsFile(filePath)) continue;
-        const opened = await this.openFile(filePath, cwd, capability, signal);
+        const opened = await this.openFile(filePath, cwd, capability, signal, readText);
 
         if (opened) {
           remainingExtensions.delete(extension);
@@ -387,7 +416,7 @@ export class LspManager {
     const selected = path.resolve(cwd, scope);
     if ((await stat(selected)).isFile()) {
       if (!acceptsFile(selected)) return [];
-      const opened = await this.openFile(selected, cwd, capability, signal);
+      const opened = await this.openFile(selected, cwd, capability, signal, readText);
       if (opened === null || !opened.client.hasWorkspaceSymbolCapability) return [];
       await prepareProjectQuery(opened.client, selected);
       return [opened.client];
@@ -397,14 +426,18 @@ export class LspManager {
     return [...clients];
   }
 
-  /** Open matching source files before querying workspace symbols; excluded files start no server. */
+  /**
+   * Open matching source files before querying workspace symbols; excluded files start no server.
+   * `readText` supplies the text each opened file is published with, as in {@link openFile}.
+   */
   async prepareWorkspaceSymbols(
     cwd: string,
     scope = cwd,
     acceptsFile?: (source: string) => boolean,
     signal?: AbortSignal,
+    readText?: SourceTextReader,
   ): Promise<LspClient[]> {
-    return this.getWorkspaceClients(cwd, "symbols", scope, acceptsFile, signal);
+    return this.getWorkspaceClients(cwd, "symbols", scope, acceptsFile, signal, readText);
   }
 
   /**
@@ -440,15 +473,21 @@ export class LspManager {
     if (source.startsWith("ssh://")) return this.requireOwner().readSnapshot(source, signal);
     if (source.includes("://"))
       throw Object.assign(new Error("Unsupported rename source"), { code: "UNSUPPORTED_SOURCE" });
-    const identity = (info: Awaited<ReturnType<typeof stat>>) =>
-      `${info.dev}:${info.ino}:${info.mode}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
-    const before = identity(await stat(source));
-    const content = await this.readSourceText(source, signal);
-    if (before !== identity(await stat(source)))
-      throw new Error("A rename source changed while reading it. No edits applied.");
+    const read = await readUnchanged(
+      source,
+      () => this.readSourceText(source, signal),
+      (first, second) => first === second,
+      this._options.fileGeneration,
+    );
+    if (read === undefined)
+      throw sourceChanged("A rename source changed while reading it. No edits applied.");
     return {
-      content,
-      version: createHash("sha256").update(before).update("\0").update(content).digest("hex"),
+      content: read.value,
+      version: createHash("sha256")
+        .update(read.stamp)
+        .update("\0")
+        .update(read.value)
+        .digest("hex"),
     };
   }
   /** Preserve original bytes for code-view size and binary checks. */
@@ -478,12 +517,15 @@ export class LspManager {
   /**
    * Open a document in the appropriate LSP server and return the client.
    * Returns null if no server handles this file.
+   * `readText` supplies the text to publish, such as one a caller already read of the file;
+   * by default the file is read from disk or, in a remote workspace, from its owner.
    */
   async openFile(
     filePath: string,
     cwd: string,
     capability: "diagnostics" | "symbols" = "diagnostics",
     signal?: AbortSignal,
+    readText?: SourceTextReader,
   ): Promise<{ client: LspClient; uri: string; languageId: string } | null> {
     signal?.throwIfAborted();
     if (filePath.startsWith("ssh://") && !cwd.startsWith("ssh://")) {
@@ -510,7 +552,7 @@ export class LspManager {
     const languageId = resolved[0]?.languageId ?? "plaintext";
 
     if (owner) {
-      const text = await owner.readText(uri, signal);
+      const text = readText ? await readText(absolutePath) : await owner.readText(uri, signal);
       signal?.throwIfAborted();
       client.syncDocument(uri, text, languageId);
       await client.waitUntilLoaded(signal);
@@ -520,7 +562,9 @@ export class LspManager {
     // We use a minimal open — the server gets the text from disk next request
     try {
       const { readFile } = await import("node:fs/promises");
-      const text = await readFile(absolutePath, { encoding: "utf8", signal });
+      const text = readText
+        ? await readText(absolutePath)
+        : await readFile(absolutePath, { encoding: "utf8", signal });
       signal?.throwIfAborted();
       client.syncDocument(uri, text, languageId);
     } catch (error) {

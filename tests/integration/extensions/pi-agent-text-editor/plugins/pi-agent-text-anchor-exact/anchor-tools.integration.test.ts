@@ -15,7 +15,7 @@ import {
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
 
 const restoreRunner = forceStandaloneIntegrationFile();
-const extensions = await createExtensionSet();
+const extensions = createExtensionSet();
 const rendererExtensions = extensions.paths.map((extension) =>
   extension ===
   path.resolve("tests/integration/extensions/pi-agent-text-editor/register-extension.ts")
@@ -36,7 +36,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-replace",
       "replace",
-      { start: "rav", text: "XYZ" },
+      { at: "rav", text: "XYZ" },
       content.replace("rav", "XYZ"),
     );
   });
@@ -76,7 +76,7 @@ describe("exact text anchors through real text editor tools", () => {
         tool: "replace",
         arguments: {
           path: relativeFile,
-          start: 'const privateFiles = new Set(["CONTEXT.md", "lefthook.yml"]);',
+          at: 'const privateFiles = new Set(["CONTEXT.md", "lefthook.yml"]);',
           text: replacement,
         },
       });
@@ -92,7 +92,7 @@ describe("exact text anchors through real text editor tools", () => {
       expectTextToolDiff(scenario, relativeFile, policyFixture, expectedContent);
       expect(renderedLines).toContain(replacement);
       expect(rendered).not.toMatch(/^[+ -]\|/mu);
-      expect(rendered).not.toMatch(/^\d+#[A-Z0-9]{4}\|/mu);
+      expect(rendered).not.toMatch(/^[0-9A-HJKMNP-TV-Z]{7}\|/mu);
 
       expect(rendered).not.toContain("scope-begin-");
       expect(rendered).not.toContain("scope-end-");
@@ -133,10 +133,12 @@ describe("exact text anchors through real text editor tools", () => {
               cwd: directory,
               testName: `exact-${tool}-terminated-${eolName}-${boundary}`,
               tool,
+              // Literals match exactly: the selector and the text use the file's line breaks.
               arguments: {
                 path: filename,
-                start: entry,
-                ...(tool === "replace" ? { text: replacement } : {}),
+                ...(tool === "replace"
+                  ? { at: entry.replaceAll("\n", eol), text: replacement.replaceAll("\n", eol) }
+                  : { at: entry.replaceAll("\n", eol) }),
               },
             });
             expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
@@ -173,7 +175,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-line-range",
       "replace",
-      { start: "rav", end: formatLineHashAnchor(3, "charlie"), text: "X" },
+      { from: "rav", through: formatLineHashAnchor(content, 3), text: "X" },
       ["alpha", "bX", "delta", "echo"].join("\n"),
     );
   });
@@ -182,20 +184,20 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-insert",
       "insert",
-      { anchor: "bravo", text: "!" },
-      ["alpha", "bravo", "!", "charlie", "delta", "echo"].join("\n"),
+      { after: "bravo", text: "!" },
+      content.replace("bravo", "bravo!"),
     );
   });
 
   test("deletes only one exact match", async () => {
-    await runExactScenario("exact-delete", "delete", { start: "rav" }, content.replace("rav", ""));
+    await runExactScenario("exact-delete", "delete", { at: "rav" }, content.replace("rav", ""));
   });
 
   test("deletes complete matched lines without leaving a gap", async () => {
     await runExactScenario(
       "exact-delete-lines",
       "delete",
-      { start: "bravo\ncharlie" },
+      { at: "bravo\ncharlie" },
       ["alpha", "delta", "echo"].join("\n"),
     );
   });
@@ -204,7 +206,7 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-copy",
       "copy",
-      { start: "bravo", targetStart: "delta" },
+      { at: "bravo", targetAfter: "delta" },
       ["alpha", "bravo", "charlie", "delta", "bravo", "echo"].join("\n"),
     );
   });
@@ -213,50 +215,9 @@ describe("exact text anchors through real text editor tools", () => {
     await runExactScenario(
       "exact-move",
       "move",
-      { start: "bravo", targetStart: "delta" },
+      { at: "bravo", targetAfter: "delta" },
       ["alpha", "charlie", "delta", "bravo", "echo"].join("\n"),
     );
-  });
-
-  test("blocks ambiguous exact text and returns fresh primary anchors", async () => {
-    await withTempWorkspace(async (directory) => {
-      const file = await createFixture(directory, "ambiguous.txt", content);
-      const scenario = await runTextToolScenario({
-        extensions: extensions.paths,
-        cwd: directory,
-        testName: "exact-ambiguous-recovery",
-        tool: "replace",
-        arguments: { path: "ambiguous.txt", start: "a", text: "blocked" },
-      });
-      const execution = getToolExecution(scenario.result, scenario.mutationCallId);
-      expect(execution.isError).toBe(true);
-      const resultText = getToolResultText(scenario.result, scenario.mutationCallId);
-      expect(resultText).toContain('anchor "a" is ambiguous');
-      expect(resultText).not.toContain("is stale");
-      expect(resultText).toMatch(/\d+#[A-F0-9]{4}\|/u);
-      expect(getToolExecutionDetails(execution)).toHaveProperty("anchorRecoveries.0.total", 5);
-      await expect(readFile(file, "utf8")).resolves.toBe(content);
-    });
-  });
-
-  test("reports missing exact text without calling it stale", async () => {
-    await withTempWorkspace(async (directory) => {
-      const file = await createFixture(directory, "missing.txt", content);
-      const scenario = await runTextToolScenario({
-        extensions: extensions.paths,
-        cwd: directory,
-        testName: "exact-missing-recovery",
-        tool: "replace",
-        arguments: { path: "missing.txt", start: "charle", text: "blocked" },
-      });
-      const execution = getToolExecution(scenario.result, scenario.mutationCallId);
-      expect(execution.isError).toBe(true);
-      const resultText = getToolResultText(scenario.result, scenario.mutationCallId);
-      expect(resultText).toContain('anchor "charle" was not found');
-      expect(resultText).not.toContain("is stale");
-      expect(resultText).toMatch(/\d+#[A-F0-9]{4}\|charlie/u);
-      await expect(readFile(file, "utf8")).resolves.toBe(content);
-    });
   });
 
   test("reports every failed anchor field before copy mutation", async () => {
@@ -269,39 +230,40 @@ describe("exact text anchors through real text editor tools", () => {
         tool: "copy",
         arguments: {
           path: "multiple-failures.txt",
-          start: "a",
+          at: "a",
           target: "multiple-failures.txt",
-          targetStart: "charle",
+          targetAfter: "charle",
         },
       });
       const execution = getToolExecution(scenario.result, scenario.mutationCallId);
       expect(execution.isError).toBe(true);
       const detailsText = JSON.stringify(getToolExecutionDetails(execution));
-      expect(detailsText).toContain('"field":"start"');
-      expect(detailsText).toContain('"field":"targetStart"');
+      expect(detailsText).toContain('"field":"at"');
+      expect(detailsText).toContain('"field":"targetAfter"');
       await expect(readFile(file, "utf8")).resolves.toBe(content);
     });
   });
 
   test("preserves source line endings when copying into another file", async () => {
     await withTempWorkspace(async (directory) => {
-      const source = await createFixture(directory, "source.txt", "alpha\nbravo");
+      const source = await createFixture(directory, "source.txt", "alpha\nbravo\n");
       const target = await createFixture(directory, "target.txt", "one\r\ntwo");
       const scenario = await runTextToolScenario({
         extensions: extensions.paths,
         cwd: directory,
         testName: "exact-copy-crlf",
         tool: "copy",
+        // Includes the source and target terminators to cover LPT-1747.
         arguments: {
           path: "source.txt",
-          start: "alpha\nbravo",
+          at: "alpha\nbravo\n",
           target: "target.txt",
-          targetStart: "one",
+          targetAfter: "one\r\n",
         },
       });
       expect(getToolExecution(scenario.result, scenario.mutationCallId).isError).toBe(false);
       await expect(readFile(target, "utf8")).resolves.toBe("one\r\nalpha\nbravo\r\ntwo");
-      await expect(readFile(source, "utf8")).resolves.toBe("alpha\nbravo");
+      await expect(readFile(source, "utf8")).resolves.toBe("alpha\nbravo\n");
     });
   });
 });

@@ -46,7 +46,32 @@ const events = [
 const task = { steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" } }] };
 
 describe("capability route evidence", () => {
-  test("whole-file routes reject filled-in selection arguments", () => {
+  test("line-context routes reject extra Read calls, including registered aliases", () => {
+    const task = { steps: [{ tool: "search" }], forbiddenTools: ["read"] };
+    const search = [
+      { type: "tool_execution_start", toolCallId: "s", toolName: "search" },
+      { type: "tool_execution_end", toolCallId: "s", toolName: "search", isError: false },
+    ];
+    expect(validateRoute(task, search, "direct").passed).toBe(true);
+    for (const name of ["read", "mcp__ide__read"]) {
+      expect(
+        validateRoute(
+          task,
+          [
+            ...search,
+            {
+              type: "tool_execution_start",
+              toolCallId: "extra",
+              toolName: name,
+            },
+          ],
+          "direct",
+          { mcp__ide__read: "read" },
+        ).passed,
+      ).toBe(false);
+    }
+  });
+  test("whole-file routes compare omitted selectors after Pi parsing", () => {
     const fixture = capabilityCases.find((candidate) => candidate.id === "file-copy-move-delete");
     expect(fixture).toBeDefined();
     for (const step of fixture?.steps ?? []) {
@@ -66,13 +91,29 @@ describe("capability route evidence", () => {
         );
       expect(check({ ...step.args }).passed).toBe(true);
       const selectors =
-        step.tool === "delete" ? ["start", "end"] : ["start", "end", "targetStart", "targetEnd"];
-      for (const selector of selectors)
-        for (const value of ["", null])
+        step.tool === "delete"
+          ? ["at", "from", "after", "through", "before"]
+          : [
+              "at",
+              "from",
+              "after",
+              "through",
+              "before",
+              "targetAt",
+              "targetFrom",
+              "targetAfter",
+              "targetThrough",
+              "targetBefore",
+            ];
+      for (const selector of selectors) {
+        // Pi removes optional null fields before invoking the tool.
+        expect(check({ ...step.args, [selector]: null }).passed).toBe(true);
+        for (const value of ["", "fragment"])
           expect(
             check({ ...step.args, [selector]: value }).passed,
             `${step.tool} ${selector}`,
           ).toBe(false);
+      }
     }
   });
 
@@ -109,53 +150,129 @@ describe("capability route evidence", () => {
     expect(check(zero, 0).passed).toBe(true);
     expect(check(zero).passed).toBe(false);
   });
-  test.each([
-    {
-      id: "exact-range-move",
-      index: 3,
-      field: "start",
-      selector: "段🙂\n尾界",
-      args: {
-        path: "eof.txt",
-        target: "inline.txt",
-        targetStart: "SLOT",
-        targetEnd: "SLOT",
+  describe("tool discovery steps", () => {
+    const discovery = capabilityCases.find(
+      (candidate) => candidate.id === "deferred-navigation-recovery",
+    )?.steps[0];
+    if (!discovery?.discovers) throw new Error("Missing discovery step");
+    const task = { steps: [discovery, { tool: "ast_search" }] };
+    const search = (id: string, loaded: string[], parentToolCallId?: string) => [
+      { type: "tool_execution_start", toolCallId: id, toolName: "tool_search", parentToolCallId },
+      {
+        type: "tool_execution_end",
+        toolCallId: id,
+        toolName: "tool_search",
+        isError: false,
+        result: { content: [{ type: "text", text: "" }], details: { loaded } },
       },
-    },
+    ];
+    const use = (mode: string, tool = "ast_search") => [
+      ...(mode === "codemode"
+        ? [{ type: "tool_execution_start", toolCallId: "script", toolName: "codemode" }]
+        : []),
+      {
+        type: "tool_execution_start",
+        toolCallId: tool,
+        toolName: tool,
+        ...(mode === "codemode" && { parentToolCallId: "script" }),
+      },
+      { type: "tool_execution_end", toolCallId: tool, toolName: tool, isError: false },
+      ...(mode === "codemode"
+        ? [
+            {
+              type: "tool_execution_end",
+              toolCallId: "script",
+              toolName: "codemode",
+              isError: false,
+            },
+          ]
+        : []),
+    ];
+
+    // The first search also loads lsp_search, so the search for lsp_search itself finds nothing.
+    test.each(["direct", "codemode"])(
+      "accepts tools that direct searches loaded together (%s)",
+      (mode) => {
+        const events = [
+          ...search("first", ["ast_search", "lsp_search", "debug"]),
+          ...search("second", []),
+          ...search("third", ["diff", "stage"]),
+          ...search("fourth", ["undo"]),
+          ...use(mode),
+        ];
+        expect(validateRoute(task, events, mode)).toEqual({ passed: true, reasons: [] });
+      },
+    );
+
+    test("rejects incomplete, late or failed direct discovery", () => {
+      const mode = "direct";
+      const early = [
+        ...search("first", ["ast_search", "lsp_search", "diff"]),
+        ...use(mode),
+        ...use(mode, "undo"),
+      ];
+      expect(validateRoute(task, early, mode).passed).toBe(false);
+      expect(validateRoute(task, [...early, ...search("late", ["undo"])], mode).passed).toBe(false);
+      const failed = [
+        ...search("first", ["ast_search", "lsp_search", "diff"]),
+        ...search("second", ["undo"]).map((event) =>
+          event.type === "tool_execution_end" ? { ...event, isError: true } : event,
+        ),
+        ...use(mode),
+      ];
+      expect(validateRoute(task, failed, mode).passed).toBe(false);
+    });
+
+    test("does not count a nested call named tool_search", () => {
+      const events = [
+        ...search("first", ["ast_search", "lsp_search", "diff"]),
+        { type: "tool_execution_start", toolCallId: "outer", toolName: "codemode" },
+        ...search("nested", ["undo"], "outer"),
+        { type: "tool_execution_end", toolCallId: "outer", toolName: "codemode", isError: false },
+        ...use("direct"),
+      ];
+      expect(validateRoute(task, events, "direct").passed).toBe(false);
+    });
+  });
+  test.each([
     {
       id: "exact-eof-crlf",
       index: 1,
-      field: "start",
+      field: "at",
       selector: "Last\nBlock",
       args: { path: "block.txt" },
     },
     {
       id: "exact-eof-crlf",
       index: 2,
-      field: "start",
+      field: "at",
       selector: "Last\nBlock",
       args: { path: "empty.txt", text: "" },
     },
     {
       id: "insert-before",
       index: 3,
-      field: "anchor",
+      field: "before",
       selector: "α\nβ",
-      args: { path: "block.txt", text: "[", before: true },
+      args: { path: "block.txt", text: "[" },
     },
     {
       id: "insert-before",
       index: 4,
-      field: "anchor",
+      field: "after",
       selector: "α\nβ",
       args: { path: "block.txt", text: "]" },
     },
-  ])("$id step $index accepts exact LF and CRLF selectors without widening", (fixture) => {
+  ])("$id step $index checks exact selection independently of spelling", (fixture) => {
     const step = capabilityCases.find((candidate) => candidate.id === fixture.id)?.steps[
       fixture.index
     ];
     if (!step) throw new Error("Missing multiline selector capability step");
-    const route = { steps: [step] };
+    const route = {
+      // Isolate selector matching from the full route’s cross-call constraints.
+      steps: [{ tool: step.tool, args: step.args, exactText: step.exactText }],
+      files: capabilityCases.find((candidate) => candidate.id === fixture.id)?.files,
+    };
     const check = (selector: string) =>
       validateRoute(
         route,
@@ -172,8 +289,10 @@ describe("capability route evidence", () => {
       ).passed;
     expect(check(fixture.selector)).toBe(true);
     expect(check(fixture.selector.replace("\n", "\r\n"))).toBe(true);
-    expect(check(`${fixture.selector}\n`)).toBe(false);
-    expect(check(fixture.selector.replace("\n", "\r\r\n"))).toBe(false);
+    // Only the outcome validator decides whether literal boundaries changed the right bytes.
+    expect(check(`${fixture.selector}\n`)).toBe(true);
+    expect(check("SEARCH#ABCD:1:line")).toBe(false);
+    expect(check("regex:.*")).toBe(false);
   });
   test("direct batch evidence requires both call ids in one completed assistant message", () => {
     const route = { steps: [{ tool: "read" }, { tool: "search", sameAssistantWith: 0 }] };
@@ -260,42 +379,38 @@ describe("capability route evidence", () => {
       validateRoute(route, [...child, parent("3 replacements in 1 file", true)], "codemode").passed,
     ).toBe(false);
   });
-  test("final feedback checks do not confuse validation events with transcript results", () => {
-    const route = { steps: [{ tool: "insert", error: true, finalContains: "is stale" }] };
-    const validation = [
-      { type: "tool_execution_start", toolCallId: "call", toolName: "insert" },
+  test("a parent summary must contain every required fragment", () => {
+    const route = {
+      steps: [{ tool: "read", error: true, parentContains: ["read source", "fixture-recovery"] }],
+    };
+    const events = [
+      { type: "tool_execution_start", toolCallId: "parent", toolName: "codemode" },
+      {
+        type: "tool_execution_start",
+        toolCallId: "child",
+        parentToolCallId: "parent",
+        toolName: "read",
+      },
       {
         type: "tool_execution_end",
-        toolCallId: "call",
+        toolCallId: "child",
         isError: true,
-        result: { content: [{ type: "text", text: "Validation failed" }] },
+        result: { content: [{ type: "text", text: "failed" }] },
       },
     ];
-    const final = {
-      type: "message_end",
-      message: {
-        role: "toolResult",
-        toolCallId: "call",
-        isError: true,
-        content: [{ type: "text", text: "Anchor is stale" }],
-      },
-    };
-    expect(validateRoute(route, [...validation, final], "direct").passed).toBe(true);
-    expect(validateRoute(route, validation, "direct").passed).toBe(false);
+    const parent = (text: string) => ({
+      type: "tool_execution_end",
+      toolCallId: "parent",
+      isError: false,
+      result: { content: [{ type: "text", text }] },
+    });
     expect(
-      validateRoute(
-        route,
-        [...validation, { ...final, message: { ...final.message, toolCallId: "another" } }],
-        "direct",
-      ).passed,
-    ).toBe(false);
-    expect(
-      validateRoute(
-        route,
-        [...validation, { ...final, message: { ...final.message, isError: false } }],
-        "direct",
-      ).passed,
-    ).toBe(false);
+      validateRoute(route, [...events, parent("read source fixture-recovery")], "codemode").passed,
+    ).toBe(true);
+    expect(validateRoute(route, [...events, parent("read source")], "codemode").passed).toBe(false);
+    expect(validateRoute(route, [...events, parent("fixture-recovery")], "codemode").passed).toBe(
+      false,
+    );
   });
   test("final feedback byte limits count all UTF-8 text blocks, not an earlier result", () => {
     const events = [
@@ -344,6 +459,37 @@ describe("capability route evidence", () => {
     expect(validateRoute(task, bypass, "direct").passed).toBe(false);
   });
 
+  test("accepts the RESULT# id that a Codemode value gives an enveloped result", () => {
+    const byId = (path: string) =>
+      events.map((event) =>
+        event.toolCallId === "s" && event.type === "tool_execution_start"
+          ? { ...event, args: { path, query: "marker" } }
+          : event,
+      );
+    expect(
+      validateRoute(task, byId("RESULT#9b901a2b-a965-4729-8abb-3c09c3cbc6c2"), "direct").passed,
+    ).toBe(true);
+    expect(
+      validateRoute(task, byId("RESULT#00000000-a965-4729-8abb-3c09c3cbc6c2"), "direct").passed,
+    ).toBe(false);
+  });
+
+  test("a step limited to other routes is skipped, and nothing can reuse it", () => {
+    const readOnly = events.slice(0, 2);
+    const searchFor = (modes: string[]) => ({
+      steps: [{ tool: "read" }, { tool: "search", reuse: { from: 0, field: "path" }, modes }],
+    });
+    expect(validateRoute(searchFor(["direct"]), readOnly, "direct").passed).toBe(false);
+    expect(validateRoute(searchFor(["codemode"]), readOnly, "direct").passed).toBe(true);
+    const skippedSource = {
+      steps: [
+        { tool: "read", modes: ["codemode"] },
+        { tool: "search", reuse: { from: 0, field: "path" } },
+      ],
+    };
+    expect(validateRoute(skippedSource, events, "direct").passed).toBe(false);
+  });
+
   test("accepts fixture path spellings and returned selectors, not invented references", () => {
     const readOnly = { steps: [{ tool: "read", args: { path: "task.txt" } }] };
     const absolute = events.map((event) =>
@@ -374,7 +520,7 @@ describe("capability route evidence", () => {
     const route = {
       steps: [
         { tool: "read" },
-        { tool: "insert", reuse: { from: 0, field: ["anchor", "path"], kind: "anchor" } },
+        { tool: "insert", reuse: { from: 0, field: ["after", "path"], kind: "anchor" } },
       ],
     };
     expect(validateRoute(route, anchored, "direct").passed).toBe(true);
@@ -408,14 +554,13 @@ describe("capability route evidence", () => {
       ).passed,
     ).toBe(true);
   });
-  test("accepts only reviewed argument alternatives without weakening result reuse", () => {
+  test("checks subject filters without weakening required result reuse", () => {
     const route = {
       steps: [
         { tool: "read" },
         {
           tool: "search",
           args: { query: "marker" },
-          argsAny: [{ path: result }, { include: "task.txt" }],
           reuse: { from: 0, field: "path" },
         },
       ],
@@ -427,7 +572,7 @@ describe("capability route evidence", () => {
         : event,
     );
     const scoped = {
-      steps: [{ tool: "search", argsAny: [{ path: "task.txt" }, { include: "task.txt" }] }],
+      steps: [{ tool: "search", args: { include: "task.txt" } }],
     };
     expect(validateRoute(scoped, wrongScope, "direct").passed).toBe(false);
     const included = events.map((event) =>
@@ -437,6 +582,37 @@ describe("capability route evidence", () => {
     );
     expect(validateRoute(scoped, included, "direct").passed).toBe(true);
     expect(validateRoute(route, included, "direct").passed).toBe(false);
+  });
+  test("accepts a reused result of the expected file as its path", () => {
+    const uuid = "9b901a2b-a965-4729-8abb-3c09c3cbc6c2";
+    const read = (file: string) => [
+      { type: "tool_execution_start", toolCallId: "r", toolName: "read", args: { path: file } },
+      {
+        type: "tool_execution_end",
+        toolCallId: "r",
+        isError: false,
+        result: { content: [{ type: "text", text: `<uuid>${uuid}</uuid>\nFirst` }] },
+      },
+    ];
+    const edit = (path: unknown) => [
+      {
+        type: "tool_execution_start",
+        toolCallId: "d",
+        toolName: "delete",
+        args: { path, at: "A" },
+      },
+      { type: "tool_execution_end", toolCallId: "d", isError: false },
+    ];
+    const route = { steps: [{ tool: "delete", args: { path: "line.txt", at: "A" } }] };
+    for (const path of [{ id: uuid }, `RESULT#${uuid}`])
+      expect(validateRoute(route, [...read("line.txt"), ...edit(path)], "direct").passed).toBe(
+        true,
+      );
+    // A result of another file, or an id nothing issued, does not name the expected file.
+    expect(
+      validateRoute(route, [...read("other.txt"), ...edit({ id: uuid })], "direct").passed,
+    ).toBe(false);
+    expect(validateRoute(route, edit({ id: uuid }), "direct").passed).toBe(false);
   });
   test("does not accept failed execution or incomplete evidence", () => {
     expect(validateRoute(task, events.slice(0, -1), "direct").passed).toBe(false);
@@ -468,10 +644,81 @@ describe("capability route evidence", () => {
       { type: "tool_execution_end", toolCallId: "compose", toolName: "codemode", isError: true },
     ];
     expect(validateRoute(route, native, "codemode").passed).toBe(true);
+    // A result-bound selector runs the call at once, so it fails as a child.
     expect(
       validateRoute(
         route,
         native.map((event) => (event.toolCallId === "move" ? { ...event, isError: true } : event)),
+        "codemode",
+      ).passed,
+    ).toBe(true);
+    // An accepted call whose parent completed was not shown to fail.
+    expect(
+      validateRoute(
+        route,
+        native.map((event) =>
+          event.toolCallId === "compose" ? { ...event, isError: false } : event,
+        ),
+        "codemode",
+      ).passed,
+    ).toBe(false);
+  });
+  test("accepts selection spelling independently but still requires rollback and later inspection", () => {
+    const rollback = capabilityCases.find((item) => item.id === "move-rollback-restored");
+    if (!rollback) throw Error("Missing Move rollback capability case");
+    const source = ".tmp/move-rollback/restored-source.txt";
+    const target = ".tmp/move-rollback/restored-target.txt";
+    const route = (at: string) => [
+      { type: "tool_execution_start", toolCallId: "m", toolName: "codemode", args: {} },
+      {
+        type: "tool_execution_start",
+        toolCallId: "move",
+        parentToolCallId: "m",
+        toolName: "move",
+        args: { path: source, at, target, targetAfter: "top" },
+      },
+      { type: "tool_execution_end", toolCallId: "move", toolName: "move", isError: false },
+      { type: "tool_execution_end", toolCallId: "m", toolName: "codemode", isError: true },
+      ...[source, target].flatMap((file, index) => [
+        { type: "tool_execution_start", toolCallId: `c${index}`, toolName: "codemode", args: {} },
+        {
+          type: "tool_execution_start",
+          toolCallId: `r${index}`,
+          parentToolCallId: `c${index}`,
+          toolName: "read",
+          args: { path: file },
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: `r${index}`,
+          toolName: "read",
+          isError: false,
+          result: { content: [{ type: "text", text: "move-me bottom" }] },
+        },
+        {
+          type: "tool_execution_end",
+          toolCallId: `c${index}`,
+          toolName: "codemode",
+          isError: false,
+        },
+      ]),
+    ];
+    expect(validateRoute(rollback, route("1A4YVAE"), "codemode").passed).toBe(true);
+    expect(validateRoute(rollback, route("1A4YVAE|move-me"), "codemode").passed).toBe(true);
+    expect(validateRoute(rollback, route("begin"), "codemode").passed).toBe(true);
+    expect(
+      validateRoute(
+        rollback,
+        route("begin").filter(
+          (event) => event.toolCallId !== "m" || event.type !== "tool_execution_end",
+        ),
+        "codemode",
+      ).passed,
+    ).toBe(false);
+    expect(
+      validateRoute(
+        rollback,
+        route("move-me").filter((event) => event.toolCallId !== "r1"),
         "codemode",
       ).passed,
     ).toBe(false);
@@ -587,50 +834,6 @@ test("coverage rejects missing cases, uncovered live tools, and duplicate capabi
   expect(checkCoverage(matrix, [], ["read"]).length).toBeGreaterThan(0);
   expect(checkCoverage(matrix, cases, ["read", "new_tool"]).join(" ")).toContain("new_tool");
   expect(checkCoverage([...matrix, ...matrix], cases, ["read"]).join(" ")).toContain("duplicate");
-});
-
-test("deletion capability fixtures preserve symlink identities and detect leftover empty directories", async () => {
-  await mkdir(".tmp", { recursive: true });
-  const parent = await mkdtemp(path.resolve(".tmp/capability-delete-test-"));
-  const source = path.join(parent, "source");
-  await mkdir(source);
-  execFileSync("git", ["init", "-q", source]);
-  execFileSync("git", [
-    "-C",
-    source,
-    "-c",
-    "user.name=Fixture",
-    "-c",
-    "user.email=fixture@example.invalid",
-    "commit",
-    "--allow-empty",
-    "-qm",
-    "fixture",
-  ]);
-  try {
-    const task = capabilityCases.find(({ id }) => id === "delete-objects");
-    if (task === undefined) throw new Error("Missing deletion capability case");
-    const trial = await prepareTrial(parent, source, task);
-    expect(trial.initial["broken-link"]?.toString()).toBe("symlink:missing");
-    expect(trial.initial.link?.toString()).toBe("symlink:sentinel.txt");
-    for (const name of [
-      "remove-tree/data",
-      "remove-tree/link",
-      "remove-tree/nested",
-      "remove-tree/broken",
-      "link",
-      "broken-link",
-    ])
-      await rm(path.join(trial.cwd, name), { recursive: true });
-    expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([
-      "Expected deleted object still exists: remove-tree",
-    ]);
-    await rm(path.join(trial.cwd, "remove-tree"), { recursive: true });
-    expect(await validateFiles(trial.cwd, trial.initial, task.expected)).toEqual([]);
-    expect(await readFile(path.join(trial.cwd, "sentinel.txt"), "utf8")).toBe("KEEP\n");
-  } finally {
-    await rm(parent, { recursive: true, force: true });
-  }
 });
 
 test("temporary directory capability fixtures enforce defaults, roots, moves, and replacement without inference", async () => {

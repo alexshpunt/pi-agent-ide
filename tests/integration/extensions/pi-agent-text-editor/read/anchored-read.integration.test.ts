@@ -13,6 +13,7 @@ import {
 } from "pi-coding-agent-test";
 import { afterAll, expect, test } from "vitest";
 
+import { recoveryReadArguments } from "#integration/support/recovery-read.ts";
 import type { ReadResultDetails } from "pi-agent-read/api/tools/read";
 import { generateReadExtensions } from "pi-agent-read/testing";
 import { formatLineHashAnchor } from "pi-agent-text-anchor-line-hash/api/anchor";
@@ -62,13 +63,13 @@ test("treats zero as an alias for the default offset on a returned anchor", asyn
     });
 
     const anchorMatch = getToolResultText(source, "source").match(
-      /\b([1-9]\d*#[A-Z0-9]{3,4})\|charlie note/u,
+      /(?<![0-9A-Z])([0-9A-HJKMNP-TV-Z]{7})\|charlie note/u,
     );
     const anchor = anchorMatch?.[1];
     if (anchor === undefined) {
-      throw new Error("Expected a complete line-hash anchor in the read result");
+      throw new Error("Expected a complete line anchor in the read result");
     }
-    expect(anchor).toBe(formatLineHashAnchor(3, fixtureLines[2]));
+    expect(anchor).toBe(formatLineHashAnchor(fixtureLines.join("\n"), 3));
 
     const result = await runReadCalls({
       cwd: directory,
@@ -110,10 +111,10 @@ test("counts offsets from the anchor while keeping absolute numbering", async ()
   });
 });
 
-test("accepts a line-hash anchor value", async () => {
+test("accepts a line anchor value", async () => {
   await withTempDirectory(async (directory) => {
     await writeFixture(directory);
-    const anchor = formatLineHashAnchor(2, fixtureLines[1]);
+    const anchor = formatLineHashAnchor(fixtureLines.join("\n"), 2);
     const result = await runReadCalls({
       cwd: directory,
       testName: "anchored-read-line-hash",
@@ -136,8 +137,23 @@ test("rejects an ambiguous anchor with candidate lines", async () => {
 
     expect(getToolResultMessage(result, "ambiguous").isError).toBe(true);
     const failureText = getToolResultText(result, "ambiguous");
-    expect(failureText).toContain("Candidate: line 2");
-    expect(failureText).toContain("Candidate: line 4");
+    expect([...failureText.matchAll(/\bread\(\{/gu)]).toHaveLength(1);
+    const second = formatLineHashAnchor(fixtureLines.join("\n"), 2);
+    const fourth = formatLineHashAnchor(fixtureLines.join("\n"), 4);
+    expect(failureText).toContain(`${second}|${fixtureLines[1]}`);
+    expect(failureText).toContain(`${fourth}|${fixtureLines[3]}`);
+    const offered = recoveryReadArguments(failureText);
+    // Each shared Pi run stages the same fixture in a new workspace.
+    const args = { ...offered, path: path.basename(offered.path) };
+    const retry = await runReadCalls({
+      cwd: directory,
+      testName: "anchored-read-recover",
+      calls: [{ id: "retry", ...args }],
+    });
+    const message = getToolResultMessage<ReadResultDetails>(retry, "retry");
+    expect(message.isError).toBe(false);
+    expect(message.details.startLine).toBe(2);
+    expect(getToolResultText(retry, "retry")).toContain(`${second}|${fixtureLines[1]}`);
   });
 });
 

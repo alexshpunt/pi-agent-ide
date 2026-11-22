@@ -11,6 +11,7 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
 import { startSshPrivateDiagnosticFixture } from "./support/ssh-private-diagnostic-fixture.ts";
 
@@ -76,7 +77,7 @@ test("ordinary and native tools keep private SSH diagnostics out of agent and TU
             id: "native",
             name: "codemode",
             arguments: {
-              code: `for (const operation of [() => tools.read({path:${JSON.stringify(source)}}), () => tools.write({path:${JSON.stringify(source)},content:"Must not change\\n"})]) { let failure; try { const value = await operation(); if (value?.status === "error") failure = JSON.stringify(value.errors); } catch(error) { failure=String(error); } if(!failure?.includes("TRANSPORT_FAILED") || failure.includes("Outcome unknown")) throw Error("Unexpected SSH receipt: " + failure); text({refusal:failure}); }`,
+              code: `for (const operation of [() => tools.read({path:${JSON.stringify(source)}}), () => tools.write({path:${JSON.stringify(source)},content:"Must not change\\n"})]) { const value = await operation(); if (value !== null) throw Error("Unexpected SSH receipt: " + JSON.stringify(value)); } text("both refused");`,
             },
           }),
         ]),
@@ -103,12 +104,16 @@ test("ordinary and native tools keep private SSH diagnostics out of agent and TU
     expect(getToolResultText(run, "ordinary-write")).toContain("TRANSPORT_FAILED");
     expect(getToolResultText(run, "ordinary-write")).not.toContain("Outcome unknown");
     expect(getToolExecution(run, "native").isError, getToolResultText(run, "native")).toBe(false);
-    const results = getToolResultText(run, "native")
-      .split("\n")
-      .filter((line) => line.startsWith('{"refusal":'))
-      .map((line) => JSON.parse(line) as { refusal: string });
-    expect(results).toHaveLength(2);
-    for (const result of results) expect(result.refusal).toContain("TRANSPORT_FAILED");
+    // Both calls resolved to null; the Codemode result lists each refusal with its reason.
+    const refusals = codemodeFailures(getToolResultText(run, "native"));
+    expect(refusals).toMatch(/^2 of 2 IDE calls failed:\n/u);
+    const results = refusals.split(/\n(?=- )/u).slice(1);
+    expect(results.map((result) => result.split("\n")[0])).toEqual([
+      `- read ${source}`,
+      `- write ${source}`,
+    ]);
+    for (const result of results) expect(result).toContain("TRANSPORT_FAILED");
+    expect(refusals).not.toContain("Outcome unknown");
     expect(getToolExecution(run, "unknown").isError).toBe(true);
     expect(getToolResultText(run, "unknown")).toContain("UNKNOWN_TARGET");
     expect(getToolExecution(run, "application").isError).toBe(false);

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { createTextDocument, renderTextDocument } from "pi-agent-text";
+import { createTextDocument, renderTextDocument, textLineAnchors } from "pi-agent-text";
 import { addDiagnosticAnnotations, createDiagnosticViewContent } from "./diagnostic-view.ts";
 
 test.each(["pending", "unavailable", "snapshot", "unversioned"] as const)(
@@ -56,9 +56,10 @@ test("diagnostic reads include and merge five lines of surrounding context", () 
   expect(lines.filter((line) => line === "line 8")).toHaveLength(1);
   expect(lines[5]).toContain("<!-- lsp: [ERROR] lsp:LSP7:");
   expect(lines[9]).toContain("<!-- lint: [ERROR] lint:LINT11:");
+  const anchors = textLineAnchors("sample.ts", text);
   expect(content.sourceLines).toMatchObject({
-    "1": { source: "sample.ts", lineNumber: 2, content: "line 2" },
-    "15": { source: "sample.ts", lineNumber: 16, content: "line 16" },
+    "1": { source: "sample.ts", lineNumber: 2, content: "line 2", anchor: anchors[1] },
+    "15": { source: "sample.ts", lineNumber: 16, content: "line 16", anchor: anchors[15] },
   });
 });
 

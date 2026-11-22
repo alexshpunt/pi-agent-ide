@@ -32,7 +32,8 @@ for (const native of [false, true]) {
           JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
         );
         const source = `rollback-${scenario}.txt`;
-        const parameters = { path: source, anchor: "KEEP", text: "NEW" };
+        // A literal selects only its characters; NEW goes after the line break.
+        const parameters = { path: source, after: "KEEP\n", text: "NEW" };
         const run = await new PiIntegrationTest({
           testName: `rollback-${native ? "native" : "standalone"}-${scenario}`,
           artifactsDir: testArtifactsDir(import.meta.filename),
@@ -79,6 +80,7 @@ for (const native of [false, true]) {
                     operations: [
                       {
                         effect,
+                        files: [{ effect }],
                         errors: [
                           {
                             code: "WRITE_FAILED",

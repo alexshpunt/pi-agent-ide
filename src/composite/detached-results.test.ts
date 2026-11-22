@@ -2,6 +2,7 @@ import v8 from "node:v8";
 import vm from "node:vm";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ResourceError } from "pi-agent-resource";
 import { expect, test } from "vitest";
 
 import { registerDetachedResults } from "./detached-results.ts";
@@ -50,8 +51,28 @@ test("kept result details do not keep the file text their lines were cut from", 
   expect(kept.at(-1)).toEqual({ details: { lines }, structuredContent: { data: { lines } } });
 });
 
-test("details that are not plain data stay as they are", () => {
+test("class instances and functions in details keep their identity", () => {
   const handler = detachedResults();
-  expect(handler({ details: { render: () => "text" } })).toBeUndefined();
+  const render = () => "text";
+  const cause = new ResourceError("LINEAR_RATE_LIMITED", "linear://example", "not-applied");
+  const details = { render, failure: { code: "READ_FAILED", cause } };
+  const kept = handler({ details })?.details as typeof details;
+  expect(kept).not.toBe(details);
+  expect(kept.render).toBe(render);
+  // An extension loaded after the IDE still recognizes the provider failure.
+  expect(kept.failure.cause).toBe(cause);
+  expect(kept.failure.cause).toBeInstanceOf(ResourceError);
   expect(handler({ details: undefined })).toBeUndefined();
+});
+
+test("shared and cyclic plain values are copied once", () => {
+  const handler = detachedResults();
+  const shared = { text: "line" };
+  const cyclic: Record<string, unknown> = { shared, again: shared };
+  cyclic.self = cyclic;
+  const kept = handler({ details: cyclic })?.details as typeof cyclic;
+  expect(kept).not.toBe(cyclic);
+  expect(kept.self).toBe(kept);
+  expect(kept.again).toBe(kept.shared);
+  expect(kept.shared).toEqual(shared);
 });

@@ -1,7 +1,9 @@
 import { renderAgentDiff } from "./agent-diff.ts";
 import { groupReplacements, renderGroupedReplacements } from "./grouped-replacements.ts";
 import { renderFinalStateFragment } from "./final-state-fragment.ts";
+import { attachFileTextWindows, type FileTextWindow } from "pi-agent-resource";
 import { type FileMutationResult } from "./file-mutation-result.ts";
+import { describeAlreadyDone, describeAlreadyDoneFile } from "#src/core/already-done.ts";
 
 // ─── Agent-facing result formatter ───────────────────────────────────────
 
@@ -24,9 +26,13 @@ export class FileMutationAgentResult {
    * Returned string is suitable for content[0].text in a tool response.
    */
   public toText(): string {
+    return this.format();
+  }
+
+  private format(shown?: (window: FileTextWindow) => void): string {
     const grouped = groupReplacements(this.results);
     if (grouped !== undefined) return renderGroupedReplacements(grouped);
-    const parts: string[] = Array.from(this.results, (fmr) => this.formatSingle(fmr));
+    const parts = this.results.map((fmr) => this.formatSingle(fmr, shown));
 
     return parts.join("\n\n");
   }
@@ -36,10 +42,13 @@ export class FileMutationAgentResult {
    * Returns { type: "text", text } suitable for content[] in tool response.
    */
   public toTextContent(): { type: "text"; text: string } {
-    return { type: "text", text: this.toText() };
+    const windows: FileTextWindow[] = [];
+    const block = { type: "text" as const, text: this.format((window) => windows.push(window)) };
+    attachFileTextWindows(block, windows);
+    return block;
   }
 
-  private formatSingle(fmr: FileMutationResult): string {
+  private formatSingle(fmr: FileMutationResult, shown?: (window: FileTextWindow) => void): string {
     if (fmr.isPartial) {
       return "gate progress";
     }
@@ -50,21 +59,19 @@ export class FileMutationAgentResult {
 
     // ok, but no actual changes — e.g. new FileMutationResult(undefined)
     if (fmr.diffs.length === 0 && fmr.files.length === 0) {
-      return "<empty-result>";
+      return (fmr.data.alreadyDone?.length ?? 0) > 0
+        ? describeAlreadyDoneFile(fmr)
+        : "<empty-result>";
     }
 
-    return this.formatSuccess(fmr);
+    return this.formatSuccess(fmr, shown);
   }
 
   // ── Failure formatting ────────────────────────────────────────────────
 
   private formatFailure(fmr: FileMutationResult): string {
-    // Special case: all edits were stale anchors (without detailed staleDiagnostic)
-    if (
-      fmr.errors.some((e) => e.code === "STALE_ANCHOR") &&
-      fmr.staleEdits.length > 0 &&
-      !fmr.staleDiagnostic
-    ) {
+    // Special case: every edit failed on a stale anchor
+    if (fmr.errors.some((e) => e.code === "STALE_ANCHOR") && fmr.staleEdits.length > 0) {
       return this.formatStaleFailure(fmr);
     }
 
@@ -199,27 +206,6 @@ export class FileMutationAgentResult {
       lines.push("", `Edit indices: ${fmr.editIndices.join(", ")}`);
     }
 
-    // Stale diagnostic (detailed stale anchor with context)
-    if (fmr.staleDiagnostic) {
-      const sd = fmr.staleDiagnostic;
-      lines.push("", `target: ${fmr.path ?? "?"}`);
-      lines.push(`line: ${sd.lineNumber}`, "");
-      lines.push("expected:");
-      lines.push(`  ${sd.expected.lineNumber}#${sd.expected.hash}  (original text unavailable)`);
-      lines.push("", "current:");
-      lines.push(`  ${sd.current.lineNumber}#${sd.current.hash}  ${sd.current.text}`);
-      lines.push("", `anchor_hash_changed: ${sd.anchorHashChanged}`);
-
-      if (sd.currentContext.length > 0) {
-        lines.push("", "current_context:");
-
-        for (const context of sd.currentContext) {
-          const marker = context.lineNumber === sd.lineNumber ? ">>" : "  ";
-          lines.push(`  ${marker} ${context.lineNumber}#${context.hash}  ${context.text}`);
-        }
-      }
-    }
-
     // A failed call alone does not prove that files stayed unchanged.
     if (fmr.fileChangedStatement !== undefined) {
       lines.push("", fmr.fileChangedStatement);
@@ -291,6 +277,9 @@ export class FileMutationAgentResult {
       case "unchanged": {
         return `Already formatted${by}.`;
       }
+      case "skipped-style": {
+        return `Formatting skipped${by}: existing style preserved.`;
+      }
       case "unavailable": {
         return "No formatter is available for this file.";
       }
@@ -303,7 +292,7 @@ export class FileMutationAgentResult {
     }
   }
 
-  private formatSuccess(fmr: FileMutationResult): string {
+  private formatSuccess(fmr: FileMutationResult, shown?: (window: FileTextWindow) => void): string {
     const operations = fmr.data.operations ?? [];
     const verbs: Record<string, string> = {
       replace: "Replaced selected text",
@@ -325,6 +314,7 @@ export class FileMutationAgentResult {
                 : `${verbs[operation] ?? `Applied ${operation}`}: ${changes} text change(s) in this file.`,
             )
             .join("\n"),
+      ...[describeAlreadyDone(fmr.data.alreadyDone ?? [])].filter((line) => line !== undefined),
       this.formatFormatting(fmr.data.formatting),
     ];
 
@@ -339,7 +329,7 @@ export class FileMutationAgentResult {
     }
     for (const diff of fmr.diffs) {
       const path = /^--- (.+)$/m.exec(diff)?.[1] ?? fmr.path ?? "<unknown file>";
-      blocks.push(renderFinalStateFragment(fmr, path).join("\n"));
+      blocks.push(renderFinalStateFragment(fmr, path, shown).join("\n"));
     }
 
     if (fmr.diffs.length === 0) {

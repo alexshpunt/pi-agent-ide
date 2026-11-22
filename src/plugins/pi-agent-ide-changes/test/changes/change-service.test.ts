@@ -243,3 +243,77 @@ describe("Git change domain", () => {
     });
   });
 });
+
+describe("Git line-ending conversion", () => {
+  const head = "one\ntwo\nthree\n";
+  const crlf = "one\r\nchanged\r\nthree\r\n";
+
+  async function convertingRepository(configure: (directory: string) => Promise<void>) {
+    const repository = await createRepository(head);
+    await configure(repository.directory);
+    await writeFile(repository.file, crlf, "utf8");
+    return repository;
+  }
+  const autocrlf = async (directory: string) => {
+    await runGit(["config", "core.autocrlf", "true"], directory);
+  };
+  const attribute = async (directory: string) => {
+    await writeFile(path.join(directory, ".gitattributes"), "*.txt text eol=crlf\n", "utf8");
+  };
+
+  test.each([
+    ["core.autocrlf", autocrlf],
+    ["an eol attribute", attribute],
+  ])("a CRLF worktree matches LF blobs with %s", async (_name, configure) => {
+    const { directory, file, service } = await convertingRepository(configure);
+    const inspection = await inspectCurrent(service, directory, file, crlf);
+    expect(inspection).toMatchObject({ status: "applicable", groups: [{ state: "unstaged" }] });
+    if (inspection.status !== "applicable") return;
+    const group = requiredValue(inspection.groups[0]);
+    expect(group.currentStartLine).toBe(2);
+    expect(group.currentEndLine).toBe(2);
+
+    await expect(
+      service.changeIndex(
+        { source: file, worktreeText: crlf, cwd: directory },
+        group.selector,
+        "stage",
+      ),
+    ).resolves.toMatchObject({ status: "applied", state: "staged" });
+    expect(await indexText(directory)).toBe("one\nchanged\nthree\n");
+    // Git agrees that the staged file has no further worktree change.
+    expect((await runGit(["diff", "--name-only"], directory)).stdout).toBe("");
+  });
+
+  test("undo restores CRLF in a uniformly CRLF file", async () => {
+    const { directory, file, service } = await convertingRepository(autocrlf);
+    const inspection = await inspectCurrent(service, directory, file, crlf);
+    if (inspection.status !== "applicable") throw new Error("Missing change");
+    await expect(
+      service.prepareUndo(
+        { source: file, worktreeText: crlf, cwd: directory },
+        requiredValue(inspection.groups[0]).selector,
+      ),
+    ).resolves.toMatchObject({ status: "applied", worktreeText: "one\r\ntwo\r\nthree\r\n" });
+  });
+
+  test("undo refuses a file that mixes CRLF and LF", async () => {
+    const { directory, file, service } = await convertingRepository(autocrlf);
+    const mixed = "one\r\nchanged\nthree\r\n";
+    const inspection = await inspectCurrent(service, directory, file, mixed);
+    if (inspection.status !== "applicable") throw new Error("Missing change");
+    await expect(
+      service.prepareUndo(
+        { source: file, worktreeText: mixed, cwd: directory },
+        requiredValue(inspection.groups[0]).selector,
+      ),
+    ).resolves.toMatchObject({ status: "unavailable", reason: "mixed-line-endings" });
+  });
+
+  test("a CRLF worktree is a whole-file change when Git does not convert", async () => {
+    const { directory, file, service } = await convertingRepository(async () => {});
+    const inspection = await inspectCurrent(service, directory, file, crlf);
+    if (inspection.status !== "applicable") throw new Error("Missing change");
+    expect(requiredValue(inspection.groups[0]).currentEndLine).toBe(3);
+  });
+});

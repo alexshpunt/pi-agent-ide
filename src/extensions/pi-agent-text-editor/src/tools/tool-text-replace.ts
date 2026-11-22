@@ -1,66 +1,86 @@
 import { Type } from "typebox";
 import { resultInputSchema } from "pi-agent-resource";
+import { PRESENTED_LINE_ANCHOR_PATTERN, isLineAnchor } from "pi-agent-text";
+
+import { resolvedTextAnchorType } from "#src/core/text-anchor-registry.ts";
+import { refuseEndOfFileMarker } from "#src/tools/display-marker.ts";
 
 import { sourceRangeProperties } from "#src/tools/text-tool-schema-properties.ts";
 
-import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
 import {
-  anchorSpanRange,
-  replaceAnchorSpan,
+  sourceSelectors,
+  sourceTextSelector,
+  textSelectorAnchors,
+} from "#src/api/text-selector-fields.ts";
+import {
+  replaceSelectedSpan,
+  resolveTextSpan,
   selectionChanges,
   textSelections,
 } from "#src/tools/text-selection.ts";
 
-import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
+import {
+  TextMutationInputError,
+  type TextMutationContext,
+  type TextMutationToolRegistration,
+} from "#src/api/mutation-tool.ts";
 
 export const replaceSchema = Type.Object(
   {
     path: Type.Optional(
       Type.Union(resultInputSchema.anyOf, {
-        description:
-          "File path, SEARCH# reference, unchanged Read/Search/edit result or its UUID, or an array of them; a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
+        description: "Source selection. Omit to reuse the anchor’s file or the last source.",
       }),
     ),
-    ...sourceRangeProperties(),
+    ...sourceRangeProperties(
+      "Replace only this selection. Do not combine with range boundaries. Omit all selectors when path is an issued selection of the intended text.",
+    ),
     text: Type.String({
-      description: "Replacement for each selected range; empty text deletes it.",
+      description:
+        "Replacement for each selected range; empty text deletes it. Over whole lines, the last line keeps its original ending. Use a single line break to leave one empty line. Outside the part you change, look-alike characters (special spaces, smart quotes, dashes) keep the original; send only look-alikes to normalize them.",
     }),
   },
   { additionalProperties: false },
 );
-interface ReplaceParameters {
-  readonly path?: unknown;
-  readonly start?: string;
-  readonly end?: string;
-  readonly text: string;
-}
-
 export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSchema> = {
   name: "replace",
-  description: "Use replace to change selected text.",
+  description:
+    "Use replace to change text selected by a result, a single selector, or a pair of range boundaries.",
 
   promptSnippet: "Make precise file edits by replacing text using exact matches or anchors",
   parameters: replaceSchema,
   source: { field: "path", inherited: true },
-  anchors: [
-    {
-      field: "start",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-    {
-      field: "end",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-      optional: true,
-    },
-  ],
-  pair: ["start", "end"],
-  mutate: async (context, parameters: ReplaceParameters) => {
-    const starts = await context.resolveAnchors("start");
-    const selections = textSelections(starts, "start");
-    if (parameters.end === undefined && selections !== undefined) {
+  anchors: textSelectorAnchors("path", sourceSelectors, ["through", "before"]),
+  validateInput: sourceTextSelector,
+  mutate: async (context, parameters) => {
+    const selector = sourceTextSelector(parameters) ?? { kind: "single", first: "at" };
+    refuseEndOfFileMarker(parameters.text);
+    const startField = selector.first;
+    const starts = await context.resolveAnchors(startField);
+    const copiedAnchor = PRESENTED_LINE_ANCHOR_PATTERN.exec(parameters.text)?.[1];
+    if (
+      copiedAnchor !== undefined &&
+      [...starts.values()].some(
+        (anchor) =>
+          resolvedTextAnchorType(anchor) === "major" &&
+          isLineAnchor(anchor.value) &&
+          anchor.value === copiedAnchor,
+      )
+    ) {
+      throw new TextMutationInputError(
+        "COPIED_LINE_ANCHOR",
+        `Replacement text starts with the copied display prefix "${copiedAnchor}|". Nothing was changed. Remove that prefix from text and retry with only the replacement content. To write the prefix literally, select the text through a Search result or longer exact text.`,
+      );
+    }
+    const selections = textSelections(starts, startField);
+    if (selector.kind === "single" && selections !== undefined) {
       const changes = selectionChanges(context, selections, parameters.text);
+      refuseIdenticalReplacement(
+        context,
+        [...changes].flatMap(([source, sourceChanges]) =>
+          sourceChanges.map((change) => ({ source, ...change })),
+        ),
+      );
       return {
         edits: new Map(
           [...changes].map(([source, sourceChanges]) => [
@@ -71,15 +91,33 @@ export const replaceMutationTool: TextMutationToolRegistration<typeof replaceSch
       };
     }
 
-    const ends = parameters.end === undefined ? undefined : await context.resolveAnchors("end");
-    const span = anchorSpanRange(context, starts, ends, "start", "end");
+    const span = await resolveTextSpan(context, selector, starts);
+    const change = replaceSelectedSpan(context.documentFor(span.source), span, parameters.text);
+    refuseIdenticalReplacement(context, [{ source: span.source, ...change }]);
     return {
-      edits: new Map([
-        [
-          span.source,
-          { changes: [replaceAnchorSpan(context, span, parameters.text)], action: "edited" },
-        ],
-      ]),
+      edits: new Map([[span.source, { changes: [change], action: "edited" }]]),
     };
   },
 };
+
+/**
+ * Refuses a call whose replacement equals every selected target byte for byte. When only some
+ * targets already hold the text, the others are edited as usual.
+ */
+function refuseIdenticalReplacement(
+  context: TextMutationContext,
+  targets: readonly {
+    readonly source: string;
+    readonly from: number;
+    readonly to: number;
+    readonly insert: string;
+  }[],
+): void {
+  if (targets.length === 0) return;
+  if (targets.some((target) => context.documentFor(target.source).text(target) !== target.insert))
+    return;
+  throw new TextMutationInputError(
+    "REPLACEMENT_IDENTICAL",
+    "The replacement text is identical to the selected text, so nothing would change. replace writes text in place of the selection: send the changed text.",
+  );
+}

@@ -12,25 +12,27 @@ test("preserves line endings and renders line presentation separately", () => {
   };
 
   expect(document.lines).toMatchObject([
-    { lineNumber: 1, content: "alpha", lineEnding: "\r\n" },
+    { lineNumber: 1, content: "alpha\r", lineEnding: "\n" },
     { lineNumber: 2, content: "bravo", lineEnding: "\n" },
   ]);
   expect(renderTextDocument(presented)).toBe("alpha\r\nbravo\n");
-  expect(renderPresentedTextDocument(presented)).toBe("1|alpha!\r\n2|bravo!\n");
+  expect(renderPresentedTextDocument(presented)).toBe("1|alpha\r!\n2|bravo!\n");
 });
 
-test("keeps empty lines, CR, CRLF, LF, and an unterminated last line", () => {
+test("ends lines only at LF: CR stays in the line text, and an unterminated last line is kept", () => {
   const content = "\r\nalpha\rbravo\n\ncharlie";
   const document = createTextDocument("notes.txt", content);
   expect(document.lines.map((line) => [line.content, line.lineEnding])).toEqual([
-    ["", "\r\n"],
-    ["alpha", "\r"],
-    ["bravo", "\n"],
+    ["\r", "\n"],
+    ["alpha\rbravo", "\n"],
     ["", "\n"],
     ["charlie", ""],
   ]);
   expect(renderTextDocument(document)).toBe(content);
   expect(createTextDocument("empty.txt", "").lines).toEqual([]);
+  expect(createTextDocument("lf.txt", "\n").lines).toEqual([
+    { lineNumber: 1, content: "", lineEnding: "\n" },
+  ]);
 });
 test("aligns change markers, presented prefixes, and synthetic rows", () => {
   const document = createTextDocument("source.ts", "new value\ncontext\n");
@@ -41,20 +43,23 @@ test("aligns change markers, presented prefixes, and synthetic rows", () => {
         ? {
             ...line,
             presentation: {
-              prefix: " 1#AAAA|",
+              prefix: " K7M2QX4|",
               marker: "+" as const,
               before: [{ marker: "-" as const, prefix: "|", content: "old value" }],
               suffix: "  <!-- change -->",
             },
           }
-        : { ...line, presentation: { prefix: " 2#BBBB|" } },
+        : { ...line, presentation: { prefix: " B4NR9T2|" } },
     ),
   };
 
   expect(renderPresentedTextDocument(presented)).toBe(
-    ["-|       |old value", "+| 1#AAAA|new value  <!-- change -->", " | 2#BBBB|context", ""].join(
-      "\n",
-    ),
+    [
+      "-|        |old value",
+      "+| K7M2QX4|new value  <!-- change -->",
+      " | B4NR9T2|context",
+      "",
+    ].join("\n"),
   );
 });
 

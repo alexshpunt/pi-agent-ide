@@ -8,12 +8,17 @@ import {
 import { Text } from "@earendil-works/pi-tui";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import { readParameters, type ReadScriptData } from "pi-agent-read/api/tools/read";
+import { readParameters, readRequestOf, type ReadScriptData } from "pi-agent-read/api/tools/read";
 import type { ReadPluginApi } from "pi-agent-read/api/plugin-protocol";
 import type { TextEditorCore } from "#src/core/text-editor-core.ts";
 import { createUnifiedDiff, type DiffStats } from "#src/core/mutation-result/diff.ts";
 import { FileMutationResult } from "#src/core/mutation-result/file-mutation-result.ts";
-import { resultError, structuredResultSchema, withStructuredResult } from "pi-agent-resource";
+import {
+  resultError,
+  resultValueSchema,
+  structuredResultSchema,
+  withStructuredResult,
+} from "pi-agent-resource";
 const comparisonSourceSchema = Type.Object(
   { source: Type.String(), sources: Type.Array(Type.String()) },
   { additionalProperties: false },
@@ -45,8 +50,12 @@ const comparisonReadParameters = {
     }),
   ) as typeof readParameters.properties,
 };
-const source = Type.Union([Type.String({ minLength: 1 }), comparisonReadParameters]);
-/** Each side accepts a source string or the same request object as read. */
+const source = Type.Union([
+  Type.String({ minLength: 1 }),
+  resultValueSchema,
+  comparisonReadParameters,
+]);
+/** Each side accepts a source string, a script value with an id, or the same request object as read. */
 export const diffParameters = Type.Object(
   {
     before: {
@@ -90,7 +99,12 @@ export async function executeDiff(
     });
   const request = input;
   const resolve = async (side: DiffRequest["before"]) => {
-    const request = typeof side === "string" ? { path: side } : side;
+    const request =
+      typeof side === "string"
+        ? { path: side }
+        : "id" in side
+          ? { path: side.id }
+          : readRequestOf(side);
     const outcome = await read.read(request, context, "script");
     if (outcome.isError || outcome.details.failure)
       throw Object.assign(new Error(outcome.details.failure?.message ?? "Comparison read failed"), {

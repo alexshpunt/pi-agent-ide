@@ -50,13 +50,12 @@ for (const route of ["direct", "codemode"] as const) {
               call(`transfer-${index}`, transfer.tool, {
                 path: "$previous-uuid",
                 target: transfer.target,
-                targetStart: "TARGET",
-                ...(transfer.paired ? { targetEnd: "TARGET" } : {}),
+                [transfer.paired ? "targetAt" : "targetAfter"]: "TARGET",
               }),
             ])
           : [
               call("transfer", "codemode", {
-                code: `for (const transfer of ${JSON.stringify(transfers)}) { const selected = await tools.read({path:transfer.source,offset:2,limit:2}); text(await tools[transfer.tool]({path:selected,target:transfer.target,targetStart:"TARGET",...(transfer.paired?{targetEnd:"TARGET"}:{})})); }`,
+                code: `for (const transfer of ${JSON.stringify(transfers)}) { const selected = await tools.read({path:transfer.source,offset:2,limit:2}); text(await tools[transfer.tool]({path:selected,target:transfer.target,[transfer.paired?"targetAt":"targetAfter"]:"TARGET"})); }`,
               }),
             ];
       const result = await new PiIntegrationTest({
@@ -85,7 +84,8 @@ for (const route of ["direct", "codemode"] as const) {
       for (const id of ids) expect(getToolExecution(result, id).isError).toBe(false);
       const expected = {
         "copy-source.txt": source,
-        "move-source.txt": "keep\r\n",
+        // The moved lines end the file without a line break, so the one before them goes too.
+        "move-source.txt": "keep",
         "copy-target.txt": `left ${selected} right\n`,
         "move-target.txt": `left ${selected} right\n`,
         "inline-target.txt": `left TARGET${selected} right\n`,

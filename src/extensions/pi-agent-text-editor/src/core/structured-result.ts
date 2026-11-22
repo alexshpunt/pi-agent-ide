@@ -60,6 +60,8 @@ export interface BatchMutationData {
     operation: string;
     effect: MutationData["effect"];
     errors: ResultError[];
+    /** The files this operation changed, may have changed or left unchanged. */
+    files: MutationData["files"];
   }[];
 }
 /** Small internal receipt used to collect observed file effects. */

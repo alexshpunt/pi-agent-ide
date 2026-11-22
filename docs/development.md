@@ -63,6 +63,10 @@ The focused `linked-terminal.integration.test.ts` case checks direct and nested 
 
 Tool changes also require reviewing the matrix and supported tool chains in `benchmarks/tool-capabilities/README.md` in the checkout. Run `pnpm check:capabilities` for its free schema/coverage gate; it is included in `pnpm check`. The real-model suite uses `pnpm validate:tools:models --run --model PROFILE_ID` only with explicit paid permission. It runs isolated cases and checks both outcomes and actual routes. It is not part of ordinary tests or CI.
 
+### Byte-exact edit benchmark
+
+`benchmarks/byte-exact-edit/README.md` describes a small real-model benchmark that edits a file full of invisible characters (BOM, no-break and zero-width spaces, mixed CRLF and LF, no final line break) with Pi's stock `read` and `edit` and with the IDE's `read`, `replace`, `insert` and `delete`, and compares each result byte for byte with the expected file. `pnpm bench:byte-exact-edit --run --auth-dir DIR` runs it and prints the pass table; it makes model calls only with `--run` and needs paid permission like the matrix. `pnpm check:byte-exact-edit` checks its fixture, grader and runner without model calls and is included in `pnpm check`.
+
 ### Watch integration tests live
 
 Use the project command to watch every test in one file:

@@ -7,6 +7,7 @@
 import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
 import type { LspRange } from "./types.ts";
+import { sourceChanged } from "./source-changes.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ Raw LSP DocumentSymbol, as returned by the server.
 export interface LspDocumentSymbol {
   name: string;
   kind: number;
+  /** Extra information, such as clangd's signature `int (int, int) const`. */
+  detail?: string;
   /**
     Range may be missing from some LSP servers (incomplete data).
     */
@@ -73,11 +76,14 @@ export async function requestDocumentSymbols(
   uri: string,
   signal?: AbortSignal,
 ): Promise<LspDocumentSymbol[]> {
+  const version = client.documentVersion(uri);
   const result = await client.sendRequest<LspDocumentSymbol[] | null>(
     "textDocument/documentSymbol",
     { textDocument: { uri } },
     signal,
   );
+  if (client.documentVersion(uri) !== version)
+    throw sourceChanged("The document changed while the server listed its symbols.");
   return result ?? [];
 }
 

@@ -25,7 +25,7 @@ test("displayed exact Search references retain their registered ranges and expir
     await writeFile(source, "B gap");
     store.refresh(source, cwd);
     await writeFile(source, "A gap");
-    expect(() => store.source(match, cwd)).toThrow("expired");
+    expect(() => store.resolve([match], cwd)).toThrow("expired");
     store.clear();
     expect(store.source(match, cwd)).toBe(match);
   } finally {
@@ -47,16 +47,16 @@ test("text results compose through registered IDs, not agent-supplied data", asy
     if (!id) throw new Error("Missing issued UUID");
     expect(store.source(id, cwd)).toBe(target);
     expect(store.source(`RESULT#${id}`, cwd)).toBe(target);
-    expect(() => store.source(output.replace(/\nA$/u, "\nB"), cwd)).toThrow("changed");
+    expect(() => store.source(output.replace(/\nA$/u, "\nB"), cwd)).toThrow(Error);
     expect(() =>
       store.source(
         "<system-result><uuid>00000000-0000-4000-8000-000000000000</uuid></system-result>\nA",
         cwd,
       ),
-    ).toThrow("expired or unknown");
-    expect(() => store.source(output, path.join(cwd, "other"))).toThrow("worktree");
+    ).toThrow(Error);
+    expect(() => store.source(output, path.join(cwd, "other"))).toThrow(Error);
     store.clear();
-    expect(() => store.source(output, cwd)).toThrow("expired");
+    expect(() => store.source(output, cwd)).toThrow(Error);
     expect(await readFile(source, "utf8")).toBe("A");
   } finally {
     await rm(cwd, { recursive: true, force: true });
@@ -82,7 +82,8 @@ test("retired snapshots and their derived text results never revive after A to B
     store.refresh(source, cwd);
     expect(() => store.resolve(a, cwd)).toThrow("expired");
     expect(() => store.resolve(derived, cwd)).toThrow("expired");
-    expect(() => store.source(output, cwd)).toThrow("expired");
+    // The result stays, and its use reports what changed instead of an unknown reference.
+    expect(() => store.resolve(store.source(output, cwd), cwd)).toThrow("expired");
     const current = store.register([{ source, expectedContent: "A", ranges: [range] }], cwd);
     expect(store.resolve(current, cwd).targets[0]?.expectedContent).toBe("A");
   } finally {

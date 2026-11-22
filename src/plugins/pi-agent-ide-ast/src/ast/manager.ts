@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-import { TextAnchor } from "pi-agent-text";
+import { lineAnchors, TextAnchor } from "pi-agent-text";
 import * as WTS from "web-tree-sitter";
 
 import { parseNativeDocument } from "./native-parser.ts";
@@ -14,9 +13,9 @@ export interface ScopeEntry {
   readonly startLine: number;
   readonly endLine: number;
   readonly depth: number;
+  /** The line anchor of the scope's first line, which names the scope. */
   readonly hash: string;
   readonly blockHash: string;
-  readonly occurrence?: number;
   readonly beginAnchor: TextAnchor;
   readonly endScopeAnchor: TextAnchor;
   readonly scopeBeginAnchor: TextAnchor;
@@ -179,32 +178,18 @@ async function parseDocument(
   return parseNativeDocument(extension, source);
 }
 
-function hashScope(lines: readonly string[], startLine: number, endLine: number): string {
-  const text = lines.slice(Math.max(0, startLine - 1), Math.max(0, endLine)).join("\n");
-  return createHash("sha1").update(text).digest("hex").slice(0, 4).toUpperCase();
-}
-
 class AstScopeTextAnchor extends TextAnchor {
-  public constructor(
-    boundary: "begin" | "end",
-    hash: string,
-    lineNumber: number,
-    occurrence?: number,
-  ) {
-    super(
-      `scope-${boundary}-${hash}${occurrence === undefined ? "" : `-${occurrence}`}`,
-      lineNumber,
-    );
+  public constructor(boundary: "begin" | "end", lineAnchor: string, lineNumber: number) {
+    super(`scope-${boundary}-${lineAnchor}`, lineNumber);
   }
 }
 
 function createScopeAnchor(
   boundary: "begin" | "end",
-  hash: string,
+  lineAnchor: string,
   lineNumber: number,
-  occurrence?: number,
 ): TextAnchor {
-  return new AstScopeTextAnchor(boundary, hash, lineNumber, occurrence);
+  return new AstScopeTextAnchor(boundary, lineAnchor, lineNumber);
 }
 
 /**
@@ -220,16 +205,16 @@ export class AstScopeManager {
       return [];
     }
 
-    return await withParsedDocument(filePath, cwd, lines, (tree) => {
-      if (!tree) {
-        return [];
-      }
+    return await withParsedDocument(filePath, cwd, lines, (tree) =>
+      tree ? this.getTreeScopes(tree.rootNode, lineAnchors(lines)) : [],
+    );
+  }
 
-      const candidates: ScopeCandidate[] = [];
-      this.collectCandidates(tree.rootNode, candidates);
-
-      return this.buildEntries(candidates, lines);
-    });
+  /** Scopes of an already parsed document with the given line anchors. */
+  public getTreeScopes(root: SyntaxNode, anchors: readonly string[]): ScopeEntry[] {
+    const candidates: ScopeCandidate[] = [];
+    this.collectCandidates(root, candidates);
+    return this.buildEntries(candidates, anchors);
   }
 
   private collectCandidates(
@@ -318,7 +303,7 @@ export class AstScopeManager {
 
   private buildEntries(
     candidates: readonly ScopeCandidate[],
-    lines: readonly string[],
+    anchors: readonly string[],
   ): ScopeEntry[] {
     const byStart = new Map<number, ScopeCandidate>();
 
@@ -342,53 +327,59 @@ export class AstScopeManager {
     // The outermost scope with a given endLine wins.
     const deduped: ScopeCandidate[] = [];
 
+    // Every earlier candidate starts on an earlier line, so only the shared endLine matters.
+    const dedupedEnds = new Set<number>();
     for (const candidate of ordered) {
-      const hasOuterWithSameEnd = deduped.some(
-        (existing) =>
-          existing.startLine < candidate.startLine && existing.endLine === candidate.endLine,
-      );
-
-      if (!hasOuterWithSameEnd) {
+      if (!dedupedEnds.has(candidate.endLine)) {
+        dedupedEnds.add(candidate.endLine);
         deduped.push(candidate);
       }
     }
 
-    const counts = new Map<string, number>();
+    const depths = containingScopeCounts(deduped);
 
-    for (const candidate of deduped) {
-      const hash = hashScope(lines, candidate.startLine, candidate.endLine);
-      counts.set(hash, (counts.get(hash) ?? 0) + 1);
-    }
-
-    const seen = new Map<string, number>();
-
-    return deduped.map((candidate) => {
-      const hash = hashScope(lines, candidate.startLine, candidate.endLine);
-      const total = counts.get(hash) ?? 1;
-      const occurrence = (seen.get(hash) ?? 0) + 1;
-      seen.set(hash, occurrence);
-      const occurrenceSuffix = total > 1 ? occurrence : undefined;
+    // A scope is named by the line anchor of its first line, so it keeps its name through edits
+    // inside it and moves of other code. No two scopes start on the same line (see byStart).
+    return deduped.map((candidate, index) => {
+      const firstLineAnchor = anchors[candidate.startLine - 1] ?? "";
 
       return {
         name: candidate.kind,
         kind: candidate.kind,
         startLine: candidate.startLine,
         endLine: candidate.endLine,
-        depth: deduped.filter(
-          (parent) =>
-            parent !== candidate &&
-            parent.startLine <= candidate.startLine &&
-            parent.endLine >= candidate.endLine &&
-            (parent.startLine < candidate.startLine || parent.endLine > candidate.endLine),
-        ).length,
-        hash,
-        blockHash: hash,
-        ...(occurrenceSuffix !== undefined && { occurrence: occurrenceSuffix }),
-        beginAnchor: createScopeAnchor("begin", hash, candidate.startLine, occurrenceSuffix),
-        endScopeAnchor: createScopeAnchor("end", hash, candidate.endLine, occurrenceSuffix),
-        scopeBeginAnchor: createScopeAnchor("begin", hash, candidate.startLine, occurrenceSuffix),
-        scopeEndAnchor: createScopeAnchor("end", hash, candidate.endLine, occurrenceSuffix),
+        depth: depths[index] ?? 0,
+        hash: firstLineAnchor,
+        blockHash: firstLineAnchor,
+        beginAnchor: createScopeAnchor("begin", firstLineAnchor, candidate.startLine),
+        endScopeAnchor: createScopeAnchor("end", firstLineAnchor, candidate.endLine),
+        scopeBeginAnchor: createScopeAnchor("begin", firstLineAnchor, candidate.startLine),
+        scopeEndAnchor: createScopeAnchor("end", firstLineAnchor, candidate.endLine),
       } satisfies ScopeEntry;
     });
   }
+}
+
+/** For scopes ordered by distinct ascending start lines, count the earlier scopes that reach at
+ * least each scope's end line, which are the scopes containing it. A Fenwick tree over end lines
+ * keeps this O(n log n) for files with thousands of scopes.
+ */
+function containingScopeCounts(
+  scopes: readonly { readonly startLine: number; readonly endLine: number }[],
+): number[] {
+  const size = scopes.reduce((max, scope) => Math.max(max, scope.endLine), 0);
+  const tree = Array.from({ length: size + 1 }, () => 0);
+  const countEndingBefore = (line: number): number => {
+    let count = 0;
+    for (let index = line - 1; index > 0; index -= index & -index) count += tree[index] ?? 0;
+    return count;
+  };
+
+  return scopes.map((scope, inserted) => {
+    const containing = inserted - countEndingBefore(scope.endLine);
+    for (let index = scope.endLine; index <= size; index += index & -index) {
+      tree[index] = (tree[index] ?? 0) + 1;
+    }
+    return containing;
+  });
 }

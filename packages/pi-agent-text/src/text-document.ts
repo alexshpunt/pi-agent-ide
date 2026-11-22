@@ -170,39 +170,25 @@ function presentedRowFor(line: TextLine, compact: boolean): PresentedTextRow {
   };
 }
 
+/**
+ * Splits text into lines. Only LF ends a line: CR is an ordinary character, so a CRLF line's
+ * content ends with CR and a lone CR stays inside its line. Every tool counts lines this way.
+ */
 function splitTextLines(content: string): TextLine[] {
   if (content.length === 0) {
     return [];
   }
 
   const lines: TextLine[] = [];
-  if (!content.includes("\r")) {
-    // LF-only text, the common case: indexOf scans much faster than a line-ending regex.
-    let start = 0;
-    for (let end = content.indexOf("\n"); end !== -1; end = content.indexOf("\n", start)) {
-      lines.push({
-        lineNumber: lines.length + 1,
-        content: content.slice(start, end),
-        lineEnding: "\n",
-      });
-      start = end + 1;
-    }
-    if (start < content.length) {
-      lines.push({ lineNumber: lines.length + 1, content: content.slice(start), lineEnding: "" });
-    }
-    return lines;
-  }
-
-  const endings = /\r\n|\r|\n/gu;
+  // indexOf scans much faster than a line-ending regex.
   let start = 0;
-  let match: RegExpExecArray | null;
-  while ((match = endings.exec(content)) !== null) {
+  for (let end = content.indexOf("\n"); end !== -1; end = content.indexOf("\n", start)) {
     lines.push({
       lineNumber: lines.length + 1,
-      content: content.slice(start, match.index),
-      lineEnding: match[0],
+      content: content.slice(start, end),
+      lineEnding: "\n",
     });
-    start = match.index + match[0].length;
+    start = end + 1;
   }
   if (start < content.length) {
     lines.push({ lineNumber: lines.length + 1, content: content.slice(start), lineEnding: "" });

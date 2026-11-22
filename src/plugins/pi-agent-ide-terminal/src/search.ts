@@ -14,74 +14,110 @@ import type { TerminalSessionManager } from "#src/plugins/pi-agent-ide-terminal/
 import type { TerminalSessionSnapshot } from "#src/plugins/pi-agent-ide-terminal/src/types.ts";
 
 interface TerminalSearchPayload {
-  readonly snapshot: TerminalSessionSnapshot;
+  /** Requested scope: one session or `shell:` for every listed session. */
+  readonly source: string;
+  /** Searched sessions with the status each had at search time. */
+  readonly sessions: readonly { readonly source: string; readonly status: string }[];
   readonly query: string;
   readonly matches: readonly SearchSelectionMatch[];
+  readonly complete: boolean;
 }
 
 /** Register retained terminal output as a searchable resource. */
 export async function registerTerminalSearch(
   pi: ExtensionAPI,
   manager: TerminalSessionManager,
+  ownerSessionId: () => string | undefined = () => undefined,
 ): Promise<void> {
   const plugin = {
     protocol: SEARCH_PROTOCOL,
     apiVersion: SEARCH_API_VERSION,
     id: "terminal",
     setup(api) {
-      api.addResolver({ resolver: terminalSearchResolver(manager), priority: 100 });
+      api.addResolver({
+        resolver: terminalSearchResolver(manager, ownerSessionId),
+        // Before the filesystem regex resolver (-10), which reads `shell:` as a file path.
+        priority: -20,
+      });
     },
   } satisfies SearchPlugin;
   await connectSearchPlugin(pi, plugin);
 }
 
-function terminalSearchResolver(manager: TerminalSessionManager) {
+function terminalSearchResolver(
+  manager: TerminalSessionManager,
+  ownerSessionId: () => string | undefined,
+) {
   return {
     readResources: (request: SearchRequest) =>
       request.path?.startsWith("shell:") ? [request.path] : [],
     id: "terminal",
     toScriptData(payload: unknown) {
       const result = parsePayload(payload);
-      return selectionData(result.matches, false);
+      return selectionData(result.matches, result.complete);
     },
     async tryResolve(request: SearchRequest) {
       if (request.path === undefined || !request.path.startsWith("shell:")) {
         return { kind: "not-handled" as const };
       }
-      const session = manager.get(request.path);
-      if (session === undefined) {
-        return {
-          kind: "failed" as const,
-          error: new Error(`Unknown terminal session ${request.path}`),
-        };
+      try {
+        terminalMatcher(request);
+      } catch (error) {
+        return { kind: "failed" as const, error };
       }
-      const snapshot = manager.snapshot(session);
-      const matches = findTerminalMatches(snapshot, request);
+      let snapshots: readonly TerminalSessionSnapshot[];
+      if (request.path === "shell:") {
+        snapshots = manager.listOwnedBy(ownerSessionId());
+      } else {
+        const session = manager.get(request.path);
+        if (session === undefined) {
+          return {
+            kind: "failed" as const,
+            error: new Error(
+              `Unknown terminal session ${request.path}. Read shell: to list your terminal sessions.`,
+            ),
+          };
+        }
+        snapshots = [manager.snapshot(session)];
+      }
+      const maximum = request.limit ?? 100;
+      const matches: SearchSelectionMatch[] = [];
+      for (const snapshot of snapshots) {
+        if (matches.length >= maximum) break;
+        matches.push(
+          ...findTerminalMatches(snapshot, { ...request, limit: maximum - matches.length }),
+        );
+      }
       return {
         kind: "resolved" as const,
         payload: {
-          snapshot,
+          source: request.path,
+          sessions: snapshots.map(({ source, status }) => ({ source, status })),
           query: request.query,
           matches,
-        },
+          // Output keeps growing and older output may be dropped, so a match set is never final.
+          complete: false,
+        } satisfies TerminalSearchPayload,
       };
     },
     format(payload: unknown) {
       const result = parsePayload(payload);
       const lines = result.matches.map(
-        (match) => `${result.snapshot.source}:${match.lineNumber}: ${match.lineText}`,
+        (match) => `${match.source}:${match.lineNumber}: ${match.lineText}`,
       );
+      const scope =
+        result.source === "shell:"
+          ? `${result.sessions.length} terminal session${result.sessions.length === 1 ? "" : "s"}`
+          : result.source;
+      const text =
+        result.source === "shell:" && result.sessions.length === 0
+          ? "No terminal sessions in this Pi session to search."
+          : lines.length === 0
+            ? `No matches in ${scope}`
+            : `${lines.join("\n")}\n\n${lines.length} match${lines.length === 1 ? "" : "es"} in ${scope}`;
       return {
-        content: [
-          {
-            type: "text" as const,
-            text:
-              lines.length === 0
-                ? `No matches in ${result.snapshot.source}`
-                : `${lines.join("\n")}\n\n${lines.length} match${lines.length === 1 ? "" : "es"} in ${result.snapshot.source}`,
-          },
-        ],
-        details: { source: result.snapshot.source, payload: result },
+        content: [{ type: "text" as const, text }],
+        details: { source: result.source, payload: result },
       };
     },
     renderResult(
@@ -97,41 +133,72 @@ function terminalSearchResolver(manager: TerminalSessionManager) {
         theme,
         options.expanded === true,
         undefined,
-        [`Retained terminal output · ${payload.snapshot.status} · read-only`],
+        [
+          payload.source === "shell:"
+            ? `Retained terminal output · ${payload.sessions.length} sessions · read-only`
+            : `Retained terminal output · ${payload.sessions[0]?.status ?? "unknown"} · read-only`,
+        ],
       );
     },
   };
 }
 
-/** Find literal matches in retained output without claiming a complete source scope. */
+const REGEX_PREFIX = "regex:";
+
+/** Find line matches of a literal query, or of a `regex:` query, in a line of retained output. */
+function terminalMatcher(request: SearchRequest): (lineText: string) => Iterable<[number, number]> {
+  if (request.query.startsWith(REGEX_PREFIX)) {
+    const pattern = request.query.slice(REGEX_PREFIX.length);
+    if (pattern.length === 0) return () => [];
+    const expression = new RegExp(pattern, request.caseSensitive === true ? "gu" : "giu");
+    return function* (lineText) {
+      for (const found of lineText.matchAll(expression)) {
+        const end = found.index + found[0].length;
+        if (
+          found[0].length > 0 &&
+          (request.wholeWord !== true || isWordBoundary(lineText, found.index, end))
+        )
+          yield [found.index, end];
+      }
+    };
+  }
+  const query = request.caseSensitive === true ? request.query : request.query.toLocaleLowerCase();
+  if (query.length === 0) return () => [];
+  return function* (lineText) {
+    const haystack = request.caseSensitive === true ? lineText : lineText.toLocaleLowerCase();
+    let column = 0;
+    for (;;) {
+      const start = haystack.indexOf(query, column);
+      if (start < 0) return;
+      const end = start + query.length;
+      if (request.wholeWord !== true || isWordBoundary(haystack, start, end)) yield [start, end];
+      column = Math.max(end, start + 1);
+    }
+  };
+}
+
+/**
+ * Find matches in retained output without claiming a complete source scope. A query is literal
+ * unless it starts with `regex:`; an invalid regular expression throws.
+ */
 export function findTerminalMatches(
   snapshot: TerminalSessionSnapshot,
   request: SearchRequest,
 ): SearchSelectionMatch[] {
-  const query = request.caseSensitive === true ? request.query : request.query.toLocaleLowerCase();
-  if (query.length === 0) return [];
+  const find = terminalMatcher(request);
   const matches: SearchSelectionMatch[] = [];
   const maximum = request.limit ?? 100;
   for (const [index, lineText] of snapshot.output.replaceAll("\r", "").split("\n").entries()) {
-    const haystack = request.caseSensitive === true ? lineText : lineText.toLocaleLowerCase();
-    let column = 0;
-    while (matches.length < maximum) {
-      const startColumn = haystack.indexOf(query, column);
-      if (startColumn < 0) break;
-      const endColumn = startColumn + query.length;
-      const wholeWord =
-        request.wholeWord !== true || isWordBoundary(haystack, startColumn, endColumn);
-      if (wholeWord) {
-        matches.push({
-          source: snapshot.source,
-          lineNumber: index + 1,
-          startColumn,
-          endColumn,
-          matchedText: lineText.slice(startColumn, endColumn),
-          lineText,
-        });
-      }
-      column = Math.max(endColumn, startColumn + 1);
+    for (const [startColumn, endColumn] of find(lineText)) {
+      if (matches.length >= maximum) return matches;
+      matches.push({
+        source: snapshot.source,
+        lineNumber: index + 1,
+        startColumn,
+        endColumn,
+        matchedText: lineText.slice(startColumn, endColumn),
+        lineText,
+      });
     }
     if (matches.length >= maximum) break;
   }
@@ -150,10 +217,10 @@ function parsePayload(value: unknown): TerminalSearchPayload {
 function isTerminalSearchPayload(value: unknown): value is TerminalSearchPayload {
   return (
     isRecord(value) &&
+    typeof value.source === "string" &&
     typeof value.query === "string" &&
     Array.isArray(value.matches) &&
-    isRecord(value.snapshot) &&
-    typeof value.snapshot.source === "string"
+    Array.isArray(value.sessions)
   );
 }
 

@@ -16,7 +16,7 @@ type Tool = {
     signal: undefined,
     update: undefined,
     context: Context,
-  ): Promise<{ content: { text: string }[] }>;
+  ): Promise<{ content: { text: string }[]; structuredContent?: unknown }>;
 };
 type Handler = (event: unknown, context: Context) => Promise<void>;
 type Command = { handler(args: string, context: Context): Promise<void> };
@@ -68,13 +68,14 @@ function host() {
 }
 
 const context = (cwd: string) => ({ cwd, mode: "tui", hasUI: true, ui: { notify: vi.fn() } });
+const found = (text: string, files: readonly string[] = []) => ({ text, files });
 
 test("an invalid engine setting does not prevent the IDE from loading or use another backend", async () => {
   const h = host();
   const backend: SemanticBackend = {
     available: vi.fn(async () => true),
     index: vi.fn(async () => {}),
-    search: vi.fn(async () => "result"),
+    search: vi.fn(async () => found("result")),
   };
   await createConfiguredSemanticExtension({ colgrep: backend, vera: backend }, "invalid")(h.pi);
   const project = context("/project");
@@ -92,7 +93,7 @@ test("switching engines applies to search and indexing without reloading", async
   const colgrep: SemanticBackend = {
     available: vi.fn(async () => true),
     index: vi.fn(async () => {}),
-    search: vi.fn(async () => "colgrep result"),
+    search: vi.fn(async () => found("colgrep result")),
   };
   let veraIndexed = false;
   const vera: SemanticBackend = {
@@ -100,7 +101,7 @@ test("switching engines applies to search and indexing without reloading", async
     index: vi.fn(async () => {
       veraIndexed = true;
     }),
-    search: vi.fn(async () => "vera result"),
+    search: vi.fn(async () => found("vera result")),
   };
   await createConfiguredSemanticExtension({ colgrep, vera }, async () => selected)(h.pi);
   const project = context("/project");
@@ -135,12 +136,12 @@ test("an in-flight index stays with its original engine when selection changes",
       await indexing;
       indexed = true;
     }),
-    search: vi.fn(async () => "colgrep"),
+    search: vi.fn(async () => found("colgrep")),
   };
   const vera: SemanticBackend = {
     available: vi.fn(async () => false),
     index: vi.fn(async () => {}),
-    search: vi.fn(async () => "vera"),
+    search: vi.fn(async () => found("vera")),
   };
   await createConfiguredSemanticExtension({ colgrep, vera }, async () => selected)(h.pi);
   const project = context("/project");
@@ -168,12 +169,12 @@ test("an older availability check cannot override a newer engine selection", asy
   const colgrep: SemanticBackend = {
     available: vi.fn(async () => delayed),
     index: vi.fn(async () => {}),
-    search: vi.fn(async () => "colgrep"),
+    search: vi.fn(async () => found("colgrep")),
   };
   const vera: SemanticBackend = {
     available: vi.fn(async () => false),
     index: vi.fn(async () => {}),
-    search: vi.fn(async () => "vera"),
+    search: vi.fn(async () => found("vera")),
   };
   await createConfiguredSemanticExtension({ colgrep, vera }, async () => selected)(h.pi);
   const project = context("/project");
@@ -192,14 +193,14 @@ test("the selected engine owns availability, indexing and search", async () => {
   const colgrep: SemanticBackend = {
     available: vi.fn(async () => true),
     index: vi.fn(async () => {}),
-    search: vi.fn(async () => "wrong"),
+    search: vi.fn(async () => found("wrong")),
   };
   const vera: SemanticBackend = {
     available: vi.fn(async () => veraIndexed),
     index: vi.fn(async () => {
       veraIndexed = true;
     }),
-    search: vi.fn(async () => "selected result"),
+    search: vi.fn(async () => found("selected result")),
   };
   await createConfiguredSemanticExtension({ colgrep, vera }, "vera")(h.pi);
   await h.handlers.get("session_start")?.({}, context("/project"));
@@ -230,7 +231,7 @@ test("only exposes semantic search while the current project has a usable index"
     index: vi.fn(async (cwd: string) => {
       indexed.add(cwd);
     }),
-    search: vi.fn(async () => "src/example.ts:1-2"),
+    search: vi.fn(async () => found("src/example.ts:1-2", ["src/example.ts"])),
   };
   await createSemanticExtension(backend)(h.pi);
   await h.handlers.get("session_start")?.({}, context("/empty"));
@@ -247,6 +248,8 @@ test("only exposes semantic search while the current project has a usable index"
     context("/indexed"),
   );
   expect(result.content[0]?.text).toContain("src/example.ts:1-2");
+  // Scripts get the ranked files; the approximate ranges stay in the readable text.
+  expect(result.structuredContent).toEqual({ files: ["src/example.ts"] });
   await h.handlers.get("before_agent_start")?.({}, context("/empty"));
   expect(h.tools.get("semantic_search")?.exposure).toBe("hidden");
   expect(h.active()).not.toContain("semantic_search");
@@ -261,7 +264,7 @@ test("index progress from the selected backend reaches the user", async () => {
       progress?.("fixture engine progress");
       indexed = true;
     },
-    search: vi.fn(async () => "result"),
+    search: vi.fn(async () => found("result")),
   };
   await createSemanticExtension(backend)(h.pi);
   const project = context("/project");
@@ -277,7 +280,7 @@ test("a failed index does not enable semantic search", async () => {
     index: async () => {
       throw new Error("index failed");
     },
-    search: vi.fn(async () => "result"),
+    search: vi.fn(async () => found("result")),
   };
   await createSemanticExtension(backend)(h.pi);
   const project = context("/project");
@@ -295,7 +298,7 @@ test("explicit indexing enables search for that project and not another", async 
     index: async (cwd) => {
       indexed.add(cwd);
     },
-    search: vi.fn(async () => "result"),
+    search: vi.fn(async () => found("result")),
   };
   await createSemanticExtension(backend)(h.pi);
   const first = context("/first");

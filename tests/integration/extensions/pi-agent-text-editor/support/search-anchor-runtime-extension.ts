@@ -3,7 +3,7 @@ import type { ExtensionAPI, ToolCallEvent, ToolResultEvent } from "@earendil-wor
 const PLACEHOLDER = /^SEARCH#RUNTIME:(\d+):(all|[1-9]\d*):(line|match)$/u;
 const LINE_PLACEHOLDER = /^LINE#RUNTIME:(\d+)$/u;
 const ANCHOR = /SEARCH#([A-F0-9]{4,64}):(all|[1-9]\d*):(line|match)/gu;
-const LINE_ANCHOR = /(?<![A-Za-z0-9])([1-9]\d*#[A-Z0-9]{3,4})\|/u;
+const LINE_ANCHOR = /^\s*([0-9A-HJKMNP-TV-Z]{7})\|/mu;
 
 /**
  * Rewrites test placeholders with the search-session ID produced inside the
@@ -58,15 +58,16 @@ export default function registerSearchAnchorRuntimeExtension(pi: ExtensionAPI): 
 
   pi.on("tool_call", (event: ToolCallEvent) => {
     const scope = scopeAnchors.at(0);
-    for (const [key, value] of Object.entries(event.input)) {
-      if (value === "SCOPE#RUNTIME:1" && scope !== undefined) event.input[key] = scope;
+    const input: Record<string, unknown> = event.input;
+    for (const [key, value] of Object.entries(input)) {
+      if (value === "SCOPE#RUNTIME:1" && scope !== undefined) input[key] = scope;
     }
-    rewriteInput(event.input, sessionIds, lineAnchors);
+    rewriteInput(input, sessionIds, lineAnchors);
   });
 }
 
 function rewriteInput(
-  input: Record<string, unknown>,
+  input: Record<string, unknown> | unknown[],
   sessionIds: readonly string[],
   lineAnchors: readonly string[],
 ): void {
@@ -83,11 +84,11 @@ function rewriteInput(
         LINE_PLACEHOLDER,
         (_full, index: string) => lineAnchors.at(Number(index) - 1) ?? _full,
       );
-      input[key] = resolved;
+      (input as Record<string, unknown>)[key] = resolved;
       continue;
     }
 
-    if (isRecord(value)) {
+    if (isRecord(value) || Array.isArray(value)) {
       rewriteInput(value, sessionIds, lineAnchors);
     }
   }

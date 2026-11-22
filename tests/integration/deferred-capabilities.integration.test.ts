@@ -235,7 +235,7 @@ test("disabled debugger modules cannot activate contributed schemas", async () =
 test("terminal first use supports its shell Read and Delete through Codemode", async () => {
   const result = await run("capabilities-terminal-smoke", "on", false, [
     call("terminal", "codemode", {
-      code: 'const terminal = await tools.bash({command: "printf deferred-terminal-smoke"}); text(terminal); const source = terminal.match(/shell:[\\w-]+/)?.[0]; if (!source) throw new Error("Missing terminal source"); text(await tools.read({path: source})); text(await tools.delete({path: source}));',
+      code: 'const terminal = await tools.bash({command: "printf deferred-terminal-smoke"}); text(terminal.output); const source = terminal.session; if (!source) throw new Error("Missing terminal source"); text(await tools.read({path: source})); text(await tools.delete({path: source}));',
     }),
   ]);
   expect(getToolExecution(result, "terminal").isError).toBe(false);

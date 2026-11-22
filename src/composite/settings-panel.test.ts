@@ -63,3 +63,37 @@ test("renders a bordered settings panel with feature-first tabs", () => {
   ).toBe(true);
   expect(rendered.every((line) => visibleWidth(line) === 64)).toBe(true);
 });
+
+function longPanel(rows?: number) {
+  const style = ((...args: string[]) => args.at(-1) ?? "") as Theme["fg"];
+  const theme = { fg: style, bold: (value: string) => value } as Theme;
+  return createSettingsPanel(
+    theme,
+    () => ({
+      modules: Array.from({ length: 35 }, (_, index) => ({
+        id: `module-${index}`,
+        label: `Module ${index}`,
+        description: "A long description that wraps onto several lines in a narrow panel.",
+        currentValue: "default",
+        values: ["default", "enabled"],
+      })),
+      features: [],
+    }),
+    vi.fn(),
+    vi.fn(),
+    "Project",
+    rows === undefined ? undefined : () => rows,
+  );
+}
+
+test.each([120, 80, 60, 40])("keeps the Ctrl+S hint in the footer at width %i", (width) => {
+  const rendered = longPanel().render(width);
+  expect(rendered.at(-2)).toContain("Ctrl+S save");
+  expect(rendered.every((line) => visibleWidth(line) === width)).toBe(true);
+});
+
+test.each([40, 30, 22])("fits the whole panel above Pi's footer in %i rows", (rows) => {
+  const rendered = longPanel(rows).render(80);
+  expect(rendered.length).toBeLessThanOrEqual(rows - 3);
+  expect(rendered.at(-2)).toContain("Ctrl+S save");
+});

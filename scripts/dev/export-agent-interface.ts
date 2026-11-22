@@ -1,6 +1,6 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { format } from "oxfmt";
 import {
@@ -40,6 +40,8 @@ interface Options {
   readonly output: string;
   readonly declarationsOutput?: string;
   readonly tools?: readonly string[];
+  /** Override native Codemode presentation without relying on ambient settings. */
+  readonly codemodeMode?: "on" | "only";
   /** Select the runner transport. Omit for the existing TUI runner. */
   readonly transport?: "tui" | "rpc";
 }
@@ -73,7 +75,19 @@ export async function exportAgentInterface(options: Options): Promise<void> {
     artifactsDir: artifacts,
     cwd,
     isolateUserResources: true,
-    extensions: [path.resolve(cwd, options.extension), "builtin:codemode", "builtin:tool-search"],
+    extensions: [
+      path.resolve(cwd, options.extension),
+      ...(options.codemodeMode === undefined ? ["builtin:codemode"] : []),
+      "builtin:tool-search",
+      // The helper registers the native factory for explicit modes and activates only default runs.
+      ...(options.tools === undefined || options.codemodeMode !== undefined
+        ? [fileURLToPath(new URL("activate-codemode.ts", import.meta.url))]
+        : []),
+    ],
+    environment: {
+      PI_AGENT_INTERFACE_CODEMODE_MODE: options.codemodeMode ?? "",
+      PI_AGENT_INTERFACE_ACTIVATE_CODEMODE: options.tools === undefined ? "1" : "0",
+    },
     ...(options.tools === undefined ? {} : { tools: [...options.tools] }),
     ...(options.transport === undefined ? {} : { transport: options.transport }),
     conversation: [
@@ -228,7 +242,7 @@ async function formatTypeScriptBlocks(source: string): Promise<string> {
     const result = await format("agent-interface.ts", match[1] ?? "", { printWidth: 90 });
     if (result.errors.length > 0)
       throw new Error(`Cannot format tool declaration: ${result.errors[0]?.message}`);
-    formatted = formatted.replace(match[0], fence("ts", result.code.trimEnd()));
+    formatted = formatted.replace(match[0], () => fence("ts", result.code.trimEnd()));
   }
   return formatted;
 }
@@ -245,6 +259,7 @@ function parseArguments(arguments_: readonly string[]): Options {
   let output = ".tmp/prompt-snapshots/pi-agent-ide.md";
   let declarationsOutput: string | undefined;
   let tools: readonly string[] | undefined;
+  let codemodeMode: "on" | "only" | undefined;
   let transport: "tui" | "rpc" | undefined;
   for (let index = 0; index < arguments_.length; index += 1) {
     const flag = arguments_[index];
@@ -254,6 +269,8 @@ function parseArguments(arguments_: readonly string[]): Options {
     else if (flag === "--output" && value !== undefined) output = value;
     else if (flag === "--declarations-output" && value !== undefined) declarationsOutput = value;
     else if (flag === "--transport" && (value === "tui" || value === "rpc")) transport = value;
+    else if (flag === "--codemode-mode" && (value === "on" || value === "only"))
+      codemodeMode = value;
     else if (flag === "--tools" && value !== undefined)
       tools = value
         .split(",")
@@ -269,6 +286,7 @@ function parseArguments(arguments_: readonly string[]): Options {
     ...(declarationsOutput === undefined ? {} : { declarationsOutput }),
     ...(tools === undefined ? {} : { tools }),
     ...(transport === undefined ? {} : { transport }),
+    ...(codemodeMode === undefined ? {} : { codemodeMode }),
   };
 }
 

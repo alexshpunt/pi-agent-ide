@@ -1,10 +1,16 @@
+import {
+  hasTextSelectors,
+  insertSelectors,
+  insertTextSelector,
+  sourceSelectors,
+} from "pi-agent-text-editor/api/text-selector-fields";
 import path from "node:path";
 import { registerIdeCapability } from "#src/api/capabilities.ts";
 import { access } from "node:fs/promises";
 
-import { StringEnum } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectAgentDocumentation, loadPackagedAgentGuide } from "pi-agent-documentation";
+import { textLineAnchors } from "pi-agent-text";
 import { Type, type Static } from "typebox";
 import { connectDoctorPlugin } from "pi-agent-doctor/api/connect-plugin";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -54,6 +60,7 @@ import {
 } from "#src/core/reload-resource-store.ts";
 import { debuggerDoctorPlugin } from "#src/plugins/pi-agent-ide-debugger/src/doctor-plugin.ts";
 import { createBreakpointPresenter } from "#src/plugins/pi-agent-ide-debugger/src/breakpoint-view.ts";
+import { StringEnum } from "#src/plugins/pi-agent-ide-debugger/src/string-enum.ts";
 import {
   renderDebugActionCall,
   renderDebugCall,
@@ -92,24 +99,16 @@ import {
   type DebugSessionOptions,
 } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 
-/** Keep Pi's provider-friendly `{ type: "string", enum }` schema with a TypeBox literal type. */
-function stringEnum<const T extends readonly string[]>(
-  values: T,
-  options: { description: string },
-) {
-  return Type.Unsafe<T[number]>(StringEnum(values, options));
-}
-
 const debugParameters = Type.Object(
   {
     backend: Type.Optional(
-      stringEnum(["auto", "vscode", "native"] as const, {
+      StringEnum(["auto", "vscode", "native"] as const, {
         description:
           "Select the debugger backend. auto (default) debugs through VS Code when the local program is inside a workspace open in VS Code with the DebugMCP extension, that window has no active debug session, and args and mainClass are omitted; otherwise it uses the native adapter. vscode fails with the unmet condition instead of falling back. native always launches the selected adapter.",
       }),
     ),
     adapter: Type.Optional(
-      stringEnum(
+      StringEnum(
         [
           "dart",
           "debugpy",
@@ -272,15 +271,19 @@ export async function registerDebuggerWithOwner(
         execute: async (context, input) => {
           const parameters = input as {
             readonly path: string;
-            readonly anchor?: string;
+            readonly after?: string;
+            readonly before?: string;
             readonly text: string;
           };
           const session = requiredSession(manager, parameters.path);
+          const field = insertTextSelector(parameters);
           if (manager.sourceFile(parameters.path) !== undefined) {
-            if (parameters.text !== "breakpoint" || parameters.anchor === undefined) {
-              throw new Error('A debug source accepts text "breakpoint" with one anchor');
+            if (parameters.text !== "breakpoint" || parameters[field] === undefined) {
+              throw new Error(
+                'Set text to "breakpoint" and pass a line anchor in after or before.',
+              );
             }
-            const anchor = await context.resolveAnchor("anchor");
+            const anchor = await context.resolveAnchor(field);
             const breakpoint = await manager.addBreakpoint(
               parameters.path,
               anchor.lineNumber,
@@ -299,8 +302,8 @@ export async function registerDebuggerWithOwner(
               },
             };
           }
-          if (parameters.path !== session.source || parameters.anchor !== undefined) {
-            throw new Error("Debug commands target the session resource without an anchor");
+          if (parameters.path !== session.source || hasTextSelectors(parameters, insertSelectors)) {
+            throw new Error("Omit after and before for a debugger session command.");
           }
           let evaluation: DebugEvaluation | undefined;
           try {
@@ -338,7 +341,10 @@ export async function registerDebuggerWithOwner(
       api.tool("delete").addSemanticHandler({
         matches: (input) => matchesDebugDelete(input, manager),
         execute: async (context, input) => {
-          const source = (input as { readonly path: string }).path;
+          const parameters = input as Readonly<Record<string, unknown>>;
+          if (hasTextSelectors(parameters, sourceSelectors))
+            throw new Error("Omit text selectors when deleting a debugger session or breakpoint.");
+          const source = String(parameters.path);
           const session = requiredSession(manager, source);
           const before = manager.snapshot(session);
           deletedSnapshots.set(source, before);
@@ -402,7 +408,7 @@ export async function registerDebuggerWithOwner(
                   ? "delete-session"
                   : `delete-breakpoint ${path.basename(breakpoint.file)}:${breakpoint.line}`
                 : input.text === "breakpoint" && sourceFile !== undefined
-                  ? `breakpoint ${path.basename(sourceFile)}:${breakpointLine(input)}`
+                  ? `breakpoint ${path.basename(sourceFile)}:${breakpointAnchor(input)}`
                   : (input.text ?? "debug action");
             return renderDebugActionCall(snapshot, action, theme);
           },
@@ -518,7 +524,7 @@ export async function registerDebuggerWithOwner(
               content: [
                 {
                   type: "text",
-                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${session.source} to inspect the configured session. To set a breakpoint, read ${details.sourceResource} with views ["anchors"], then insert "breakpoint" at an anchor.`,
+                  text: `${renderDebugSession(session)}\nSource: ${details.sourceResource}\nBreakpoints: ${details.breakpointsResource}\n\nNext: read ${session.source} to inspect the configured session. To set a breakpoint, read ${details.sourceResource} with views ["anchors"], then insert "breakpoint" with the line anchor in after.`,
                 },
               ],
               details,
@@ -575,7 +581,7 @@ export async function registerDebuggerWithOwner(
   );
 
   const editingGuideline =
-    'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" at an anchor. On the session, insert start, continue, step over, step into, step out, or evaluate <expression>. Delete removes a breakpoint or terminates the session.';
+    'For debug:<session> resources, insert performs debugger actions without changing source text. On a debug source, insert "breakpoint" with the line anchor in after. On the session, insert start, continue, step over, step into, step out, or evaluate <expression>. Delete removes a breakpoint or terminates the session.';
   registerIdeCapability(pi, {
     version: 1,
     id: "debugger",
@@ -591,7 +597,8 @@ export async function registerDebuggerWithOwner(
         parameters: {
           path: "debug:<session> controls the debugger; debug:<session>/source with a line anchor sets a breakpoint.",
           text: "For debug:<session>: start, continue, step over, step into, step out or evaluate <expression> (needs a stopped frame). For debug:<session>/source: breakpoint.",
-          anchor: "Omit for debug:<session>.",
+          after:
+            "Pass the breakpoint line anchor for a debug source. Omit both selectors for debug:<session>.",
         },
         promptGuidelines: [editingGuideline],
       },
@@ -793,10 +800,9 @@ function requiredSession(manager: DebugSessionManager, source: string): DebugSes
   return session;
 }
 
-function breakpointLine(input: unknown): string {
-  const anchor = isRecord(input) && typeof input.anchor === "string" ? input.anchor : undefined;
-  const match = /^(\d+)#/u.exec(anchor ?? "");
-  return match?.[1] ?? anchor ?? "selected line";
+function breakpointAnchor(input: unknown): string {
+  const anchor = isRecord(input) ? (input.after ?? input.before) : undefined;
+  return typeof anchor === "string" ? anchor : "selected line";
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -804,16 +810,20 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 }
 
 function debugSourceContent(sourceFile: string, text: string) {
+  const anchors = textLineAnchors(sourceFile, text);
   return {
     type: "text" as const,
     text,
     sourceLines: Object.fromEntries(
-      text
-        .split(/\r?\n/u)
-        .map((line, index) => [
-          String(index + 1),
-          { source: sourceFile, lineNumber: index + 1, content: line },
-        ]),
+      text.split(/\r?\n/u).map((line, index) => [
+        String(index + 1),
+        {
+          source: sourceFile,
+          lineNumber: index + 1,
+          content: line,
+          ...(anchors[index] !== undefined && { anchor: anchors[index] }),
+        },
+      ]),
     ),
   };
 }

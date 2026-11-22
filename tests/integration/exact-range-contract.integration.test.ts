@@ -31,18 +31,28 @@ for (const route of ["direct", "codemode"] as const) {
         files[file] = `base${eol}`;
         expected[file] = files[file];
         edits.push(
-          { tool: "insert", args: { path: file, anchor: "base", text: "added" } },
-          { tool: "delete", args: { path: file, start: "added" } },
-          { tool: "insert", args: { path: file, anchor: "base", before: true, text: "correct" } },
+          { tool: "insert", args: { path: file, after: "base", text: "added" } },
+          { tool: "delete", args: { path: file, at: "added" } },
+          // A literal selects only its characters; the line break comes from the inserted text,
+          // written as sent, so it uses the file's own line break.
+          {
+            tool: "insert",
+            args: { path: file, before: "base", text: `correct${eol}` },
+          },
         );
         expected[file] = `correct${eol}base${eol}`;
         for (const tool of ["delete", "replace"]) {
           const name = `${tool}-${index}.txt`;
           files[name] = `keep${eol}${eol}尾🙂`;
-          expected[name] = `keep${eol}${eol}`;
+          // Deleting the unterminated final line removes its preceding separator.
+          expected[name] = `keep${eol}`;
           edits.push({
             tool,
-            args: { path: name, start: "尾🙂", ...(tool === "replace" ? { text: "" } : {}) },
+            args: {
+              path: name,
+              at: "尾🙂",
+              ...(tool === "replace" ? { text: "" } : {}),
+            },
           });
         }
       }
@@ -52,16 +62,50 @@ for (const route of ["direct", "codemode"] as const) {
           const target = `${tool}-target-${index}.txt`;
           files[source] = `keep\r\n段🙂${ending}`;
           files[target] = "left TARGET right\n";
-          expected[source] = tool === "move" ? "keep\r\n" : files[source];
-          expected[target] = `left 段🙂${ending} right\n`;
+          expected[source] = tool === "move" ? `keep${ending}` : files[source];
+          // A whole-line source loses its trailing separator at an inline destination.
+          expected[target] = "left 段🙂 right\n";
           edits.push({
             tool,
             args: {
               path: source,
-              start: "段🙂",
+              // Include the line break in the literal to transfer the whole line.
+              at: `段🙂${ending}`,
               target,
-              targetStart: "TARGET",
-              targetEnd: "TARGET",
+              targetFrom: "TARGET",
+              targetThrough: "TARGET",
+            },
+          });
+        }
+      }
+      for (const tool of ["replace", "delete", "copy", "move"]) {
+        for (const nestedThrough of [false, true]) {
+          const source = `${tool}-opening-${nestedThrough}.txt`;
+          const from = "OPEN\r\nEND-";
+          const suffix = "more stays\r\n";
+          files[source] = `pre END\r\nleft ${from}${suffix}`;
+          const transfer = tool === "copy" || tool === "move";
+          expected[source] =
+            tool === "copy"
+              ? files[source]
+              : `pre END\r\nleft ${tool === "replace" ? "NEW" : ""}${suffix}`;
+          const target = `${tool}-destination-${nestedThrough}.txt`;
+          if (transfer) {
+            files[target] = "left SLOT old stays\n";
+            expected[target] = `left ${from} stays\n`;
+          }
+          edits.push({
+            tool,
+            args: {
+              path: source,
+              from,
+              ...(nestedThrough && { through: "END" }),
+              ...(tool === "replace" && { text: "NEW" }),
+              ...(transfer && {
+                target,
+                targetFrom: "SLOT old",
+                ...(nestedThrough && { targetThrough: "SLOT" }),
+              }),
             },
           });
         }
@@ -70,7 +114,11 @@ for (const route of ["direct", "codemode"] as const) {
         const file = `insert-${before}.txt`;
         files[file] = "pre α\r\nβ end\r\n";
         expected[file] = before ? "pre +α\r\nβ end\r\n" : "pre α\r\nβ+ end\r\n";
-        edits.push({ tool: "insert", args: { path: file, anchor: "α\nβ", text: "+", before } });
+        // A literal matches only the file's own line breaks: CRLF in a CRLF file.
+        edits.push({
+          tool: "insert",
+          args: { path: file, [before ? "before" : "after"]: "α\r\nβ", text: "+" },
+        });
       }
       await Promise.all(
         Object.entries(files).map(([file, content]) => writeFile(path.join(cwd, file), content)),
@@ -100,7 +148,7 @@ for (const route of ["direct", "codemode"] as const) {
         expect(getToolExecution(result, id).isError).toBe(false);
       }
       for (const [file, content] of Object.entries(expected)) {
-        expect(await readFile(path.join(cwd, file)), file).toEqual(Buffer.from(content));
+        expect.soft(await readFile(path.join(cwd, file)), file).toEqual(Buffer.from(content));
       }
       expect(result.tuiRenderedOutput).toContain("α");
       expect(result.tuiRenderedOutput).toContain("β");
@@ -125,19 +173,19 @@ for (const route of ["direct", "codemode"] as const) {
           ? [
               call("ambiguous", "replace", {
                 path: "ambiguous.txt",
-                start: "duplicate",
+                at: "duplicate",
                 text: "BAD",
               }),
               call("search", "search", { path: "stale.txt", query: "OLD" }),
-              call("change", "replace", { path: "stale.txt", start: "OLD", text: "NEW" }),
-              call("stale", "delete", { path: "stale.txt", start: "SEARCH#RUNTIME:1:1:match" }),
+              call("change", "replace", { path: "stale.txt", at: "OLD", text: "NEW" }),
+              call("stale", "delete", { path: "stale.txt", at: "SEARCH#RUNTIME:1:1:match" }),
             ]
           : [
               call("ambiguous", "codemode", {
-                code: 'await tools.replace({path:"ambiguous.txt",start:"duplicate",text:"BAD"});',
+                code: 'await tools.replace({path:"ambiguous.txt",at:"duplicate",text:"BAD"});',
               }),
               call("stale", "codemode", {
-                code: 'const selected = await tools.search({path:"stale.txt",query:"OLD"}); await tools.replace({path:"stale.txt",start:"OLD",text:"NEW"}); await tools.delete({path:selected.result});',
+                code: 'const selected = await tools.search({path:"stale.txt",query:"OLD"}); await tools.replace({path:"stale.txt",at:"OLD",text:"NEW"}); await tools.delete({path:selected});',
               }),
             ];
       const result = await new PiIntegrationTest({
@@ -159,11 +207,17 @@ for (const route of ["direct", "codemode"] as const) {
           assistantMessage([text("Completed the rejection checks.")]),
         ],
       }).run("Reject ambiguous and stale selections without changing unselected text.");
-      for (const id of ["ambiguous", "stale"])
-        expect(getToolExecution(result, id).isError).toBe(true);
       if (route === "direct") {
+        for (const id of ["ambiguous", "stale"])
+          expect(getToolExecution(result, id).isError).toBe(true);
         for (const id of ["search", "change"])
           expect(getToolExecution(result, id).isError).toBe(false);
+      } else {
+        // Codemode returns structured edit failures instead of rejecting the script.
+        for (const id of ["ambiguous", "stale"])
+          expect(getToolExecution(result, id).isError).toBe(false);
+        for (const id of ["ambiguous/1", "stale/3"])
+          expect(getToolExecution(result, id).isError).toBe(true);
       }
       expect(await readFile(path.join(cwd, "ambiguous.txt"))).toEqual(Buffer.from(ambiguous));
       expect(await readFile(path.join(cwd, "stale.txt"))).toEqual(Buffer.from("keep\nNEW\n"));

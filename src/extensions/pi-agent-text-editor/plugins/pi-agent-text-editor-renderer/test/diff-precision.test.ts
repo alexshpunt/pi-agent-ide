@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDiffModel } from "#src/diff-model.ts";
 import writeAlignment from "./fixtures/write-alignment.json" with { type: "json" };
+import replaceFormatted from "./fixtures/replace-formatted.json" with { type: "json" };
 
 function modified(before: string, after: string) {
   const model = createDiffModel(before, after);
@@ -127,6 +128,41 @@ describe("precise inline changes", () => {
     expect(model.omittedChanges?.unavailable).not.toBe(true);
     expect(model.rows.some((row) => row.changed && row.text.includes("computer_open"))).toBe(true);
     expect(model.added + model.modified + model.removed).toBeGreaterThan(0);
+  });
+  test("pairs the lines of a formatted declaration replacement", () => {
+    // A ~90-line replace in a 721-line file, rewritten by the formatter afterwards.
+    const model = createDiffModel(replaceFormatted.before, replaceFormatted.after, [], {
+      project: false,
+    });
+    expect(model.omittedChanges?.unavailable).not.toBe(true);
+    // Whole-file counts; the final panel shows 27 of the added rows inside the edit's window.
+    expect(model).toMatchObject({ added: 33, modified: 8, removed: 13 });
+    expect(
+      model.rows.find(
+        (row) =>
+          row.kind === "modified" && row.text.includes("const { errorsOf, texts } = context;"),
+      ),
+    ).toBeDefined();
+  });
+  test("leaves changed blocks as removed and added rows without line pairing", () => {
+    const model = createDiffModel(replaceFormatted.before, replaceFormatted.after, [], {
+      project: false,
+      pairLines: false,
+    });
+    // The 8 modified lines of the paired model each become one removed and one added row.
+    expect(model).toMatchObject({ added: 41, modified: 0, removed: 21 });
+  });
+  test("diffs files of a few megabytes", () => {
+    const lines = Array.from({ length: 60_000 }, (_, index) => `const value${index} = ${index};`);
+    const before = lines.join("\n");
+    expect(before.length).toBeGreaterThan(1_000_000);
+    const model = createDiffModel(before, before.replace("value30000 = 30000", "value30000 = 1"));
+    expect(model).toMatchObject({ added: 0, modified: 1, removed: 0 });
+  });
+  test("reports unavailable above the document size limit", () => {
+    const before = "const value = 1;\n".repeat(120_000);
+    const model = createDiffModel(before, `${before}const extra = 2;\n`);
+    expect(model.omittedChanges?.unavailable).toBe(true);
   });
   test("reports unavailable when the comparison deadline expires", () => {
     vi.spyOn(performance, "now").mockReturnValueOnce(0).mockReturnValue(101);

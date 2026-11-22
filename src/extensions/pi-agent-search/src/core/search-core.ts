@@ -2,10 +2,13 @@ import { withBlockedToolResult } from "pi-agent-tool-call-interception";
 import {
   resourceAccesses,
   resourceScheduler,
+  describeAdjustedRanges,
   withStructuredResult,
+  type ResolvedResultTargets,
   type ResultTargetStore,
 } from "pi-agent-resource";
-import { searchDataSchema } from "#src/api/structured-result.ts";
+import { searchDataSchema, selectionPreview } from "#src/api/structured-result.ts";
+import { pathMachine, plainPathList, uniquePaths } from "#src/api/path-list.ts";
 
 import type { SearchPlugin } from "#src/api/plugin-protocol.ts";
 import type {
@@ -195,38 +198,84 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
       audience = "agent",
       only?: SearchResolver,
     ): Promise<SearchToolResult> {
-      let request: SearchRequest = {
-        ...input,
-        path: typeof input.path === "string" ? input.path : undefined,
-      };
-      if (request.query.trim().length === 0) {
+      if (input.query.trim().length === 0) {
         return failure("INVALID_REQUEST", "Search query must not be empty");
       }
-
+      // An empty path names the working directory, as an omitted path does. A list of plain
+      // paths is searched root by root; a list of results is a result scope.
+      let pathInput = input.path === "" ? undefined : input.path;
+      let paths: readonly string[] | undefined;
       try {
-        if (typeof input.path === "string") {
+        paths = Array.isArray(input.path) ? plainPathList(input.path) : undefined;
+        if (paths !== undefined) {
+          paths = uniquePaths(paths, context.cwd);
+          const machines = new Set(paths.map((item) => pathMachine(item, context.cwd)));
+          if (machines.size > 1)
+            throw new Error(
+              "The paths in a list must be on one machine: local paths, or ssh:// paths of one target. Search each machine in a separate call.",
+            );
+          pathInput = paths.length === 1 ? paths[0] : undefined;
+          if (paths.length === 1) paths = undefined;
+        }
+      } catch (error) {
+        return failure("INVALID_REQUEST", messageFor(error, "Invalid path list"), undefined, error);
+      }
+      let request: SearchRequest = {
+        ...input,
+        path: typeof pathInput === "string" ? pathInput : undefined,
+        ...(paths === undefined ? {} : { paths }),
+      };
+
+      let latestScope: ResolvedResultTargets | undefined;
+      try {
+        if (typeof pathInput === "string") {
           for (const provider of scopeProviders) {
-            const scope = await provider(input.path, context);
+            const scope = await provider(pathInput, context);
             if (scope === undefined) continue;
             if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
             if (targets !== undefined) await targets.verify(scope, context.signal);
-            context = { ...context, scope };
+            const scopeInput = pathInput;
+            const scopeContext = context;
+            // A refresh of this search, such as for an all-anchor after other edits, runs on the
+            // scope as its file is now. A numbered Search match follows its region like RESULT#.
+            const rescope = async (signal?: AbortSignal): Promise<ResolvedResultTargets> => {
+              if (targets?.hasSearchReference(scopeInput) === true)
+                return targets.resolveCurrent(scopeInput, scopeContext.cwd, signal);
+              const current = await provider(scopeInput, {
+                ...scopeContext,
+                ...(signal !== undefined && { signal }),
+              });
+              if (current === undefined) throw new Error("its reference is no longer available");
+              return current;
+            };
+            context = { ...context, scope, rescope };
             request = Object.assign({}, request, { path: undefined });
             break;
           }
         }
         const scoped =
-          input.path !== undefined &&
-          (typeof input.path !== "string" ||
-            (request.path === input.path && input.path.startsWith("RESULT#")));
+          pathInput !== undefined &&
+          (typeof pathInput !== "string" ||
+            (request.path === pathInput && pathInput.startsWith("RESULT#")));
         if (scoped) {
           if (targets === undefined) throw new Error("Result scopes are unavailable.");
           if (context.scope !== undefined) throw new Error("Pass one result scope, not two.");
-          const scope = targets.resolve(input.path, context.cwd);
-          await targets.verify(scope, context.signal);
-          context = { ...context, scope };
+          const scopeInput = pathInput;
+          const cwd = context.cwd;
+          // Search only reads, so a result whose lines changed still selects the same region.
+          const rescope = (signal?: AbortSignal) => targets.resolveCurrent(scopeInput, cwd, signal);
+          context = { ...context, scope: await rescope(context.signal), rescope };
           request = Object.assign({}, request, { path: undefined });
         }
+        if (context.rescope !== undefined) {
+          // Remember the scope of the latest attempt: it is the one the result describes.
+          const rescope = context.rescope;
+          context = {
+            ...context,
+            rescope: async (signal) => (latestScope = await rescope(signal)),
+          };
+        }
+        latestScope = context.scope;
         if (context.scope !== undefined) {
           const ownerContext = context;
           context = {
@@ -240,12 +289,23 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
             },
           };
         }
-        for (const provider of context.scope === undefined ? environments : []) {
-          const environment = provider(request, context);
-          if (environment !== undefined) {
-            context = { ...context, environment };
-            break;
-          }
+        if (context.scope === undefined) {
+          // Every listed path is owned like a single path; the list shares its first owner.
+          const owner = (source: string | undefined) => {
+            for (const provider of environments) {
+              const environment = provider({ ...request, path: source }, context);
+              if (environment !== undefined) return environment;
+            }
+            return undefined;
+          };
+          const [first, ...rest] = request.paths ?? [request.path];
+          const environment = owner(first);
+          for (const source of rest)
+            if ((owner(source) === undefined) !== (environment === undefined))
+              throw new Error(
+                `No search owner on the machine of ${first ?? "."} owns ${source ?? "."}.`,
+              );
+          if (environment !== undefined) context = { ...context, environment };
         }
       } catch (error) {
         return failure(
@@ -274,16 +334,12 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
           left.order - right.order,
       );
 
-      const emptyProtocol = /^[a-z][\w-]*:\s*$/iu.test(request.query);
-      const protocolLike = /^[a-z][\w-]*:/iu.test(request.query);
       for (const entry of snapshot) {
         if (context.scope !== undefined && entry.registration.resolver.supportsResultScope !== true)
           continue;
-        if (emptyProtocol && !entry.registration.fallback && context.scope === undefined) continue;
         const resolver = entry.registration.resolver;
         if (context.scope !== undefined && resolver.supportsResultScope !== true) continue;
-        // Unknown colon prefixes can be source text (for example, feature: "legacy").
-        // The fallback still searches only the verified scope; structural protocols stay above.
+        if (request.paths !== undefined && resolver.supportsPathList !== true) continue;
 
         try {
           const scope = Promise.resolve().then(async () => {
@@ -360,22 +416,16 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
                   );
                 }
 
-                const data = resolver.toScriptData?.(attempt.payload, formatted.details);
-                const missingAdapter = data === undefined;
+                const full = resolver.toScriptData?.(attempt.payload, formatted.details);
+                const missingAdapter = full === undefined;
+                // A script gets every match with its whole text; other callers get a preview that
+                // keeps the record within the 1 MiB limit.
+                const data = audience === "script" ? full : selectionPreview(full);
                 return withStructuredResult(
                   {
                     content: [
-                      ...(entry.registration.fallback && protocolLike
-                        ? [
-                            {
-                              type: "text" as const,
-                              text: emptyProtocol
-                                ? "Search fallback: empty protocol query; searched the original text."
-                                : "Search fallback: unhandled protocol query; searched the original text.",
-                            },
-                            ...formatted.content,
-                          ]
-                        : formatted.content),
+                      ...adjustedNotice(latestScope, context.cwd),
+                      ...formatted.content,
                       ...(isRecord(data) && data.complete === false
                         ? [
                             {
@@ -418,6 +468,8 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
                           ],
                         }
                       : { status: "success", data, errors: [] },
+                  // A script gets the whole result; the 1 MiB limit protects the model's context.
+                  audience === "script" ? { maxBytes: Infinity } : undefined,
                 );
               } catch (error) {
                 return failure(
@@ -441,7 +493,10 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
         }
       }
 
-      const reason = `No search resolver handled ${request.query}`;
+      const reason =
+        request.paths === undefined
+          ? `No search resolver handled ${request.query}`
+          : `No search resolver handled ${request.query} in a path list. A path list applies to text, file, AST and LSP search in local or SSH files; search other sources one path at a time.`;
       return withBlockedToolResult(failure("NO_RESOLVER", reason), reason);
     },
     runAction(reference, capability, resolverId, input, context): Promise<unknown> {
@@ -472,6 +527,15 @@ export function createSearchCore(targets?: ResultTargetStore): SearchCore {
   };
 
   return core;
+}
+
+/** A scope whose text changed says so, so the reader knows which text was searched. */
+function adjustedNotice(
+  scope: ResolvedResultTargets | undefined,
+  cwd: string,
+): { type: "text"; text: string }[] {
+  const text = scope === undefined ? undefined : describeAdjustedRanges(scope, cwd);
+  return text === undefined ? [] : [{ type: "text", text }];
 }
 
 function assertResolver(value: unknown): asserts value is SearchResolverRegistration {

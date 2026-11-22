@@ -35,7 +35,7 @@ export default function debuggerStateFixture(pi: ExtensionAPI): void {
             new RegExp(`(?:^|\\n)(${line}#[A-F\\d]+)\\|`, "u").exec(sourceText)?.[1] ??
             sourceText.split("\n")[line - 1];
           if (anchor === undefined) throw new Error(`Source returned no line-${line} anchor`);
-          return call("insert", { path: `${source}/source`, anchor, text: "breakpoint" });
+          return call("insert", { path: `${source}/source`, after: anchor, text: "breakpoint" });
         };
         const pending = await addBreakpoint(phase === "late" ? 2 : 4);
         if (phase === "late") await addBreakpoint(4);

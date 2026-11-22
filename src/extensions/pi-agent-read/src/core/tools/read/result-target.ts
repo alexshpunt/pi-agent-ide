@@ -1,13 +1,14 @@
 import { readFile } from "node:fs/promises";
-import type { ResultRange, ResultTargetStore } from "pi-agent-resource";
+import { fileTextDigest, type ResultRange, type ResultTargetStore } from "pi-agent-resource";
 import type { ReadPostReadHandler, ReadToolPluginApi } from "#src/api/tools/read.ts";
 
-/** Retain exact local or SSH text windows with an owning, guarded reread; never grant authority to converted output. */
+/** Retain exact source-backed text windows with an owning reread and optional source-wide edit prohibition. */
 export function createReadResultTargetHandler(
   store: ResultTargetStore,
   read: ReadToolPluginApi["read"],
   ownsSource: (source: string, resolver: string) => boolean = (_source, resolver) =>
     ["filesystem", "ssh"].includes(resolver),
+  readOnlyReason?: string,
 ): ReadPostReadHandler {
   return async (context) => {
     const state = context.state;
@@ -83,8 +84,18 @@ export function createReadResultTargetHandler(
               ],
           context.resolverContext.cwd,
           input?.complete ?? true,
+          undefined,
+          readOnlyReason,
         );
-        return { ...result, script: { ...script, target } };
+        return {
+          ...result,
+          script: {
+            ...script,
+            target,
+            ...((state.resolvedBy === "filesystem" || state.resolvedBy === "ssh") &&
+              state.entries === undefined && { fileDigest: fileTextDigest(state.text.content) }),
+          },
+        };
       },
     };
   };
@@ -112,7 +123,7 @@ function ownedReader(
   };
 }
 
-function intersectRange(seed: ResultRange, window: ResultRange): ResultRange[] {
+export function intersectRange(seed: ResultRange, window: ResultRange): ResultRange[] {
   const compare = (a: ResultRange["start"], b: ResultRange["start"]) =>
     a.lineNumber - b.lineNumber || a.column - b.column;
   const start = compare(seed.start, window.start) >= 0 ? seed.start : window.start;

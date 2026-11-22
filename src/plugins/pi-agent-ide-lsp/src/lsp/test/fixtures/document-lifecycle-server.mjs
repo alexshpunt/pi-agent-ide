@@ -18,12 +18,14 @@ const refreshAfter = (sent) =>
   void sent.then(() =>
     pullRegistered ? connection.sendRequest("workspace/diagnostic/refresh").catch(() => process.exit(1)) : undefined,
   );
-const publish = (uri, version) =>
-  pullDiagnostics && version !== undefined
-    ? refreshAfter(connection.sendNotification("textDocument/publishDiagnostics", { uri, version, diagnostics: [] }))
-    : version !== undefined && delayMs > 0
-    ? setTimeout(() => open.get(uri) === version && send(uri, version), delayMs)
-    : send(uri, version);
+const publish = (uri, version) => {
+  if (version !== undefined && process.env.LIFECYCLE_MANUAL_DIAGNOSTICS === "1") return;
+  if (pullDiagnostics && version !== undefined)
+    return refreshAfter(connection.sendNotification("textDocument/publishDiagnostics", { uri, version, diagnostics: [] }));
+  if (version !== undefined && delayMs > 0)
+    return setTimeout(() => open.get(uri) === version && send(uri, version), delayMs);
+  return send(uri, version);
+};
 const send = (uri, version) =>
   connection.sendNotification("textDocument/publishDiagnostics", {
     uri,
@@ -97,12 +99,41 @@ connection.onNotification("textDocument/didClose", ({ textDocument }) => {
   if (clearDelayMs > 0) setTimeout(() => send(textDocument.uri, undefined), clearDelayMs);
   else publish(textDocument.uri, undefined);
 });
-connection.onRequest("textDocument/documentSymbol", () => []);
+let finishOutline;
+connection.onRequest("textDocument/documentSymbol", () =>
+  process.env.LIFECYCLE_DEFER_OUTLINE === "1"
+    ? new Promise((resolve) => { finishOutline = resolve; })
+    : [],
+);
+connection.onRequest("lifecycle/outlinePending", () => finishOutline !== undefined);
+connection.onRequest("lifecycle/finishOutline", () => {
+  finishOutline?.([]);
+  finishOutline = undefined;
+  return null;
+});
 connection.onRequest("lifecycle/status", () => ({ open: [...open.keys()], events, watched, pid: process.pid }));
 connection.onRequest("lifecycle/text", ({ textDocument }) => texts.get(textDocument.uri) ?? null);
+connection.onRequest("lifecycle/publishDiagnostics", async ({ textDocument: { uri } }) => {
+  await send(uri, open.get(uri));
+  return null;
+});
+connection.onRequest("textDocument/references", ({ textDocument, position }) =>
+  texts.get(textDocument.uri)?.split("\n")[position.line] === "first"
+    ? [{ uri: textDocument.uri, range: { start: position, end: { ...position, character: 5 } } }]
+    : [],
+);
 // Answers for the version it had when the request arrived, after LIFECYCLE_RENAME_DELAY_MS.
 const renameDelayMs = Number(process.env.LIFECYCLE_RENAME_DELAY_MS ?? 0);
+let finishRename;
+connection.onRequest("lifecycle/renamePending", () => finishRename !== undefined);
+connection.onRequest("lifecycle/finishRename", () => {
+  finishRename?.();
+  finishRename = undefined;
+  return null;
+});
 connection.onRequest("textDocument/rename", ({ textDocument }) => {
+  if (process.env.LIFECYCLE_DEFER_RENAME === "1")
+    return new Promise((resolve) => { finishRename = () => resolve({ changes: { [textDocument.uri]: [] } }); });
   const answer = {
     documentChanges: [{ textDocument: { uri: textDocument.uri, version: open.get(textDocument.uri) ?? null }, edits: [] }],
   };

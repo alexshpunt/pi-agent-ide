@@ -1,12 +1,18 @@
 import { Type } from "typebox";
+import { resultInputSchema } from "pi-agent-resource";
 
-import { TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND } from "#src/api/plugin-protocol.ts";
+import {
+  insertSelectors,
+  insertTextSelector,
+  textSelectorAnchors,
+} from "#src/api/text-selector-fields.ts";
+import { refuseEndOfFileMarker } from "#src/tools/display-marker.ts";
+import { anchorProperty } from "#src/tools/text-tool-schema-properties.ts";
 import {
   insertionAfterAnchor,
   insertionBeforeAnchor,
   insertionChanges,
   textSelections,
-  targetText,
 } from "#src/tools/text-selection.ts";
 
 import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
@@ -14,71 +20,55 @@ import type { TextMutationToolRegistration } from "#src/api/mutation-tool.ts";
 export const insertSchema = Type.Object(
   {
     path: Type.Optional(
-      Type.String({
-        description:
-          "File path, resource reference, unchanged Read/Search/edit result or its UUID; a result selects only its ranges. Omit to reuse the file of the anchor, the last read or the preceding edit.",
+      Type.Union(resultInputSchema.anyOf, {
+        description: "Source selection or live resource.",
       }),
     ),
-    anchor: Type.Optional(
-      Type.String({
-        description:
-          "Line anchor or unique exact text. Insert at the selection boundary: whole lines include their own separator; partial or multiline exact matches keep character boundaries. Omit when path already selects text.",
-      }),
+    after: anchorProperty(
+      "Insert at the end of this selection. Do not combine with before. Omit both when path already selects text or a live resource.",
+    ),
+    before: anchorProperty(
+      "Insert at the start of this selection. Do not combine with after. With a result as path, select inside its ranges.",
     ),
     text: Type.String({
       minLength: 1,
       description:
-        "Non-empty text to insert, using the target line-ending style. Whole-line selections add needed separators; exact fragments do not.",
+        "Non-empty text to insert. At a line edge, include a line break to insert separate lines; text with no line break goes at the selected boundary with default separation. Mid-line insertion keeps its character boundary.",
     }),
     separation: Type.Optional(
       Type.Union([Type.Literal("line"), Type.Literal("blank-line")], {
-        description: "line (default) or blank-line: add blank lines around the insertion.",
-      }),
-    ),
-    before: Type.Optional(
-      Type.Boolean({
         description:
-          "true inserts at the start of the selection; default false inserts at its end.",
+          "line (default) uses ordinary insertion; blank-line separates a paragraph at a line edge.",
       }),
     ),
   },
   { additionalProperties: false },
 );
 
-interface InsertParameters {
-  readonly path?: string;
-  readonly anchor?: string;
-  readonly text: string;
-  readonly separation?: "line" | "blank-line";
-  readonly before?: boolean;
-}
-
 export const insertMutationTool: TextMutationToolRegistration<typeof insertSchema> = {
   name: "insert",
   description:
-    "Use insert to add text at a selection boundary without changing selected text, to send keys to a terminal session, or to control a debugger.",
+    "Use insert to add text at a selection boundary without changing selected text, to send keys to a terminal session, or to control a debugger. At a line edge, use one leading or trailing line break in a text block as a separator and add more breaks for blank lines.",
 
   promptSnippet: "Insert file text, send terminal keys, or perform debugger actions",
   parameters: insertSchema,
   source: { field: "path", inherited: true },
-  anchors: [
-    {
-      field: "anchor",
-      sourceField: "path",
-      kinds: [TEXT_POSITION_ANCHOR_KIND, TEXT_SEARCH_ANCHOR_KIND],
-    },
-  ],
-  mutate: async (context, parameters: InsertParameters) => {
+  anchors: textSelectorAnchors("path", insertSelectors),
+  validateInput: insertTextSelector,
+  mutate: async (context, parameters) => {
+    const field = insertTextSelector(parameters);
+    const before = field === "before";
     if (parameters.text.length === 0) throw new Error("Insert text must not be empty.");
-    const anchors = await context.resolveAnchors("anchor");
-    const selections = textSelections(anchors, "anchor");
+    refuseEndOfFileMarker(parameters.text);
+    const anchors = await context.resolveAnchors(field);
+    const selections = textSelections(anchors, field);
 
     if (selections !== undefined) {
       const changes = insertionChanges(
         context,
         selections,
         parameters.text,
-        parameters.before,
+        before,
         parameters.separation,
       );
       return {
@@ -91,14 +81,10 @@ export const insertMutationTool: TextMutationToolRegistration<typeof insertSchem
       };
     }
 
-    const insertion = parameters.before === true ? insertionBeforeAnchor : insertionAfterAnchor;
-    const [source, change] = insertion(
-      context,
-      anchors,
-      "anchor",
-      targetText(context, context.sourceFor("path"), parameters.text),
-      parameters.separation,
-    );
+    const insertion = before ? insertionBeforeAnchor : insertionAfterAnchor;
+    const [source, change] = insertion(context, anchors, field, parameters.text, {
+      separation: parameters.separation,
+    });
     return {
       edits: new Map([[source, { changes: [change], action: "edited" }]]),
     };

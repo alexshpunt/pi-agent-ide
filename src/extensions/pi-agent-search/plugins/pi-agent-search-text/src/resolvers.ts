@@ -1,30 +1,60 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { SEARCH_HIGHLIGHT_CLOSE, SEARCH_HIGHLIGHT_OPEN } from "pi-agent-text";
+import {
+  attachFileTextWindows,
+  snapshotOnToolDeadline,
+  toolDeadlineFailure,
+  withStructuredResult,
+  type FileTextWindow,
+  type ResultRange,
+} from "pi-agent-resource";
 import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.ts";
 
-import { searchFiles } from "#src/file-search.ts";
-import { createSearchRecipe, runSearchRecipe, type SearchRecipe } from "#src/search-recipe.ts";
+import {
+  captureCurrentMatches,
+  type CaptureOptions,
+  type CapturedMatches,
+} from "#src/current-matches.ts";
+import { searchFiles, type FileSearchResult } from "#src/file-search.ts";
+import type { TextSearchRequest } from "#src/search-backend.ts";
+import {
+  booleanQueryNotice,
+  createSearchRecipe,
+  runSearchRecipe,
+  tokenSelectionWarning,
+  type SearchRecipe,
+} from "#src/search-recipe.ts";
 import { renderSearchResult } from "#src/search-renderer.ts";
-import { createFuzzyPresentation, createSearchToolDetails } from "#src/search-result.ts";
-import { planSearchPresentation } from "#src/search-presentation.ts";
+import {
+  createFuzzyPresentation,
+  createSearchToolDetails,
+  displaySource,
+  unreadableNotice,
+} from "#src/search-result.ts";
+import { planSearchPresentation, searchCompactionHint } from "#src/search-presentation.ts";
 
-import type {
-  SearchSessionStore,
-  TextSearchMatch,
-  TextSearchSession,
+import {
+  compareMatches,
+  type SearchSessionStore,
+  type TextSearchMatch,
+  type TextSearchSession,
 } from "#src/search-session.ts";
 import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 import {
+  currentScope,
   selectionData,
+  searchDataSchema,
   fuzzyLimits,
   isFuzzyQuery,
   fuzzyCandidateData,
   formatFuzzyCandidate,
+  type FuzzyCandidate,
   type FuzzyResult,
 } from "pi-agent-search/api/search";
 import type { SearchToolDetails } from "#src/search-result.ts";
-import { searchFuzzy, searchFuzzyAlternative } from "#src/fuzzy-search.ts";
+import { isWholeIdentifierMatch, searchFuzzy, searchFuzzyAlternative } from "#src/fuzzy-search.ts";
 
 const SEARCH_ANCHOR_LEGEND =
   "Anchors: SEARCH#HASH:N:line (line), SEARCH#HASH:N:match (exact match), SEARCH#HASH:all:line (each unique containing line), SEARCH#HASH:all:match (every exact match)";
@@ -35,26 +65,123 @@ interface TextPayload {
   readonly recipe: SearchRecipe;
   readonly notices: readonly string[];
   readonly fuzzy?: FuzzyResult;
+  readonly fallback?: "regex" | "words" | undefined;
 }
 
-interface FilePayload {
+interface FilePayload extends FileSearchResult {
   readonly query: string;
-  readonly files: readonly string[];
+  readonly notices: readonly string[];
+}
+
+/** What a search registered its anchors for; a concurrent writer can make it differ from the backend's matches. */
+interface RegisteredMatches {
+  readonly fallback?: "regex" | "words" | undefined;
+  readonly query: string;
+  readonly matches: readonly TextSearchMatch[];
   readonly complete: boolean;
+  readonly notices: readonly string[];
+}
+
+/**
+ * The query and options that produced these matches, including the broadening step a fallback
+ * used, so the same matching can run again inside the text the matches are registered with.
+ */
+function effectiveRequest(result: TextPayload): TextSearchRequest {
+  const query = result.request.query;
+  if (query === result.recipe.query) return result.recipe;
+  const fallback = result.recipe.fallbacks?.find((candidate) => candidate.query === query);
+  const { condition: _condition, ...options } = result.recipe;
+  return fallback?.condition === undefined
+    ? { ...options, query, regex: true }
+    : { ...options, query, regex: true, condition: fallback.condition };
+}
+
+/**
+ * A possible-name candidate's matches with the text they describe, ready to register without
+ * reading its files again. Searching that text again keeps the candidate's own rules: whole
+ * identifiers only, and no more matches than a candidate captures. A candidate registers all its
+ * matches or none, so a source that cannot be read, or that exceeds the byte budget of `read`,
+ * fails it.
+ */
+async function captureCandidate(
+  candidate: FuzzyCandidate,
+  request: TextSearchRequest,
+  cwd: string,
+  options: Pick<CaptureOptions, "read" | "signal">,
+): Promise<CapturedMatches> {
+  const captured = await captureCurrentMatches(candidate, cwd, {
+    ...options,
+    request,
+    inContent: true,
+    accept: isWholeIdentifierMatch,
+    requireEverySource: true,
+  });
+  if (captured.matches.length <= fuzzyLimits.matchesPerCandidate) return captured;
+  return {
+    ...captured,
+    matches: [...captured.matches].sort(compareMatches).slice(0, fuzzyLimits.matchesPerCandidate),
+    complete: false,
+  };
+}
+
+type RecordScriptWindows = (details: SearchToolDetails, windows: readonly FileTextWindow[]) => void;
+
+function searchWindows(
+  contents: ReadonlyMap<string, string>,
+  rangesBySource: ReadonlyMap<string, readonly ResultRange[]>,
+): FileTextWindow[] {
+  return [...rangesBySource].flatMap(([source, ranges]) => {
+    const content = contents.get(source);
+    return content === undefined ? [] : [{ source, content, ranges }];
+  });
+}
+
+/** Match the exact text and containing lines returned by the script adapter. */
+function scriptRanges(matches: readonly TextSearchMatch[]): Map<string, ResultRange[]> {
+  const bySource = new Map<string, ResultRange[]>();
+  for (const match of matches) {
+    const last = match.endLineNumber ?? match.lineNumber;
+    const context = match.linesText ?? (last === match.lineNumber ? match.lineText : undefined);
+    const ranges = bySource.get(match.source) ?? [];
+    ranges.push({
+      start: { lineNumber: match.lineNumber, column: match.startColumn },
+      end: { lineNumber: last, column: match.endColumn },
+    });
+    if (context !== undefined) {
+      const tail = context.lastIndexOf("\n") + 1;
+      ranges.push({
+        start: { lineNumber: match.lineNumber, column: 0 },
+        end: {
+          lineNumber: last > match.lineNumber && match.endColumn === 0 ? last - 1 : last,
+          column: context.length - tail,
+        },
+      });
+    }
+    bySource.set(match.source, ranges);
+  }
+  return bySource;
 }
 
 /** Search unhandled requests with literal-first hybrid matching. */
 export function createTextResolver(
   sessions: SearchSessionStore,
   resultScopeOnly = false,
+  recordScriptWindows?: RecordScriptWindows,
 ): SearchResolver {
-  return createMatchResolver("text", sessions, createSearchRecipe, resultScopeOnly);
+  return createMatchResolver(
+    "text",
+    sessions,
+    createSearchRecipe,
+    resultScopeOnly,
+    recordScriptWindows,
+  );
 }
 
 /** Search an explicit regex without broadening or swallowing syntax errors. */
 export function createRegexResolver(
   sessions: SearchSessionStore,
   resultScopeOnly = false,
+  recordScriptWindows?: RecordScriptWindows,
 ): SearchResolver {
   return createMatchResolver(
     "regex",
@@ -64,12 +191,15 @@ export function createRegexResolver(
         ? { ...request, query: request.query.slice("regex:".length), regex: true }
         : undefined,
     resultScopeOnly,
+    recordScriptWindows,
   );
 }
 
 /** Options the `file_search` tool passes in `SearchRequest.options.files`; their presence selects this resolver. */
 export interface FileSearchOptions {
   readonly pattern: string;
+  /** Without a `limit`, list every matching file instead of the first 100: a script's call. */
+  readonly uncapped?: boolean;
 }
 
 function fileOptions(request: SearchRequest): FileSearchOptions | undefined {
@@ -81,11 +211,17 @@ function fileOptions(request: SearchRequest): FileSearchOptions | undefined {
 export function createFileResolver(): SearchResolver {
   return {
     id: "files",
+    supportsPathList: true,
     readResources: (request, context) =>
-      fileOptions(request) === undefined ? [] : [request.path ?? context.cwd],
+      fileOptions(request) === undefined ? [] : (request.paths ?? [request.path ?? context.cwd]),
     toScriptData(payload) {
       const result = payload as FilePayload;
-      return { kind: "files", files: [...result.files], complete: result.complete };
+      return {
+        kind: "files",
+        files: [...result.files],
+        complete: result.complete,
+        ...(result.notices.length === 0 ? {} : { notices: [...result.notices] }),
+      };
     },
     async tryResolve(request, context) {
       const options = fileOptions(request);
@@ -94,12 +230,16 @@ export function createFileResolver(): SearchResolver {
       const query = options.pattern.trim();
       const result = await searchFiles(
         query,
-        request,
+        options.uncapped === true && request.limit === undefined
+          ? { ...request, limit: Number.POSITIVE_INFINITY }
+          : request,
         context.cwd,
         context.signal,
         context.environment,
       );
-      return { kind: "resolved", payload: { query, ...result } satisfies FilePayload };
+      const notices =
+        result.unreadable === undefined ? [] : [unreadableNotice(result.unreadable, context.cwd)];
+      return { kind: "resolved", payload: { query, ...result, notices } satisfies FilePayload };
     },
     renderResult(result, options, theme) {
       const data = result.details as FilePayload & { cwd: string };
@@ -126,7 +266,7 @@ export function createFileResolver(): SearchResolver {
         ? `${String(result.files.length)} files`
         : `${String(result.files.length)}+ files (limit reached)`;
       return {
-        content: [{ type: "text", text: [heading, ...result.files].join("\n") }],
+        content: [{ type: "text", text: [...result.notices, heading, ...result.files].join("\n") }],
         details: {
           query: result.query,
           files: result.files,
@@ -143,14 +283,23 @@ function createMatchResolver(
   sessions: SearchSessionStore,
   queryBody: (request: SearchRequest) => SearchRecipe | undefined,
   resultScopeOnly = false,
+  recordScriptWindows?: RecordScriptWindows,
 ): SearchResolver {
+  /**
+   * What the registration made of each formatted payload. Registering can relocate or leave out
+   * matches another session wrote meanwhile, so a script must be shown those matches, in their
+   * order, and not the ones the backend returned: its anchors and targets belong to them.
+   */
+  const registered = new WeakMap<TextPayload, RegisteredMatches>();
   return {
     readResources: (request, context) =>
       queryBody(request) === undefined || (resultScopeOnly && context.scope === undefined)
         ? []
-        : (context.scope?.targets.map((target) => target.source) ?? [request.path ?? context.cwd]),
+        : (context.scope?.targets.map((target) => target.source) ??
+          request.paths ?? [request.path ?? context.cwd]),
     id,
     supportsResultScope: true,
+    supportsPathList: true,
     supportsMultiline: true,
     toScriptData(payload, details) {
       const result = payload as TextPayload;
@@ -159,9 +308,18 @@ function createMatchResolver(
         matchTargets?: readonly string[];
       };
       const sessionId = formatted.sessionId;
+      const shown = registered.get(result) ?? result;
+      const editWarning = tokenSelectionWarning(
+        result.recipe,
+        registered.get(result)?.query ?? result.request.query,
+        shown.matches.length,
+        shown.complete,
+      );
       return {
-        ...selectionData(result.matches, result.complete, sessionId, formatted),
-        notices: [...result.notices],
+        ...selectionData(shown.matches, shown.complete, sessionId, formatted),
+        notices: [...shown.notices],
+        ...(shown.fallback === undefined ? {} : { fallback: shown.fallback }),
+        ...(editWarning === undefined ? {} : { editWarning }),
         ...(formatted.fuzzy === undefined ? {} : { fuzzy: formatted.fuzzy }),
       };
     },
@@ -171,7 +329,50 @@ function createMatchResolver(
       if (recipe === undefined) return { kind: "not-handled" };
       const result =
         context.scope === undefined
-          ? await runSearchRecipe(recipe, context.cwd, context.signal, context.environment)
+          ? await runSearchRecipe(
+              recipe,
+              context.cwd,
+              context.signal,
+              context.environment,
+              (fallback, snapshot) => {
+                snapshotOnToolDeadline((error) => {
+                  const matches = snapshot();
+                  if (matches.length === 0) return undefined;
+                  const result = toolDeadlineFailure(error);
+                  const lines = matches
+                    .slice(0, 20)
+                    .map(
+                      (match) =>
+                        `${displaySource(match.source, context.cwd)}:${match.lineNumber}: ${match.matchedText.slice(0, 240)}`,
+                    );
+                  return withStructuredResult(
+                    {
+                      ...result,
+                      content: [
+                        ...result.content,
+                        {
+                          type: "text",
+                          text: [
+                            `Incomplete search (${matches.length} observed${fallback === undefined ? "" : `; ${fallback} fallback`})`,
+                            ...lines,
+                          ].join("\n"),
+                        },
+                      ],
+                    },
+                    searchDataSchema,
+                    {
+                      status: "partial",
+                      data: {
+                        ...selectionData(matches, false),
+                        ...(fallback === undefined ? {} : { fallback }),
+                      },
+                      errors: [{ code: error.code, source: error.target, message: error.message }],
+                    },
+                    { maxBytes: Infinity },
+                  );
+                });
+              },
+            )
           : await runScopedSearch(recipe, context.scope, context.cwd, context.signal);
       const fuzzy =
         context.scope === undefined &&
@@ -192,6 +393,7 @@ function createMatchResolver(
         payload: {
           request: { ...request, query: result.query },
           ...result,
+          notices: [booleanQueryNotice(recipe) ?? [], result.notices].flat(),
           recipe: { ...recipe, originalQuery: request.query },
           ...(fuzzy === undefined ? {} : { fuzzy }),
         } satisfies TextPayload,
@@ -201,19 +403,78 @@ function createMatchResolver(
       const result = payload as TextPayload;
 
       const scope = context.scope;
-      const session = await sessions.registerIfCurrent(
-        result.request.query,
-        result.matches,
-        result.complete,
+      const rerun =
+        scope === undefined
+          ? undefined
+          : async (signal?: AbortSignal) =>
+              runScopedSearch(
+                result.recipe,
+                (await currentScope(context, signal)) ?? scope,
+                context.cwd,
+                signal,
+              );
+      // Another session may write a matched file between a search and the read of its text. The
+      // captured text is the snapshot, with the matches a search of that text finds.
+      const capture = (
+        found: {
+          readonly matches: readonly TextSearchMatch[];
+          readonly complete: boolean;
+          readonly query?: string;
+          readonly fallback?: "regex" | "words" | undefined;
+        },
+        signal?: AbortSignal,
+      ) =>
+        captureCurrentMatches(found, context.cwd, {
+          request: effectiveRequest(result),
+          inContent: scope === undefined,
+          read: sessions.snapshotReader(context.cwd, context.environment),
+          ...(rerun === undefined ? {} : { rerun }),
+          ...(signal === undefined ? {} : { signal }),
+        });
+      // An all reference to a changed file searches again, and captures that search the same way.
+      const refresh = async (signal?: AbortSignal) => {
+        const found =
+          rerun === undefined
+            ? await runSearchRecipe(result.recipe, context.cwd, signal, context.environment)
+            : await rerun(signal);
+        const again = await capture(found, signal);
+        return {
+          ...again,
+          query: again.query ?? found.query,
+          notices: [...(again.rerunNotices ?? found.notices), ...again.notices],
+        };
+      };
+      const captured = await capture(result, context.signal);
+      const warning = tokenSelectionWarning(
+        result.recipe,
+        captured.query ?? result.request.query,
+        captured.matches.length,
+        captured.complete,
+      );
+      const notices = [
+        ...(captured.rerunNotices ?? result.notices),
+        ...captured.notices,
+        ...(warning === undefined ? [] : [warning]),
+      ];
+      const session = await sessions.register(
+        captured.query ?? result.request.query,
+        captured.matches,
+        captured.complete,
         context.cwd,
         context.signal,
         result.recipe,
-        scope === undefined
-          ? undefined
-          : (signal) => runScopedSearch(result.recipe, scope, context.cwd, signal),
+        refresh,
         undefined,
         context.environment,
+        captured.contents,
       );
+      registered.set(result, {
+        query: captured.query ?? result.request.query,
+        fallback: captured.fallback,
+        matches: session.matches,
+        complete: session.complete,
+        notices,
+      });
       if (result.fuzzy !== undefined) {
         const details = createSearchToolDetails(
           result.request.query,
@@ -222,6 +483,8 @@ function createMatchResolver(
           context.cwd,
         );
         const groups = [];
+        // What each candidate shows: the matches it registered, or the backend's when it could not.
+        const shown: FuzzyCandidate[] = [];
         let registrationLimited = false;
         const deadline = AbortSignal.timeout(fuzzyLimits.timeoutMs);
         const registrationSignal =
@@ -236,22 +499,40 @@ function createMatchResolver(
           };
           let session: TextSearchSession | undefined;
           try {
+            // Another session may write a candidate file after the search, as on the main path:
+            // the captured text is the snapshot, with the candidate's matches in that text.
+            const captured = await captureCandidate(candidate, recipe, context.cwd, {
+              read: sessions.snapshotReader(
+                context.cwd,
+                context.environment,
+                fuzzyLimits.vocabularyBytes,
+              ),
+              signal: registrationSignal,
+            });
+            // The name is gone from every file it was found in, so it is no longer a possible name.
+            if (captured.matches.length === 0) continue;
             session = await sessions.registerIfCurrent(
               candidate.identifier,
-              candidate.matches,
-              candidate.complete,
+              captured.matches,
+              captured.complete,
               context.cwd,
               registrationSignal,
               recipe,
               (signal) => searchFuzzyAlternative(recipe, context.cwd, signal, context.environment),
               fuzzyLimits.vocabularyBytes,
               context.environment,
+              captured.contents,
             );
           } catch {
             context.signal?.throwIfAborted();
           }
           if (session === undefined) registrationLimited = true;
-          groups.push(fuzzyCandidateData(candidate, session?.id, session));
+          const registeredCandidate =
+            session === undefined
+              ? candidate
+              : { ...candidate, matches: session.matches, complete: session.complete };
+          shown.push(registeredCandidate);
+          groups.push(fuzzyCandidateData(registeredCandidate, session?.id, session));
         }
         const message = registrationLimited
           ? "Some candidate files changed or could not be registered; locations are shown without stable references."
@@ -261,7 +542,7 @@ function createMatchResolver(
           ...(message === undefined ? {} : { message }),
           candidates: groups,
         };
-        const rows = [...result.notices, "No matches found."];
+        const rows = [...notices, "No matches found."];
         if (groups.some((candidate) => candidate.selection.matches[0]?.references !== undefined))
           rows.push(SEARCH_ANCHOR_LEGEND);
         if (fuzzy.status === "ready" && fuzzy.message !== undefined) rows.push(fuzzy.message);
@@ -276,72 +557,67 @@ function createMatchResolver(
           content: [{ type: "text", text: rows.join("\n\n") }],
           details: {
             ...details,
-            ...(session?.target === undefined ? {} : { target: session.target, matchTargets: [] }),
-            fuzzyPresentation: createFuzzyPresentation(result.fuzzy.candidates, context.cwd),
+            ...(session.target === undefined ? {} : { target: session.target, matchTargets: [] }),
+            fuzzyPresentation: createFuzzyPresentation(shown, context.cwd),
             fuzzy,
           } satisfies SearchToolDetails,
         };
       }
 
       const detailBudget = result.request.limit ?? 50;
-      if (result.matches.length === 0) {
+      if (session.matches.length === 0) {
         return {
-          content: [{ type: "text", text: [...result.notices, "No matches found."].join("\n") }],
+          content: [{ type: "text", text: [...notices, "No matches found."].join("\n") }],
           details: {
-            ...createSearchToolDetails(result.request.query, [], result.complete, context.cwd),
-            ...(session?.target === undefined ? {} : { target: session.target, matchTargets: [] }),
+            ...createSearchToolDetails(session.query, [], session.complete, context.cwd),
+            ...(session.target === undefined ? {} : { target: session.target, matchTargets: [] }),
           },
         };
       }
-      const display = session ?? {
-        query: result.request.query,
-        matches: result.matches,
-        complete: result.complete,
+      const rangesBySource = new Map<string, ResultRange[]>();
+      const formatted = formatSearchSession(session, context.cwd, detailBudget, (match, range) => {
+        const ranges = rangesBySource.get(match.source) ?? [];
+        ranges.push(range);
+        rangesBySource.set(match.source, ranges);
+      });
+      const details = {
+        ...createSearchToolDetails(
+          session.query,
+          session.matches,
+          session.complete,
+          context.cwd,
+          session.id,
+          detailBudget,
+        ),
+        ...(session.target === undefined
+          ? {}
+          : { target: session.target, matchTargets: session.matchTargets }),
       };
-      return {
-        content: [
-          {
-            type: "text",
-            text: [
-              ...result.notices,
-              formatSearchSession(display, context.cwd, detailBudget, session !== undefined),
-            ].join("\n"),
-          },
-        ],
-        details: {
-          ...createSearchToolDetails(
-            display.query,
-            display.matches,
-            display.complete,
-            context.cwd,
-            session?.id,
-            detailBudget,
-          ),
-          ...(session?.target === undefined
-            ? {}
-            : { target: session.target, matchTargets: session.matchTargets }),
-        },
-      };
+      const block = { type: "text" as const, text: [...notices, formatted].join("\n") };
+      attachFileTextWindows(block, searchWindows(captured.contents, rangesBySource));
+      recordScriptWindows?.(
+        details,
+        searchWindows(captured.contents, scriptRanges(session.matches)),
+      );
+      return { content: [block], details };
     },
     renderResult: renderSearchResult as SearchResolver["renderResult"],
   };
 }
 
 function formatSearchSession(
-  session: Omit<TextSearchSession, "id"> & { readonly id?: string },
+  session: TextSearchSession,
   cwd: string,
   detailBudget: number,
-  anchorsRegistered = true,
+  visible: (match: TextSearchMatch, range: ResultRange) => void,
 ): string {
   const fileCount = new Set(session.matches.map((match) => match.source)).size;
   const count = session.matches.length;
   const summary = `${String(count)}${session.complete ? "" : "+"} ${plural(count, "match", "matches")} in ${String(fileCount)} ${plural(fileCount, "file", "files")}`;
-  const heading = anchorsRegistered
-    ? session.complete
-      ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${summary}`
-      : `${summary} (incomplete results; no all anchors were registered)`
-    : `${summary} (files changed during search; results shown without anchors)`;
-  const lines = anchorsRegistered ? [SEARCH_ANCHOR_LEGEND, heading] : [heading];
+  const heading = session.complete
+    ? `SEARCH#${session.id}:all:line / SEARCH#${session.id}:all:match — ${summary}`
+    : `${summary} (incomplete results; no all anchors were registered)`;
+  const lines = [SEARCH_ANCHOR_LEGEND, heading];
   const indices = new Map(session.matches.map((match, index) => [match, index + 1]));
   const presentation = planSearchPresentation(session.matches, detailBudget);
 
@@ -355,10 +631,19 @@ function formatSearchSession(
       for (const group of file.groups) {
         const index = indices.get(group.first);
         const first = group.first;
+        // The compact view shows a representative, not all its occurrences.
+        if (group.text === first.lineText)
+          visible(first, {
+            start: { lineNumber: first.lineNumber, column: 0 },
+            end: {
+              lineNumber: first.lineNumber,
+              column: Math.min(first.lineText.length, compactPreviewLength),
+            },
+          });
         lines.push(
-          anchorsRegistered && index !== undefined
-            ? `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
-            : `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)}`,
+          index === undefined
+            ? `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)}`
+            : `  ×${String(group.matchCount)} first at ${source}:${String(first.lineNumber)} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`,
           `    ${previewLine(group.text)}`,
         );
       }
@@ -368,7 +653,12 @@ function formatSearchSession(
         );
       }
       lines.push(
-        `  Search again with path: ${JSON.stringify(source)} and a narrower query to see individual matches.`,
+        `  ${searchCompactionHint(file.matchCount, `path: ${JSON.stringify(source)}`)} to show individual references. Each group above references only its first occurrence.`,
+        ...(session.complete
+          ? [
+              `  For all results across this search, use SEARCH#${session.id}:all:line (containing lines) or SEARCH#${session.id}:all:match (exact matches).`,
+            ]
+          : []),
       );
       continue;
     }
@@ -380,12 +670,12 @@ function formatSearchSession(
         match.endLineNumber === undefined
           ? String(match.endColumn + 1)
           : `${String(match.endLineNumber)}:${String(match.endColumn + 1)}`;
+      const preview = previewMatch(match);
+      visible(match, preview.range);
       const location = `${source}:${String(match.lineNumber)}:${String(match.startColumn + 1)}-${end}`;
       lines.push(
-        anchorsRegistered
-          ? `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`
-          : location,
-        `  ${previewMatch(match)}`,
+        `${location} SEARCH#${session.id}:${String(index)}:line SEARCH#${session.id}:${String(index)}:match`,
+        `  ${preview.text}`,
       );
     }
   }
@@ -403,38 +693,40 @@ function formatSearchSession(
   return lines.join("\n");
 }
 
-function previewMatch(match: TextSearchMatch): string {
+const compactPreviewLength = 129;
+
+function previewMatch(match: TextSearchMatch): { text: string; range: ResultRange } {
   const context = 64;
+  const lineNumber = match.lineNumber;
+  const from = Math.max(0, match.startColumn - context);
+  const start = { lineNumber, column: from };
   if (match.endLineNumber !== undefined) {
     // Show the matched lines themselves, bounded; continuation lines keep the preview indent.
     const maximumLines = 8;
-    const from = Math.max(0, match.startColumn - context);
-    const matched = match.matchedText.replace(/\r\n/gu, "\n").split("\n");
+    // Only LF ends a line: a CRLF line's preview keeps its CR, as the file holds it.
+    const matched = match.matchedText.split("\n");
     const shown = matched.slice(0, maximumLines);
     const more = matched.length - shown.length;
-    return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${shown.join("\n  ")}${
-      more > 0 ? `\n  … ${String(more)} more lines` : ""
-    }⟧`;
+    return {
+      range: {
+        start,
+        end:
+          more > 0
+            ? { lineNumber: lineNumber + maximumLines, column: 0 }
+            : { lineNumber: match.endLineNumber, column: match.endColumn },
+      },
+      text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}${SEARCH_HIGHLIGHT_OPEN}${shown.join("\n  ")}${more > 0 ? `\n  … ${String(more)} more lines` : ""}${SEARCH_HIGHLIGHT_CLOSE}`,
+    };
   }
-  const from = Math.max(0, match.startColumn - context);
   const to = Math.min(match.lineText.length, match.endColumn + context);
-  return `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${match.lineText.slice(
-    match.startColumn,
-    match.endColumn,
-  )}⟧${match.lineText.slice(match.endColumn, to)}${to < match.lineText.length ? "…" : ""}`;
+  return {
+    range: { start, end: { lineNumber, column: to } },
+    text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}${SEARCH_HIGHLIGHT_OPEN}${match.lineText.slice(match.startColumn, match.endColumn)}${SEARCH_HIGHLIGHT_CLOSE}${match.lineText.slice(match.endColumn, to)}${to < match.lineText.length ? "…" : ""}`,
+  };
 }
 
 function previewLine(text: string): string {
-  const context = 129;
-  return `${text.slice(0, context)}${text.length > context ? "…" : ""}`;
-}
-function displaySource(source: string, cwd: string): string {
-  if (source.includes("://")) return source;
-  const relative = path.relative(cwd, source);
-  // oxlint-disable-next-line repo/no-parent-paths -- defensive check against traversal, not a traversal
-  return relative.length > 0 && !relative.startsWith("..") && !path.isAbsolute(relative)
-    ? relative
-    : source;
+  return `${text.slice(0, compactPreviewLength)}${text.length > compactPreviewLength ? "…" : ""}`;
 }
 
 function plural(count: number, singular: string, pluralForm: string): string {

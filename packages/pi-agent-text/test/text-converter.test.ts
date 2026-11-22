@@ -22,12 +22,12 @@ test("preserves strict UTF-8 text, multiline endings, and empty content", async 
   });
 });
 
-test("consumes a UTF-8 BOM without changing the remaining text", async () => {
+test("keeps a UTF-8 BOM as the first character of the text", async () => {
   const bytes = new Uint8Array([0xef, 0xbb, 0xbf, ...encoder.encode("hello")]);
 
   await expect(converter.tryConvert({ source: "bom", bytes }, {})).resolves.toEqual({
     kind: "converted",
-    content: [{ type: "text", text: "hello" }],
+    content: [{ type: "text", text: "\uFEFFhello" }],
   });
 });
 

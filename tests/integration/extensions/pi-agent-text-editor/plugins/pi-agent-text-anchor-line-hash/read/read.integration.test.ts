@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { restoreReadDetails } from "#src/extensions/pi-agent-read/src/core/tools/read/persisted-result.ts";
 
+import { NO_FINAL_LINE_BREAK } from "pi-agent-text";
 import {
   formatLineHashAnchor,
   renderLineHashLines,
@@ -58,7 +59,10 @@ const changedFixtureLines = fixtureLines.map((line, index) =>
   index === 7 ? "The changed observation produces a different content-derived anchor." : line,
 );
 
-test("adds hash anchors to filesystem text", async () => {
+const fixtureContent = fixtureLines.join("\n");
+const changedContent = changedFixtureLines.join("\n");
+
+test("adds line anchors to filesystem text", async () => {
   await withTempDirectory(async (directory) => {
     await writeFile(path.join(directory, "original.md"), fixtureLines.join("\n"), "utf8");
     await writeFile(path.join(directory, "changed.md"), changedFixtureLines.join("\n"), "utf8");
@@ -75,11 +79,16 @@ test("adds hash anchors to filesystem text", async () => {
     const original = getToolResultMessage<ReadResultDetails>(result, "read-original");
     const originalText = getToolResultText(result, "read-original");
     const changedText = getToolResultText(result, "read-changed");
-    const originalAnchor = formatLineHashAnchor(8, fixtureLines[7]);
-    const changedAnchor = formatLineHashAnchor(8, changedFixtureLines[7]);
+    const originalAnchor = formatLineHashAnchor(fixtureContent, 8);
+    const changedAnchor = formatLineHashAnchor(changedContent, 8);
 
-    expect(originalText).toBe(renderLineHashLines(fixtureLines).join("\n"));
-    expect(changedText).toBe(renderLineHashLines(changedFixtureLines).join("\n"));
+    // The fixture has no final line break, so Read ends it with the marker, which is no line.
+    expect(originalText).toBe(
+      `${renderLineHashLines(fixtureContent).join("\n")}\n${NO_FINAL_LINE_BREAK}`,
+    );
+    expect(changedText).toBe(
+      `${renderLineHashLines(changedContent).join("\n")}\n${NO_FINAL_LINE_BREAK}`,
+    );
     expect(originalAnchor).not.toBe(changedAnchor);
     expect(originalText).toContain(`${originalAnchor}|${fixtureLines[7]}`);
     expect(changedText).toContain(`${changedAnchor}|${changedFixtureLines[7]}`);
@@ -103,7 +112,7 @@ test("keeps original anchors when projecting a range", async () => {
     const selectedLines = fixtureLines.slice(6, 9);
 
     expect(getToolResultText(result, "read-range")).toContain(
-      renderLineHashLines(fixtureLines, 7, 9).join("\n"),
+      renderLineHashLines(fixtureContent, 7, 9).join("\n"),
     );
     expect(restoreReadDetails(read.details, getToolResultText(result, "read-range"))).toMatchObject(
       {
@@ -130,11 +139,8 @@ test("does not process text resolved by another plugin", async () => {
       testName: "read-text-hash-anchor-other-resolver",
       calls: [{ id: "read-other", path: "other:other.txt" }],
     });
-    const read = getToolResultMessage<ReadResultDetails>(result, "read-other");
-    const lines = restoreReadDetails(read.details, getToolResultText(result, "read-other")).lines;
-
+    // The text carries no line-hash prefix, so the other resolver's lines got no anchors.
     expect(getToolResultText(result, "read-other")).toBe(source);
-    expect(lines?.every((line) => line.anchor === undefined)).toBe(true);
   });
 });
 

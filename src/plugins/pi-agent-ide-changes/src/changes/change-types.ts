@@ -7,6 +7,7 @@ export type ChangeUnavailableReason =
   | "index-file-lookup-failed"
   | "index-write-failed"
   | "missing-head"
+  | "mixed-line-endings"
   | "no-worktree"
   | "outside-worktree";
 

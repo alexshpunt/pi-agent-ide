@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -29,11 +29,14 @@ export async function replaceFileContent(
     `.${path.basename(target)}.${randomBytes(6).toString("hex")}.pi-tmp`,
   );
   try {
+    const mode = existing.mode & 0o7777;
     await writeFile(temporary, bytes, {
-      mode: existing.mode & 0o7777,
+      mode,
       flag: "wx",
       ...(signal !== undefined && { signal }),
     });
+    // The process umask narrows the mode a file is created with; the replacement keeps the original.
+    await chmod(temporary, mode);
     await rename(temporary, target);
   } catch (error) {
     await rm(temporary, { force: true });

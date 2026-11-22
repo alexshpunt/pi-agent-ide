@@ -56,7 +56,11 @@ for (const expanded of [false, true]) {
         scenario === "truncated-read"
           ? { path: file }
           : name === "replace"
-            ? { path: file, start: "unchanged source line 0005", text: "changed source line five" }
+            ? {
+                path: file,
+                at: "unchanged source line 0005",
+                text: "changed source line five",
+              }
             : name === "read"
               ? { path: file, offset: 4, limit: 8, views: ["anchors"] }
               : { query: "source line 0005", path: file };
@@ -77,20 +81,6 @@ for (const expanded of [false, true]) {
         ...options,
         testName: `${baseline ? "baseline" : "compact"}-${id}`,
         conversation: [
-          ...(name === "replace"
-            ? [
-                assistantMessage(
-                  [
-                    toolCall({
-                      id: "editing-guide",
-                      name: "read",
-                      arguments: { path: "docs:editing" },
-                    }),
-                  ],
-                  { stopReason: "toolUse" },
-                ),
-              ]
-            : []),
           assistantMessage([toolCall({ id, name, arguments: arguments_, delayMs: 0 })], {
             stopReason: "toolUse",
           }),
@@ -206,13 +196,13 @@ test("restores formatted multi-hunk batch results and errors without source file
             toolCall({
               id: "batch-first",
               name: "replace",
-              arguments: { path: file, start: "source line 5", text: "unformatted first" },
+              arguments: { path: file, at: "source line 5", text: "unformatted first" },
               delayMs: 0,
             }),
             toolCall({
               id: "batch-last",
               name: "replace",
-              arguments: { path: file, start: "source line 25", text: "unformatted last" },
+              arguments: { path: file, at: "source line 25", text: "unformatted last" },
               delayMs: 0,
             }),
           ],
@@ -223,7 +213,7 @@ test("restores formatted multi-hunk batch results and errors without source file
             toolCall({
               id: "batch-error",
               name: "replace",
-              arguments: { path: file, start: "absent anchor", text: "never written" },
+              arguments: { path: file, at: "absent anchor", text: "never written" },
               delayMs: 0,
             }),
           ],

@@ -246,10 +246,7 @@ function sampleSource(language: string): string {
   return sources[language] ?? "fixture\n";
 }
 
-async function expectConfigEntries(
-  cwd: string,
-  expectedKinds: ReadonlySet<"formatter" | "linter" | "lsp">,
-): Promise<void> {
+async function expectConfigEntries(cwd: string, expectedKinds: ReadonlySet<string>): Promise<void> {
   for (const [name, key, kind] of [
     ["formatters", "formatters", "formatter"],
     ["linters", "linters", "linter"],
@@ -263,6 +260,6 @@ async function expectConfigEntries(
       string,
       Record<string, unknown>
     >;
-    expect(Object.keys(value[key])).not.toHaveLength(0);
+    expect(Object.keys(requiredValue(value[key]))).not.toHaveLength(0);
   }
 }
