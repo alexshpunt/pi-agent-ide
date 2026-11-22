@@ -6,7 +6,6 @@ export interface LineSelection {
 }
 
 const ending = /(?:\r\n|\n)$/u;
-const withoutEnding = (text: string) => text.replace(ending, "");
 
 /**
  * The whole-line extent of a unique line text, such as the line a Read anchor shows. Literal
@@ -28,10 +27,9 @@ export function wholeLineSelection(content: string, selector: unknown): LineSele
 }
 
 /**
- * Normalize only a terminal separator of new text whose omission has the same effect on a line
- * selection, such as a line anchor. Selectors stay strict: a literal selects only its
- * characters, so a terminal newline in it changes the edit. Final file bytes are checked
- * separately.
+ * Accept a single separator on either edge of an Insert payload if the destination
+ * supplies its final separator. Omitting every break leaves the payload inline.
+ * Final file bytes are checked separately.
  */
 export function equivalentLineArguments(
   tool: string,
@@ -39,23 +37,16 @@ export function equivalentLineArguments(
   actual: Record<string, unknown>,
   selected: LineSelection | undefined,
 ): Record<string, unknown> {
-  const normalized = { ...actual };
   const required = expected.text;
   const text = actual.text;
-  if (
-    !selected ||
-    typeof required !== "string" ||
-    typeof text !== "string" ||
-    required === text ||
-    withoutEnding(required).length === 0 ||
-    withoutEnding(required) !== withoutEnding(text)
-  )
-    return normalized;
-  // Insert adds the separator before following text. Replace writes exactly its text, so a
-  // replacement without the line's separator joins the next line and is not equivalent.
-  const equivalent =
-    tool === "insert" &&
-    (actual.before !== undefined ? selected.from : selected.to) < selected.content.length;
-  if (equivalent) normalized.text = required;
-  return normalized;
+  if (tool !== "insert" || !selected || typeof required !== "string" || typeof text !== "string")
+    return actual;
+
+  const trailing = /^([^\r\n]+)\r?\n$/u;
+  const leading = /^\r?\n([^\r\n]+)$/u;
+  const body = (value: string) => (trailing.exec(value) ?? leading.exec(value))?.[1];
+  const requiredBody = body(required);
+  if (required === text || requiredBody === undefined || requiredBody !== body(text)) return actual;
+
+  return { ...actual, text: required };
 }

@@ -14,8 +14,18 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
-import { ResultTargetStore, type ResultRange } from "pi-agent-resource";
-import { createTextContentConverter, linesWithAnchor, textLineAnchors } from "pi-agent-text";
+import {
+  ResultTargetStore,
+  takeFileTextWindows,
+  type FileTextWindow,
+  type ResultRange,
+} from "pi-agent-resource";
+import {
+  createTextContentConverter,
+  linesWithAnchor,
+  NO_FINAL_LINE_BREAK,
+  textLineAnchors,
+} from "pi-agent-text";
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 
 import { createExactTextAnchorResolver } from "#pi-agent-text-anchor-exact/src/anchor.ts";
@@ -155,9 +165,16 @@ function lineEndingAt(content: string, at: number): string {
   return content[lineFeed - 1] === "\r" ? "\r\n" : "\n";
 }
 
-/** Text sent for a literal selection as written at `at`. */
+/** At the start of a BOM file, the file's existing mark supplies the leading BOM. */
+function withoutDuplicateBom(content: string, at: number, text: string): string {
+  return at === 1 && content.startsWith(BOM) && text.startsWith(BOM) ? text.slice(1) : text;
+}
+
+/** Text sent for a selection as written at `at`. */
 function sentText(content: string, at: number, text: string): string {
-  return text.replace(/\r\n?/gu, "\n").replaceAll("\n", lineEndingAt(content, at));
+  return withoutDuplicateBom(content, at, text)
+    .replace(/\r\n?/gu, "\n")
+    .replaceAll("\n", lineEndingAt(content, at));
 }
 
 /**
@@ -166,6 +183,89 @@ function sentText(content: string, at: number, text: string): string {
  */
 function replacedText(content: string, from: number, to: number, text: string): string {
   return keepLookalikeBytes(content.slice(from, to), sentText(content, from, text));
+}
+
+type Span = { from: number; to: number };
+
+function splice(content: string, from: number, to: number, text: string): string {
+  return content.slice(0, from) + text + content.slice(to);
+}
+
+/** A character span covers whole lines if it starts at their start and ends at their content or ending. */
+function wholeLineBounds(content: string, lines: readonly Span[], { from, to }: Span) {
+  if (from === to) return undefined;
+  const low = lines.findIndex((line) => withoutBom(content, line).from === from);
+  if (low === -1) return undefined;
+  const high = lines.findIndex(
+    (line, index) => index >= low && (contentEnd(content, line) === to || line.to === to),
+  );
+  return high === -1 ? undefined : { low, high };
+}
+
+function writeSpan(content: string, lines: readonly Span[], { from, to }: Span, text: string) {
+  const whole = wholeLineBounds(content, lines, { from, to });
+  return whole === undefined
+    ? splice(content, from, to, replacedText(content, from, to, text))
+    : writeLines(content, lines, whole.low, whole.high, text);
+}
+
+/** Copy and Move carry the line contents, with internal endings unchanged. */
+function transferSpan(content: string, lines: readonly Span[], span: Span) {
+  const whole = wholeLineBounds(content, lines, span);
+  const range = whole === undefined ? span : linesContent(content, lines, whole.low, whole.high);
+  return { text: content.slice(range.from, range.to), wholeLines: whole !== undefined };
+}
+
+function putTransfer(content: string, span: Span, moved: ReturnType<typeof transferSpan>) {
+  const lines = lineSpans(content);
+  const whole = wholeLineBounds(content, lines, span);
+  const { from, to } =
+    whole === undefined ? span : linesContent(content, lines, whole.low, whole.high);
+  const text = withoutDuplicateBom(content, from, moved.text);
+  if (from === to) {
+    if (!moved.wholeLines) return splice(content, from, to, text);
+    return insertBlock(content, from, text, true);
+  }
+  if (moved.text === "" && !moved.wholeLines) return writeSpan(content, lines, span, "");
+  return splice(content, from, to, text);
+}
+
+/** Add a block at a line edge. Existing bytes keep their own separators. */
+function insertBlock(content: string, at: number, block: string, transferred = false) {
+  const ending = lineEndingAt(content, at);
+  const startsLine = at <= (content.startsWith(BOM) ? 1 : 0) || content[at - 1] === "\n";
+  const existingBreak = /^\r?\n/u.test(content.slice(at));
+  const endsLine = !transferred && block.endsWith(ending);
+  if (!startsLine && (existingBreak || at === content.length)) {
+    const body = endsLine ? block.slice(0, -ending.length) : block;
+    return splice(content, at, at, ending + body);
+  }
+  const suffix = !endsLine && (at < content.length || content.endsWith("\n")) ? ending : "";
+  return splice(content, at, at, (startsLine ? "" : ending) + block + suffix);
+}
+
+/** Insert line-break payloads at a line edge as separate lines. */
+function insertAt(
+  content: string,
+  lines: readonly Span[],
+  span: Span,
+  before: boolean,
+  text: string,
+  explicitLine?: Span,
+) {
+  const at = before ? span.from : span.to;
+  const atStart = at === (content.startsWith(BOM) ? 1 : 0) || content[at - 1] === "\n";
+  const endingLine = lines.find((line) => contentEnd(content, line) === at);
+  if ((!atStart && endingLine === undefined) || !/[\r\n]/u.test(text))
+    return splice(content, at, at, sentText(content, at, text));
+
+  const afterLine = endingLine !== undefined && (!atStart || explicitLine === endingLine);
+  const insertion = !before && afterLine ? endingLine.to : at;
+  const ending = lineEndingAt(content, insertion);
+  const written = sentText(content, insertion, text);
+  const block =
+    written.startsWith(ending) && /[^\r\n]/u.test(written) ? written.slice(ending.length) : written;
+  return insertBlock(content, insertion, block);
 }
 
 /** The source offset of an offset in `normalizeToLF(text)`: before the CR of a CRLF at its LF. */
@@ -368,6 +468,7 @@ async function harness() {
     ).execute("call", input, undefined, undefined, { cwd } as ExtensionToolContext);
     return {
       result,
+      windows: result.content.flatMap(takeFileTextWindows),
       text: result.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""),
     };
   };
@@ -381,43 +482,32 @@ const file = (name: string) => path.join(cwd, name);
 const bytes = (name: string) => readFile(file(name));
 const put = (name: string, content: string) => writeFile(file(name), content);
 
-/** The text a result view shows for each final line: `Final text, lines A–B:` and its lines. */
-function shownFinalLines(text: string): Map<number, string> {
-  const rows = text.split("\n");
-  const shown = new Map<number, string>();
-  for (let index = 0; index < rows.length; index += 1) {
-    const header = /^Final text, lines (\d+)–(\d+):$/u.exec(rows[index] ?? "");
-    if (header === null) continue;
-    const first = Number(header[1]);
-    const last = Number(header[2]);
-    for (let line = first; line <= last; line += 1)
-      shown.set(line, rows[index + 1 + line - first] ?? "");
-    const after = rows[index + 2 + last - first];
-    if (after === "\\ No newline at end of file") shown.set(last + 1, after);
+/** Check the rendered fixture bytes for the line windows delivered with the tool result. */
+function expectExactView(text: string, windows: readonly FileTextWindow[], content: string): void {
+  const lines = content.length === 0 ? [""] : content.split("\n");
+  const hasFinalBreak = content.endsWith("\n");
+  if (hasFinalBreak) lines.pop();
+  for (const window of windows) {
+    expect(window.content).toBe(content);
+    for (const { start, end } of window.ranges) {
+      const last =
+        end.column === 0 && start.lineNumber < end.lineNumber ? end.lineNumber - 1 : end.lineNumber;
+      const expected = lines.slice(start.lineNumber - 1, last);
+      if (last === lines.length && !hasFinalBreak) expected.push(NO_FINAL_LINE_BREAK);
+      expect(`${text}\n`).toContain(`\n${expected.join("\n")}\n`);
+    }
   }
-  return shown;
-}
-
-/** The result view shows each final line as it is, and marks an end without a final LF. */
-function expectExactView(text: string, content: string): void {
-  const lines = content.length === 0 ? [] : content.split("\n");
-  if (content.endsWith("\n")) lines.pop();
-  const shown = shownFinalLines(text);
-  for (const [line, row] of shown) {
-    if (row === "\\ No newline at end of file") {
-      expect(line - 1).toBe(Math.max(1, lines.length));
-      expect(content.endsWith("\n")).toBe(false);
-    } else expect(row).toBe(lines[line - 1] ?? "");
-  }
-  const last = Math.max(1, lines.length);
-  if (shown.has(last) && !content.endsWith("\n")) expect(shown.get(last + 1)).toBeDefined();
 }
 
 type Harness = Awaited<ReturnType<typeof harness>>;
 
 interface Operation {
   readonly name: string;
-  readonly run: () => Promise<{ readonly text: string; readonly applied: boolean }>;
+  readonly run: () => Promise<{
+    readonly text: string;
+    readonly applied: boolean;
+    readonly windows: readonly FileTextWindow[];
+  }>;
   /** Expected bytes of each file after the operation, or undefined when it must refuse. */
   readonly expected: Readonly<Record<string, string>> | undefined;
 }
@@ -431,16 +521,14 @@ function randomOperation(
   near: number | undefined,
 ): Operation | undefined {
   const text = insertedText(rng);
-  const splice = (content: string, from: number, to: number, insert: string) =>
-    content.slice(0, from) + insert + content.slice(to);
-  const outcome = (applied: boolean, result: { text: string; result: { details: unknown } }) => ({
-    text: result.text,
-    applied,
-  });
   const call = (tool: TextMutationToolRegistration, input: Record<string, unknown>) => async () => {
     const result = await h.run(tool, input);
     const effect = (result.result.details as { effect?: string }).effect;
-    return outcome(effect !== "not-applied" && result.result.isError !== true, result);
+    return {
+      applied: effect !== "not-applied" && result.result.isError !== true,
+      text: result.text,
+      windows: result.windows,
+    };
   };
   const kind = rng.int(15);
   const lines = lineSpans(main);
@@ -467,7 +555,7 @@ function randomOperation(
           at: main.slice(span.from, span.to),
           ...(kind === 1 ? {} : { text: insert }),
         }),
-        expected: { "main.txt": splice(main, from, to, replacedText(main, from, to, insert)) },
+        expected: { "main.txt": writeSpan(main, lines, { from, to }, insert) },
       };
     }
     case 2: {
@@ -492,7 +580,7 @@ function randomOperation(
         expected: (() => {
           const from = literalSpan(main, first).from;
           const to = literalSpan(main, second).to;
-          return { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) };
+          return { "main.txt": writeSpan(main, lines, { from, to }, text) };
         })(),
       };
     }
@@ -527,7 +615,7 @@ function randomOperation(
       return {
         name: `replace match ${JSON.stringify(main.slice(span.from, span.to))}`,
         run: call(replaceMutationTool, { path: "main.txt", at: reference, text: text }),
-        expected: { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) },
+        expected: { "main.txt": writeSpan(main, lines, { from, to }, text) },
       };
     }
     case 6: {
@@ -556,7 +644,6 @@ function randomOperation(
       if (span === undefined || text.length === 0) return undefined;
       const before = rng.chance(0.5);
       const literal = literalSpan(main, span);
-      const at = before ? literal.from : literal.to;
       return {
         name: `insert ${before ? "before" : "after"} literal`,
         run: call(insertMutationTool, {
@@ -564,7 +651,7 @@ function randomOperation(
           [before ? "before" : "after"]: main.slice(span.from, span.to),
           text,
         }),
-        expected: { "main.txt": splice(main, at, at, sentText(main, at, text)) },
+        expected: { "main.txt": insertAt(main, lines, literal, before, text) },
       };
     }
     case 8:
@@ -574,13 +661,12 @@ function randomOperation(
       const target = uniqueSpan(rng, other);
       if (source === undefined || target === undefined) return undefined;
       const literal = main.slice(source.from, source.to);
-      // Transferred text is file text: it keeps its bytes.
       const from = literalSpan(main, source);
       const to = literalSpan(other, target);
-      const moved = main.slice(from.from, from.to);
+      const moved = transferSpan(main, lines, from);
       const tool = kind === 8 ? copyMutationTool : moveMutationTool;
       return {
-        name: `${tool.name} literal ${JSON.stringify(literal)}`,
+        name: `${tool.name} literal ${JSON.stringify(literal)} over ${JSON.stringify(other.slice(target.from, target.to))}`,
         run: call(tool, {
           path: "main.txt",
           at: literal,
@@ -588,8 +674,8 @@ function randomOperation(
           targetAt: other.slice(target.from, target.to),
         }),
         expected: {
-          "main.txt": kind === 8 ? main : splice(main, from.from, from.to, ""),
-          "other.txt": splice(other, to.from, to.to, moved),
+          "main.txt": kind === 8 ? main : writeSpan(main, lines, from, ""),
+          "other.txt": putTransfer(other, to, moved),
         },
       };
     }
@@ -631,7 +717,7 @@ function randomOperation(
         run: call(replaceMutationTool, { path: "main.txt", at: variant, text: text }),
         expected:
           found.length === 1
-            ? { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) }
+            ? { "main.txt": writeSpan(main, lines, { from, to }, text) }
             : undefined,
       };
     }
@@ -680,21 +766,20 @@ function randomOperation(
         run: call(replaceMutationTool, { path: "main.txt", at: variant, text: text }),
         expected:
           found.length === 1
-            ? { "main.txt": splice(main, from, to, replacedText(main, from, to, text)) }
+            ? { "main.txt": writeSpan(main, lines, { from, to }, text) }
             : undefined,
       };
     }
     default: {
-      // Insert after a whole line with text ending in LF adds the text, with its line breaks
-      // written in the line ending at the insertion point.
+      // Insert a block after an explicit line, with a separator borrowed or supplied at the edge.
       const line = uniqueLine();
       if (line === undefined || !main.slice(0, lines[line]?.to).endsWith("\n")) return undefined;
       const insert = `${text}\n`;
-      const at = lines[line]?.to ?? 0;
+      const span = linesContent(main, lines, line, line);
       return {
         name: `insert after line ${String(line + 1)}`,
         run: call(insertMutationTool, { path: "main.txt", after: anchors[line], text: insert }),
-        expected: { "main.txt": splice(main, at, at, sentText(main, at, insert)) },
+        expected: { "main.txt": insertAt(main, lines, span, false, insert, lines[line]) },
       };
     }
   }
@@ -752,11 +837,17 @@ describe("byte-exact edits on bomb files", () => {
         expect(outcome.applied, `${label}\n${outcome.text}`).toBe(true);
         const expectedMain = operation.expected["main.txt"] ?? main;
         const expectedOther = operation.expected["other.txt"] ?? other;
-        expect(Buffer.compare(await bytes("main.txt"), Buffer.from(expectedMain)), label).toBe(0);
-        expect(Buffer.compare(await bytes("other.txt"), Buffer.from(expectedOther)), label).toBe(0);
+        expect(
+          Buffer.compare(await bytes("main.txt"), Buffer.from(expectedMain)),
+          `${label}\nmain.txt: expected ${JSON.stringify(expectedMain)}, got ${JSON.stringify(mainNow)}`,
+        ).toBe(0);
+        expect(
+          Buffer.compare(await bytes("other.txt"), Buffer.from(expectedOther)),
+          `${label}\nother.txt: expected ${JSON.stringify(expectedOther)}, got ${JSON.stringify(otherNow)}`,
+        ).toBe(0);
         // A transfer shows both files; the single-file view is checked for the other edits.
         if (expectedMain !== main && expectedOther === other)
-          expectExactView(outcome.text, expectedMain);
+          expectExactView(outcome.text, outcome.windows, expectedMain);
         near = firstDifference(main, expectedMain);
         main = expectedMain;
         other = expectedOther;
@@ -864,10 +955,14 @@ describe("byte-exact regressions", () => {
     await put("main.txt", "one\r\ntwo\r\nlf\n");
     await h.run(replaceMutationTool, { path: "main.txt", at: "one", text: "1\n1\r\n1" });
     expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nlf\n");
-    await h.run(insertMutationTool, { path: "main.txt", after: "two", text: "\nmore" });
-    expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nmore\r\nlf\n");
+    await h.run(insertMutationTool, { path: "main.txt", after: "two", text: "\nmore\r\nagain" });
+    expect((await bytes("main.txt")).toString("utf8")).toBe(
+      "1\r\n1\r\n1\r\ntwo\r\nmore\nagain\nlf\n",
+    );
     await h.run(replaceMutationTool, { path: "main.txt", at: "lf", text: "l\r\nf" });
-    expect((await bytes("main.txt")).toString("utf8")).toBe("1\r\n1\r\n1\r\ntwo\r\nmore\r\nl\nf\n");
+    expect((await bytes("main.txt")).toString("utf8")).toBe(
+      "1\r\n1\r\n1\r\ntwo\r\nmore\nagain\nl\nf\n",
+    );
   });
 
   test("an LF selector matches CRLF text and keeps the file's line endings", async () => {
@@ -905,18 +1000,26 @@ describe("byte-exact regressions", () => {
   test("the result view shows a missing final line break", async () => {
     const h = await harness();
     await put("main.txt", "one\ntwo");
-    const { text } = await h.run(replaceMutationTool, {
+    const open = await h.run(replaceMutationTool, {
       path: "main.txt",
       at: "two",
-      text: "2",
+      text: "last2",
     });
-    expect(shownFinalLines(text).get(3)).toBe("\\ No newline at end of file");
+    expect(open.result.isError, open.text).not.toBe(true);
+    expect(open.windows).toHaveLength(1);
+    expectExactView(open.text, open.windows, "one\nlast2");
+
+    // A partial-line edit can add a final LF. A whole-line edit preserves its old ending.
     const ended = await h.run(replaceMutationTool, {
       path: "main.txt",
       at: "2",
       text: "2\n",
     });
-    expect([...shownFinalLines(ended.text).values()]).toEqual(["one", "2"]);
+    expect(ended.result.isError, ended.text).not.toBe(true);
+    expect((await bytes("main.txt")).toString("utf8")).toBe("one\nlast2\n");
+    expect(ended.windows).toHaveLength(1);
+    expectExactView(ended.text, ended.windows, "one\nlast2\n");
+    expect(ended.text).not.toContain(NO_FINAL_LINE_BREAK);
   });
 
   test("the result view shows CR as part of a line", async () => {
@@ -927,7 +1030,7 @@ describe("byte-exact regressions", () => {
       at: "one",
       text: "1",
     });
-    expect([...shownFinalLines(text).values()]).toEqual(["1\r", "two\rx"]);
+    expect(`${text}\n`).toContain("\n1\r\ntwo\rx\n");
   });
 
   test("a fuzzy literal replaces only the characters it matched", async () => {
