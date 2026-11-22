@@ -22,6 +22,7 @@ import {
   isAgentContent,
   ResourceError,
   isResourceResolutionAttempt,
+  EDIT_EXECUTION_TIMEOUT_MS,
   EDIT_WAIT_TIMEOUT_MS,
   reportToolEffect,
   resourceScheduler,
@@ -533,14 +534,21 @@ export function createTextEditorCore(
   const fileOperationResolvers: FileOperationResolver[] = [];
   let registrationQueue = Promise.resolve();
   const scheduler = resourceScheduler;
+  const editWaitPolicy = {
+    waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+    waitTimeoutForAccesses: (accesses: readonly ResourceAccess[]) =>
+      accesses.length > 0 &&
+      accesses.every(
+        ({ resource, group = resource }) => group.startsWith("file:") || group.startsWith("ssh://"),
+      )
+        ? EDIT_EXECUTION_TIMEOUT_MS
+        : undefined,
+  };
   const enqueueMutation = <T>(
     action: () => Promise<T>,
     signal?: AbortSignal,
     accesses?: Promise<readonly ResourceAccess[] | undefined>,
-  ): Promise<T> =>
-    scheduler.run(accesses, action, signal, {
-      waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
-    });
+  ): Promise<T> => scheduler.run(accesses, action, signal, editWaitPolicy);
   const registerContributions = (draft: PluginContributionDraft): void => {
     validateContributionDraft(
       draft,
@@ -798,7 +806,7 @@ export function createTextEditorCore(
             ).then((sets) => sets.flat());
       return scheduler.run(accesses, action, signal, {
         allowNestedWrites: scope?.allowNestedEdits === true,
-        waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+        ...editWaitPolicy,
         waitFor: scope === undefined ? "the file operation reservation" : scope.sources.join(", "),
       });
     },
