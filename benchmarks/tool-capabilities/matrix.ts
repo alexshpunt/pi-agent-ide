@@ -51,7 +51,13 @@ const groups: [string[], string[]][] = [
   [["read.ssh-guide"], ["ssh-guide"]],
   [["read.ide-settings", "search.ide-settings"], ["ide-settings-catalog"]],
   [
-    ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
+    [
+      "search.docs-all",
+      "search.docs-one",
+      "search.docs-flags",
+      "search.docs-readonly",
+      "search.docs-literal-colon",
+    ],
     ["docs-search"],
   ],
   [
