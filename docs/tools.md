@@ -176,7 +176,7 @@ When an `:all` form cannot be used, the error says why and what to do: the searc
 
 ## File search
 
-`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored. Results are sorted, limited by `limit` (default 100), and mark an incomplete list when the limit is reached. In Codemode, `file_search` resolves to the paths as a `string[]`, and without `limit` it lists every matching file.
+`file_search` finds file paths under `path` (default: the session directory), locally or on an SSH target. A `pattern` with glob syntax (`*`, `**`, `?`, character classes, braces) matches paths relative to `path` when it contains `/`, and file names at any depth otherwise. Other patterns match as a case-insensitive subsequence of the relative path. `include` and `exclude` narrow the scan; `.git` is skipped and ignore files are honored. The tool walks paths in a deterministic order and stops as soon as it finds `limit` distinct matches (default 100). Reaching the limit or the 30-second deadline leaves an incomplete list. In Codemode, the value is a `string[]` with no default match limit. If the call times out, the array contains the paths found so far and the Codemode failure summary marks it incomplete. Narrow `path` if you need a complete list.
 
 ## Syntax search
 
