@@ -160,13 +160,9 @@ Both default to `false`. A project boolean overrides the global boolean, includi
 
 ## Search timeout
 
-The complete `search` call has a 30-second timeout by default. This covers resolver work and result formatting. When it expires, the active resolver is cancelled and the agent receives this error:
+The `search` tool has a 30-second deadline by default. This includes resolving the scope and formatting results. On timeout, the tool cancels the active resolver and reports the target and elapsed limit. If the search has confirmed matches, it can return them as an incomplete result without editable selections.
 
-```text
-Search timed out after 30 seconds. Try a smaller path scope.
-```
-
-Set a global timeout in `~/.pi/agent/pi-agent-ide/search.json`:
+Set the global deadline in `~/.pi/agent/pi-agent-ide/search.json`:
 
 ```json
 {
@@ -174,7 +170,7 @@ Set a global timeout in `~/.pi/agent/pi-agent-ide/search.json`:
 }
 ```
 
-A project can override it in `<project>/.pi/pi-agent-ide/search.json`. Set `timeoutMs` to `null` at either level to disable the timeout. A project value wins over the global value. Any numeric value must be a positive integer. Invalid search settings reject the search call and name the bad config file.
+A project can override it in `<project>/.pi/pi-agent-ide/search.json`. Give `timeoutMs` a positive integer in milliseconds. Pi Agent IDE caps the deadline at 120 seconds; `null` uses that cap. Invalid settings fail the call and name the config file. This setting does not change the 30-second deadline for `file_search`.
 
 ## Tool configuration
 
