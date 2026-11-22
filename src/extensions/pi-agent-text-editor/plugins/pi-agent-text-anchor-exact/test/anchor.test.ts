@@ -44,6 +44,54 @@ function rangesOf(result: ReturnType<typeof resolve>) {
   return result.anchor.ranges;
 }
 
+test("a pasted search highlight resolves to the unmarked source span", () => {
+  expect(rangesOf(resolve("// ⟦needle⟧", "// needle\n"))).toEqual([
+    { start: { lineNumber: 1, column: 0 }, end: { lineNumber: 1, column: 9 } },
+  ]);
+});
+
+test("brackets in actual source text take precedence over stripping", () => {
+  expect(rangesOf(resolve("⟦needle⟧", "needle\n⟦needle⟧\n"))).toEqual([
+    { start: { lineNumber: 2, column: 0 }, end: { lineNumber: 2, column: 8 } },
+  ]);
+});
+
+test("a peeled closing selector counts only matches after the opening selector", () => {
+  expect(rangesOf(resolve("⟦END⟧", "END\nSTART\nEND\n", 4))).toEqual([
+    { start: { lineNumber: 3, column: 0 }, end: { lineNumber: 3, column: 3 } },
+  ]);
+});
+
+test("a real bracketed closing match before the opening selector does not redirect the edit", () => {
+  expect(resolve("⟦END⟧", "⟦END⟧\n⟦END⟧\nSTART\nEND\n", 12)).toMatchObject({
+    kind: "rejected",
+    rejection: { code: "before-start" },
+  });
+});
+
+test("an ambiguous real bracketed match does not fall back to the plain text", () => {
+  const result = resolve("⟦needle⟧", "⟦needle⟧\n⟦needle⟧\nneedle\n");
+  expect(result).toMatchObject({ kind: "rejected", rejection: { code: "ambiguous" } });
+  expect(result.kind === "rejected" && result.rejection.searchHighlightRetry).toBeUndefined();
+});
+
+test("a stripped closing selector that only matches before the start is refused", () => {
+  const result = resolve("⟦END⟧", "END\nSTART\n", 9);
+  expect(result).toMatchObject({ kind: "rejected", rejection: { code: "before-start" } });
+  expect(result.kind === "rejected" && result.rejection.reason).toContain("⟦ ⟧");
+});
+
+test.each([
+  ["⟦needle⟧", "needle\nneedle\n", "ambiguous"],
+  ["⟦needle⟧", "unrelated\n", "missing"],
+  ["⟦⟧", "needle\n", "missing"],
+])("refuses a highlighted selector %j in %j when the retry is %s", (value, content, code) => {
+  const result = resolve(value, content);
+  expect(result).toMatchObject({ kind: "rejected", rejection: { code } });
+  if (result.kind !== "rejected") throw new Error("Expected refusal");
+  expect(result.rejection.reason).toContain("⟦ ⟧");
+});
+
 test.each(["\n", "\r\n"])("keeps blank separators outside an exact match ending in %j", (eol) => {
   expect(
     rangesOf(resolve(`alpha${eol}bravo${eol}`, `alpha${eol}bravo${eol}${eol}charlie${eol}`)),
