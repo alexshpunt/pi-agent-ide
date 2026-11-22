@@ -182,7 +182,10 @@ function scopedResolvers(
     sources.map(async (source) => {
       try {
         for (const { resolver } of cached) {
-          const attempt = await resolver.tryResolve(source, context);
+          const attempt = await resolver.tryResolve(
+            source,
+            mode === "write" ? { ...context, deferSnapshot: true } : context,
+          );
           if (!isResourceResolutionAttempt(attempt)) return undefined;
           if (attempt.kind === "not-handled") continue;
           if (attempt.kind === "failed") return undefined;
@@ -534,7 +537,7 @@ export function createTextEditorCore(
   const fileOperationResolvers: FileOperationResolver[] = [];
   let registrationQueue = Promise.resolve();
   const scheduler = resourceScheduler;
-  const editWaitPolicy = {
+  const fileOperationWaitPolicy = {
     waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
     waitTimeoutForAccesses: (accesses: readonly ResourceAccess[]) =>
       accesses.length > 0 &&
@@ -548,7 +551,12 @@ export function createTextEditorCore(
     action: () => Promise<T>,
     signal?: AbortSignal,
     accesses?: Promise<readonly ResourceAccess[] | undefined>,
-  ): Promise<T> => scheduler.run(accesses, action, signal, editWaitPolicy);
+  ): Promise<T> =>
+    scheduler.run(accesses, action, signal, {
+      waitTimeoutMs: EDIT_WAIT_TIMEOUT_MS,
+      waitTimeoutForAccesses: (resolved) =>
+        resolved.length > 0 ? EDIT_EXECUTION_TIMEOUT_MS : undefined,
+    });
   const registerContributions = (draft: PluginContributionDraft): void => {
     validateContributionDraft(
       draft,
@@ -806,7 +814,7 @@ export function createTextEditorCore(
             ).then((sets) => sets.flat());
       return scheduler.run(accesses, action, signal, {
         allowNestedWrites: scope?.allowNestedEdits === true,
-        ...editWaitPolicy,
+        ...fileOperationWaitPolicy,
         waitFor: scope === undefined ? "the file operation reservation" : scope.sources.join(", "),
       });
     },
