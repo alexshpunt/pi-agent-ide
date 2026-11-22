@@ -53,11 +53,16 @@ if (request.get("path", "").endswith("/filesystem-owned.txt") and
         (request.get("operation") == "journal" or
          request.get("operation") == "write" and isinstance(request.get("expected"), str))):
     owned_parent = pathlib.Path(request["path"]).parent
+    ready_marker = owned_parent / "filesystem-owned-ready"
     native_flock = fcntl.flock
 
     def observe_flock(descriptor, operation):
-        if operation == fcntl.LOCK_EX and pathlib.Path("/proc/self/fd", str(descriptor)).resolve() == owned_parent:
-            (owned_parent / "filesystem-owned-ready").write_text(str(os.getpid()), encoding="utf-8")
+        if (operation & fcntl.LOCK_EX and not ready_marker.exists() and
+                pathlib.Path("/proc/self/fd", str(descriptor)).resolve() == owned_parent):
+            # Publish the PID once, without exposing a partial marker during retries.
+            pending_marker = ready_marker.with_suffix(".tmp")
+            pending_marker.write_text(str(os.getpid()), encoding="utf-8")
+            pending_marker.replace(ready_marker)
         return native_flock(descriptor, operation)
 
     fcntl.flock = observe_flock
