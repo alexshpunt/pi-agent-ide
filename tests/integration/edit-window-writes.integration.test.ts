@@ -63,6 +63,19 @@ const window=(write)=>tools.write({path:".tmp/edit-window/write.json",content:JS
   return { output, final: await readFile(path.join(cwd, source), "utf8") };
 }
 
+function expectTargetedRecovery(refusal: string, file: string): void {
+  for (const tool of ["replace", "insert", "delete", "move"]) {
+    expect(refusal).toMatch(new RegExp(`\\b${tool}\\b`, "u"));
+  }
+  // Check the ready-to-run Read arguments without fixing the surrounding prose.
+  const example = /\bread\((\{[^\n]+\})\)/u.exec(refusal)?.[1];
+  const args: unknown = JSON.parse(example ?? "null");
+  expect(args).toMatchObject({ views: ["anchors"] });
+  // The shared runtime runs in a copy of the fixture workspace.
+  const suggestedPath = path.normalize((args as { path: string }).path);
+  expect(suggestedPath === file || suggestedPath.endsWith(path.sep + file)).toBe(true);
+}
+
 test("A whole-file Write based on an earlier Read does not discard a peer's write before the transaction", async () => {
   await withTempWorkspace(async (cwd) => {
     const original = "int task = 0;\nint peer = 0;\n";
@@ -78,13 +91,20 @@ check(peer.exit_code===0,"Peer write failed");
 await tools.search({path:file,query:"task"});
 await tools.read({path:file,offset:1,limit:1});
 await rejects(()=>tools.write({path:"./"+file,content:prior.text.replace("task = 0","task = 1")}));
+const current=await tools.read({path:file,views:["anchors"]});
+check(current.text.includes("peer = 1"),"Peer's change was lost");
+const anchor=/^([^|\n]+)\|int task = 0;$/mu.exec(current.text)?.[1];
+check(anchor,"Target line anchor is missing");
+await tools.replace({path:file,at:anchor,text:"int task = 2;"});
+// A fresh whole-file read can still authorize a later overwrite.
 const fresh=await tools.read({path:file});
-check(fresh.text.includes("peer = 1"),"Peer's change was lost");
-await tools.write({path:file,content:fresh.text.replace("task = 0","task = 2")});
-await tools.write({path:file,content:fresh.text.replace("task = 0","task = 3")});`,
+await tools.write({path:file,content:fresh.text.replace("task = 2","task = 3")});
+await tools.write({path:file,content:fresh.text.replace("task = 2","task = 4")});`,
     );
-    expect(codemodeFailures(output)).toMatch(/^1 of \d+ IDE calls failed:\n- write /u);
-    expect(final).toBe("int task = 3;\nint peer = 1;\n");
+    const failures = codemodeFailures(output);
+    expect(failures).toMatch(/^1 of \d+ IDE calls failed:\n- write /u);
+    expectTargetedRecovery(failures, path.normalize(source));
+    expect(final).toBe("int task = 4;\nint peer = 1;\n");
   });
 });
 
@@ -105,7 +125,8 @@ await rejects(()=>tools.write({path:prior,content:prior.text.replace("task = 0",
 });
 test("Direct Write refuses stale content and permits creation and a fresh overwrite", async () => {
   await withTempWorkspace(async (cwd) => {
-    const file = "shared.txt";
+    // A compact Write receipt must not truncate the suggested call for a long path.
+    const file = `shared-${"long-".repeat(20)}file.txt`;
     const original = "task old\npeer old\n";
     const peerVersion = "task old\npeer new\n";
     const rebuilt = "task new\npeer new\n";
@@ -121,7 +142,7 @@ test("Direct Write refuses stale content and permits creation and a fresh overwr
       tools: ["read", "write", "bash"],
       conversation: [
         turn("observed", "read", { path: file }),
-        turn("peer", "bash", { command: "printf 'task old\\npeer new\\n' > shared.txt" }),
+        turn("peer", "bash", { command: `printf 'task old\\npeer new\\n' > ${file}` }),
         turn("stale", "write", { path: "./" + file, content: "task new\npeer old\n" }),
         turn("fresh", "read", { path: file }),
         turn("rebuilt", "write", { path: file, content: rebuilt }),
@@ -133,6 +154,7 @@ test("Direct Write refuses stale content and permits creation and a fresh overwr
     const refusal = getToolExecution(run, "stale");
     expect(refusal.isError).toBe(true);
     expect(getToolExecutionDetails(refusal)).toMatchObject({ effect: "not-applied" });
+    expectTargetedRecovery(getToolResultText(run, "stale"), file);
     expect(getToolResultText(run, "fresh")).toContain(peerVersion);
     expect(getToolExecution(run, "rebuilt").isError).toBe(false);
     expect(getToolExecution(run, "new").isError).toBe(false);
