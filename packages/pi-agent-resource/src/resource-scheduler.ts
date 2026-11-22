@@ -89,6 +89,8 @@ interface ReservationOptions {
   readonly allowNestedWrites?: boolean;
   /** Deadline for acquiring the scope, not for executing the action. */
   readonly waitTimeoutMs?: number;
+  /** Override the acquisition budget for known scopes, measured from submission. */
+  readonly waitTimeoutForAccesses?: (accesses: readonly ResourceAccess[]) => number | undefined;
   /** What to name if the scope is unresolved or exclusive. */
   readonly waitFor?: string;
 }
@@ -96,17 +98,17 @@ interface ReservationOptions {
 async function waitForDependencies<T>(
   pending: Promise<T>,
   signal: AbortSignal | undefined,
-  timeoutMs: number | undefined,
+  deadline: number | undefined,
   timeoutError: () => Error,
 ): Promise<T> {
   signal?.throwIfAborted();
-  const deadline = timeoutMs === undefined ? undefined : performance.now() + timeoutMs;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let abort!: () => void;
   const cancelled = new Promise<never>((_resolve, reject) => {
     abort = () => reject(signal?.reason);
     signal?.addEventListener("abort", abort, { once: true });
-    if (timeoutMs !== undefined) timer = setTimeout(() => reject(timeoutError()), timeoutMs);
+    if (deadline !== undefined)
+      timer = setTimeout(() => reject(timeoutError()), Math.max(0, deadline - performance.now()));
   });
   try {
     const result = await Promise.race([pending, cancelled]);
@@ -177,31 +179,41 @@ export class ResourceScheduler {
     return (async () => {
       try {
         signal?.throwIfAborted();
+        const submittedAt = performance.now();
+        const deadlineFor = (timeoutMs: number | undefined): number | undefined =>
+          timeoutMs === undefined ? undefined : submittedAt + timeoutMs;
         let resources: string[] = [];
-        const current = await waitForDependencies(
-          resolved.then(async (current) => {
-            resources = [...new Set(current?.map((access) => access.resource))];
-            await Promise.all(
-              prior.map((previous) =>
-                Promise.race([
-                  previous.done,
-                  previous.accesses.then((accesses) =>
-                    conflicts(current, accesses) ? previous.done : undefined,
-                  ),
-                ]),
-              ),
-            );
-            return current;
-          }),
-          signal,
-          ownership.waitTimeoutMs,
-          () =>
-            Object.assign(
-              new Error(
-                `Timed out waiting for ${ownership.waitFor ?? (resources.join(", ") || "the editor reservation or its resource resolution")}.`,
-              ),
-              { code: "RESOURCE_WAIT_TIMEOUT", resources },
+        const timeoutError = () =>
+          Object.assign(
+            new Error(
+              `Timed out waiting for ${ownership.waitFor ?? (resources.join(", ") || "the editor reservation or its resource resolution")}.`,
             ),
+            { code: "RESOURCE_WAIT_TIMEOUT", resources },
+          );
+        const current = await waitForDependencies(
+          resolved,
+          signal,
+          deadlineFor(ownership.waitTimeoutMs),
+          timeoutError,
+        );
+        resources = [...new Set(current?.map((access) => access.resource))];
+        const waitTimeoutMs =
+          (current === undefined ? undefined : ownership.waitTimeoutForAccesses?.(current)) ??
+          ownership.waitTimeoutMs;
+        await waitForDependencies(
+          Promise.all(
+            prior.map((previous) =>
+              Promise.race([
+                previous.done,
+                previous.accesses.then((accesses) =>
+                  conflicts(current, accesses) ? previous.done : undefined,
+                ),
+              ]),
+            ),
+          ),
+          signal,
+          deadlineFor(waitTimeoutMs),
+          timeoutError,
         );
         signal?.throwIfAborted();
         const reservation: ActiveReservation = {
