@@ -223,6 +223,28 @@ describe("matches inside changed lines", () => {
   });
 });
 
+describe("tracking selections after a line append", () => {
+  test.each(["anchor\nrepeat\nrepeat\n", "repeat\nrepeat\nrepeat\n"])(
+    "preserves the complete prefix and keeps the old EOF position at EOF",
+    (before) => {
+      const tracker = createRangeTracker(before, `${before}new repeat\n`);
+      const wholeLines = { ...span(2, 0, 4, 0), linewise: true };
+      expect(tracker.move(span(2, 1, 3, 4))).toEqual(span(2, 1, 3, 4));
+      expect(tracker.move(wholeLines, true)).toEqual(wholeLines);
+      expect(tracker.move(span(4, 0, 4, 0))).toEqual(span(5, 0, 5, 0));
+    },
+  );
+
+  test.each(["anchor\nrepeat\nrepeat\n", "repeat\nanchor\nrepeat\n"])(
+    "does not resolve a selection whose line now has an indistinguishable copy",
+    (before) => {
+      const line = before.startsWith("anchor\n") ? 1 : 2;
+      const tracker = createRangeTracker(before, `${before}anchor\n`);
+      expect(tracker.move(span(line, 0, line, 6))).toBeUndefined();
+    },
+  );
+});
+
 describe("tracking selections after a block move", () => {
   const block = Array.from({ length: 1000 }, (_, index) => `int moved_${index};`);
   const middle = Array.from({ length: 1200 }, (_, index) => `int kept_${index};`);

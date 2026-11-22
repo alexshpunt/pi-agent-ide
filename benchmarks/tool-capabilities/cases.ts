@@ -1771,7 +1771,7 @@ add(
 add(
   "search-multiline-between",
   ["search.multiline", "compose.search-multiline-replace", "compose.search-retained-result"],
-  "Search task.txt with query regex:old one\\nold two\\n(?=END) and multiline true; pass backslash-n escapes in the regex. This selects both old lines and their following line breaks, not the marker lines. In Codemode confirm its only match has text old one followed by a newline, old two and a final newline. Retain this result, then Search task.txt with query keep. Replace the FIRST Search selection with text NEW and no newline, reusing its original reference or value, not the later Search. Keep the marker lines and all other bytes.",
+  "Search task.txt with query regex:old one\\nold two\\n(?=END) and multiline true; pass backslash-n escapes in the regex. This selects both old lines and their following line breaks, not the marker lines. In Codemode confirm its only match has text old one followed by a newline, old two and a final newline. Retain this result. Run Bash with command \"printf '%s\\n' 'peer note' >> task.txt\" to append one line. Then Search task.txt with query keep. Replace the FIRST Search selection with text NEW and no newline, reusing its original reference or value, not the later Search. Keep the marker lines, the appended line and all other bytes.",
   [
     {
       tool: "search",
@@ -1787,23 +1787,28 @@ add(
         matches: { length: 1, 0: { text: "old one\nold two\n" } },
       },
     },
-    { tool: "search", args: { path: "task.txt", query: "keep" } },
+    { tool: "bash", modes: ["direct"], after: [0] },
+    { tool: "bash", modes: ["codemode"], after: [1] },
+    { tool: "search", args: { path: "task.txt", query: "keep" }, modes: ["direct"], after: [2] },
+    { tool: "search", args: { path: "task.txt", query: "keep" }, modes: ["codemode"], after: [3] },
     {
       tool: "replace",
       args: { text: "NEW" },
       modes: ["direct"],
       reuse: reuse(0, ["path", "at"]),
+      after: [4],
     },
     {
       tool: "replace",
       args: { text: "NEW" },
       modes: ["codemode"],
       reuse: reuse(1, ["path", "at"]),
+      after: [5],
     },
   ],
   {
     files: { "task.txt": "keep\nBEGIN\nold one\nold two\nEND\nkeep\n" },
-    expected: { "task.txt": "keep\nBEGIN\nNEW\nEND\nkeep\n" },
+    expected: { "task.txt": "keep\nBEGIN\nNEW\nEND\nkeep\npeer note\n" },
   },
 );
 
