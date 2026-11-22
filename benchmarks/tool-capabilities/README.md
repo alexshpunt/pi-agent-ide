@@ -13,7 +13,9 @@ pnpm validate:tools:models --list
 
 The coverage gate is part of `pnpm check`. It loads the current IDE without a prompt or model call, compares structural tool contracts, and checks links between the declared capabilities and executable cases. It includes deferred tools, not just initially active tools. Descriptions and other prompt wording are not snapshot-tested.
 
-The free regression tests cover route provenance and sandbox timeout/reset/cleanup. Scripted real-Pi integration tests prove that nested Codemode events are read correctly and check the actual provider declarations before and after discovery, nested Bash and deferred-tool execution, and the unchanged direct loadout. These tests do not use paid models.
+`pnpm test:benchmarks` runs the benchmark unit tests on their own. `pnpm test` and full CI validation also run them. The tests use Node’s test runner and cover route provenance, argument and selection equivalence, and sandbox timeout, reset, and cleanup. They do not call models.
+
+Separate scripted real-Pi integration tests check nested Codemode event handling, provider declarations before and after discovery, nested Bash and deferred-tool execution, and the unchanged direct loadout. They do not use paid models.
 
 The scripted edit RPC regression checks the raw update and end records against a 128 KiB per-record limit for small edit arguments. It covers direct batching with and without the editor renderer and a Codemode batch of at least 12 edits on a shared file over 1 MiB, including Replace, Delete, Insert, Move and Write. It also checks the resulting file bytes. This does not replace the paid shared-file mixed probe.
 
