@@ -33,6 +33,8 @@ The `stale-whole-file-write` case checks refusal after a peer changes a file, th
 
 The direct-only `parallel-same-file-replace` case checks six independent literal replacements sent together and verifies every resulting byte. The paid route can coalesce the calls; the separate `standalone-edit-wait` real-Pi regression forces standalone execution and holds the first file reservation beyond the old five-second limit. The paid route remains unverified.
 
+The Codemode-only `parallel-provider-write-queue` case requires three overlapping Write calls to the same provider action in one script. The fixture delays the first action; the runner checks that all three finish successfully and the provider journal records each comment exactly once, in submission order. The paid route remains unverified.
+
 Rust edition selection is formatter behavior after an edit, not a new model operation. The existing edit routes still cover tool use; focused Rust formatter and real-Pi tests cover Cargo edition discovery and formatting. The paid routes do not verify Rust editions.
 
 The `rust-diagnostics-no-build` case reads annotated and focused Rust diagnostics and requests a symbol from the real server. Its dependency-free build script records an unexpected compilation; the final validator requires that marker to remain absent. It covers default Cargo safety, not explicit build-backed opt-in or large-workspace performance. The focused Rust diagnostic integration case also guards compiler invocations on a cold target and can use a real large workspace. Direct and Codemode paid routes remain unverified until paid execution.

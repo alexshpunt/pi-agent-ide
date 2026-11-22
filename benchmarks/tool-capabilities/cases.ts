@@ -338,6 +338,23 @@ add(
   },
 );
 add(
+  "parallel-provider-write-queue",
+  ["compose.parallel-provider-writes"],
+  'In one native Codemode script, call Write three times to fixture://queue/issue/comments/new. Submit all three calls together in one Promise.all, in this order, with content exactly "first", "second", and "third", respectively. Await the batch; do not await any individual call before submitting the others. These are provider actions, not local file writes. Do not retry a call or edit provider-comments.txt yourself.',
+  ["first", "second", "third"].map((content, index) => ({
+    tool: "write",
+    args: { path: "fixture://queue/issue/comments/new", content },
+    ...(index > 0 && { parallelWith: 0 }),
+  })),
+  {
+    modes: ["codemode"],
+    setup: "parallel-provider-writes",
+    files: {},
+    expected: { "provider-comments.txt": "first\nsecond\nthird\n" },
+    forbiddenTools: ["bash", "insert", "replace", "delete", "copy", "move"],
+  },
+);
+add(
   "ide-settings-catalog",
   ["read.ide-settings", "search.ide-settings"],
   "Read docs:ide-settings with limit 1000 to inspect the registered IDE settings. Find the registered ui.codemode preference. Search that exact ID in docs:ide-settings with caseSensitive true and limit 1000, then repeat the search in docs:all. Both searches must return locations under docs:ide-settings without editable Search references. Do not change configuration or fixture files.",
