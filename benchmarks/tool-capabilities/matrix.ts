@@ -199,6 +199,7 @@ const groups: [string[], string[]][] = [
   // Optional safe error metadata does not change provider receipt effects or their data fields.
   // Rate-limit metadata transport has deterministic ResourceError/Read/Write coverage, not a paid route.
   [["compose.provider-structured-receipt"], ["semantic-script-receipts"]],
+  [["compose.parallel-provider-writes"], ["parallel-provider-write-queue"]],
   [["edit.write-failure-recovery", "compose.uncertain-write-read"], ["write-unknown-effects"]],
   [
     ["edit.write-canonicalized-snapshot", "compose.confirmed-write-readback"],
