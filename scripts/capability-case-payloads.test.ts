@@ -34,12 +34,11 @@ function trace(text = "BETA\n"): RunEvent[] {
     end("read", searchText),
     start("insert", "insert", {
       path: "task.txt",
-      anchor: "alpha",
-      before: true,
+      before: "alpha",
       text: "added\n",
     }),
     start("replace", "replace", { at: reference(1), text: text }),
-    start("delete", "delete", { start: reference(2) }),
+    start("delete", "delete", { at: reference(2) }),
     end("insert"),
     end("replace"),
     end("delete"),
@@ -82,7 +81,7 @@ test.each(["BETA", "BETA\n"])(
         if (event.toolCallId === "replace" && event.type === "tool_execution_start")
           return { ...event, args: { path: { id }, text: text } };
         if (event.toolCallId === "delete" && event.type === "tool_execution_start")
-          return { ...event, args: { path: "task.txt", start: "gamma" } };
+          return { ...event, args: { path: "task.txt", at: "gamma" } };
         return event;
       });
     expect(validateRoute(valueTask, events, "codemode").passed).toBe(true);
@@ -98,16 +97,17 @@ describe("Search anchor batch payloads", () => {
   });
 
   test.each([
-    ["insert", { before: false }],
+    ["insert", { before: undefined, after: "alpha" }],
+    ["insert", { after: "alpha" }],
     ["insert", { path: "other.txt" }],
     ["replace", { path: "task.txt" }],
     ["delete", { path: "task.txt" }],
     ["replace", { at: reference(1, "DEAD") }],
-    ["delete", { start: reference(2, "DEAD") }],
+    ["delete", { at: reference(2, "DEAD") }],
     ["replace", { at: reference(1, "ABC123", "match") }],
     ["replace", { at: "RESULT#06755bc0-a0c2-480a-a770-630b3d4db3df" }],
     ["replace", { at: "beta" }],
-    ["delete", { start: reference(1) }],
+    ["delete", { at: reference(1) }],
   ] as const)("rejects changed selector or path on %s (%#)", (id, args) => {
     expect(check(changeStart(trace("BETA"), id, args))).toBe(false);
   });

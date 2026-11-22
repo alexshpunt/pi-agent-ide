@@ -116,7 +116,7 @@ test.each(["direct", "codemode"])(
 
 test("direct editor batches retain a shared snapshot for newline-equivalent inserts", async () => {
   await withTempWorkspace(async (cwd) => {
-    const initial = "keep1\nOLD1\nkeep2\nOLD2\nkeep3\nOLD3\n";
+    const initial = "keep1\nOLD1\nkeep2\nOLD2\nkeep3\nOLD3";
     await writeFile(path.join(cwd, "task.txt"), initial);
     const anchors = [2, 4, 6].map((line) => formatLineHashAnchor(initial, line));
     const run = await new PiIntegrationTest({
@@ -143,7 +143,11 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             toolCall({
               id: `insert-${String(index)}`,
               name: "insert",
-              arguments: { path: "task.txt", before: anchor, text: "ADDED\n" },
+              arguments: {
+                path: "task.txt",
+                [index === 2 ? "after" : "before"]: anchor,
+                text: index === 0 ? "ADDED\n" : "\nADDED",
+              },
               chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER },
             }),
           ),
@@ -153,9 +157,9 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
           text("Done", { chunks: { kind: "fixed", size: Number.MAX_SAFE_INTEGER } }),
         ]),
       ],
-    }).run("Read the line anchors, then insert ADDED before each OLD line in one message");
+    }).run("Read the line anchors, then insert ADDED beside each OLD line in one message");
     expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
-      "keep1\nADDED\nOLD1\nkeep2\nADDED\nOLD2\nkeep3\nADDED\nOLD3\n",
+      "keep1\nADDED\nOLD1\nkeep2\nADDED\nOLD2\nkeep3\nOLD3\nADDED",
     );
     const events = run.traceEvents.flatMap((entry) =>
       "event" in entry && entry.event && typeof entry.event === "object"
@@ -170,7 +174,11 @@ test("direct editor batches retain a shared snapshot for newline-equivalent inse
             { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
             ...anchors.map((anchor, index) => ({
               tool: "insert",
-              args: { path: "task.txt", before: anchor, text: "ADDED\n" },
+              args: {
+                path: "task.txt",
+                [index === 2 ? "after" : "before"]: anchor,
+                text: "ADDED\n",
+              },
               after: [0],
               ...(index > 0 && { sameAssistantWith: 1 }),
             })),

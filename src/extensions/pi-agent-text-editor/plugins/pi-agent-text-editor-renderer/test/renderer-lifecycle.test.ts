@@ -58,7 +58,7 @@ describe("mutation renderer lifecycle", () => {
       if (!renderer?.renderResult) throw new Error("Missing renderer");
       const renderResult = renderer.renderResult;
       const privateReason = "PRIVATE anchor payload and recovery instructions";
-      const field = name === "replace" ? "at" : name === "insert" ? "anchor" : "start";
+      const field = name === "insert" ? "after" : "at";
       const args = { path: "fixture.txt", [field]: "selection", text: "changed" };
       const render = (code: string | undefined) =>
         renderResult(
@@ -1056,11 +1056,7 @@ describe("mutation renderer lifecycle", () => {
         listener({
           name: "delete",
           source: { field: "path" },
-          pair: ["start", "end"],
-          anchors: [
-            { field: "start", sourceField: "path", kinds: ["search"] },
-            { field: "end", sourceField: "path", kinds: ["search"] },
-          ],
+          anchors: [{ field: "at", sourceField: "path", kinds: ["search"] }],
         });
       },
       addToolRenderer(value: TextEditorToolRendererRegistration): void {
@@ -1072,7 +1068,7 @@ describe("mutation renderer lifecycle", () => {
       throw new Error("Expected delete renderer registration");
     }
 
-    const args = { path: "service.ts", start: "SEARCH#EXAMPLE:all:match" };
+    const args = { path: "service.ts", at: "SEARCH#EXAMPLE:all:match" };
     const state: Record<PropertyKey, unknown> = {};
     const context = {
       args,
@@ -1096,7 +1092,7 @@ describe("mutation renderer lifecycle", () => {
     const firstHeader = panel.render(100)[0];
 
     state[TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH] = {
-      start: {
+      at: {
         kind: "resolved",
         full: "SEARCH#EXAMPLE:all:match",
         compact: "all matches",
@@ -1106,7 +1102,7 @@ describe("mutation renderer lifecycle", () => {
     renderer.renderCall(args, theme, { ...context, lastComponent: panel });
 
     expect(panel.render(100)[0]).toBe(firstHeader);
-    expect(firstHeader).toContain(args.start);
+    expect(firstHeader).toContain(args.at);
     renderer.renderCall(args, theme, {
       ...context,
       lastComponent: panel,
@@ -1122,11 +1118,7 @@ describe("mutation renderer lifecycle", () => {
         listener({
           name: "delete",
           source: { field: "path" },
-          pair: ["start", "end"],
-          anchors: [
-            { field: "start", sourceField: "path", kinds: ["search"] },
-            { field: "end", sourceField: "path", kinds: ["search"] },
-          ],
+          anchors: [{ field: "at", sourceField: "path", kinds: ["search"] }],
         });
       },
       addToolRenderer(value: TextEditorToolRendererRegistration): void {
@@ -1139,10 +1131,10 @@ describe("mutation renderer lifecycle", () => {
     }
 
     const anchor = "SEARCH#EXAMPLE:all:match";
-    const args = { path: "src/example.ts", start: anchor };
+    const args = { path: "src/example.ts", at: anchor };
     const state: Record<PropertyKey, unknown> = {
       [TOOL_CALL_INTERCEPTION_ANCHOR_RENDER_PATCH]: {
-        start: {
+        at: {
           kind: "resolved",
           full: anchor,
           compact: "all matches",
@@ -1180,9 +1172,7 @@ describe("mutation renderer lifecycle", () => {
     });
     const expandedText = expanded.render(100).join("\n");
 
-    expect(expandedText).toContain(anchor);
-
-    expect(expandedText).toContain("path=src/example.ts");
-    expect(expandedText).toContain(`start=${anchor}`);
+    expect(expandedText).toContain(args.path);
+    expect(expandedText.split("\n").slice(1).join("\n")).toContain(anchor);
   });
 });

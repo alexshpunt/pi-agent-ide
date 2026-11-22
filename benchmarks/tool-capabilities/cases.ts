@@ -1296,7 +1296,6 @@ for (const operation of ["replace", "delete", "insert"] as const) {
         tool: operation,
         reuse: reuse(index),
         ...(index > 0 && { sameAssistantWith: 3 }),
-        ...(operation === "insert" && { args: { text: "ADDED\n" } }),
       })),
       ...(operation === "replace"
         ? [3, 4, 5].flatMap((index): RouteStep[] => [

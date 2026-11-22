@@ -689,17 +689,19 @@ test.each([
     name: "stale-anchor",
     // The stale edit resolves to null; the script stops on it and its reason ends the result.
     tail: `if ((await tools.replace({path:"note.txt",at:${JSON.stringify(anchor(2, "wrong"))},text:"wrong"})) === null) throw new Error("stale edit failed");`,
-    message: "is stale",
+    failedCall: { name: "replace", status: "error" },
+    errorCode: "stale",
   },
   {
     name: "blocked-hook",
     tail: 'await tools.replace({path:"note.txt",at:"beta",text:"BLOCKED"});',
     message: "fixture blocked this edit",
+    failedCall: { name: "replace", status: "error" },
   },
   {
     name: "malformed-arguments",
     tail: 'await tools.replace({path:"note.txt",at:{invalid:true},text:"wrong"});',
-    message: 'Validation failed for tool "replace"',
+    failedCall: { name: "replace", status: "error" },
   },
 ])("accepted edits survive $name without bypassing validation", async (scenario) => {
   await withTempWorkspace(async (cwd) => {
@@ -708,8 +710,19 @@ test.each([
       `text(await tools.insert({path:"note.txt",before:${JSON.stringify(anchor(1, "alpha"))},text:"added\\n"}));\n${scenario.tail}`,
     ]);
     expect(getToolExecution(run, "script-0").isError).toBe(true);
-    expect(getToolResultText(run, "script-0")).toContain(scenario.message);
-    expect(getToolResultText(run, "script-0")).toContain("Editor batches: 1 committed");
+    const { calls, editorBatches } = batchDetails(run);
+    if (scenario.failedCall)
+      expect(calls).toContainEqual(expect.objectContaining(scenario.failedCall));
+    if (scenario.message) expect(getToolResultText(run, "script-0")).toContain(scenario.message);
+    if (scenario.errorCode) {
+      expect(getToolExecutionDetails(getToolExecution(run, "script-0/2"))).toMatchObject({
+        effect: "not-applied",
+        results: [{ data: { errors: [{ code: scenario.errorCode }] } }],
+      });
+    }
+    const committed = editorBatches.filter((batch) => batch.applied);
+    expect(committed).toHaveLength(1);
+    expect(committed[0]?.calls).toContainEqual({ id: "script-0/1", state: "completed" });
     expect(await readFile(path.join(cwd, "note.txt"), "utf8")).toBe("added\n" + initial);
     expect((await events(cwd)).filter((event) => event.type === "edit")).toHaveLength(1);
   });

@@ -81,13 +81,13 @@ describe("repeated-line-anchor-after-block-delete", () => {
   const block = call({
     id: "block",
     tool: "delete",
-    args: { path: "task.txt", start: "ABCDEFG", end: "HJKMNPQ" },
+    args: { path: "task.txt", from: "ABCDEFG", through: "HJKMNPQ" },
   });
   const stale = (error: boolean) =>
     call({
       id: "stale",
       tool: "delete",
-      args: { path: "task.txt", start: "RSTVWXY" },
+      args: { path: "task.txt", at: "RSTVWXY" },
       error,
     });
   const fresh = call({
@@ -96,11 +96,11 @@ describe("repeated-line-anchor-after-block-delete", () => {
     args: { path: "task.txt", views: ["anchors"] },
     text: "1234567|template <typename T>",
   });
-  const recovery = (start = "1234567") =>
+  const recovery = (at = "1234567") =>
     call({
       id: "recovery",
       tool: "delete",
-      args: { path: "task.txt", start },
+      args: { path: "task.txt", at },
     });
   const check = (events: RunEvent[]) => validateRoute(task, events, "direct").passed;
 
@@ -119,10 +119,8 @@ describe("repeated-line-anchor-after-block-delete", () => {
 
   test.each(["RSTVWXY", "7654321", "template <typename T>"])(
     "rejects recovery with the unissued fresh selector %j",
-    (start) => {
-      expect(check([...initial, ...block, ...stale(true), ...fresh, ...recovery(start)])).toBe(
-        false,
-      );
+    (at) => {
+      expect(check([...initial, ...block, ...stale(true), ...fresh, ...recovery(at)])).toBe(false);
     },
   );
 });
@@ -425,7 +423,7 @@ test("read-jq-bounded-input reads the first line with or without offset 1", () =
 describe("whole-line insert argument normalization", () => {
   const original = capabilityCase("selection-batch-insert");
   // Outcome validation leaves payload spelling free in the paid case. Isolate normalization:
-  // accepting an omitted separator still requires a current whole-line witness.
+  // accepting an equivalent separator placement still requires a current whole-line witness.
   const task = {
     ...original,
     steps: original.steps.map((step) =>
@@ -452,7 +450,7 @@ describe("whole-line insert argument normalization", () => {
       call({
         id: `insert-${String(index)}`,
         tool: "insert",
-        args: { path: { id: uuid(String(index + 1)) }, text: text, before: true },
+        args: { path: { id: uuid(String(index + 1)) }, text },
         details: receipt,
       }),
     );
@@ -469,7 +467,7 @@ describe("whole-line insert argument normalization", () => {
       ).toBe(false);
     },
   );
-  test.each(["ADDED", "ADDED\n"])("accepts %j before each selected line", (text) => {
+  test.each(["\nADDED", "ADDED\n"])("accepts %j on its own line after each selection", (text) => {
     expect(validateRoute(task, [...reads, batch, ...inserts(text)], "direct")).toEqual({
       passed: true,
       reasons: [],
@@ -483,7 +481,7 @@ describe("whole-line insert argument normalization", () => {
       agenticIdeBatch: { ...receipt.agenticIdeBatch, calls: [{ id: "insert-0", name: "insert" }] },
     },
   ])("rejects missing or inconsistent shared-snapshot receipts (%#)", (details) => {
-    const edits = inserts("ADDED").map((event) =>
+    const edits = inserts("\nADDED").map((event) =>
       event.type === "tool_execution_end" && event.toolCallId === "insert-0"
         ? { ...event, result: { ...event.result, details } }
         : event,
@@ -494,7 +492,7 @@ describe("whole-line insert argument normalization", () => {
   test.each([{ calls: [] }, { calls: [{ id: "insert-0", name: "insert" }] }, { calls: [null] }])(
     "rejects matching receipts without both call memberships (%#)",
     ({ calls }) => {
-      const edits = inserts("ADDED").map((event) =>
+      const edits = inserts("\nADDED").map((event) =>
         event.type === "tool_execution_end"
           ? {
               ...event,
@@ -517,11 +515,12 @@ describe("whole-line insert argument normalization", () => {
     expect(
       validateRoute(
         task,
-        [...reads, ...(completed ? write : write.slice(0, 1)), batch, ...inserts("ADDED")],
+        [...reads, ...(completed ? write : write.slice(0, 1)), batch, ...inserts("\nADDED")],
         "direct",
       ).passed,
     ).toBe(false);
   });
+
   test("still requires one assistant message for the batch", () => {
     expect(
       validateRoute(
@@ -536,8 +535,8 @@ describe("whole-line insert argument normalization", () => {
         "direct",
       ).passed,
     ).toBe(false);
-    expect(validateRoute(task, [...reads, batch, ...inserts("ADDED\n\n")], "direct").passed).toBe(
-      false,
-    );
+  });
+  test.each(["ADDED", "ADDED\n\n"])("rejects a different line payload %j", (text) => {
+    expect(validateRoute(task, [...reads, batch, ...inserts(text)], "direct").passed).toBe(false);
   });
 });

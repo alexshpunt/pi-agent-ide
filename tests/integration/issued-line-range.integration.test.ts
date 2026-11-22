@@ -58,8 +58,8 @@ function rangeAnchors(before: string, selection: string) {
   const startLine = before.slice(0, before.lastIndexOf(selection)).split("\n").length - 1;
   const anchors = textLineAnchors(file, before);
   return {
-    start: requiredValue(anchors[startLine]),
-    end: requiredValue(anchors[startLine + selection.trimEnd().split("\n").length - 1]),
+    from: requiredValue(anchors[startLine]),
+    through: requiredValue(anchors[startLine + selection.trimEnd().split("\n").length - 1]),
   };
 }
 
@@ -83,15 +83,14 @@ test.each(["delete", "replace", "move"] as const)(
         ),
         call("edit", tool, {
           path: file,
-          from: issued.start,
-          through: issued.end,
+          ...issued,
           ...(tool === "replace" ? { text: "REPLACED" } : {}),
           ...(tool === "move" ? { target: file, targetAfter: "int keep_last;" } : {}),
         }),
       ]);
       const recovery = getToolResultText(runResult, "ambiguous");
-      expect(recovery).toContain(`${issued.start}|typedef enum`);
-      expect(recovery).toContain(`${issued.end}|} Datatype;`);
+      expect(recovery).toContain(`${issued.from}|typedef enum`);
+      expect(recovery).toContain(`${issued.through}|} Datatype;`);
       expect(
         (await readFile(source, "utf8")) ===
           initial.replace(copySlot, block).replace(prototype, "").replace(slot, prototype),
@@ -119,13 +118,15 @@ test.each(["same-size interior edit", "unrelated shift"] as const)(
         call("reread", "read", { path: file, views: ["anchors"] }),
         call("edit", "delete", { path: file, ...issued }),
       ]);
-      expect(getToolResultText(runResult, "reread")).toContain(`${issued.start}|typedef enum`);
-      expect(getToolResultText(runResult, "reread")).toContain(`${issued.end}|} Datatype;`);
+      expect(getToolResultText(runResult, "reread")).toContain(`${issued.from}|typedef enum`);
+      expect(getToolResultText(runResult, "reread")).toContain(`${issued.through}|} Datatype;`);
       expect(await readFile(source, "utf8")).toBe(
         changed ? initial.replace("TYPE_UINT8", "TYPE_INT08") : "inserted\nbefore\nafter\n",
       );
+      const edit = getToolExecution(runResult, "edit");
+      expect(edit.isError).toBe(changed);
       if (changed) {
-        expect(getToolExecutionDetails(getToolExecution(runResult, "edit"))).toMatchObject({
+        expect(getToolExecutionDetails(edit)).toMatchObject({
           effect: "not-applied",
           results: [{ data: { errors: [{ code: "STALE_ANCHOR_RANGE" }] } }],
         });
