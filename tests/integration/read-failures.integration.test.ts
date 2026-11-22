@@ -85,7 +85,7 @@ if(again !== null) throw Error("A failed Read stopped resolving to null");
       expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
     expect(await readFile(path.join(cwd, "notes.txt"), "utf8")).toBe(source);
     const rendered = run.tuiRenderedOutput.replace(/\s+/gu, " ");
-    expect(rendered).toContain('views=["anchors"]');
+    expect(rendered).toContain('"views":["anchors"]');
     expect(rendered).toContain("notes.txt");
     expect(getToolResultText(run, "failure-authority")).not.toContain("FRAGMENT_FAILED");
 
@@ -96,10 +96,10 @@ if(again !== null) throw Error("A failed Read stopped resolving to null");
     const [absent, missing, raw, jq] = failureEntries(recovered);
     expect(absent).toMatch(/^read notes\.txt#not-in-the-file\n/u);
     expect(absent).not.toContain("FRAGMENT_FAILED");
-    const action = /("(?:[^"\\\r\n]|\\.)*")(?=[^\n]*views=\["anchors"\])/u.exec(absent ?? "");
-    expect(action, absent).not.toBeNull();
+    const action = recoveryRead(absent);
+    expect(action?.views, absent).toEqual(["anchors"]);
     // The shared Pi process runs in its own copy of the workspace, so compare the file name.
-    expect(JSON.parse(action?.[1] ?? '""') as string).toMatch(/(?:^|\/)notes\.txt$/u);
+    expect(action?.path).toMatch(/(?:^|\/)notes\.txt$/u);
     expect(missing).toMatch(/^read\n/u);
     expect(missing).toContain("path");
     expect(missing).not.toContain("INVALID_REQUEST");
@@ -109,9 +109,17 @@ if(again !== null) throw Error("A failed Read stopped resolving to null");
     expect(jq).toContain("jq:<filter>");
     const again = failureEntries(codemodeFailures(getToolResultText(run, "failure-authority")));
     expect(again).toHaveLength(1);
-    expect(again[0]).toContain('views=["anchors"]');
+    expect(recoveryRead(again[0])?.views, again[0]).toEqual(["anchors"]);
   });
 });
+
+/** The arguments of the recovery Read call that a failure entry offers. */
+function recoveryRead(entry: string | undefined): { path?: string; views?: string[] } | undefined {
+  const call = /\bread\((\{.*\})\)/u.exec(entry ?? "");
+  return call?.[1] === undefined
+    ? undefined
+    : (JSON.parse(call[1]) as { path?: string; views?: string[] });
+}
 
 /** The entries of a Codemode failure block, each starting with its tool and source. */
 function failureEntries(block: string): string[] {

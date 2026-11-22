@@ -136,10 +136,14 @@ test("Anthropic stale prefixes report the guard before validation and recover wi
       }
       expect(final).toMatchObject({
         isError: true,
-        details: { guardId: "stale-anchor", effect: "not-applied" },
+        details: {
+          guardId: "stale-anchor",
+          effect: "not-applied",
+          field: "after",
+          path: "note.txt",
+          anchor: formatLineHashAnchor("keep\nOLD\nlast\n", 2),
+        },
       });
-      const details = final?.details as { context?: string } | undefined;
-      expect(details?.context).toContain(formatLineHashAnchor("keep\nNEW\nlast\n", 2));
       expect(execution?.isError).toBe(true);
       // All consumers must get the saved refusal, not an incomplete-payload schema error.
       expect(execution?.result?.content).toEqual(final?.content);

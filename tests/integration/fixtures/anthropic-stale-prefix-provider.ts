@@ -76,7 +76,8 @@ export default async function anthropicStalePrefixProvider(pi: ExtensionAPI): Pr
             path: "note.txt",
             after: formatLineHashAnchor(stale ? original : updated, 2),
             ...(turn === 4 && { text: "BLOCKED" }),
-            ...(turn === 6 && { text: "RECOVERED" }),
+            // A leading line break makes the insertion its own line after the anchored line.
+            ...(turn === 6 && { text: "\nRECOVERED" }),
           };
       send(response, {
         type: "content_block_start",
