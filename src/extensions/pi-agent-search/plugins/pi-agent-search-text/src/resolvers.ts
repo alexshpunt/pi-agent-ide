@@ -1,4 +1,6 @@
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { SEARCH_HIGHLIGHT_CLOSE, SEARCH_HIGHLIGHT_OPEN } from "pi-agent-text";
 import {
   attachFileTextWindows,
   snapshotOnToolDeadline,
@@ -7,7 +9,6 @@ import {
   type FileTextWindow,
   type ResultRange,
 } from "pi-agent-resource";
-import { pathToFileURL } from "node:url";
 import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.ts";
 
@@ -714,13 +715,13 @@ function previewMatch(match: TextSearchMatch): { text: string; range: ResultRang
             ? { lineNumber: lineNumber + maximumLines, column: 0 }
             : { lineNumber: match.endLineNumber, column: match.endColumn },
       },
-      text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${shown.join("\n  ")}${more > 0 ? `\n  … ${String(more)} more lines` : ""}⟧`,
+      text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}${SEARCH_HIGHLIGHT_OPEN}${shown.join("\n  ")}${more > 0 ? `\n  … ${String(more)} more lines` : ""}${SEARCH_HIGHLIGHT_CLOSE}`,
     };
   }
   const to = Math.min(match.lineText.length, match.endColumn + context);
   return {
     range: { start, end: { lineNumber, column: to } },
-    text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}⟦${match.lineText.slice(match.startColumn, match.endColumn)}⟧${match.lineText.slice(match.endColumn, to)}${to < match.lineText.length ? "…" : ""}`,
+    text: `${from > 0 ? "…" : ""}${match.lineText.slice(from, match.startColumn)}${SEARCH_HIGHLIGHT_OPEN}${match.lineText.slice(match.startColumn, match.endColumn)}${SEARCH_HIGHLIGHT_CLOSE}${match.lineText.slice(match.endColumn, to)}${to < match.lineText.length ? "…" : ""}`,
   };
 }
 

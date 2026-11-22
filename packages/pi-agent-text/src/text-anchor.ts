@@ -78,6 +78,8 @@ export interface TextAnchorRejection {
   /** outside-scope means the selector matches the source, but not within the requested ranges. */
   readonly code: "invalid" | "stale" | "missing" | "ambiguous" | "outside-scope" | "before-start";
   readonly reason: string;
+  /** The literal after removing Search highlight delimiters, for suggestions only. */
+  readonly searchHighlightRetry?: string;
   readonly contextRange?: TextAnchorRecoveryRange;
 }
 
@@ -120,7 +122,12 @@ export type TextAnchorRecoveryOutcome =
 /** Result of resolving an anchor value. */
 export type TextAnchorResolutionAttempt =
   | { readonly kind: "not-handled" }
-  | { readonly kind: "resolved"; readonly anchor: TextAnchor }
+  | {
+      readonly kind: "resolved";
+      readonly anchor: TextAnchor;
+      /** Agent-visible notice when a fallback matched instead of the supplied selector. */
+      readonly notice?: string;
+    }
   | { readonly kind: "rejected"; readonly rejection: TextAnchorRejection }
   | { readonly kind: "failed"; readonly error: unknown };
 
@@ -241,6 +248,7 @@ const rejectionSchema = Type.Object({
     Type.Literal("ambiguous"),
   ]),
   reason: Type.String(),
+  searchHighlightRetry: Type.Optional(Type.String()),
   contextRange: Type.Optional(
     Type.Object({
       offset: Type.Number(),
@@ -254,6 +262,7 @@ const attemptSchema = Type.Union([
     {
       kind: Type.Literal("resolved"),
       anchor: Type.Unknown(),
+      notice: Type.Optional(Type.String()),
     },
     objectOptions,
   ),

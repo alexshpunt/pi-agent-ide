@@ -1,4 +1,5 @@
 import type { TextEditIntent } from "#src/api/edit-completion.ts";
+import type { MutationDiffStatus } from "#src/api/mutation-result.ts";
 import type { TextChange, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import type { ImageContent } from "pi-agent-resource";
 import type { TextAnchor } from "pi-agent-text";
@@ -21,6 +22,8 @@ export interface TextMutationChange extends TextChange {
 export interface TextMutationEdit {
   readonly changes: readonly TextMutationChange[];
   readonly action: "edited" | "overwritten";
+  /** Notices from the selectors that produced this edit. */
+  readonly selectorStatuses?: readonly MutationDiffStatus[];
   /** Indices of changes that produce live output targets; omit to select all, or use [] for removals. */
   readonly resultChanges?: readonly number[];
 }

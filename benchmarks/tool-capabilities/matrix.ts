@@ -117,6 +117,7 @@ const groups: [string[], string[]][] = [
   [["edit.stale-insert-feedback", "edit.bounded-stale-feedback"], ["stale-insert-recovery"]],
   [["edit.copied-line-prefix-refusal"], ["copied-line-prefix-recovery"]],
   [["edit.replace-anchored-display"], ["replace-anchored-display"]],
+  [["edit.search-highlight-selectors"], ["search-highlight-selectors"]],
   [["edit.ambiguous-exact-all-match"], ["ambiguous-exact-all-match"]],
   // Stale checks follow the edit; literal Search is independent of either refusal.
   // Early streaming cutoffs remain refusals, even when their payload has not arrived.

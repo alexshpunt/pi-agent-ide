@@ -4841,5 +4841,112 @@ add(
     answer: "LITERAL-PATH-MARKER",
   },
 );
+{
+  const preview = "// ⟦SLOT⟧";
+  const notice = "⟦ ⟧";
+  // Native batch children return acceptance; applied edits are reported in the parent receipt.
+  const edits = (step: RouteStep, fallback = true): RouteStep[] => [
+    { ...step, modes: ["direct"], ...(fallback ? { contains: notice } : { excludes: notice }) },
+    {
+      ...step,
+      modes: ["codemode"],
+      ...(fallback ? { parentContains: notice } : { parentExcludes: notice }),
+    },
+  ];
+  add(
+    "search-highlight-selectors",
+    ["edit.search-highlight-selectors"],
+    [
+      "Search replace.txt for SLOT and wait for its result.",
+      'Replace the full matching line fragment using at "// ⟦SLOT⟧" and text "// ⟦kept⟧". In direct mode take the fragment from the readable preview. In Codemode use the same marked fragment; the Search value gives you the unmarked line and match.',
+      'Keep the ⟦ ⟧ characters in every selector below. In insert.txt, insert "inside " before "⟦edge⟧".',
+      'Delete in delete.txt using after "⟦BEGIN⟧" and before "⟦END⟧". Keep the marker lines.',
+      'Copy from source.txt using from "⟦START⟧" and through "⟦STOP⟧", replacing the range in copy.txt using targetFrom "⟦OPEN⟧" and targetThrough "⟦CLOSE⟧".',
+      'Move from move.txt using at "⟦TRANSFER⟧", replacing the range in move-target.txt using targetAfter "⟦LEFT⟧" and targetBefore "⟦RIGHT⟧". Keep the target marker lines.',
+      'Copy "⟦START⟧" from source.txt using at, replacing targetAt "⟦HOLE⟧" in copy-inline.txt.',
+      'In literal.txt, Replace with at "⟦SLOT⟧" and text "matched". Only the literal bracketed fragment should change there.',
+      'Attempt Replace in ambiguous.txt and missing.txt using at "⟦SLOT⟧" and text "wrong". Both must refuse; do not retry.',
+      "In Codemode use a separate script for each edit attempt so its final receipt is easy to identify. Preserve all other bytes. Report which operations refused.",
+    ].join("\n"),
+    [
+      {
+        tool: "search",
+        args: { path: "replace.txt", query: "SLOT" },
+        contains: preview,
+        modes: ["direct"],
+      },
+      {
+        tool: "search",
+        args: { path: "replace.txt", query: "SLOT" },
+        scriptResult: { matches: { length: 1, 0: { text: "SLOT", lineText: "// SLOT" } } },
+        modes: ["codemode"],
+      },
+      ...edits({ tool: "replace", args: { path: "replace.txt", at: preview } }).map(
+        (step, index) => ({ ...step, after: [index] }),
+      ),
+      ...edits({ tool: "insert", args: { path: "insert.txt", before: "⟦edge⟧" } }),
+      ...edits({ tool: "delete", args: { path: "delete.txt", after: "⟦BEGIN⟧", before: "⟦END⟧" } }),
+      ...edits({
+        tool: "copy",
+        args: {
+          path: "source.txt",
+          from: "⟦START⟧",
+          through: "⟦STOP⟧",
+          target: "copy.txt",
+          targetFrom: "⟦OPEN⟧",
+          targetThrough: "⟦CLOSE⟧",
+        },
+      }),
+      ...edits({
+        tool: "move",
+        args: {
+          path: "move.txt",
+          at: "⟦TRANSFER⟧",
+          target: "move-target.txt",
+          targetAfter: "⟦LEFT⟧",
+          targetBefore: "⟦RIGHT⟧",
+        },
+      }),
+      ...edits({
+        tool: "copy",
+        args: { path: "source.txt", at: "⟦START⟧", target: "copy-inline.txt", targetAt: "⟦HOLE⟧" },
+      }),
+      ...edits({ tool: "replace", args: { path: "literal.txt", at: "⟦SLOT⟧" } }, false),
+      ...["ambiguous.txt", "missing.txt"].map((path) => ({
+        tool: "replace",
+        args: { path, at: "⟦SLOT⟧" },
+        contains: notice,
+        error: true,
+      })),
+    ],
+    {
+      forbiddenTools: ["write"],
+      files: {
+        "replace.txt": "// SLOT\n",
+        "insert.txt": "left edge right\n",
+        "delete.txt": "BEGIN\nold\nEND\n",
+        "source.txt": "START\nbody\nSTOP\n",
+        "copy.txt": "OPEN\nold\nCLOSE\n",
+        "move.txt": "keep\nTRANSFER\n",
+        "move-target.txt": "LEFT\nold\nRIGHT\n",
+        "copy-inline.txt": "left HOLE right\n",
+        "literal.txt": "SLOT\n⟦SLOT⟧\n",
+        "ambiguous.txt": "SLOT\nSLOT\n",
+        "missing.txt": "unrelated\n",
+      },
+      expected: {
+        "replace.txt": "// ⟦kept⟧\n",
+        "insert.txt": "left inside edge right\n",
+        "delete.txt": "BEGIN\nEND\n",
+        "copy.txt": "START\nbody\nSTOP\n",
+        "move.txt": "keep\n",
+        "move-target.txt": "LEFT\nTRANSFER\nRIGHT\n",
+        "copy-inline.txt": "left START right\n",
+        "literal.txt": "SLOT\nmatched\n",
+      },
+    },
+  );
+}
+
 /** The same small tasks are used for every configured model. */
 export const capabilityCases: CapabilityCase[] = cases;

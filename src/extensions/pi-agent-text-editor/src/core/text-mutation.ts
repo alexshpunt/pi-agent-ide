@@ -25,6 +25,7 @@ import {
   type FileMutationBatchResult,
   FileMutationResult,
   type MutationResultPresentation,
+  type MutationDiffStatus,
   type MutationOperationReceipt,
 } from "#src/api/mutation-result.ts";
 import {
@@ -57,6 +58,7 @@ import { presentAnchorCandidates, type AnchorCandidates } from "#src/core/anchor
 import { readTextAnchorRecovery } from "#src/core/text-anchor-recovery.ts";
 import { applyTextChanges, TextChangeDocument } from "#src/core/text-change-engine.ts";
 import {
+  resolvedTextAnchorNotice,
   resolvedTextAnchorType,
   TextAnchorResolutionError,
   TextAnchorResourceResolutionError,
@@ -124,7 +126,7 @@ import type {
   TextPresentedLines,
   TextResourcesEditOutcome,
 } from "#src/core/text-editor-core.ts";
-import { renderTextAnchor, type TextAnchor } from "pi-agent-text";
+import { renderTextAnchor, stripSearchHighlights, type TextAnchor } from "pi-agent-text";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import type { ToolCallAnchorRenderState } from "pi-agent-tool-call-interception";
 import type { Static, TSchema } from "typebox";
@@ -1045,6 +1047,7 @@ function mergeResolvedAnchors(
 }
 interface MutationExecutionContext extends TextMutationContext {
   resultPresentationFor(source: string): MutationResultPresentation;
+  readonly selectorNotices: readonly { source: string; field: string; notice: string }[];
 }
 
 interface ExecutedTextMutation extends TextMutation {
@@ -1070,6 +1073,24 @@ export function createMutationContext(
   const anchorCache = new Map<string, Promise<ReadonlyMap<string, TextAnchor>>>();
 
   const majorAnchorSources = new Set<string>();
+  const selectorNotices: MutationExecutionContext["selectorNotices"][number][] = [];
+  const recordResolvedAnchor = (
+    field: string,
+    source: string,
+    value: string,
+    anchor: TextAnchor,
+  ) => {
+    if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(source);
+    const notice = resolvedTextAnchorNotice(anchor);
+    if (notice !== undefined) selectorNotices.push({ source, field, notice });
+    const rendered = renderTextAnchor(anchor, value, { source, anchor });
+    publishAnchorRenderState?.(field, {
+      kind: "resolved",
+      full: rendered.full,
+      compact: rendered.compact,
+      resolverId: rendered.resolverId,
+    });
+  };
   const sourceFor = (field: string): string => {
     const source = sources.fields.get(field);
 
@@ -1108,6 +1129,7 @@ export function createMutationContext(
       target: TextTarget,
       code: TextAnchorRejection["code"],
       reason: string,
+      searchHighlightRetry?: string,
     ): TextMutationAnchorResolutionError =>
       new TextMutationAnchorResolutionError(
         definition.name,
@@ -1117,6 +1139,7 @@ export function createMutationContext(
         new TextAnchorResolutionError(reason, "result-scope", undefined, {
           code,
           reason,
+          ...(searchHighlightRetry === undefined ? {} : { searchHighlightRetry }),
           ...((target.ranges ?? []).length > 0 && {
             contextRange: scopeWindow(target.ranges ?? []),
           }),
@@ -1187,18 +1210,43 @@ export function createMutationContext(
         return { target, anchor, indices };
       }),
     );
-    const resolved = attempts.flatMap((attempt) =>
+    const checked = attempts.map((attempt, index) => {
+      const failure = attempt.status === "rejected" ? (attempt.reason as unknown) : undefined;
+      const rejection =
+        failure instanceof TextMutationAnchorResolutionError
+          ? failure.resolution.rejection
+          : undefined;
+      return {
+        attempt,
+        target: requiredValue(scope[index]),
+        failure,
+        rejection,
+        fallback:
+          attempt.status === "fulfilled"
+            ? resolvedTextAnchorNotice(attempt.value.anchor) !== undefined
+            : rejection?.searchHighlightRetry !== undefined,
+      };
+    });
+    // A real match in any scoped source wins over a presentation fallback in another.
+    const hasOriginalMatch = checked.some(
+      ({ attempt, fallback, rejection }) =>
+        !fallback &&
+        (attempt.status === "fulfilled" ||
+          rejection?.code === "ambiguous" ||
+          rejection?.code === "outside-scope" ||
+          rejection?.code === "before-start"),
+    );
+    const preferred = hasOriginalMatch ? checked.filter(({ fallback }) => !fallback) : checked;
+    const resolved = preferred.flatMap(({ attempt }) =>
       attempt.status === "fulfilled" ? [attempt.value] : [],
     );
-    const failures = attempts.flatMap((attempt) =>
-      attempt.status === "rejected" ? [attempt.reason as unknown] : [],
+    const failures = preferred.flatMap(({ attempt, failure }) =>
+      attempt.status === "rejected" ? [failure] : [],
     );
     // A file whose selection holds the anchor more than once holds it too.
-    const ambiguous = attempts.flatMap((attempt, index) =>
-      attempt.status === "rejected" &&
-      attempt.reason instanceof TextMutationAnchorResolutionError &&
-      attempt.reason.resolution.rejection?.code === "ambiguous"
-        ? [{ target: requiredValue(scope[index]), error: attempt.reason }]
+    const ambiguous = preferred.flatMap(({ target, failure, rejection }) =>
+      failure instanceof TextMutationAnchorResolutionError && rejection?.code === "ambiguous"
+        ? [{ target, error: failure }]
         : [],
     );
     const holding = [...resolved, ...ambiguous].map(({ target }) => target);
@@ -1211,16 +1259,30 @@ export function createMutationContext(
       );
       if (unexpected !== undefined)
         throw unexpected instanceof Error ? unexpected : new Error(errorMessage(unexpected));
-      if (holding.length > 1)
+      if (holding.length > 1) {
+        const notice = resolved.flatMap(({ anchor }) => resolvedTextAnchorNotice(anchor))[0];
+        const retryReason = ambiguous.find(
+          ({ error }) => error.resolution.rejection?.searchHighlightRetry !== undefined,
+        )?.error.resolution.rejection?.reason;
+        const retry = notice ?? retryReason;
         throw rejection(
           first,
           "ambiguous",
-          `The anchor matches in several files of the result: ${holding.map(describe).join("; ")}. Pass the result of one file, or its path.`,
+          `The anchor matches in several files of the result: ${holding.map(describe).join("; ")}. ${retry === undefined ? "" : `${retry.replace(/\.?$/u, ".")} `}Pass the result of one file, or its path.`,
+          retry === undefined ? undefined : stripSearchHighlights(value),
         );
+      }
       // Every failure is an anchor rejection here; one file has exactly one.
       if (scope.length === 1) throw requiredValue(failures[0]) as TextMutationAnchorResolutionError;
       // Only one file holds the anchor, more than once.
       if (ambiguous[0] !== undefined) throw ambiguous[0].error;
+      const relevant = preferred.find(({ fallback, rejection }) =>
+        hasOriginalMatch
+          ? preferred.length < checked.length &&
+            (rejection?.code === "outside-scope" || rejection?.code === "before-start")
+          : fallback,
+      )?.failure;
+      if (relevant instanceof TextMutationAnchorResolutionError) throw relevant;
       throw rejection(
         first,
         "missing",
@@ -1248,14 +1310,7 @@ export function createMutationContext(
       }
     }
     scopedPlacements.set(field, { source: target.source, indices });
-    if (resolvedTextAnchorType(anchor) === "major") majorAnchorSources.add(target.source);
-    const rendered = renderTextAnchor(anchor, value, { source: target.source, anchor });
-    publishAnchorRenderState?.(field, {
-      kind: "resolved",
-      full: rendered.full,
-      compact: rendered.compact,
-      resolverId: rendered.resolverId,
-    });
+    recordResolvedAnchor(field, target.source, value, anchor);
     return new Map([[target.source, anchor]]);
   };
   const resolveAnchors = (
@@ -1296,16 +1351,7 @@ export function createMutationContext(
                       start?.source === source ? start.offset : undefined,
                     );
 
-                    if (resolvedTextAnchorType(anchor) === "major") {
-                      majorAnchorSources.add(source);
-                    }
-                    const rendered = renderTextAnchor(anchor, value, { source, anchor });
-                    publishAnchorRenderState?.(field, {
-                      kind: "resolved",
-                      full: rendered.full,
-                      compact: rendered.compact,
-                      resolverId: rendered.resolverId,
-                    });
+                    recordResolvedAnchor(field, source, value, anchor);
                     return [source, anchor] as const;
                   } catch (error) {
                     publishAnchorRenderState?.(field, { kind: "failed" });
@@ -1399,6 +1445,7 @@ export function createMutationContext(
       return requiredValue(resolved.values().next().value);
     },
 
+    selectorNotices,
     resultPresentationFor(source): MutationResultPresentation {
       return [...majorAnchorSources].some((candidate) =>
         sameResource(candidate, source, invocation.cwd),
@@ -1411,12 +1458,35 @@ export function createMutationContext(
   return context;
 }
 
-function withResultPresentations(
+/** Carries selector feedback forward to the committed direct or batched result. */
+export function withMutationResultMetadata(
   mutation: TextMutation,
   context: MutationExecutionContext,
 ): ExecutedTextMutation {
+  const noticesByTarget = new Map<string, Map<string, Set<string>>>();
+  for (const { source, field, notice } of context.selectorNotices) {
+    // Copy can resolve a selector in a source it doesn't edit. Show that notice on its target.
+    const target = mutation.edits.has(source) ? source : mutation.edits.keys().next().value;
+    if (target === undefined) continue;
+    const notices = noticesByTarget.get(target) ?? new Map<string, Set<string>>();
+    noticesByTarget.set(target, notices);
+    const fields = notices.get(notice) ?? new Set<string>();
+    notices.set(notice, fields);
+    fields.add(field);
+  }
   return {
     ...mutation,
+    edits: new Map(
+      [...mutation.edits].map(([source, edit]) => {
+        const notices = noticesByTarget.get(source);
+        if (notices === undefined) return [source, edit];
+        const selectorStatuses: MutationDiffStatus[] = [...notices].map(([notice, fields]) => ({
+          origin: "pre-edit",
+          text: `${notice} from ${[...fields].join(", ")}.`,
+        }));
+        return [source, { ...edit, selectorStatuses }];
+      }),
+    ),
     resultPresentations: new Map(
       [...mutation.edits.keys()].map((source) => [source, context.resultPresentationFor(source)]),
     ),
@@ -1695,7 +1765,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
             const semanticAction = await semanticHandler.execute(mutationContext, state.input);
             return {
               changes: new Map(),
-              result: withResultPresentations(
+              result: withMutationResultMetadata(
                 { edits: new Map(), semanticAction },
                 mutationContext,
               ),
@@ -1743,7 +1813,7 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
             mutationContext,
           );
           const executedMutation: ExecutedTextMutation = {
-            ...withResultPresentations(mutation, mutationContext),
+            ...withMutationResultMetadata(mutation, mutationContext),
             snapshots: texts,
             ...(definition.name === "write" && {
               unchangedWrite: {
@@ -1917,10 +1987,13 @@ export function buildSuccessfulTextMutationResult(
     ...(diffPeerRanges === undefined ? {} : { diffPeerRanges }),
 
     operations,
-    diffStatuses: resource.postEditContributions
-      .map((item) => item.data)
-      .filter(isDiffStatusContribution)
-      .flatMap((item) => item.diffStatuses),
+    diffStatuses: [
+      ...(edit.selectorStatuses ?? []),
+      ...resource.postEditContributions
+        .map((item) => item.data)
+        .filter(isDiffStatusContribution)
+        .flatMap((item) => item.diffStatuses),
+    ],
     formatting: resource.postEditContributions
       .map((item) => item.data)
       .findLast(isFormattingContribution)?.formatting ?? { status: "not-reported" },
@@ -2248,6 +2321,9 @@ async function anchorFailureToolResult(
         path: contextual.source,
         code: resolution.rejection?.code ?? failure.code,
         reason,
+        ...(resolution.rejection?.searchHighlightRetry !== undefined && {
+          searchHighlightFallback: true,
+        }),
       },
     ],
   });

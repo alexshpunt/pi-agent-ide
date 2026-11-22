@@ -1,4 +1,7 @@
 import {
+  SEARCH_HIGHLIGHT_CLOSE,
+  SEARCH_HIGHLIGHT_OPEN,
+  stripSearchHighlights,
   type TextAnchorRecoveryCandidateRange,
   type TextAnchorRejection,
   type TextAnchorResolutionAttempt,
@@ -32,7 +35,7 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
       return Promise.resolve(resolveExactTextAnchor(value, context));
     },
     recover(value, context) {
-      return recoverExactText(value, context, config);
+      return recoverExactText(context.rejection.searchHighlightRetry ?? value, context, config);
     },
   };
 }
@@ -40,9 +43,9 @@ export function createExactTextAnchorResolver(config: ExactTextRecoveryConfig): 
 /**
  * Resolves the one place the literal `value` selects, matching the way Pi's edit matches
  * `oldText`: exact characters first, then without the BOM and with CRLF and CR as LF, then
- * fuzzily. Finally, match a copy from the current Read anchors view. The first way that finds
- * the literal decides. Every selector must match uniquely; the second boundary of a pair counts
- * only the matches from its paired start on.
+ * fuzzily, then as a copy from the current Read anchors view. If the supplied literal is absent,
+ * retry without Search highlight delimiters. Every selector must match uniquely; the second
+ * boundary of a pair counts only the matches from its paired start on.
  */
 export function resolveExactTextAnchor(
   value: string,
@@ -60,6 +63,40 @@ export function resolveExactTextAnchor(
   if (match.kind === "missing") {
     const outsideScope =
       inScope !== undefined && matchLiteral(content, value, anchored).kind !== "missing";
+    const plain = stripSearchHighlights(value);
+    if (!outsideScope && plain !== value) {
+      const markers = `${SEARCH_HIGHLIGHT_OPEN} ${SEARCH_HIGHLIGHT_CLOSE}`;
+      const retry =
+        plain.length === 0
+          ? { kind: "missing" as const }
+          : matchLiteral(content, plain, anchored, inScope, context.endAfter);
+      if (
+        retry.kind === "unique" &&
+        (context.endAfter === undefined || retry.span.from >= context.endAfter)
+      ) {
+        return {
+          ...resolved(value, context, retry.span),
+          notice: `Removed Search highlight markers ${markers}`,
+        };
+      }
+      const code = retry.kind === "unique" ? "before-start" : retry.kind;
+      const reason =
+        code === "ambiguous"
+          ? "the selector without them matches more than once"
+          : code === "before-start"
+            ? "the selector without them only matches before the end of the start selection"
+            : plain.length === 0
+              ? "removing them leaves an empty selector"
+              : "the selector without them did not match within the requested text";
+      return {
+        kind: "rejected",
+        rejection: {
+          code,
+          reason: `The selector contains Search highlight markers ${markers}; ${reason}`,
+          searchHighlightRetry: plain,
+        },
+      };
+    }
     // Interpret only single backslash control escapes, and only to explain a refusal.
     // Never resolve or edit the decoded candidate, or reinterpret escaped backslashes.
     const decoded = value.replace(/(?<!\\)\\[nrt]/gu, (escape) =>
@@ -97,11 +134,19 @@ export function resolveExactTextAnchor(
     return rejected("before-start", "all matches start before the end of the start selection");
   }
 
+  return resolved(value, context, match.span);
+}
+
+function resolved(
+  value: string,
+  { source, content }: TextAnchorResolverContext,
+  span: LiteralSpan,
+): Extract<TextAnchorResolutionAttempt, { kind: "resolved" }> {
   // Literal text selects exactly the characters it matched, even when they form complete lines.
   return {
     kind: "resolved",
-    anchor: new TextSelectionAnchor(value, context.source, [
-      { start: positionAt(content, match.span.from), end: positionAt(content, match.span.to) },
+    anchor: new TextSelectionAnchor(value, source, [
+      { start: positionAt(content, span.from), end: positionAt(content, span.to) },
     ]),
   };
 }

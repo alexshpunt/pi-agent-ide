@@ -23,7 +23,7 @@ import { TYPING_FRAME_INTERVAL_MS, TypingInterpolation } from "./typing-interpol
 import type { MutationRenderResource } from "./render-resource.ts";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 
-import { isLineAnchor } from "pi-agent-text";
+import { isLineAnchor, SEARCH_HIGHLIGHT_CLOSE, SEARCH_HIGHLIGHT_OPEN } from "pi-agent-text";
 import type { TextMutationPreviewResource } from "pi-agent-text-editor/api/mutation-preview";
 import {
   NO_TEXT_TARGET,
@@ -1167,8 +1167,16 @@ function userFacingFailure(
     details?.results?.flatMap((result) =>
       // Provider reasons can contain private data; decode only public editor failure codes.
       (result.data.errors ?? []).map((error) => {
-        const cause = wholeFileFailureCause(error.code ?? "");
+        if (error.searchHighlightFallback === true) {
+          const markers = `${SEARCH_HIGHLIGHT_OPEN} ${SEARCH_HIGHLIGHT_CLOSE}`;
+          if (error.code === "ambiguous")
+            return `multiple matches after removing Search markers ${markers}`;
+          if (error.code === "before-start")
+            return `no match after the start selector without Search markers ${markers}`;
+          return `no match without Search markers ${markers}`;
+        }
         // A provider's own code still names the editor step that failed.
+        const cause = wholeFileFailureCause(error.code ?? "");
         return cause === GENERIC_FAILURE_CAUSE && error.stage !== undefined
           ? wholeFileFailureCause(error.stage)
           : cause;
