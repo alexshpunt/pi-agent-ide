@@ -35,7 +35,7 @@ The `outline-search-edit` case follows a continuation to a second outline page a
 
 The `copy-destination-recovery` and `move-destination-recovery` cases retry with a destination anchor printed in the refusal, from an ambiguous match's context or a near match for misspelled text. Move also requires a refusal for an explicitly empty `at`. The revised direct and Codemode paid routes remain unverified until paid execution.
 
-The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The `lsp-rename-window` tests use real clangd to cover stale plans, a stalled refresh, and a peer sync that makes clangd refuse the rename. The tests also check that the same capture remains usable if retries run out. The paid case does not exercise contention.
+The `lsp-overload-rename` case covers exact selection and bare name-capture UUID reuse in a quiet workspace. The `lsp-rename-window` tests use real clangd to cover stale plans, a stalled refresh, and a peer sync that makes clangd refuse the rename. The tests also check that exhausted recovery reports `SOURCE_CHANGED` without writing, and that it does not invalidate the capture. The paid case does not exercise contention.
 
 The scripted `lsp-selector-retry` integration tests cover exact C++ `calls` and `declaration` queries when a peer writes the file and the first clangd outline omits the requested overload. The quiet paid case does not exercise this retry.
 

@@ -285,6 +285,7 @@ export interface TextResourceEditFailure {
   readonly code:
     | "CONFLICT"
     | "INVALID_REQUEST"
+    | "SOURCE_CHANGED"
     | "INVALID_RESOLVER_RESULT"
     | "INVALID_RESOURCE_CONTENT"
     | "INVALID_WRITE_CONTENT"

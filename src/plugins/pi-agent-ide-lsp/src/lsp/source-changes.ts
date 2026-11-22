@@ -9,8 +9,8 @@ export const SOURCE_CHANGED = "SOURCE_CHANGED";
  */
 const RETRY_DELAYS_MS = [0, 100, 250, 500];
 
-export function sourceChanged(message: string): Error {
-  return Object.assign(new Error(message), { code: SOURCE_CHANGED });
+export function sourceChanged(message: string, options?: ErrorOptions): Error {
+  return Object.assign(new Error(message, options), { code: SOURCE_CHANGED });
 }
 
 /** Whether the caller must refresh its source snapshot before retrying. */
