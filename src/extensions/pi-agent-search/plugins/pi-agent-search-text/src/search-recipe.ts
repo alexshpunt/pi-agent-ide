@@ -4,6 +4,7 @@ import {
   searchText,
   type TextSearchRequest,
   type TextSearchBackendResult,
+  type ObserveSearchMatches,
 } from "#src/search-backend.ts";
 import {
   compileSearchQuery,
@@ -50,6 +51,10 @@ export async function runSearchRecipe(
   cwd: string,
   signal?: AbortSignal,
   environment?: SearchEnvironment,
+  observe?: (
+    mode: SearchFallback["mode"] | undefined,
+    snapshot: () => TextSearchBackendResult["matches"],
+  ) => void,
 ): Promise<
   TextSearchBackendResult & {
     readonly query: string;
@@ -59,7 +64,18 @@ export async function runSearchRecipe(
 > {
   let query = recipe.query;
   let selectedFallback: SearchFallback["mode"] | undefined;
-  let result = await searchText(recipe, cwd, signal, undefined, environment);
+  const observerFor = (
+    mode: SearchFallback["mode"] | undefined,
+  ): ObserveSearchMatches | undefined => observe && ((snapshot) => observe(mode, snapshot));
+  let result = await searchText(
+    recipe,
+    cwd,
+    signal,
+    undefined,
+    environment,
+    observerFor(undefined),
+  );
+  observe?.(undefined, () => result.matches);
   const notices: string[] = [];
   for (const fallback of recipe.fallbacks ?? []) {
     if (result.matches.length > 0 || !result.complete) break;
@@ -71,8 +87,10 @@ export async function runSearchRecipe(
         signal,
         undefined,
         environment,
+        observerFor(fallback.mode),
       );
       result = next;
+      observe?.(fallback.mode, () => next.matches);
       query = fallback.query;
       selectedFallback = fallback.mode;
       notices.push(fallbackNotice(fallback.mode));

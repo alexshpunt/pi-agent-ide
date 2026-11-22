@@ -32,6 +32,7 @@ import { markNullFields, nullFieldsMessage } from "#src/api/null-fields.ts";
 
 import { loadSearchConfig, resolveSearchConfigPaths } from "#src/core/search-config.ts";
 import { runWithSearchTimeout } from "#src/core/search-timeout.ts";
+import { configureSearchDeadline } from "pi-agent-resource";
 
 import { searchCallPolicy, type SearchToolDetails } from "#src/api/search.ts";
 
@@ -186,39 +187,46 @@ export default async function registerSearchCore(
             const config = await loadSearchConfig(
               resolveSearchConfigPaths(process.env, os.homedir(), context.cwd),
             );
-            return await runWithSearchTimeout(config.timeoutMs, signal, async (operationSignal) => {
-              await core.waitForPendingPlugins();
-              // A list of plain paths goes to the core as it is; a list of results is a scope.
-              const pathList =
-                Array.isArray(parameters.path) && plainPathList(parameters.path) !== undefined;
-              const scoped =
-                parameters.path !== undefined &&
-                !pathList &&
-                (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
-              // Search only reads, so a result whose lines changed still selects the same region.
-              const rescope = scoped
-                ? (signal?: AbortSignal) =>
-                    targets.resolveCurrent(parameters.path, context.cwd, signal)
-                : undefined;
-              const scope = rescope === undefined ? undefined : await rescope(operationSignal);
-              return core.execute(
-                {
-                  ...parameters,
-                  path:
-                    pathList || (typeof parameters.path === "string" && !scoped)
-                      ? parameters.path
-                      : undefined,
-                },
-                {
-                  cwd: context.cwd,
-                  ...(scope === undefined || rescope === undefined ? {} : { scope, rescope }),
-                  ...(operationSignal !== undefined && { signal: operationSignal }),
-                  ...(onUpdate !== undefined && { onUpdate }),
-                },
-                // Text Search uses limit as a display budget, not a match cap.
-                searchCallPolicy(parameters.limit, scriptCall(id), "presentation").audience,
-              );
-            });
+            const standaloneTimeout = configureSearchDeadline(config.timeoutMs)
+              ? null
+              : config.timeoutMs;
+            return await runWithSearchTimeout(
+              standaloneTimeout,
+              signal,
+              async (operationSignal) => {
+                await core.waitForPendingPlugins();
+                // A list of plain paths goes to the core as it is; a list of results is a scope.
+                const pathList =
+                  Array.isArray(parameters.path) && plainPathList(parameters.path) !== undefined;
+                const scoped =
+                  parameters.path !== undefined &&
+                  !pathList &&
+                  (typeof parameters.path !== "string" || parameters.path.startsWith("RESULT#"));
+                // Search only reads, so a result whose lines changed still selects the same region.
+                const rescope = scoped
+                  ? (signal?: AbortSignal) =>
+                      targets.resolveCurrent(parameters.path, context.cwd, signal)
+                  : undefined;
+                const scope = rescope === undefined ? undefined : await rescope(operationSignal);
+                return core.execute(
+                  {
+                    ...parameters,
+                    path:
+                      pathList || (typeof parameters.path === "string" && !scoped)
+                        ? parameters.path
+                        : undefined,
+                  },
+                  {
+                    cwd: context.cwd,
+                    ...(scope === undefined || rescope === undefined ? {} : { scope, rescope }),
+                    ...(operationSignal !== undefined && { signal: operationSignal }),
+                    ...(onUpdate !== undefined && { onUpdate }),
+                  },
+                  // Text Search uses limit as a display budget, not a match cap.
+                  searchCallPolicy(parameters.limit, scriptCall(id), "presentation").audience,
+                );
+              },
+            );
           } catch (error) {
             if (signal?.aborted) throw error;
             const message = error instanceof Error ? error.message : String(error);

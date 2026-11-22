@@ -13,6 +13,13 @@ import {
 
 import { splitGlobList, type SearchRequest } from "pi-agent-search/api/search";
 import type { SearchEnvironment } from "pi-agent-search/api/search";
+import {
+  snapshotOnToolDeadline,
+  toolDeadlineFailure,
+  trackToolCleanup,
+  withStructuredResult,
+} from "pi-agent-resource";
+import { searchDataSchema } from "pi-agent-search/api/search";
 
 export interface FileSearchResult {
   readonly files: readonly string[];
@@ -21,112 +28,179 @@ export interface FileSearchResult {
   readonly unreadable?: UnreadablePaths;
 }
 
-/** List matching files in sort order: the first `request.limit` (default 100); `Infinity` lists all. */
+/** List matching paths, stopping the walk once the requested number has been found. */
 export async function searchFiles(
   query: string,
   request: SearchRequest,
   cwd: string,
-  signal?: AbortSignal,
+  parent?: AbortSignal,
   environment?: SearchEnvironment,
 ): Promise<FileSearchResult> {
   const limit = request.limit ?? 100;
-  const arguments_ = ["--files", "--hidden", "--no-config", "--glob", "!.git/**"];
-
-  for (const include of splitGlobList(request.include)) {
-    arguments_.push("--glob", include);
-  }
-
-  for (const exclude of splitGlobList(request.exclude)) {
-    arguments_.push("--glob", `!${exclude}`);
-  }
+  // Ascending path sort orders entries within each directory as ripgrep walks it. It does
+  // not collect the tree first or buffer stdout until the walk finishes.
+  const arguments_ = [
+    "--files",
+    "--sort",
+    "path",
+    "--line-buffered",
+    "--hidden",
+    "--no-config",
+    "--glob",
+    "!.git/**",
+  ];
+  for (const include of splitGlobList(request.include)) arguments_.push("--glob", include);
+  for (const exclude of splitGlobList(request.exclude)) arguments_.push("--glob", `!${exclude}`);
 
   const roots = request.paths ?? (request.path === undefined ? [] : [request.path]);
-  if (environment !== undefined) {
-    // Each root is listed from its own directory, so a glob with / matches relative to it.
-    const found = firstFiles(limit, roots.length > 1);
-    let unreadable: UnreadablePaths | undefined;
-    for (const root of roots.length === 0 ? ["."] : roots) {
-      const target = environment.resolve(cwd, root);
-      const directory = await environment.isDirectory(target, signal);
-      const searchCwd = directory ? target : environment.dirname(target);
-      const result = await environment.runLines(
-        [
+  const reachedLimit = Symbol("file search match limit");
+  const stop = new AbortController();
+  const signal = parent === undefined ? stop.signal : AbortSignal.any([parent, stop.signal]);
+  const found = new Set<string>();
+  snapshotOnToolDeadline((error) => {
+    const files = [...found];
+    const result = toolDeadlineFailure(error);
+    return withStructuredResult(
+      {
+        ...result,
+        content: [
+          ...result.content,
+          {
+            type: "text",
+            text: [`Incomplete file list (${files.length} found)`, ...files.slice(0, 100)].join(
+              "\n",
+            ),
+          },
+        ],
+      },
+      searchDataSchema,
+      {
+        status: "partial",
+        data: { kind: "files", complete: false, files },
+        errors: [{ code: error.code, source: error.target, message: error.message }],
+      },
+      { maxBytes: Infinity },
+    );
+  });
+  let unreadable: UnreadablePaths | undefined;
+  const accept = (relative: string, source: string): void => {
+    if (signal.aborted || !matchFile(relative, query)) return;
+    found.add(source);
+    if (found.size >= limit) stop.abort(reachedLimit);
+  };
+  const recordExit = (stderr: RipgrepStderr, code: number | null): void => {
+    if (!stop.signal.aborted && stderr.failed(code))
+      throw new Error(stderr.message || `rg exited with code ${String(code)}`);
+    unreadable = mergeUnreadablePaths(
+      unreadable,
+      stderr.unreadable(stop.signal.aborted ? 2 : code),
+    );
+  };
+
+  try {
+    signal.throwIfAborted();
+    if (environment !== undefined) {
+      // Each root is listed from its own directory, so a glob with / matches relative to it.
+      const targets = (roots.length === 0 ? ["."] : roots)
+        .map((root) => environment.resolve(cwd, root))
+        .toSorted();
+      for (const target of targets) {
+        const directory = await environment.isDirectory(target, signal);
+        const searchCwd = directory ? target : environment.dirname(target);
+        const runArgs = [
           ...arguments_,
           ...(directory ? await parentIgnoreArguments(target, environment, signal) : []),
           "--",
           directory ? "." : `./${environment.basename(target)}`,
-        ],
-        searchCwd,
-        (file) => {
-          const relative = file.replace(/^\.\//u, "");
-          if (matchFile(relative, query)) found.add(environment.resolve(searchCwd, file));
-        },
-        signal,
+        ];
+        signal.throwIfAborted();
+        const result = await environment.runLines(
+          runArgs,
+          searchCwd,
+          (file) => {
+            const relative = file.replace(/^\.\//u, "");
+            accept(relative, environment.resolve(searchCwd, file));
+          },
+          signal,
+        );
+        const stderr = new RipgrepStderr((printed) => environment.resolve(searchCwd, printed));
+        stderr.write(result.stderr);
+        recordExit(stderr, result.code);
+        signal.throwIfAborted();
+      }
+    } else {
+      if (roots.some((root) => root.includes("://")) || cwd.includes("://"))
+        throw new Error("No search environment owns this scope.");
+      const sortedRoots = roots.toSorted((a, b) =>
+        comparePaths(path.resolve(cwd, a), path.resolve(cwd, b)),
       );
-      signal?.throwIfAborted();
-      const stderr = new RipgrepStderr((printed) => environment.resolve(searchCwd, printed));
-      stderr.write(result.stderr);
-      if (stderr.failed(result.code)) throw new Error(stderr.message || "File search failed.");
-      unreadable = mergeUnreadablePaths(unreadable, stderr.unreadable(result.code));
+      arguments_.push(...(await localParentIgnoreArguments(sortedRoots, cwd, signal)));
+      if (sortedRoots.length > 0) arguments_.push("--", ...sortedRoots);
+      signal.throwIfAborted();
+      const stderr = new RipgrepStderr((printed) => path.resolve(cwd, printed));
+      const code = await runLocalLines(arguments_, cwd, stderr, signal, (line) => {
+        const file = path.relative(cwd, path.resolve(cwd, line));
+        accept(file, file);
+      });
+      recordExit(stderr, code);
+      signal.throwIfAborted();
     }
-    return withUnreadable(found.result(), unreadable);
+  } catch (error) {
+    parent?.throwIfAborted();
+    if (error !== reachedLimit) throw error;
   }
-  if (roots.some((root) => root.includes("://")) || cwd.includes("://"))
-    throw new Error("No search environment owns this scope.");
-  arguments_.push(...(await localParentIgnoreArguments(roots, cwd, signal)), ...roots);
+  return {
+    files: [...found],
+    complete: !stop.signal.aborted,
+    ...(unreadable === undefined ? {} : { unreadable }),
+  };
+}
 
+function comparePaths(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function runLocalLines(
+  args: readonly string[],
+  cwd: string,
+  stderr: RipgrepStderr,
+  signal: AbortSignal,
+  onLine: (line: string) => void,
+): Promise<number | null> {
   return new Promise((resolve, reject) => {
-    const child = spawn(resolveRipgrepExecutable(), arguments_, {
+    const child = spawn(resolveRipgrepExecutable(), args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
-    // A large tree lists more paths than one string can hold, so lines are matched as they arrive.
-    const found = firstFiles(limit, roots.length > 1);
-    let failure: Error | undefined;
-    const stderr = new RipgrepStderr((printed) => path.resolve(cwd, printed));
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      stderr.write(chunk);
-    });
-    createInterface({ input: child.stdout, crlfDelay: Infinity }).on("line", (line) => {
-      if (line.length === 0 || failure !== undefined) return;
-      try {
-        const file = path.relative(cwd, path.resolve(cwd, line));
-        if (matchFile(file, query)) found.add(file);
-      } catch (error) {
-        failure =
-          error instanceof Error ? error : new Error("File search failed.", { cause: error });
-        child.kill("SIGTERM");
-      }
-    });
+    let failure: unknown;
+    const closed = new Promise<void>((done) => child.once("close", () => done()));
     const abort = (): void => {
-      child.kill("SIGTERM");
+      trackToolCleanup(closed);
+      child.kill("SIGKILL");
     };
-    signal?.addEventListener("abort", abort, { once: true });
-    child.once("error", reject);
+    signal.addEventListener("abort", abort, { once: true });
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => stderr.write(chunk));
+    createInterface({ input: child.stdout, crlfDelay: Infinity }).on("line", (line) => {
+      if (line === "" || signal.aborted || failure !== undefined) return;
+      try {
+        onLine(line);
+      } catch (error) {
+        failure = error;
+        abort();
+      }
+    });
+    child.once("error", (error) => {
+      failure = error;
+    });
     child.once("close", (code) => {
-      signal?.removeEventListener("abort", abort);
-
-      if (signal?.aborted === true) {
-        reject(signal.reason instanceof Error ? signal.reason : new Error("File search aborted"));
-        return;
-      }
-
-      if (failure !== undefined) {
-        reject(failure);
-        return;
-      }
-
-      if (stderr.failed(code)) {
-        reject(new Error(stderr.message || `rg exited with code ${String(code)}`));
-        return;
-      }
-
-      resolve(withUnreadable(found.result(), stderr.unreadable(code)));
+      signal.removeEventListener("abort", abort);
+      if (failure !== undefined) reject(failure);
+      else resolve(code);
     });
   });
 }
-
 /**
  * One run lists every root, so it follows the ignore files above them only when each directory
  * root does. Ripgrep lists a file root even when an ignore file names it.
@@ -147,52 +221,6 @@ async function localParentIgnoreArguments(
     }),
   );
   return perRoot.some((arguments_) => arguments_.length > 0) ? ["--no-ignore-parent"] : [];
-}
-
-function withUnreadable(
-  result: FileSearchResult,
-  unreadable: UnreadablePaths | undefined,
-): FileSearchResult {
-  return unreadable === undefined ? result : { ...result, unreadable };
-}
-
-const collator = new Intl.Collator();
-
-/**
- * Keep the first `limit` matches in sort order and count the rest, so memory stays bounded. With
- * `unique`, for several listed paths that can overlap, a file listed again counts once.
- */
-function firstFiles(
-  limit: number,
-  unique = false,
-): {
-  add(file: string): void;
-  result(): FileSearchResult;
-} {
-  const files: string[] = [];
-  const seen = unique ? new Set<string>() : undefined;
-  let count = 0;
-  return {
-    add(file) {
-      if (seen?.has(file) === true) return;
-      seen?.add(file);
-      count += 1;
-      const last = files.at(-1);
-      if (files.length >= limit && (last === undefined || collator.compare(file, last) >= 0))
-        return;
-      let low = 0;
-      let high = files.length;
-      while (low < high) {
-        const middle = (low + high) >>> 1;
-        const current = files[middle];
-        if (current !== undefined && collator.compare(current, file) <= 0) low = middle + 1;
-        else high = middle;
-      }
-      files.splice(low, 0, file);
-      if (files.length > limit) files.pop();
-    },
-    result: () => ({ files, complete: count <= limit }),
-  };
 }
 
 function matchFile(file: string, query: string): boolean {

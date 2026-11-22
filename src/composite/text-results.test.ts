@@ -4,6 +4,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
+import { trackToolCleanup } from "pi-agent-resource";
 import { expect, test, vi } from "vitest";
 import { createIdeTextResults } from "./text-results.ts";
 import { textValue } from "./script-values/text.ts";
@@ -171,5 +172,77 @@ test("a throwing projection returns null and reports the failure without exposin
     expect(direct).toBeUndefined();
   } finally {
     spy.mockRestore();
+  }
+});
+
+test("a stalled registered tool returns a timeout for its target and aborts its work", async () => {
+  vi.useFakeTimers();
+  try {
+    let registered: ToolDefinition | undefined;
+    let cancelled = false;
+    let reaped = false;
+    const stub: Partial<ExtensionAPI> = {
+      events: createEventBus(),
+      on: () => () => {},
+      registerTool: (definition) => {
+        registered = definition as ToolDefinition;
+      },
+    };
+    const ide = createIdeTextResults(stub as ExtensionAPI);
+    ide.api.registerTool({
+      name: "file_search",
+      label: "file_search",
+      description: "fixture",
+      parameters: Type.Object({ path: Type.String() }),
+      execute: async (_id, _args, signal) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            cancelled = true;
+            trackToolCleanup(
+              new Promise<void>((resolve) => {
+                setTimeout(() => {
+                  reaped = true;
+                  resolve();
+                }, 100);
+              }),
+            );
+          },
+          { once: true },
+        );
+        // A provider that does not settle even after being told to cancel.
+        return new Promise<never>(() => {});
+      },
+    });
+    if (registered === undefined) throw new Error("Expected an IDE tool registration");
+    const result = registered.execute(
+      "call",
+      { path: "ssh://fixture/work" },
+      undefined,
+      undefined,
+      { cwd: "/workspace" } as never,
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(cancelled).toBe(true);
+    expect(reaped).toBe(false);
+    const ended = vi.fn();
+    void result.then(ended);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(ended).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(reaped).toBe(true);
+    await expect(result).resolves.toMatchObject({
+      isError: true,
+      details: {
+        code: "TOOL_TIMEOUT",
+        tool: "file_search",
+        target: "ssh://fixture/work",
+        timeoutMs: 30_000,
+      },
+    });
+    expect(cancelled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
   }
 });

@@ -6,4 +6,5 @@ import type { ScriptValue } from "./types.ts";
  * the session directory, SSH paths as `ssh://` URLs. A script's call lists every match unless it
  * sets `limit`.
  */
-export const fileSearchValue: ScriptValue = pathListValue("files");
+const paths = pathListValue("files");
+export const fileSearchValue: ScriptValue = { ...paths, failed: paths.project };

@@ -46,9 +46,12 @@ export function matchListSchema(
  */
 export function matchList(
   input: ScriptValueInput,
+  partial = false,
 ): { id?: string; complete: boolean; matches: MatchEntry[] } | undefined {
   const data =
-    record(input.outcome) && input.outcome.status === "success" ? input.outcome.data : undefined;
+    record(input.outcome) && input.outcome.status === (partial ? "partial" : "success")
+      ? input.outcome.data
+      : undefined;
   const reference = resultReference(input.shown);
   if (
     reference === undefined ||

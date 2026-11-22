@@ -3,6 +3,7 @@ import { open, stat } from "node:fs/promises";
 import path from "node:path";
 import { splitGlobList, type SearchEnvironment } from "pi-agent-search/api/search";
 import { createInterface } from "node:readline";
+import { trackToolCleanup } from "pi-agent-resource";
 
 import {
   mergeUnreadablePaths,
@@ -134,12 +135,16 @@ interface RipgrepMatchEvent {
   };
 }
 
+/** Register a lazy snapshot of confirmed matches; term probes cannot report matches of a Boolean query. */
+export type ObserveSearchMatches = (snapshot: () => readonly TextSearchMatch[]) => void;
+
 export async function searchText(
   request: TextSearchRequest,
   cwd: string,
   signal?: AbortSignal,
   budget?: SearchCaptureBudget,
   environment?: SearchEnvironment,
+  observe?: ObserveSearchMatches,
 ): Promise<TextSearchBackendResult> {
   if (request.query.length === 0) {
     throw new Error("Search query must not be empty.");
@@ -148,14 +153,19 @@ export async function searchText(
   assertSupportedPattern(request);
 
   if (request.paths !== undefined)
-    return searchEachPath(request.paths, budget, (root, rootBudget) =>
-      searchText(
-        { ...request, paths: undefined, path: root },
-        cwd,
-        signal,
-        rootBudget,
-        environment,
-      ),
+    return searchEachPath(
+      request.paths,
+      budget,
+      (root, rootBudget, observeRoot) =>
+        searchText(
+          { ...request, paths: undefined, path: root },
+          cwd,
+          signal,
+          rootBudget,
+          environment,
+          observeRoot,
+        ),
+      observe,
     );
 
   if (request.condition !== undefined)
@@ -164,7 +174,7 @@ export async function searchText(
       (pattern, onLine) => searchPattern(pattern, cwd, signal, onLine, undefined, environment),
       signal,
     );
-  return searchPattern(request, cwd, signal, undefined, budget, environment);
+  return searchPattern(request, cwd, signal, undefined, budget, environment, observe);
 }
 
 /**
@@ -177,7 +187,9 @@ export async function searchEachPath(
   search: (
     root: string,
     budget: SearchCaptureBudget | undefined,
+    observe?: ObserveSearchMatches,
   ) => Promise<TextSearchBackendResult>,
+  observe?: ObserveSearchMatches,
 ): Promise<TextSearchBackendResult> {
   const matches: TextSearchMatch[] = [];
   const searched = new Set<string>();
@@ -190,7 +202,14 @@ export async function searchEachPath(
       complete = false;
       break;
     }
-    const result = await search(root, remaining);
+    const result = await search(
+      root,
+      remaining,
+      observe &&
+        ((snapshot) => {
+          observe(() => [...matches, ...snapshot().filter((match) => !searched.has(match.source))]);
+        }),
+    );
     const found = new Set<string>();
     for (const match of result.matches) {
       if (searched.has(match.source)) continue;
@@ -199,6 +218,7 @@ export async function searchEachPath(
       matches.push(match);
     }
     for (const source of found) searched.add(source);
+    observe?.(() => matches);
     complete &&= result.complete;
     unreadable = mergeUnreadablePaths(unreadable, result.unreadable);
   }
@@ -311,11 +331,14 @@ async function searchPattern(
   onLine?: MatchingLine,
   budget?: SearchCaptureBudget,
   environment?: SearchEnvironment,
+  observe?: ObserveSearchMatches,
 ): Promise<TextSearchBackendResult> {
   const scope = await ripgrepScope(request, cwd, environment, signal);
   const searchCwd = scope.cwd;
+  signal?.throwIfAborted();
   const commonArguments = [
     "--json",
+    "--line-buffered",
     "--with-filename",
     "--line-number",
     request.caseSensitive === true ? "--case-sensitive" : "--ignore-case",
@@ -337,6 +360,7 @@ async function searchPattern(
           budget,
           undefined,
           environment,
+          observe,
         )
       : await withRegexEngineFallback(
           (engine) =>
@@ -348,6 +372,7 @@ async function searchPattern(
               budget,
               undefined,
               environment,
+              observe,
             ),
           signal,
         );
@@ -443,9 +468,11 @@ function runRipgrep(
   budget?: SearchCaptureBudget,
   input?: string,
   environment?: SearchEnvironment,
+  observe?: ObserveSearchMatches,
 ): Promise<TextSearchBackendResult> {
+  signal?.throwIfAborted();
   if (environment !== undefined)
-    return runOwnedRipgrep(arguments_, cwd, environment, signal, onLine, budget);
+    return runOwnedRipgrep(arguments_, cwd, environment, signal, onLine, budget, observe);
   return new Promise((resolve, reject) => {
     const child = spawn(resolveRipgrepExecutable(), arguments_, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -477,11 +504,14 @@ function runRipgrep(
     });
     child.stdin.end(input);
     const matches: TextSearchMatch[] = [];
+    observe?.(() => matches);
     const stderr = new RipgrepStderr((printed) => path.resolve(cwd, printed));
     let parseError: unknown;
 
+    const closed = new Promise<void>((done) => child.once("close", () => done()));
     const abort = (): void => {
-      child.kill();
+      trackToolCleanup(closed);
+      child.kill("SIGKILL");
     };
     const cleanup = (): void => {
       signal?.removeEventListener("abort", abort);
@@ -493,7 +523,13 @@ function runRipgrep(
       stderr.write(chunk);
     });
     output.on("line", (line) => {
-      if (limited || captureError !== undefined || parseError !== undefined || line.length === 0) {
+      if (
+        signal?.aborted ||
+        limited ||
+        captureError !== undefined ||
+        parseError !== undefined ||
+        line.length === 0
+      ) {
         return;
       }
 
@@ -576,8 +612,10 @@ async function runOwnedRipgrep(
   signal?: AbortSignal,
   onLine?: MatchingLine,
   budget?: SearchCaptureBudget,
+  observe?: ObserveSearchMatches,
 ): Promise<TextSearchBackendResult> {
   const matches: TextSearchMatch[] = [];
+  observe?.(() => matches);
   const controller = new AbortController();
   const abort = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", abort, { once: true });
@@ -592,7 +630,7 @@ async function runOwnedRipgrep(
       arguments_,
       cwd,
       (line) => {
-        if (state.limited || captureError !== undefined || !line.length) return;
+        if (controller.signal.aborted || captureError !== undefined || !line.length) return;
         try {
           bytes += Buffer.byteLength(line) + 1;
           if (budget !== undefined && bytes > budget.bytes) {

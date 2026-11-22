@@ -9,6 +9,20 @@ from urllib.parse import urlparse, unquote
 rename_counts = {}
 
 state = {}
+pending_symbols = set()
+
+
+def record_symbol_request(event, request_id):
+    # The probe is opt-in; ordinary fixture runs have no filesystem side effects here.
+    marker = state.get("symbolRequestLog")
+    if marker:
+        with open(marker, "a", encoding="utf-8") as log:
+            log.write(json.dumps({
+                "event": event,
+                "id": request_id,
+                "serverPid": os.getpid(),
+                "pending": sorted(pending_symbols),
+            }) + "\n")
 
 
 def send(message):
@@ -43,6 +57,8 @@ while True:
         state["watchRequested"] = params.get("initializationOptions", {}).get("ownerWatchTest", False)
         state["ignoreExit"] = params.get("initializationOptions", {}).get("ownerIgnoreExit", False)
         state["exitOnSymbolQuery"] = params.get("initializationOptions", {}).get("ownerExitOnSymbolQuery")
+        state["holdSymbolQuery"] = params.get("initializationOptions", {}).get("ownerHoldSymbolQuery")
+        state["symbolRequestLog"] = params.get("initializationOptions", {}).get("ownerSymbolRequestLog")
         state["watchRegistered"] = False
         state["watchChanges"] = []
         result = {"capabilities": {"textDocumentSync": 1, "renameProvider": True, "workspaceSymbolProvider": True, "documentSymbolProvider": True, "referencesProvider": True}}
@@ -63,6 +79,12 @@ while True:
     elif method == "textDocument/documentSymbol":
         result = [{"name": "label", "kind": 14, "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 21}}, "selectionRange": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}]
     elif method == "workspace/symbol":
+        if params["query"] == state.get("holdSymbolQuery"):
+            pending_symbols.add(message["id"])
+            record_symbol_request("held", message["id"])
+            continue
+        if params["query"] == "label":
+            record_symbol_request("served", message["id"])
         if params["query"] == state.get("exitOnSymbolQuery"):
             os._exit(7)
         if params["query"] == "unsupported":
@@ -72,6 +94,10 @@ while True:
             send({"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32603, "message": "Owned navigation failure"}})
             continue
         result = [{"name": "label", "kind": 14, "location": {"uri": state["receivedRoot"] + "/note.ts", "range": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}}] if params["query"] == "label" else []
+    elif method == "$/cancelRequest" and params["id"] in pending_symbols:
+        pending_symbols.remove(params["id"])
+        record_symbol_request("cancelled", params["id"])
+        send({"jsonrpc": "2.0", "id": params["id"], "error": {"code": -32800, "message": "Request cancelled"}})
     elif method == "textDocument/references":
         result = [{"uri": state["receivedRoot"] + "/" + name, "range": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}} for name in ("note.ts", "reference.ts") if os.path.isfile(unquote(urlparse(state["receivedRoot"] + "/" + name).path))]
     elif method == "textDocument/prepareCallHierarchy":

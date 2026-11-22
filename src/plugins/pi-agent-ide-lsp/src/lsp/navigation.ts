@@ -1,10 +1,10 @@
+import { NAVIGATION_TIMEOUT_MS } from "pi-agent-resource";
 import type { LspClient } from "./client.ts";
 import { isMethodNotFound } from "./errors.ts";
 import { sourceChanged } from "./source-changes.ts";
 import type { LspPosition, LspRange } from "./types.ts";
 
-/** One budget for server startup, coverage checks, queries and all retries. */
-export const NAVIGATION_TIMEOUT_MS = 15_000;
+export { NAVIGATION_TIMEOUT_MS };
 
 export async function withNavigationDeadline<T>(
   parent: AbortSignal | undefined,

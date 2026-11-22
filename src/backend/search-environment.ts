@@ -33,14 +33,17 @@ export function createSshSearchEnvironmentProvider(
       error: unknown,
       command: string,
       cwd: string,
+      signal?: AbortSignal,
     ): Promise<unknown> => {
+      signal?.throwIfAborted();
       if (!(error instanceof SshBackendError) || error.code !== "ENOENT") return error;
       let directory = false;
       try {
-        directory = (await backend.stat(cwd)).kind === "directory";
+        directory = (await backend.stat(cwd, { signal })).kind === "directory";
       } catch {
         // A missing working directory keeps the original failure.
       }
+      signal?.throwIfAborted();
       return directory
         ? new Error(missingToolMessage(command, backend.target.id, windows), { cause: error })
         : error;
@@ -67,7 +70,7 @@ export function createSshSearchEnvironmentProvider(
         try {
           result = await backend.execute(command, arguments_, directory, { signal });
         } catch (error) {
-          throw await explainMissing(error, command, directory);
+          throw await explainMissing(error, command, directory, signal);
         }
         return {
           code: result.exitCode,
@@ -85,7 +88,7 @@ export function createSshSearchEnvironmentProvider(
             signal,
           });
         } catch (error) {
-          throw await explainMissing(error, "rg", directory);
+          throw await explainMissing(error, "rg", directory, signal);
         }
         const decoder = new StringDecoder("utf8");
         const pending: string[] = [];
@@ -138,9 +141,15 @@ export function createSshSearchEnvironmentProvider(
               : new Error("Search output failed.", { cause: failure });
           signal?.throwIfAborted();
           return { code: result.exitCode, stderr };
+        } catch (error) {
+          signal?.throwIfAborted();
+          throw error;
         } finally {
-          await channel.stop();
-          await Promise.allSettled([output, diagnostics]);
+          try {
+            await channel.stop();
+          } finally {
+            await Promise.allSettled([output, diagnostics]);
+          }
         }
       },
     };

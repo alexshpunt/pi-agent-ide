@@ -3,6 +3,7 @@ import { MAX_ANCHOR_EXCERPT_LENGTH, quoteAnchorExcerpt } from "#src/api/anchor-e
 import {
   ResourceError,
   resourceErrorMetadataOf,
+  reportToolEffect,
   resultValueId,
   resultValueReference,
   type ResourceErrorMetadata,
@@ -194,6 +195,7 @@ export function createTextTool<TParameters extends TSchema>(
           ),
       }),
       async execute(toolCallId, parameters, signal, onUpdate, context) {
+        reportToolEffect("not-applied");
         let plannedEdits: ReadonlyMap<string, TextMutationEdit> | undefined;
         const unchangedPlan = { snapshots: new Map<string, string>() };
         const captured = await runNativePostEditScope(
@@ -431,6 +433,8 @@ export function createTextTool<TParameters extends TSchema>(
                 if (queued !== undefined) return queued;
                 if (definition.direct?.matches(input) === true) {
                   try {
+                    signal?.throwIfAborted();
+                    reportToolEffect("unknown");
                     const action = await definition.direct.execute(
                       { cwd: context.cwd, ...(signal !== undefined && { signal }) },
                       input,
@@ -1686,6 +1690,8 @@ export async function executeTextMutationPipeline<TParameters extends TSchema>(
               publishAnchorRenderState,
             );
             await preflightMutationAnchors(definition, state.input, mutationContext);
+            state.signal?.throwIfAborted();
+            reportToolEffect("unknown");
             const semanticAction = await semanticHandler.execute(mutationContext, state.input);
             return {
               changes: new Map(),

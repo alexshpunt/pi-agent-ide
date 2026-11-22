@@ -1899,8 +1899,13 @@ add(
 
 add(
   "file-search-script-paths",
-  ["file_search.script-paths", "file_search.script-limit", "compose.file-search-paths-read"],
-  "Use native Codemode. The logs directory holds 150 .log files. Call file_search for *.log in logs without a limit and check that its value lists all 150 paths. Call it again with limit 2 and check that the value has two paths. Then read the path that ends with entry-137.log from the initial unlimited file_search result and report its content. Do not parse display text.",
+  [
+    "file_search.script-paths",
+    "file_search.script-limit",
+    "file_search.sorted-limit",
+    "compose.file-search-paths-read",
+  ],
+  "Use native Codemode. The logs directory holds 150 .log files. Call file_search for *.log in logs without a limit and check that its value lists all 150 paths. Call it again with limit 2 and verify the two paths are logs/entry-000.log and logs/entry-001.log in that order. Then read the path that ends with entry-137.log from the initial unlimited file_search result and report its content. Do not parse display text.",
   [
     {
       tool: "file_search",
@@ -1911,7 +1916,7 @@ add(
     {
       tool: "file_search",
       args: { pattern: /\*\.log|\.log/, path: "logs", limit: 2 },
-      scriptResult: { length: 2 },
+      scriptResult: { length: 2, 0: "logs/entry-000.log", 1: "logs/entry-001.log" },
     },
     { tool: "read", args: { path: "logs/entry-137.log" }, contains: "PASS-137" },
   ],
@@ -1919,7 +1924,7 @@ add(
     modes: ["codemode"],
     files: Object.fromEntries(
       Array.from({ length: 150 }, (_, index) => [
-        `logs/entry-${String(index)}.log`,
+        `logs/entry-${String(index).padStart(3, "0")}.log`,
         `PASS-${String(index)}\n`,
       ]),
     ),
