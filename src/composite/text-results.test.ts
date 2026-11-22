@@ -1,4 +1,5 @@
 import {
+  type AgentToolResult,
   createEventBus,
   type ExtensionAPI,
   type ToolDefinition,
@@ -241,6 +242,66 @@ test("a stalled registered tool returns a timeout for its target and aborts its 
       },
     });
     expect(cancelled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a cancelled registered tool reports its own cancellation outcome", async () => {
+  vi.useFakeTimers();
+  try {
+    let registered: ToolDefinition | undefined;
+    const stub: Partial<ExtensionAPI> = {
+      events: createEventBus(),
+      on: () => () => {},
+      registerTool: (definition) => {
+        registered = definition as ToolDefinition;
+      },
+    };
+    const ide = createIdeTextResults(stub as ExtensionAPI);
+    let settle = true;
+    ide.api.registerTool({
+      name: "read",
+      label: "read",
+      description: "fixture",
+      parameters: Type.Object({ path: Type.String() }),
+      execute: (_id, _args, signal) =>
+        new Promise<AgentToolResult<unknown>>((resolve) => {
+          signal?.addEventListener(
+            "abort",
+            () => {
+              if (settle)
+                resolve({
+                  content: [{ type: "text", text: "Read cancelled for the fixture." }],
+                  details: { cancelled: true },
+                  isError: true,
+                });
+            },
+            { once: true },
+          );
+        }),
+    });
+    if (registered === undefined) throw new Error("Expected an IDE tool registration");
+    const execute = (signal: AbortSignal) =>
+      registered?.execute("call", { path: "fixture" }, signal, undefined, {
+        cwd: "/workspace",
+      } as never);
+
+    const reported = new AbortController();
+    const outcome = execute(reported.signal);
+    reported.abort(new Error("caller cancelled"));
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(outcome).resolves.toMatchObject({ isError: true, details: { cancelled: true } });
+
+    // A tool that ignores cancellation still ends with the caller's reason.
+    settle = false;
+    const stalled = new AbortController();
+    const ended = execute(stalled.signal);
+    const rejected = expect(ended).rejects.toThrow("caller cancelled");
+    stalled.abort(new Error("caller cancelled"));
+    await vi.advanceTimersByTimeAsync(5_000);
+    await rejected;
     expect(vi.getTimerCount()).toBe(0);
   } finally {
     vi.useRealTimers();

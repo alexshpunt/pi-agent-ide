@@ -139,8 +139,10 @@ export async function runWithinToolDeadline<T, F>(
   const ended = new Promise<ToolDeadlineError>((resolve, reject) => {
     finish = resolve;
     cancel = () => {
-      reject(parent?.reason);
+      clearTimeout(timer);
       active.run(deadline, () => controller.abort(parent?.reason));
+      // Let the tool report its own cancellation outcome; end the call if it does not settle.
+      timer = setTimeout(() => reject(parent?.reason), CANCELLATION_CLEANUP_MS);
     };
   });
   const deadline: ActiveDeadline = {
