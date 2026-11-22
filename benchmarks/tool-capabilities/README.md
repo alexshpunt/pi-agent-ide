@@ -114,6 +114,8 @@ Tool loadouts and their prompt guidance are host lifecycle, not a new model oper
 
 The `compose.shell-first-use-input` and `compose.debug-first-use-controls` capabilities use fresh-session roundtrips after deferred terminal/debugger metadata becomes available. Bash activates terminal guidance on first use. Native `tool_search` activates debugger guidance from its loaded results; Codemode `searchTools` and `describeTool` do not activate it until an actual debug call. These paid routes validate the follow-up operations and reference reuse. Deterministic real-Pi cases check schema publication, composition, restoration and exclusions; a paid route does not inspect serialized schemas or prove cache savings. Unrun direct and Codemode routes remain unverified.
 
+The `shell-roundtrip` routes check that Read includes the final line from a background Bash command. The stalled-reader regression and real-Pi foreground and background runs check exit draining, complete logs and completion notices without inference. The revised paid routes remain unverified.
+
 ### Case prerequisites
 
 Some cases need extra tools. The sandbox sees only `/usr`, `/etc`, `/opt`, and `~/.local/bin` and `~/.local/lib` of the user who runs the matrix. A tool installed elsewhere, such as rustup's `~/.cargo/bin`, stays invisible and its case reports `unavailable`. Each attempt also starts with an empty home, so caches in the host user's home do not reach it.

@@ -16,7 +16,7 @@ function registry() {
     {
       id: "alpha",
       description: "description-only",
-      markdown: "# Alpha\nNeedle needlework needle\na.b\nПривет мир",
+      markdown: "# Alpha\nNeedle needlework needle\na.b\nПривет мир\nZinLaptop: ready\nast:$NAME",
       triggers: [{ tool: "read" }],
     },
   ]);
@@ -88,6 +88,11 @@ test("keeps punctuation and quotes literal and supports explicit regex", async (
   ).toEqual(["Needle"]);
 });
 
+test.each(["ZinLaptop:", "ast:$NAME"])("matches %s as literal guide text", async (query) => {
+  const { data } = await search({ path: "docs:alpha", query });
+  expect(data.matches.map((match) => match.matchedText)).toEqual([query]);
+});
+
 test("uses one limit across guides and distinguishes exact limit from truncation", async () => {
   const limited = await search({ query: "needle", path: "docs:all", limit: 3 });
   expect(limited.data.complete).toBe(false);
@@ -131,7 +136,6 @@ test("leaves unowned scopes alone and rejects invalid owned requests", async () 
     { query: "needle", path: "docs:missing" },
     { query: "needle", path: "docs:all", include: "*.md" },
     { query: "needle", path: "docs:all", exclude: "*.md" },
-    { query: "ast:$NAME", path: "docs:all" },
   ])
     expect(await resolver.tryResolve(request, context)).toMatchObject({ kind: "failed" });
   await expect(

@@ -350,7 +350,16 @@ test.each(["direct", "codemode"] as const)(
   "searches packaged guides through %s without consuming their full-read state",
   async (mode) => {
     const workspace = await createWorkspace();
+    const literalQueries = [
+      { id: "docs-trailing-colon", query: "ZinLaptop:", line: 4 },
+      { id: "docs-former-prefix", query: "ast:$NAME", line: 5 },
+    ];
     const calls = [
+      ...literalQueries.map(({ id, query }) => ({
+        id,
+        name: "search",
+        arguments: { path: "docs:search-fixture-one", query },
+      })),
       {
         id: "docs-all",
         name: "search",
@@ -406,7 +415,7 @@ test.each(["direct", "codemode"] as const)(
                       arguments: {
                         // A failed Search resolves to null; its reason ends the Codemode result.
                         // Guide matches select no text, so neither they nor the list have ids.
-                        code: `const value = await tools.search(${JSON.stringify(call.arguments)}); text(value === null ? "search failed" : value.matches.map((match) => match.path + ":" + match.line + ":" + ("id" in match ? "id" : "")).join("\\n") + "\\n" + JSON.stringify({ complete: value.complete, id: "id" in value }));`,
+                        code: `const value = await tools.search(${JSON.stringify(call.arguments)}); text(value === null ? "search failed" : value.matches.map((match) => match.path + ":" + match.line + ":" + ("id" in match ? "id" : "") + ":" + match.text).join("\\n") + "\\n" + JSON.stringify({ complete: value.complete, id: "id" in value }));`,
                       },
                     },
               ),
@@ -426,6 +435,18 @@ test.each(["direct", "codemode"] as const)(
         .content.filter((part) => part.type === "text")
         .map((part) => part.text)
         .join("\n");
+    for (const { id, query, line } of literalQueries) {
+      if (mode === "direct") {
+        expect(getToolResultMessage(result, id).details).toMatchObject({
+          payload: {
+            complete: true,
+            matches: [{ source: "docs:search-fixture-one", lineNumber: line, matchedText: query }],
+          },
+        });
+      } else {
+        expect(resultText(id)).toContain(`docs:search-fixture-one:${line}::${query}`);
+      }
+    }
     expect(resultText("docs-all")).toContain("docs:search-fixture-one:2:");
     expect(resultText("docs-all")).toContain("docs:search-fixture-two:2:");
     expect(resultText("docs-regex")).toContain("docs:search-fixture-one:2:");
@@ -444,7 +465,7 @@ test.each(["direct", "codemode"] as const)(
       expect(resultText("docs-empty")).not.toMatch(/^docs:/mu);
       for (const id of ["docs-all", "docs-regex"]) {
         expect(resultText(id)).toContain('{"complete":true,"id":false}');
-        expect(resultText(id)).not.toMatch(/:id$/mu);
+        expect(resultText(id)).not.toMatch(/:id:/mu);
       }
     }
     if (mode === "codemode")

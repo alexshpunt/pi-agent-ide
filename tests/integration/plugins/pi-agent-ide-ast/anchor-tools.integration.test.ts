@@ -40,7 +40,7 @@ describe("AST scope anchors through text editor tools", () => {
     await runAstScenario(
       "ast-anchor-insert",
       "insert",
-      ([first]) => ({ after: first.endScopeAnchor.value, text: "inserted();" }),
+      ([first]) => ({ after: first.endScopeAnchor.value, text: "inserted();\n" }),
       [...firstFunction, "inserted();", "", ...secondFunction].join("\n"),
     );
   });
@@ -114,7 +114,8 @@ async function runAstScenario(
     const expectedAnchors = Object.entries(anchorArguments)
       .filter(
         ([key, value]) =>
-          ["targetAfter", "at", "from", "through"].includes(key) && typeof value === "string",
+          ["after", "targetAfter", "at", "from", "through"].includes(key) &&
+          typeof value === "string",
       )
       .map(([, value]) => value as string);
     const toolArguments =

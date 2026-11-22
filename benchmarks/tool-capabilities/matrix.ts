@@ -51,7 +51,13 @@ const groups: [string[], string[]][] = [
   [["read.ssh-guide"], ["ssh-guide"]],
   [["read.ide-settings", "search.ide-settings"], ["ide-settings-catalog"]],
   [
-    ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
+    [
+      "search.docs-all",
+      "search.docs-one",
+      "search.docs-flags",
+      "search.docs-readonly",
+      "search.docs-literal-colon",
+    ],
     ["docs-search"],
   ],
   [
@@ -369,6 +375,7 @@ const groups: [string[], string[]][] = [
     [
       // Fresh-session follow-up operations exercise metadata activated by the first Bash call.
       // Schema publication and delayed-card ownership have deterministic integration coverage.
+      // The shell Read verifies the final marker; deterministic tests cover exit-drain timing.
       "shell.execute",
       "shell.read",
       "shell.search",
