@@ -9,6 +9,7 @@ import {
   type AgentDocumentation,
 } from "#src/api/documentation.ts";
 import { AgentDocumentationRegistry } from "#src/documentation/registry.ts";
+import { guideAttachmentPrefix } from "#src/documentation/attachment.ts";
 import { connectSearchPlugin } from "pi-agent-search/api/connect-plugin";
 import { SEARCH_API_VERSION, SEARCH_PROTOCOL } from "pi-agent-search/api/plugin-protocol";
 import { createDocumentationSearchResolver } from "#src/documentation/search.ts";
@@ -159,7 +160,7 @@ export default async function registerProgressiveDocumentation(
         ...event.content,
         ...documents.map((document) => ({
           type: "text" as const,
-          text: `\n\n---\n\n# Guide: ${document.id}\n\n${document.markdown.trim()}`,
+          text: guideAttachmentPrefix(document.id) + document.markdown.trim(),
         })),
       ],
       structuredContent: event.structuredContent,

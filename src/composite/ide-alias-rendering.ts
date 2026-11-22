@@ -3,8 +3,30 @@ import {
   createCodemodeExtension,
   type ExtensionAPI,
   type ToolDefinition,
+  type ToolInfo,
   type ToolRenderers,
 } from "@earendil-works/pi-coding-agent";
+import { withoutGuideAttachments } from "#src/documentation/attachment.ts";
+
+function isBuiltinCodemode(tool: ToolInfo): boolean {
+  return (
+    tool.name === "codemode" &&
+    tool.sourceInfo.source === "builtin" &&
+    tool.sourceInfo.path === "builtin:codemode"
+  );
+}
+
+function withCodemodeGuideFiltering(
+  renderers: ToolRenderers | undefined,
+): ToolRenderers | undefined {
+  const renderResult = renderers?.renderResult;
+  if (!renderResult) return renderers;
+  return {
+    ...renderers,
+    renderResult: (result, options, theme, context) =>
+      renderResult(withoutGuideAttachments(result), options, theme, context),
+  };
+}
 
 /**
  * Preserve native IDE contracts and presentation for matching local MCP forwarding aliases.
@@ -27,9 +49,7 @@ export function registerIdeAliasCompatibility(
     const matches = tools.filter(
       (tool) =>
         ((definitions.has(tool.name) && tool.namespace?.name.startsWith("ide_") === true) ||
-          (tool.name === "codemode" &&
-            tool.sourceInfo.source === "builtin" &&
-            tool.sourceInfo.path === "builtin:codemode")) &&
+          isBuiltinCodemode(tool)) &&
         tool.exposure !== "hidden" &&
         tool.description === alias.description &&
         isDeepStrictEqual(tool.parameters, alias.parameters),
@@ -38,6 +58,8 @@ export function registerIdeAliasCompatibility(
   };
   let codemodeRenderers: ToolRenderers | undefined;
   pi.registerToolRenderer((name, next) => {
+    if (name === "codemode" && pi.getAllTools().some(isBuiltinCodemode))
+      return withCodemodeGuideFiltering(next());
     const native = source(name);
     if (native !== "codemode") return native === undefined ? next() : definitions.get(native);
     if (!codemodeRenderers) {
@@ -51,7 +73,7 @@ export function registerIdeAliasCompatibility(
         },
       });
     }
-    return codemodeRenderers ?? next();
+    return codemodeRenderers ? withCodemodeGuideFiltering(codemodeRenderers) : next();
   });
   pi.on("before_agent_start", () => {
     for (const alias of pi.getAllTools()) {
