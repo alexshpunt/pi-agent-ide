@@ -15,7 +15,6 @@ interface Call {
 const uuid = "11111111-aaaa-4aaa-8aaa-111111111111";
 const id = `RESULT#${uuid}`;
 const other = "RESULT#22222222-aaaa-4aaa-8aaa-222222222222";
-const forms = [uuid, id, { id }, JSON.stringify({ id: uuid }), JSON.stringify({ id })];
 function events(calls: Call[], mode: string): RunEvent[] {
   const entries: RunEvent[] = calls.flatMap((call, index) => [
     {
@@ -100,10 +99,19 @@ for (const mode of ["direct", "codemode"]) {
     };
     const write = (path: unknown): Call => ({ tool: "write", args: { path, content: "[1,3]\n" } });
     const check = (calls: Call[]) => validateRoute(task, events(calls, mode), mode).passed;
-    for (const path of [...forms, read.value])
+    for (const path of [uuid, id, { id: uuid }, { id }, read.value])
       assert.ok(check([read, write(path)]), JSON.stringify(path));
-    for (const path of [other, { id: other }, JSON.stringify({ id: other }), '{"id":', [id, other]])
-      assert.equal(check([read, write(path)]), false);
+    // JSON text is a literal path, not a result reference.
+    for (const path of [
+      JSON.stringify({ id: uuid }),
+      JSON.stringify({ id }),
+      other,
+      { id: other },
+      JSON.stringify({ id: other }),
+      '{"id":',
+      [id, other],
+    ])
+      assert.equal(check([read, write(path)]), false, JSON.stringify(path));
     assert.equal(check([{ ...read, text: `${read.text}\n${other}` }, write({ id: other })]), false);
     for (const changed of [
       { ...read, error: true },

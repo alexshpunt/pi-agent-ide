@@ -91,6 +91,12 @@ test("retains failures while every integration shard runs on its own runner", ()
   );
   expect(upload.step.with?.path).toBe(".agents/tmp/test-results/unit.xml");
   expect(report.index).toBeGreaterThan(upload.index);
+  const benchmarkUnitStep = job("validate").steps.find(
+    (step) => step.run === "pnpm test:benchmarks",
+  );
+  expect(benchmarkUnitStep).toBeDefined();
+  expect(benchmarkUnitStep?.if).toBe(unit.step.if);
+  expect(benchmarkUnitStep?.["continue-on-error"]).not.toBe(true);
   const integration = job("integration");
   expect(integration.needs).toBe("plan");
   expect(integration.if).toContain("needs.plan.outputs.full == 'true'");

@@ -183,6 +183,10 @@ jobs:
           reporter: java-junit
           fail-on-error: false
 
+      - name: Run benchmark unit tests
+        if: needs.plan.outputs.full == 'true'
+        run: pnpm test:benchmarks
+
       - name: Verify normal configured startup
         if: needs.plan.outputs.full == 'true' && (success())
         run: |
