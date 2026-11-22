@@ -364,6 +364,7 @@ const groups: [string[], string[]][] = [
     [
       // Fresh-session follow-up operations exercise metadata activated by the first Bash call.
       // Schema publication and delayed-card ownership have deterministic integration coverage.
+      // The shell Read verifies the final marker; deterministic tests cover exit-drain timing.
       "shell.execute",
       "shell.read",
       "shell.search",

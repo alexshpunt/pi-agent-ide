@@ -9,6 +9,7 @@ import type { ResolvedSshSource } from "#src/backend/registry.ts";
 import { targetOs } from "#src/backend/ssh-transport.ts";
 import { remoteShellProfile } from "#src/plugins/pi-agent-ide-terminal/src/shell-profile.ts";
 import { TerminalTextStream } from "#src/plugins/pi-agent-ide-terminal/src/terminal-text.ts";
+import { preserveUnixPtyOutput } from "#src/plugins/pi-agent-ide-terminal/src/unix-pty-output.ts";
 
 import type { Terminal as XtermTerminal } from "@xterm/headless";
 import type { IPty, IPtyForkOptions, IWindowsPtyForkOptions } from "node-pty";
@@ -226,6 +227,7 @@ export class TerminalSessionManager {
     const session: TerminalSession = { ...base, process };
     this.#sessions.set(id, session);
     process.onData((data) => this.#appendOutput(session, data));
+    if (globalThis.process.platform !== "win32") preserveUnixPtyOutput(process);
     // Answer terminal queries such as PowerShell's startup device-attributes probe, which
     // otherwise waits about two seconds for a reply under the bundled ConPTY.
     if (globalThis.process.platform === "win32")
