@@ -7,7 +7,7 @@ export default function registerSearchDocumentation(pi: ExtensionAPI): void {
     {
       id: "search-fixture-one",
       description: "First search fixture",
-      markdown: "# First\nunique-doc-needle one\nunique-doc-needle two",
+      markdown: "# First\nunique-doc-needle one\nunique-doc-needle two\nZinLaptop: ready\nast:$NAME",
       triggers: [{ tool: "read", resourcePrefixes: ["example.ts"] }],
     },
     {

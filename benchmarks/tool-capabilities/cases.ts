@@ -374,8 +374,14 @@ add(
 );
 add(
   "docs-search",
-  ["search.docs-all", "search.docs-one", "search.docs-flags", "search.docs-readonly"],
-  "Read docs:terminal. Search docs:terminal with query terminal, caseSensitive true, wholeWord true and limit 10. The result must contain guide-body locations under docs:terminal, not editable Search references. Then Search path docs:all with query regex:^# and limit 1000. Confirm it finds docs:terminal body headings rather than just the guide listing. Do not change files.",
+  [
+    "search.docs-all",
+    "search.docs-one",
+    "search.docs-flags",
+    "search.docs-readonly",
+    "search.docs-literal-colon",
+  ],
+  "Read docs:terminal. Search docs:terminal with query terminal, caseSensitive true, wholeWord true and limit 10. The result must contain guide-body locations under docs:terminal, not editable Search references. Search docs:terminal again with the literal query shell: and confirm a match under docs:terminal. Then Search path docs:all with query regex:^# and limit 1000. Confirm it finds docs:terminal body headings rather than just the guide listing. Do not change files.",
   [
     { tool: "read", args: { path: "docs:terminal" } },
     {
@@ -387,6 +393,12 @@ add(
         wholeWord: true,
         limit: 10,
       },
+      contains: "docs:terminal:",
+      excludes: "SEARCH#",
+    },
+    {
+      tool: "search",
+      args: { path: "docs:terminal", query: "shell:" },
       contains: "docs:terminal:",
       excludes: "SEARCH#",
     },

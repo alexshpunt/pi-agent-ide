@@ -29,11 +29,6 @@ export function createDocumentationSearchResolver(
           kind: "failed",
           error: new Error("File include/exclude globs do not apply to docs: resources."),
         };
-      if (/^(?:files|ast|symbols|process):/u.test(request.query))
-        return {
-          kind: "failed",
-          error: new Error("Use a text or regex: query for docs: resources."),
-        };
       const id = source.slice("docs:".length);
       if (id.length === 0)
         return {
