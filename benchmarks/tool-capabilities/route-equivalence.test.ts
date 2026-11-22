@@ -1811,22 +1811,31 @@ void test("whole Search scopes preserve individual-match route equivalence", () 
       assert.ok(!check(route, [search, { tool: "replace", args: { ...args, text: "RED" } }], mode));
   }
 });
-void test("multiline replacement must reuse the first search, in path or at", () => {
+void test("multiline replacement follows the append and reuses the first search", () => {
   const route = steps("search-multiline-between");
   const calls = [
     {
       tool: "search",
       args: { path: "task.txt", query: "regex:old one\\nold two\\n(?=END)", multiline: true },
       text: "SEARCH#ABCD:1:line",
+      value: { complete: true, matches: [{ text: "old one\nold two\n" }] },
     },
+    { tool: "bash", args: { command: "printf '%s\\n' 'peer note' >> task.txt" } },
     { tool: "search", args: { path: "task.txt", query: "keep" }, text: "SEARCH#DCBA:1:line" },
     { tool: "replace", args: { path: "task.txt", at: "SEARCH#ABCD:1:line", text: "NEW" } },
   ] as const satisfies readonly Call[];
-  assert.ok(check(route, calls));
-  for (const start of ["SEARCH#DCBA:1:line", "SEARCH#FFFF:1:line", "old one\nold two"]) {
-    assert.ok(
-      !check(route, [...calls.slice(0, 2), { ...calls[2], args: { ...calls[2].args, at: start } }]),
-    );
+  for (const mode of ["direct", "codemode"]) {
+    assert.ok(check(route, calls, mode));
+    assert.ok(!check(route, [calls[0], calls[2], calls[1], calls[3]], mode));
+    for (const at of ["SEARCH#DCBA:1:line", "SEARCH#FFFF:1:line", "old one\nold two"]) {
+      assert.ok(
+        !check(
+          route,
+          [...calls.slice(0, 3), { ...calls[3], args: { ...calls[3].args, at } }],
+          mode,
+        ),
+      );
+    }
   }
 });
 

@@ -552,6 +552,47 @@ function survivingRegion(
 /** Track a snapshot pair once, even when many independent selections use it. */
 export function createRangeTracker(before: string, after: string): RangeTracker {
   if (before === after) return { move: (range) => range, describe: describeUnmappedRange };
+  const prefixLines = unchangedLinesBeforeAppend(before, after);
+  if (prefixLines === undefined) return createContextualRangeTracker(before, after);
+
+  let fallback: RangeTracker | undefined;
+  const contextual = () => (fallback ??= createContextualRangeTracker(before, after));
+  return {
+    move(range, allowAdjusted) {
+      const first = range.start.lineNumber;
+      const last = lastSelectedLine(range);
+      return Number.isInteger(first) &&
+        Number.isInteger(last) &&
+        first >= 1 &&
+        first <= last &&
+        last <= prefixLines
+        ? range
+        : contextual().move(range, allowAdjusted);
+    },
+    describe: (range) => contextual().describe(range),
+  };
+}
+
+/** A single new, distinct line cannot change the identity of any complete line in the prefix. */
+function unchangedLinesBeforeAppend(before: string, after: string): number | undefined {
+  if (
+    after.length <= before.length + 1 ||
+    !before.endsWith("\n") ||
+    !after.startsWith(before) ||
+    after.indexOf("\n", before.length) !== after.length - 1
+  )
+    return undefined;
+
+  const added = after.slice(before.length);
+  // Check at line boundaries. A copy could remove a unique contextual witness.
+  if (before.startsWith(added) || before.includes(`\n${added}`)) return undefined;
+
+  let count = 0;
+  for (let end = before.indexOf("\n"); end !== -1; end = before.indexOf("\n", end + 1)) count += 1;
+  return count;
+}
+
+function createContextualRangeTracker(before: string, after: string): RangeTracker {
   const old = lineTokens(before);
   const next = lineTokens(after);
   if (old === undefined || next === undefined)
