@@ -2,12 +2,21 @@ export {
   normalizeStructuredArguments,
   type StructuredSourceContext,
 } from "./json-structured-arguments.ts";
+export { ResourceScheduler, resourceScheduler, type ResourceAccess } from "./resource-scheduler.ts";
 export {
   EDIT_WAIT_TIMEOUT_MS,
-  ResourceScheduler,
-  resourceScheduler,
-  type ResourceAccess,
-} from "./resource-scheduler.ts";
+  NAVIGATION_TIMEOUT_MS,
+  SEARCH_TIMEOUT_MS,
+  configureSearchDeadline,
+  ideToolTimeoutMs,
+  reportToolEffect,
+  runWithToolDeadline,
+  snapshotOnToolDeadline,
+  toolDeadlineFailure,
+  trackToolCleanup,
+  type DeadlineEffect,
+  type ToolDeadlineError,
+} from "./tool-deadline.ts";
 export { resourceAccesses } from "./resource-access.ts";
 export {
   fileTextDigest,

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
+import { trackToolCleanup } from "pi-agent-resource";
 import type { SearchEnvironmentProvider } from "pi-agent-search/api/search";
 import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
@@ -33,14 +34,17 @@ export function createSshSearchEnvironmentProvider(
       error: unknown,
       command: string,
       cwd: string,
+      signal?: AbortSignal,
     ): Promise<unknown> => {
+      signal?.throwIfAborted();
       if (!(error instanceof SshBackendError) || error.code !== "ENOENT") return error;
       let directory = false;
       try {
-        directory = (await backend.stat(cwd)).kind === "directory";
+        directory = (await backend.stat(cwd, { signal })).kind === "directory";
       } catch {
         // A missing working directory keeps the original failure.
       }
+      signal?.throwIfAborted();
       return directory
         ? new Error(missingToolMessage(command, backend.target.id, windows), { cause: error })
         : error;
@@ -67,7 +71,7 @@ export function createSshSearchEnvironmentProvider(
         try {
           result = await backend.execute(command, arguments_, directory, { signal });
         } catch (error) {
-          throw await explainMissing(error, command, directory);
+          throw await explainMissing(error, command, directory, signal);
         }
         return {
           code: result.exitCode,
@@ -85,8 +89,11 @@ export function createSshSearchEnvironmentProvider(
             signal,
           });
         } catch (error) {
-          throw await explainMissing(error, "rg", directory);
+          throw await explainMissing(error, "rg", directory, signal);
         }
+        const cancel = () => trackToolCleanup(channel.stop());
+        signal?.addEventListener("abort", cancel, { once: true });
+        if (signal?.aborted) cancel();
         const decoder = new StringDecoder("utf8");
         const pending: string[] = [];
         let pendingBytes = 0;
@@ -139,8 +146,12 @@ export function createSshSearchEnvironmentProvider(
           signal?.throwIfAborted();
           return { code: result.exitCode, stderr };
         } finally {
-          await channel.stop();
-          await Promise.allSettled([output, diagnostics]);
+          signal?.removeEventListener("abort", cancel);
+          try {
+            await channel.stop();
+          } finally {
+            await Promise.allSettled([output, diagnostics]);
+          }
         }
       },
     };

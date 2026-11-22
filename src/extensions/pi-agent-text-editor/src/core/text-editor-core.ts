@@ -23,6 +23,7 @@ import {
   ResourceError,
   isResourceResolutionAttempt,
   EDIT_WAIT_TIMEOUT_MS,
+  reportToolEffect,
   resourceScheduler,
   resourceAccesses,
   type ResourceAccess,
@@ -830,11 +831,15 @@ export function createTextEditorCore(
         read,
         [...mutationGuards],
       );
+      context.signal?.throwIfAborted();
+      reportToolEffect("unknown");
       try {
         for (const file of files) {
+          context.signal?.throwIfAborted();
           await mkdir(path.dirname(file.source), { recursive: true });
           await writeFile(file.source, file.bytes, { signal: context.signal });
         }
+        reportToolEffect("applied");
       } catch (error) {
         throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
           effect: "unknown",
@@ -1683,6 +1688,7 @@ async function editTextResources<Result>(
     const item = requiredValue(prepared.get(source));
     return text !== undefined && (!item.existed || text !== item.before.content);
   });
+  if (written.length > 0) reportToolEffect("unknown");
   const writes = await Promise.allSettled(
     written.map(async (source) => {
       const item = requiredValue(prepared.get(source));
@@ -1756,6 +1762,7 @@ async function editTextResources<Result>(
       completed: [],
     };
   }
+  if (written.length > 0) reportToolEffect("applied");
   const outcomes: Exclude<TextResourceEditOutcome<unknown>, { readonly kind: "failed" }>[] = [];
 
   let finalizingSource = written[0] ?? sources[0] ?? "";
@@ -2358,6 +2365,8 @@ async function editTextResource<Result>(
       };
     }
 
+    context.signal?.throwIfAborted();
+    reportToolEffect("unknown");
     try {
       await resource.write(finalContent, {
         ...(context.signal !== undefined && { signal: context.signal }),
@@ -2375,6 +2384,7 @@ async function editTextResource<Result>(
       };
     }
 
+    reportToolEffect("applied");
     try {
       return await finalizeTextResource({
         requestedSource: source,

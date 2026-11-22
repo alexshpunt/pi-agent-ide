@@ -84,8 +84,6 @@ function coveredAccess(
     ),
   );
 }
-/** Common acquisition budget for editor reservations and cooperating write locks. */
-export const EDIT_WAIT_TIMEOUT_MS = 5_000;
 
 interface ReservationOptions {
   readonly allowNestedWrites?: boolean;

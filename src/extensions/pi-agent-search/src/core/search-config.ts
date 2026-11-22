@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const defaultSearchTimeoutMs = 30_000;
+import { SEARCH_TIMEOUT_MS } from "pi-agent-resource";
 
 /** Paths used to resolve global and project search settings. */
 export interface SearchConfigPaths {
@@ -42,7 +42,7 @@ export async function loadSearchConfig(paths: SearchConfigPaths): Promise<Search
 
   const configuredTimeoutMs = projectTimeoutMs !== undefined ? projectTimeoutMs : globalTimeoutMs;
   return {
-    timeoutMs: configuredTimeoutMs === undefined ? defaultSearchTimeoutMs : configuredTimeoutMs,
+    timeoutMs: configuredTimeoutMs === undefined ? SEARCH_TIMEOUT_MS : configuredTimeoutMs,
   };
 }
 

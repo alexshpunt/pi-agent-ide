@@ -173,3 +173,58 @@ test("a throwing projection returns null and reports the failure without exposin
     spy.mockRestore();
   }
 });
+
+test("a stalled registered tool returns a timeout for its target and aborts its work", async () => {
+  vi.useFakeTimers();
+  try {
+    let registered: ToolDefinition | undefined;
+    let cancelled = false;
+    const stub: Partial<ExtensionAPI> = {
+      events: createEventBus(),
+      on: () => () => {},
+      registerTool: (definition) => {
+        registered = definition as ToolDefinition;
+      },
+    };
+    const ide = createIdeTextResults(stub as ExtensionAPI);
+    ide.api.registerTool({
+      name: "file_search",
+      label: "file_search",
+      description: "fixture",
+      parameters: Type.Object({ path: Type.String() }),
+      execute: async (_id, _args, signal) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            cancelled = true;
+          },
+          { once: true },
+        );
+        // A provider that does not settle even after being told to cancel.
+        return new Promise<never>(() => {});
+      },
+    });
+    if (registered === undefined) throw new Error("Expected an IDE tool registration");
+    const result = registered.execute(
+      "call",
+      { path: "ssh://fixture/work" },
+      undefined,
+      undefined,
+      { cwd: "/workspace" } as never,
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(result).resolves.toMatchObject({
+      isError: true,
+      details: {
+        code: "TOOL_TIMEOUT",
+        tool: "file_search",
+        target: "ssh://fixture/work",
+        timeoutMs: 30_000,
+      },
+    });
+    expect(cancelled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
