@@ -21,16 +21,22 @@ test("deferred processing times out without losing the applied edit receipt", as
     const scope = createPostEditScope("/workspace");
     const source = "/workspace/slow.txt";
     const cancelled = vi.fn();
+    let enter: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
     const failure = vi.fn();
     scope.run(() =>
       deferPostEdit(source, (signal) => {
         signal.addEventListener("abort", cancelled, { once: true });
+        enter?.();
         return new Promise<never>(() => {});
       }),
     );
     const finishing = expect(scope.finish(undefined, failure)).rejects.toBeInstanceOf(
       AggregateError,
     );
+    await started;
     await vi.advanceTimersByTimeAsync(EDIT_EXECUTION_TIMEOUT_MS);
     await finishing;
     expect(cancelled).toHaveBeenCalledOnce();
