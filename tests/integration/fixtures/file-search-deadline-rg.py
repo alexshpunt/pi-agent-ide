@@ -14,7 +14,7 @@ if "--files" not in sys.argv[1:]:
 
 root = Path(sys.argv[-1])
 stat = Path("/proc/self/stat").read_text().rsplit(")", 1)[1].split()
-_ = (root / "walker.pid").write_text(f"{os.getpid()} {stat[19]}\n")
+_ = (root / "walker.pid").write_text(f"{os.getpid()} {stat[19]} {time.time_ns() // 1_000_000}\n")
 print(root / "first.fixture", flush=True)
 # Bound the fixture even if the tool fails to cancel it.
 time.sleep(45)

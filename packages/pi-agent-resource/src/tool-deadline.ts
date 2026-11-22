@@ -80,9 +80,8 @@ export function snapshotOnToolDeadline(snapshot: Snapshot): void {
 /** Await exit acknowledgement from a native operation, within the cancellation cleanup budget. */
 export function trackToolCleanup(completion: Promise<unknown>): void {
   const deadline = active.getStore();
-  if (deadline === undefined) return;
-  deadline.cleanup.add(completion);
-  const settled = () => deadline.cleanup.delete(completion);
+  deadline?.cleanup.add(completion);
+  const settled = () => deadline?.cleanup.delete(completion);
   void completion.then(settled, settled);
 }
 
@@ -119,7 +118,7 @@ export async function runWithToolDeadline<T extends AgentToolResult<unknown>>(
     finish = resolve;
     cancel = () => {
       reject(parent?.reason);
-      controller.abort(parent?.reason);
+      active.run(deadline, () => controller.abort(parent?.reason));
     };
   });
   const deadline: ActiveDeadline = {
@@ -131,7 +130,7 @@ export async function runWithToolDeadline<T extends AgentToolResult<unknown>>(
       const expire = () => {
         const error = new ToolDeadlineError(tool, target, ms, deadline.effect);
         finish(error);
-        controller.abort(error);
+        active.run(deadline, () => controller.abort(error));
       };
       const remaining = ms - (performance.now() - started);
       if (remaining <= 0) expire();

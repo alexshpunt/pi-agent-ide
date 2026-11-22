@@ -147,7 +147,7 @@ export async function searchFiles(
     }
   } catch (error) {
     parent?.throwIfAborted();
-    if (signal.reason !== reachedLimit) throw error;
+    if (error !== reachedLimit) throw error;
   }
   return {
     files: [...found],

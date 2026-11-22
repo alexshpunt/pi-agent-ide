@@ -4,6 +4,7 @@ import {
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
+import { trackToolCleanup } from "pi-agent-resource";
 import { expect, test, vi } from "vitest";
 import { createIdeTextResults } from "./text-results.ts";
 import { textValue } from "./script-values/text.ts";
@@ -179,6 +180,7 @@ test("a stalled registered tool returns a timeout for its target and aborts its 
   try {
     let registered: ToolDefinition | undefined;
     let cancelled = false;
+    let reaped = false;
     const stub: Partial<ExtensionAPI> = {
       events: createEventBus(),
       on: () => () => {},
@@ -197,6 +199,14 @@ test("a stalled registered tool returns a timeout for its target and aborts its 
           "abort",
           () => {
             cancelled = true;
+            trackToolCleanup(
+              new Promise<void>((resolve) => {
+                setTimeout(() => {
+                  reaped = true;
+                  resolve();
+                }, 100);
+              }),
+            );
           },
           { once: true },
         );
@@ -213,6 +223,14 @@ test("a stalled registered tool returns a timeout for its target and aborts its 
       { cwd: "/workspace" } as never,
     );
     await vi.advanceTimersByTimeAsync(30_000);
+    expect(cancelled).toBe(true);
+    expect(reaped).toBe(false);
+    const ended = vi.fn();
+    void result.then(ended);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(ended).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(reaped).toBe(true);
     await expect(result).resolves.toMatchObject({
       isError: true,
       details: {

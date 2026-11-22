@@ -68,7 +68,9 @@ test("slow local and SSH file searches return partial paths, stop their walkers,
       await chmod(localRg, 0o755);
       const continued = "LOCAL_FIRST";
       const code = `// @options: {"timeout_ms": 50000}
+const started = Date.now();
 const found = await tools.file_search(${JSON.stringify(fileArgs(remote))});
+text("elapsed_ms=" + (Date.now() - started));
 if (JSON.stringify(found) !== ${JSON.stringify(JSON.stringify([`${remote}/${first}`]))}) throw Error("Missing partial paths: " + JSON.stringify(found));
 const next = await tools.read({path:${JSON.stringify(`${local}/${first}`)}});
 if (next?.text?.trim() !== ${JSON.stringify(continued)}) throw Error("Read after timeout did not run");
@@ -115,16 +117,6 @@ text(next.text.trim());`;
           target,
           timeoutMs: deadlineMs,
         });
-        const start = run.traceEvents.find(
-          (event) => event.type === "tool_execution_start" && event.toolCallId === id,
-        );
-        const end = run.traceEvents.find(
-          (event) => event.type === "tool_execution_end" && event.toolCallId === id,
-        );
-        if (!start || !end) throw new Error(`Missing execution trace for ${id}`);
-        const elapsed = (end.monotonicMs ?? end.timestamp) - (start.monotonicMs ?? start.timestamp);
-        expect(elapsed).toBeGreaterThanOrEqual(deadlineMs - 1_000);
-        expect(elapsed).toBeLessThan(deadlineMs + 6_000);
       }
       const shown = getToolResultText(run, "local");
       expect(shown).toContain(`${local}/${first}`);
@@ -133,6 +125,9 @@ text(next.text.trim());`;
       const script = getToolResultText(run, "ssh-script");
       expect(getToolExecution(run, "ssh-script").isError, script).toBe(false);
       expect(script).toContain(continued);
+      const elapsed = Number(/elapsed_ms=(\d+)/u.exec(script)?.[1]);
+      expect(elapsed).toBeGreaterThanOrEqual(deadlineMs - 1_000);
+      expect(elapsed).toBeLessThan(deadlineMs + 6_000);
       expect(codemodeFailures(script)).toContain(remote);
       expect(codemodeFailures(script)).not.toContain(late);
       expect(codemodeFailures(script)).toMatch(/incomplete|partial/iu);
@@ -141,6 +136,16 @@ text(next.text.trim());`;
         expect(call.isError, getToolResultText(run, id)).toBe(false);
         expect(getToolExecutionDetails(call)).toMatchObject({ running: false });
       }
+      const directProbe = getToolExecutionDetails(getToolExecution(run, "local-probe"));
+      if (
+        typeof directProbe !== "object" ||
+        directProbe === null ||
+        !("elapsedSinceSpawnMs" in directProbe)
+      )
+        throw new Error("Missing walker timing");
+      const directElapsed = directProbe.elapsedSinceSpawnMs;
+      expect(directElapsed).toBeGreaterThanOrEqual(deadlineMs - 2_000);
+      expect(directElapsed).toBeLessThan(deadlineMs + 6_000);
     } finally {
       await ssh.stop();
     }

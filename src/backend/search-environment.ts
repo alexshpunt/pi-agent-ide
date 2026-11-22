@@ -1,6 +1,5 @@
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import { trackToolCleanup } from "pi-agent-resource";
 import type { SearchEnvironmentProvider } from "pi-agent-search/api/search";
 import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
@@ -91,9 +90,6 @@ export function createSshSearchEnvironmentProvider(
         } catch (error) {
           throw await explainMissing(error, "rg", directory, signal);
         }
-        const cancel = () => trackToolCleanup(channel.stop());
-        signal?.addEventListener("abort", cancel, { once: true });
-        if (signal?.aborted) cancel();
         const decoder = new StringDecoder("utf8");
         const pending: string[] = [];
         let pendingBytes = 0;
@@ -145,8 +141,10 @@ export function createSshSearchEnvironmentProvider(
               : new Error("Search output failed.", { cause: failure });
           signal?.throwIfAborted();
           return { code: result.exitCode, stderr };
+        } catch (error) {
+          signal?.throwIfAborted();
+          throw error;
         } finally {
-          signal?.removeEventListener("abort", cancel);
           try {
             await channel.stop();
           } finally {
