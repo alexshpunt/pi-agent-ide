@@ -1350,8 +1350,13 @@ class NativeTextEditBatchCoordinator {
       );
     } catch (error) {
       journal.markRunningUnknown(error);
-      await this.settleTargets(script, batch, journal, [], signal);
-      return record({ status: "error", errors: [resultError(error)] });
+      const problem = resultError(error);
+      // Verification may be what timed out. Retire pending handles without doing more I/O.
+      for (const entry of batch.entries) {
+        const reference = script.targets.get(entry.callId);
+        if (reference) this.resultTargets.reject(reference, problem.message);
+      }
+      return record({ status: "error", errors: [problem] });
     }
   }
 }
