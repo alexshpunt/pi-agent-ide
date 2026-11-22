@@ -288,6 +288,12 @@ test("rename refreshes share a deadline, and an immediate repeat cancels without
     const { run, content, events } = await renameOverload(cwd, "stall");
     expect(getToolExecution(run, "rename").isError).toBe(true);
     expect(getToolExecution(run, "repeat").isError).toBe(true);
+    for (const callId of ["rename", "repeat"]) {
+      expect(getToolExecutionDetails(getToolExecution(run, callId))).toMatchObject({
+        effect: "not-applied",
+        results: [{ data: { errors: [{ code: "SOURCE_CHANGED" }] } }],
+      });
+    }
     expect(events).toEqual([
       "rename",
       ...Array.from({ length: 6 }, () => ["rename", "cancel"]).flat(),

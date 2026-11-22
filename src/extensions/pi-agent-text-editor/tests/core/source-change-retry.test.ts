@@ -94,6 +94,7 @@ test("fast attempts stop after all seven retries", async () => {
   if (outcome.kind !== "failed") throw new Error("Expected a failure");
   expect(outcome.failure.cause).toBeInstanceOf(SourceKeptChangingError);
   expect(outcome.failure.cause).toMatchObject({ attempts: 8, cause: changed.failure.cause });
+  expect(outcome.failure.code).toBe(SOURCE_CHANGED);
 });
 
 test("other failures return at once and unchanged", async () => {
