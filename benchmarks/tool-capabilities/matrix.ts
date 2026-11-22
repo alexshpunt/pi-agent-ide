@@ -145,7 +145,12 @@ const groups: [string[], string[]][] = [
   [["search.boolean", "search.regex", "file_search.glob", "search.flags"], ["search-query"]],
   [["search.path-list", "file_search.path-list", "ast_search.path-list"], ["search-path-list"]],
   [
-    ["file_search.script-paths", "file_search.script-limit", "compose.file-search-paths-read"],
+    [
+      "file_search.script-paths",
+      "file_search.script-limit",
+      "file_search.sorted-limit",
+      "compose.file-search-paths-read",
+    ],
     ["file-search-script-paths"],
   ],
   [["lsp_search.path-list"], ["lsp-path-list"]],

@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
+import type { SearchEnvironment } from "pi-agent-search/api/search";
 import { searchFiles } from "./file-search.ts";
 
 test("file globs find an existing file below an ignored parent directory", async () => {
@@ -71,7 +72,7 @@ test("include and exclude globs keep comma-separated brace alternatives", async 
   }
 });
 
-test("a limited search returns the first matches in sort order and reports the rest", async () => {
+test("a limited local search takes the first paths from a sorted directory walk", async () => {
   const root = path.resolve(".agents/tmp/file-search");
   await mkdir(root, { recursive: true });
   const cwd = await mkdtemp(path.join(root, "limit-"));
@@ -80,13 +81,49 @@ test("a limited search returns the first matches in sort order and reports the r
       { length: 40 },
       (_, index) => `file-${String(index).padStart(2, "0")}.ts`,
     );
-    await Promise.all(names.map((name) => writeFile(path.join(cwd, name), "")));
+    for (const name of names.toReversed()) await writeFile(path.join(cwd, name), "");
     await writeFile(path.join(cwd, "other.md"), "");
     const limited = await searchFiles("*.ts", { query: "*.ts", path: ".", limit: 5 }, cwd);
     expect(limited).toEqual({ files: names.slice(0, 5), complete: false });
-    const all = await searchFiles("*.ts", { query: "*.ts", path: ".", limit: 40 }, cwd);
+    const exact = await searchFiles("*.ts", { query: "*.ts", path: ".", limit: 40 }, cwd);
+    expect(exact).toEqual({ files: names, complete: false });
+    const all = await searchFiles("*.ts", { query: "*.ts", path: ".", limit: 41 }, cwd);
     expect(all).toEqual({ files: names, complete: true });
   } finally {
     await rm(cwd, { recursive: true, force: true });
   }
+});
+
+test("file search cancels the current stream and skips later roots at the distinct match limit", async () => {
+  const walked: string[] = [];
+  let streamStopped = false;
+  const environment: SearchEnvironment = {
+    resolve: path.posix.resolve,
+    dirname: path.posix.dirname,
+    basename: path.posix.basename,
+    isDirectory: async () => true,
+    readText: async () => "",
+    async runLines(args, cwd, onLine, signal) {
+      walked.push(cwd);
+      expect(args).toEqual(expect.arrayContaining(["--sort", "path", "--line-buffered"]));
+      for (const file of ["a.ts", "a.ts", "b.ts", "c.ts"]) {
+        onLine(file);
+        if (signal?.aborted) {
+          streamStopped = true;
+          signal.throwIfAborted();
+        }
+      }
+      return { code: 0, stderr: "" };
+    },
+  };
+  const result = await searchFiles(
+    "*.ts",
+    { query: "*.ts", paths: ["/work/b", "/work/a"], limit: 2 },
+    "/work",
+    undefined,
+    environment,
+  );
+  expect(result).toEqual({ files: ["/work/a/a.ts", "/work/a/b.ts"], complete: false });
+  expect(walked).toEqual(["/work/a"]);
+  expect(streamStopped).toBe(true);
 });

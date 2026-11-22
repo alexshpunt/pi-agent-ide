@@ -1,6 +1,6 @@
 import { matchList, matchListSchema, record } from "./search-matches.ts";
 import { scriptMatchSchema } from "./match.ts";
-import type { ScriptValue } from "./types.ts";
+import type { ScriptValue, ScriptValueInput } from "./types.ts";
 
 /**
  * Search resolves to `{ id, complete, matches: { path, line, text, id }[] }` with every match and
@@ -31,27 +31,34 @@ export const searchValue: ScriptValue = {
     },
   }),
   project(input) {
-    const list = matchList(input);
-    if (list === undefined) return input.shown;
-    const matches = list.matches.map(({ match }) => ({ ...match }));
-    const data = record(input.outcome) && record(input.outcome.data) ? input.outcome.data : {};
-    const fallback =
-      data.fallback === "regex" || data.fallback === "words" ? data.fallback : undefined;
-    const notices =
-      Array.isArray(data.notices) && data.notices.every((notice) => typeof notice === "string")
-        ? data.notices
-        : [];
-    const selection = {
-      ...(list.id !== undefined && { id: list.id }),
-      complete: list.complete,
-      matches,
-    };
-    return {
-      ...(fallback === undefined
-        ? selection
-        : { complete: true, matches: [], fallback: { mode: fallback, ...selection } }),
-      ...(notices.length === 0 ? {} : { notices }),
-      ...(typeof data.editWarning === "string" ? { editWarning: data.editWarning } : {}),
-    };
+    return projectSearch(input) ?? input.shown;
+  },
+  failed(input) {
+    return projectSearch(input, true);
   },
 };
+
+function projectSearch(input: ScriptValueInput, partial = false) {
+  const list = matchList(input, partial);
+  if (list === undefined) return undefined;
+  const matches = list.matches.map(({ match }) => ({ ...match }));
+  const data = record(input.outcome) && record(input.outcome.data) ? input.outcome.data : {};
+  const fallback =
+    data.fallback === "regex" || data.fallback === "words" ? data.fallback : undefined;
+  const notices =
+    Array.isArray(data.notices) && data.notices.every((notice) => typeof notice === "string")
+      ? data.notices
+      : [];
+  const selection = {
+    ...(list.id !== undefined && { id: list.id }),
+    complete: list.complete,
+    matches,
+  };
+  return {
+    ...(fallback === undefined
+      ? selection
+      : { complete: true, matches: [], fallback: { mode: fallback, ...selection } }),
+    ...(notices.length === 0 ? {} : { notices }),
+    ...(typeof data.editWarning === "string" ? { editWarning: data.editWarning } : {}),
+  };
+}

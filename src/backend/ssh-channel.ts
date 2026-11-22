@@ -3,6 +3,7 @@ import { PassThrough, type Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import { trackToolCleanup } from "pi-agent-resource";
 
 import { remoteLocation } from "./identity.ts";
 import {
@@ -275,7 +276,12 @@ class ProcessChannel implements SshProcessChannel {
     child.once("error", () => {
       this.#failure = "DEPENDENCY_UNAVAILABLE";
     });
-    const abort = () => this.cancel("CANCELLED");
+    const abort = () => {
+      if (this.#closed) return;
+      this.#failure ??= "CANCELLED";
+      const stopped = this.stop();
+      trackToolCleanup(stopped);
+    };
     signal?.addEventListener("abort", abort, { once: true });
     child.once("close", (exitCode) => {
       this.#closed = true;

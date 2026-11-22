@@ -5,6 +5,7 @@ import path from "node:path";
 import fs from "fs-extra";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
+import { reportToolEffect } from "pi-agent-resource";
 
 import type {
   FileOperation,
@@ -103,6 +104,7 @@ export async function executeFileOperation(
     signal?.throwIfAborted();
     for (const resolve of resolvers) {
       started = true;
+      reportToolEffect("unknown");
       const outcome = await resolve(
         operation,
         args,
@@ -149,9 +151,11 @@ export async function executeFileOperation(
             code: "INVALID_PROVIDER_RESULT",
             effect: "unknown",
           });
+        reportToolEffect(outcome.effect);
         return outcome;
       }
       started = false;
+      reportToolEffect("not-applied");
       signal?.throwIfAborted();
     }
     if ([cwd, args.path, args.target].some((value) => value !== undefined && isUriSource(value)))
@@ -175,6 +179,7 @@ export async function executeFileOperation(
     }
     signal?.throwIfAborted();
     started = true;
+    reportToolEffect("unknown");
     if (deleteEvent !== undefined) {
       if (deleteEvent.recursive) {
         if (deletion.removeDirectory !== undefined)
@@ -186,6 +191,7 @@ export async function executeFileOperation(
         await fs.copy(transfer.source, transfer.target, { overwrite: true, dereference: false });
       else await fs.move(transfer.source, transfer.target, { overwrite: true });
     }
+    reportToolEffect("applied");
     return {
       kind: "file-operation",
       operation,

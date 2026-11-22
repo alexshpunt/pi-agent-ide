@@ -20,6 +20,9 @@ import {
   resultValueReference,
   TempResourceStore,
   normalizeStructuredArguments,
+  ideToolTimeoutMs,
+  runWithToolDeadline,
+  reportToolEffect,
 } from "pi-agent-resource";
 import { editingSelectorFields } from "pi-agent-text-editor/api/text-selector-fields";
 import { connectReadPlugin } from "pi-agent-read/api/connect-plugin";
@@ -34,6 +37,17 @@ import { envelopePattern, resultReference } from "./script-values/result-referen
 
 /** Longest source label in the Codemode failure block. */
 const maxLabelLength = 200;
+const editors = new Set([
+  "write",
+  "replace",
+  "insert",
+  "delete",
+  "copy",
+  "move",
+  "undo",
+  "stage",
+  "unstage",
+]);
 
 const sourceFields: Record<string, readonly string[]> = {
   read: ["path"],
@@ -425,35 +439,65 @@ export function createIdeTextResults(
       }
       // A Read issued by another tool, such as a Codemode script, returns its whole text there.
       const limitText = !(["read", "outline"].includes(definition.name) && parents.has(args[0]));
-      const result = await definition.execute(...args).catch(async (error: unknown) => {
+      const run = async (signal: AbortSignal | undefined) => {
+        const result = await definition
+          .execute(args[0], args[1], signal, args[3], args[4])
+          .catch(async (error: unknown) => {
+            const limited = await limitIdeOutput(
+              [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+              "",
+              saveFullOutput,
+            );
+            if (limited.notices.length === 0) throw error;
+            throw new Error(limited.text + `\n\n${limited.notices.join("\n")}`, { cause: error });
+          });
+        // Retention can itself block. Preserve an authoritative receipt already returned by the editor.
+        const record = result.structuredContent;
+        const data: unknown =
+          typeof record === "object" && record !== null && "data" in record
+            ? record.data
+            : undefined;
+        if (
+          typeof data === "object" &&
+          data !== null &&
+          "effect" in data &&
+          (data.effect === "applied" || data.effect === "unknown" || data.effect === "not-applied")
+        )
+          reportToolEffect(data.effect);
         const limited = await limitIdeOutput(
-          [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-          "",
+          result.content,
+          outputNotices(result.details),
           saveFullOutput,
+          { limitText },
         );
-        if (limited.notices.length === 0) throw error;
-        throw new Error(limited.text + `\n\n${limited.notices.join("\n")}`, { cause: error });
-      });
-      const limited = await limitIdeOutput(
-        result.content,
-        outputNotices(result.details),
-        saveFullOutput,
-        { limitText },
-      );
-      const block = {
-        type: "text" as const,
-        text:
-          limited.text +
-          limited.metadataSuffix +
-          (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
+        const block = {
+          type: "text" as const,
+          text:
+            limited.text +
+            limited.metadataSuffix +
+            (limited.notices.length ? `\n\n${limited.notices.join("\n")}` : ""),
+        };
+        return {
+          ...result,
+          content: [
+            limited.textTruncated ? block : retainFileTextWindows(result.content, block),
+            ...limited.images,
+          ],
+        };
       };
-      return {
-        ...result,
-        content: [
-          limited.textTruncated ? block : retainFileTextWindows(result.content, block),
-          ...limited.images,
-        ],
-      };
+      const budget = ideToolTimeoutMs(definition.name);
+      if (budget === undefined) return run(args[2]);
+      const target = labels.get(args[0]) ?? sourceLabel(definition.name, args[1]) ?? args[4].cwd;
+      return (await runWithToolDeadline(
+        definition.name,
+        target,
+        budget,
+        args[2],
+        editors.has(definition.name) || definition.annotations?.readOnlyHint === false
+          ? "unknown"
+          : undefined,
+        run,
+      )) as Awaited<ReturnType<typeof definition.execute>>;
     };
     descriptors.execute = { value: execute, enumerable: true, configurable: true, writable: true };
     const render = definition.renderCall;

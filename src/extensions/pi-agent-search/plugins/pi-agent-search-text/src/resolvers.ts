@@ -1,5 +1,12 @@
 import path from "node:path";
-import { attachFileTextWindows, type FileTextWindow, type ResultRange } from "pi-agent-resource";
+import {
+  attachFileTextWindows,
+  snapshotOnToolDeadline,
+  toolDeadlineFailure,
+  withStructuredResult,
+  type FileTextWindow,
+  type ResultRange,
+} from "pi-agent-resource";
 import { pathToFileURL } from "node:url";
 import { ResultPanel } from "pi-agent-tool-ui";
 import { runScopedSearch } from "#src/scoped-search.ts";
@@ -37,6 +44,7 @@ import type { SearchRequest, SearchResolver } from "pi-agent-search/api/search";
 import {
   currentScope,
   selectionData,
+  searchDataSchema,
   fuzzyLimits,
   isFuzzyQuery,
   fuzzyCandidateData,
@@ -320,7 +328,50 @@ function createMatchResolver(
       if (recipe === undefined) return { kind: "not-handled" };
       const result =
         context.scope === undefined
-          ? await runSearchRecipe(recipe, context.cwd, context.signal, context.environment)
+          ? await runSearchRecipe(
+              recipe,
+              context.cwd,
+              context.signal,
+              context.environment,
+              (fallback, snapshot) => {
+                snapshotOnToolDeadline((error) => {
+                  const matches = snapshot();
+                  if (matches.length === 0) return undefined;
+                  const result = toolDeadlineFailure(error);
+                  const lines = matches
+                    .slice(0, 20)
+                    .map(
+                      (match) =>
+                        `${displaySource(match.source, context.cwd)}:${match.lineNumber}: ${match.matchedText.slice(0, 240)}`,
+                    );
+                  return withStructuredResult(
+                    {
+                      ...result,
+                      content: [
+                        ...result.content,
+                        {
+                          type: "text",
+                          text: [
+                            `Incomplete search (${matches.length} observed${fallback === undefined ? "" : `; ${fallback} fallback`})`,
+                            ...lines,
+                          ].join("\n"),
+                        },
+                      ],
+                    },
+                    searchDataSchema,
+                    {
+                      status: "partial",
+                      data: {
+                        ...selectionData(matches, false),
+                        ...(fallback === undefined ? {} : { fallback }),
+                      },
+                      errors: [{ code: error.code, source: error.target, message: error.message }],
+                    },
+                    { maxBytes: Infinity },
+                  );
+                });
+              },
+            )
           : await runScopedSearch(recipe, context.scope, context.cwd, context.signal);
       const fuzzy =
         context.scope === undefined &&
