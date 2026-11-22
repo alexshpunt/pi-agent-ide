@@ -1080,6 +1080,9 @@ function wholeFileFailureCause(code: string): string {
     case "OVERLAPPING_EDITS": {
       return "overlaps an earlier edit; read the current text before retrying";
     }
+    case "SOURCE_CHANGED": {
+      return "newer edits blocked this change; repeat the same edit";
+    }
     case "INVALID_REQUEST": {
       return "the request was invalid";
     }

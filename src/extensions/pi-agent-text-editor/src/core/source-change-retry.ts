@@ -103,6 +103,7 @@ function keptChanging<Result>(
     ...outcome,
     failure: {
       ...outcome.failure,
+      code: SOURCE_CHANGED,
       message,
       cause: new SourceKeptChangingError(message, attempts, { cause: outcome.failure.cause }),
     },

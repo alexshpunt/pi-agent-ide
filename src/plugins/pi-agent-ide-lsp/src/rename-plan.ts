@@ -244,7 +244,7 @@ export function prepareSymbolRename(
         );
       state.signal?.throwIfAborted();
       const deadline = contendedCaptures.has(capture) ? startRefresh(capture) : undefined;
-      if (deadline?.aborted) throw new Error(exhaustedMessage());
+      if (deadline?.aborted) throw sourceChanged(exhaustedMessage());
       if (cached !== undefined) return cached;
       const attempt = deadline === undefined ? undefined : AbortSignal.timeout(REFRESH_ATTEMPT_MS);
       const signal =
@@ -275,7 +275,7 @@ export function prepareSymbolRename(
         return cached;
       } catch (error) {
         state.signal?.throwIfAborted();
-        if (deadline?.aborted) throw new Error(exhaustedMessage(), { cause: error });
+        if (deadline?.aborted) throw sourceChanged(exhaustedMessage(), { cause: error });
         if (attempt?.aborted && error === attempt.reason)
           throw sourceChanged("The language server did not finish the rename refresh in time.");
         if (!sourceMoved(error)) throw error;
