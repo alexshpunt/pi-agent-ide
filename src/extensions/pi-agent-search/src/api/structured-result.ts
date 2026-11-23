@@ -93,6 +93,14 @@ export const searchDataSchema = Type.Union([
     {
       ...selectionProperties,
       fuzzy: Type.Optional(fuzzyDataSchema),
+      candidateLimits: Type.Optional(
+        Type.Array(
+          Type.Object(
+            { server: Type.String(), limit: Type.Integer({ minimum: 0 }) },
+            { additionalProperties: false },
+          ),
+        ),
+      ),
       skipped: Type.Optional(
         Type.Array(
           Type.Object(

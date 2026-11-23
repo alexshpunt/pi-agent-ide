@@ -2068,6 +2068,44 @@ add(
   },
 );
 
+const cappedGoQuery = { query: "'Cap", path: "target.go", limit: 200 };
+add(
+  "lsp-workspace-candidate-limit",
+  ["lsp.workspace-candidate-limit"],
+  "Use lsp_search to search for 'Cap (including the leading apostrophe) with path target.go and limit 200. Report the server candidate limit and whether the scoped result is complete. Do not change files.",
+  [
+    {
+      tool: "lsp_search",
+      args: cappedGoQuery,
+      modes: ["direct"],
+      contains: "gopls",
+      excludes: ":all:match",
+    },
+    {
+      tool: "lsp_search",
+      args: cappedGoQuery,
+      modes: ["codemode"],
+      scriptResult: {
+        complete: false,
+        candidateLimits: { length: 1, 0: { server: "gopls", limit: 100 } },
+        matches: { length: 1, 0: { path: "target.go", text: "Cap" } },
+      },
+    },
+  ],
+  {
+    files: {
+      "go.mod": "module example.com/capped\n\ngo 1.24\n",
+      "decoys.go":
+        "package capped\n\nconst Cap = 1\n" +
+        Array.from({ length: 110 }, (_, i) => `const Cap${i} = 1\n`).join(""),
+      "target.go":
+        "package capped\n\ntype Holder struct { LongDisplacedDeclarationInTargetCap int }\n\nvar _ = Cap\n",
+    },
+    answer: "100",
+    prerequisite: "command -v gopls && command -v go",
+  },
+);
+
 add(
   "search-literal-operators",
   ["search.literal-operators", "search.script-line-text"],

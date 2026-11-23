@@ -26,7 +26,12 @@ import {
 import { coverageNotes, mergeCoverage, type ClangCoverage } from "./lsp/clang-coverage.ts";
 import { missingSourcesNotes } from "./lsp/missing-sources.ts";
 import type { LspManager } from "./lsp/manager.ts";
-import { searchSymbols, type SkippedSymbol, type SymbolHit } from "./lsp/symbol-search.ts";
+import {
+  searchSymbols,
+  type SkippedSymbol,
+  type SymbolHit,
+  type WorkspaceSymbolCandidateLimit,
+} from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
 import { lspRangeMatch } from "./lsp/range-match.ts";
@@ -59,6 +64,7 @@ type Payload =
       /** Files the server reported places in that no longer exist. */
       readonly missing?: readonly string[];
       readonly skipped?: readonly SkippedSymbol[];
+      readonly candidateLimits?: readonly WorkspaceSymbolCandidateLimit[];
       readonly references: boolean;
       readonly data: unknown;
     }
@@ -342,6 +348,7 @@ export function createLspSearchResolver(
           const coverages: (ClangCoverage | undefined)[] = [];
           const missing = new Set<string>();
           const skipped = new Map<string, SkippedSymbol>();
+          const candidateLimits = new Map<string, WorkspaceSymbolCandidateLimit>();
           for (const [manager, { targets, paths }] of groups) {
             const found = await backend.searchSymbols(
               query,
@@ -368,6 +375,8 @@ export function createLspSearchResolver(
             }
             complete = complete && found.complete;
             coverages.push(found.coverage);
+            for (const cap of found.candidateLimits ?? [])
+              candidateLimits.set(JSON.stringify([cap.server, cap.limit]), cap);
             for (const source of found.missing ?? []) missing.add(source);
             for (const candidate of found.skipped ?? [])
               skipped.set(JSON.stringify([candidate.source, candidate.name]), candidate);
@@ -382,6 +391,7 @@ export function createLspSearchResolver(
               hits: hits.slice(0, limit),
               complete: complete && hits.length <= limit,
               ...(coverage && { coverage }),
+              ...(candidateLimits.size > 0 && { candidateLimits: [...candidateLimits.values()] }),
               ...(missing.size > 0 && { missing: [...missing].sort() }),
               ...(skipped.size > 0 && {
                 skipped: [...skipped.values()].sort(
@@ -421,10 +431,12 @@ export function createLspSearchResolver(
             complete: found.complete,
             ...(found.coverage && { coverage: found.coverage }),
             ...(found.missing && { missing: found.missing }),
+            ...(found.candidateLimits && { candidateLimits: found.candidateLimits }),
             ...(found.skipped && { skipped: found.skipped }),
             references,
             data: {
               ...data,
+              ...(found.candidateLimits && { candidateLimits: found.candidateLimits }),
               ...(found.skipped && { skipped: found.skipped }),
               matches: data.matches.map((match, index) => ({
                 ...match,
@@ -469,6 +481,7 @@ export function createLspSearchResolver(
         [
           ...(data.references ? ["LSP reference navigation · may leave input scope"] : []),
           ...coverageNotes(data.coverage, (source) => displaySource(source, data.cwd)),
+          ...candidateLimitNotes(data.candidateLimits),
           ...missingSourcesNotes(data.missing ?? [], (source) => displaySource(source, data.cwd)),
           ...skippedSymbolNotes(data.skipped, (source) => displaySource(source, data.cwd)),
         ],
@@ -526,6 +539,7 @@ export function createLspSearchResolver(
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
       lines.push(...coverageNotes(result.coverage, display));
+      lines.push(...candidateLimitNotes(result.candidateLimits));
       lines.push(...missingSourcesNotes(result.missing ?? [], display));
       lines.push(...skippedSymbolNotes(result.skipped, display));
       return {
@@ -534,6 +548,13 @@ export function createLspSearchResolver(
       };
     },
   };
+}
+
+function candidateLimitNotes(limits: readonly WorkspaceSymbolCandidateLimit[] = []): string[] {
+  return limits.map(
+    ({ server, limit }) =>
+      `${server} reached its workspace symbol limit (${limit}) before scope filtering. Try a narrower query.`,
+  );
 }
 
 /** Show why coverage is incomplete without letting a large index reply dominate the preview. */

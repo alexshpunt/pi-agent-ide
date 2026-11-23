@@ -119,6 +119,12 @@ export interface SkippedSymbol {
   readonly source: string;
 }
 
+/** A server returned at least its known workspace/symbol candidate limit. */
+export interface WorkspaceSymbolCandidateLimit {
+  readonly server: string;
+  readonly limit: number;
+}
+
 /** Symbols found by {@link searchSymbols}. */
 export interface SymbolSearchResult {
   readonly hits: SymbolHit[];
@@ -136,6 +142,7 @@ export interface SymbolSearchResult {
    */
   readonly missing?: readonly string[];
   readonly skipped?: readonly SkippedSymbol[];
+  readonly candidateLimits?: readonly WorkspaceSymbolCandidateLimit[];
 }
 
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
@@ -369,12 +376,18 @@ async function searchSymbolsOnce(
     }
   };
   const coverages: (ClangCoverage | undefined)[] = [scan?.coverage];
+  const candidateLimits: WorkspaceSymbolCandidateLimit[] = [];
   // Declarations already listed, by file and the name position of their first entry.
   const listed = new Map<LspClient, Set<string>>();
   for (const client of clients) {
     const typescript = hasTypeScriptProjectQueries(client);
     signal?.throwIfAborted();
     const indexed = await requestWorkspaceSymbols(client, query, Number.MAX_SAFE_INTEGER, signal);
+    // Count the raw reply. Candidates omitted here could have had declarations or references
+    // inside the scope. The exact-name scan cannot recover all of the server's fuzzy matches.
+    const candidateLimit = client.workspaceSymbolCandidateLimit;
+    if (candidateLimit !== undefined && indexed.length >= candidateLimit)
+      candidateLimits.push({ server: client.commandName, limit: candidateLimit });
     const definitions = [...indexed, ...(scan?.declarations.get(client) ?? [])];
     for (const definition of definitions) {
       signal?.throwIfAborted();
@@ -577,7 +590,9 @@ async function searchSymbolsOnce(
       (resultScope?.complete ?? true) &&
       kept.length <= limit &&
       coverageComplete(coverage) &&
-      skipped.size === 0,
+      skipped.size === 0 &&
+      candidateLimits.length === 0,
+    ...(candidateLimits.length > 0 && { candidateLimits }),
     ...(skipped.size > 0 && { skipped: [...skipped.values()] }),
     ...(coverage !== undefined && !coverageComplete(coverage) && { coverage }),
     ...(missing.size > 0 && { missing: [...missing].sort() }),
