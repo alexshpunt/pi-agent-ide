@@ -3,7 +3,14 @@ import path from "node:path";
 
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-import { assistantMessage, PiIntegrationTest, testArtifactsDir, text } from "pi-coding-agent-test";
+import {
+  assistantMessage,
+  PiIntegrationTest,
+  testArtifactsDir,
+  text,
+  type TraceEvent,
+} from "pi-coding-agent-test";
+import { integrationChromiumPath } from "#integration/support/browser-runtime.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
 const root = path.resolve(".agents", "tmp", "doctor-command-integration");
@@ -112,6 +119,61 @@ test("disabling plugins removes their doctor checks and catalog knowledge", asyn
   expect(transcript).not.toContain("Git changes (changes)");
   expect(transcript).toContain("clang-tidy [built-in]");
 });
+
+test("Doctor rechecks the current browser and accepts the executable inherited by a fresh Pi", async () => {
+  const cwd = await mkdtemp(path.join(root, "browser-"));
+  const missing = path.join(cwd, "missing-chromium");
+
+  const run = (testName: string, executable: string) =>
+    new PiIntegrationTest({
+      testName,
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      extensions: [extension],
+      tools: [],
+      rawMode: false,
+      environment: { PI_AGENT_IDE_BROWSER_PATH: executable },
+      conversation: [assistantMessage([text("No system or environment changes made.")])],
+    }).run("/agent-ide-doctor --no-apply --agent");
+
+  const before = await run("doctor-browser-unconfigured", missing);
+  expect(before.exitCode).toBe(0);
+  expect(before.providerRequests).toHaveLength(1);
+  expect(JSON.stringify(before.providerRequests)).toContain("PI_AGENT_IDE_BROWSER_PATH");
+  const beforeReports = doctorReports(before.traceEvents);
+  expect(beforeReports).toHaveLength(2);
+  for (const report of beforeReports) {
+    expect(report).toContain(missing);
+    expect(report).toContain("[web-browser]");
+  }
+  expect(before.tuiRenderedOutput).toContain("missing-chromium");
+
+  const chromium = integrationChromiumPath();
+  const after = await run("doctor-browser-configured", chromium);
+  expect(after.exitCode).toBe(0);
+  const afterReports = doctorReports(after.traceEvents);
+  expect(afterReports).toHaveLength(2);
+  for (const report of afterReports) {
+    expect(report).toContain(chromium);
+    expect(report).not.toContain("[web-browser]");
+  }
+  expect(after.tuiRenderedOutput).toContain(path.basename(chromium));
+});
+
+function doctorReports(events: readonly TraceEvent[]): string[] {
+  const branch = events.findLast((event) => event.type === "session_snapshot")?.branch;
+  if (!Array.isArray(branch)) throw new Error("Missing test session snapshot");
+  return branch.flatMap((message: unknown) =>
+    typeof message === "object" &&
+    message !== null &&
+    "customType" in message &&
+    message.customType === "agent-ide-doctor" &&
+    "content" in message &&
+    typeof message.content === "string"
+      ? [message.content]
+      : [],
+  );
+}
 
 async function cppWorkspace(): Promise<string> {
   const cwd = await mkdtemp(path.join(root, "cpp-"));

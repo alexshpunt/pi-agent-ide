@@ -35,6 +35,8 @@ export interface DoctorFinding {
   readonly status: DoctorStatus;
   readonly message: string;
   readonly detail?: string;
+  /** Optional remediation discovered by a full check, not shown in startup guidance. */
+  readonly setupAction?: DoctorSetupAction;
 }
 
 /**
@@ -68,6 +70,8 @@ export interface DoctorSetupAction {
     | "missing-runtime"
     | "unsupported-platform";
   readonly message: string;
+  /** Redacted instructions included only when delegating to the agent. */
+  readonly agentInstructions?: string;
 }
 
 /** Lightweight project setup state contributed without running full tool probes. */
