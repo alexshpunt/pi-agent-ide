@@ -10,9 +10,12 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { expect, test } from "vitest";
+import { afterAll, expect, test } from "vitest";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+
+afterAll(forceStandaloneIntegrationFile());
 
 /** Each failed IDE call of a Codemode result: its tool and source line, then its reason. */
 function failedCalls(output: string): string[] {

@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { afterAll, expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
@@ -12,6 +12,9 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+
+afterAll(forceStandaloneIntegrationFile());
 
 test.each([false, true])(
   "direct whole Search scope edits one issued match (range: %s)",
