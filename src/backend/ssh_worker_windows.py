@@ -11,22 +11,24 @@ import hashlib
 import os
 import stat
 import subprocess
+import sys
 import tempfile
+import time
 
 import ssh_windows_files as win
 from ssh_windows_files import (Failure, attributes, error_code, fingerprint, kind_of, native,
                                posix_mode, wire)
-from ssh_worker_common import MAX_BYTES, OperationError, encoded
+from ssh_worker_common import MAX_BYTES, OperationError, encoded, run
 
 effect = "not-applied"
 CHUNK = 1024 * 1024
 
 
-def git_command(cwd, args, environment=None):
+def git_command(cwd, args, environment=None, timeout=30):
     """Run Git with bounded output. The channel's Job Object owns the process tree."""
     try:
         result = subprocess.run(["git", *args], cwd=cwd, env=environment, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout,
                                 creationflags=subprocess.CREATE_NO_WINDOW)
     except subprocess.TimeoutExpired:
         raise OperationError("TIMEOUT")
@@ -500,6 +502,69 @@ def journal_release(path):
     return None
 
 
+DELETE_SESSION_OPERATIONS = frozenset(("lstat", "realpath", "read", "git-query",
+                                       "temporary-environment", "delete-object"))
+
+
+def run_delete_session():
+    """The controller sends fresh policy probes and, only after approval, the final delete."""
+    global effect
+    stdin = sys.stdin.buffer
+    while True:
+        request = stdin.readline(MAX_BYTES * 2)
+        if not request or not request.endswith(b"\n"):
+            return
+        effect = "not-applied"
+        run(sys.modules[__name__], request, DELETE_SESSION_OPERATIONS)
+
+
+class DeleteDeadline(Exception):
+    pass
+
+
+class DeleteProgress:
+    def __init__(self, path, budget_ms):
+        self.root = path
+        self.deadline = time.monotonic() + budget_ms / 1000
+        self.removed = []
+
+    def relative(self, path):
+        return os.path.relpath(path, self.root).replace("\\", "/")
+
+    def check(self, path):
+        if time.monotonic() >= self.deadline:
+            raise DeleteDeadline(self.relative(path))
+
+    def record(self, path):
+        self.removed.append(self.relative(path))
+
+
+def delete_object(path, request):
+    # Policy and dialogs run on the controller; verify the same native object here.
+    global effect
+    budget_ms = request.get("budgetMs")
+    progress = None if budget_ms is None else DeleteProgress(path, budget_ms)
+    with win.locked(win.lock_key(os.path.dirname(path))):
+        info = os.lstat(path)
+        if fingerprint(path, b"", info) != request["revision"]:
+            raise OperationError("DELETE_TARGET_CHANGED")
+        kind = kind_of(info)
+        if kind not in ("directory", "file", "symlink"):
+            raise OperationError("INVALID_FILE_TYPE")
+        try:
+            if progress is not None:
+                progress.check(path)
+            if kind == "directory":
+                effect = "unknown"
+                win.remove_tree(path, progress)
+                effect = "applied"
+            else:
+                mutate(win.force_unlink, path, info)
+        except DeleteDeadline as error:
+            return {"removed": progress.removed, "next": str(error)}
+    return None
+
+
 def perform(request):
     global effect
     try:
@@ -516,7 +581,8 @@ def operate(request):
     if operation == "gitIndex" and path is not None:
         return write_git_index(request, path)
     if operation == "git-query" and path is not None:
-        return git_command(path, request["args"], git_environment()).decode("utf8")
+        timeout = request.get("budgetMs", 30000) / 1000
+        return git_command(path, request["args"], git_environment(), timeout).decode("utf8")
     if operation == "temporary-environment":
         agent = os.environ.get("PI_CODING_AGENT_DIR", "").strip()
         result = {"home": wire(os.path.expanduser("~")), "temporary": wire(tempfile.gettempdir())}
@@ -566,20 +632,7 @@ def operate(request):
     if operation == "move-object":
         return move_object(path, native(request["destination"]), request)
     if operation == "delete-object":
-        # Policy and dialogs run on the controller; verify the same native object here.
-        with win.locked(win.lock_key(os.path.dirname(path))):
-            info = os.lstat(path)
-            if fingerprint(path, b"", info) != request["revision"]:
-                raise OperationError("DELETE_TARGET_CHANGED")
-            if kind_of(info) not in ("directory", "file", "symlink"):
-                raise OperationError("INVALID_FILE_TYPE")
-            if kind_of(info) == "directory":
-                effect = "unknown"
-                win.remove_tree(path)
-                effect = "applied"
-            else:
-                mutate(win.force_unlink, path, info)
-        return None
+        return delete_object(path, request)
     if operation == "lstat":
         info = os.lstat(path)
         return {"kind": kind_of(info), "size": info.st_size, "mode": posix_mode(info),
