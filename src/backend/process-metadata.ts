@@ -2,7 +2,7 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
-import { remotePython } from "./ssh-transport.ts";
+import { bundlePython, remotePython, targetOs } from "./ssh-transport.ts";
 import { packagedSource } from "./packaged-source.ts";
 
 const rowSchema = Type.Object({
@@ -15,11 +15,28 @@ const rowSchema = Type.Object({
 });
 const resultSchema = Type.Object({ processes: Type.Array(rowSchema) });
 const worker = packagedSource(new URL("./process-metadata-worker.py", import.meta.url));
+const windowsWorker = packagedSource(new URL("./process-metadata-windows.py", import.meta.url));
+const windowsProgram = windowsWorker.then((windows) =>
+  bundlePython(
+    `import json, sys
+from pi_windows_process import metadata
+try:
+    result = {"processes": [metadata(int(sys.argv[1]))]}
+except ProcessLookupError:
+    result = {"error": "ENOENT"}
+except PermissionError:
+    result = {"error": "EACCES"}
+except OSError:
+    result = {"error": "CAPABILITY_UNAVAILABLE"}
+print(json.dumps(result, ensure_ascii=True))`,
+    { pi_windows_process: windows },
+  ),
+);
 
 type SshProcessMetadata = Static<typeof rowSchema>;
 
 /** Check one owned PID before cleanup; never enumerate the target's processes.
- * Return undefined only when /proc confirms absence. Transport and permission
+ * Return undefined only when the target OS confirms absence. Transport and permission
  * failures do not prove process death, and must not authorize cleanup.
  */
 export async function findSshProcessMetadata(
@@ -33,7 +50,7 @@ export async function findSshProcessMetadata(
   const owner = registry.resolve(scope);
   if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", scope, "not-applied");
   const result = await owner.backend.execute(
-    remotePython(await worker),
+    remotePython(await (targetOs(owner.backend.target) === "windows" ? windowsProgram : worker)),
     [String(pid)],
     owner.location.path,
     { signal },

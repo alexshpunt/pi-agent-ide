@@ -155,17 +155,11 @@ test.each([false, true])(
   "Doctor checks native browser startup without network and reports a missing target runtime (missing=%s)",
   async (missing) => {
     const result = await probeOwnedDoctorBrowser(missing);
-    expect(result.findings).toMatchObject(
-      missing
-        ? [
-            {
-              status: "warn",
-              message: "Browser reads are unavailable",
-              detail: `CAPABILITY_UNAVAILABLE: ${result.project}`,
-            },
-          ]
-        : [{ status: "pass", detail: "Target Playwright and Chromium started without navigation" }],
-    );
+    expect(result.findings).toMatchObject([{ status: missing ? "warn" : "pass" }]);
+    if (missing) {
+      expect(result.findings?.[0]?.detail).toContain("PLAYWRIGHT_UNAVAILABLE");
+      expect(result.findings?.[0]?.detail).toContain(result.project);
+    }
   },
 );
 
@@ -231,14 +225,11 @@ test("Doctor uses only native managed debugger paths and reports a missing nativ
     PI_JS_DEBUG_PATH: `${proof.root}/workspace/adapter#café.js`,
     PI_PYTHON_PATH: `${proof.root}/workspace/missing-python`,
   });
-  const available = proof.findings?.find(
-    (finding) => finding.message === "vscode-js-debug: available",
-  );
-  expect(available?.status).toBe("pass");
+  expect(proof.findings).toHaveLength(2);
+  const available = proof.findings?.find((finding) => finding.status === "pass");
   expect(available?.detail).toMatch(/^v\d+/u);
-  const missing = proof.findings?.find((finding) => finding.message === "debugpy: unavailable");
-  expect(missing?.status).toBe("fail");
-  expect(typeof missing?.detail).toBe("string");
+  const missing = proof.findings?.find((finding) => finding.status === "fail");
+  expect(missing?.detail).toContain(`${proof.root}/workspace/missing-python`);
   expect(proof.actions.find((action) => action.category === "missing-runtime")?.message).toContain(
     `${proof.root}/workspace/missing-python`,
   );

@@ -485,7 +485,9 @@ export class DebugSessionManager {
     try {
       if (owner !== undefined && session.options.adapter === "node") {
         if (!recipe.connectChild) throw new Error("Owned Node adapter has no child connection");
-        client.onReverseRequest(this.#handleNodeReverseRequest(session, recipe.connectChild));
+        client.onReverseRequest(
+          this.#handleNodeReverseRequest(session, recipe.connectChild, recipe.launch.outFiles),
+        );
       }
       if (owner !== undefined || session.options.adapter !== "r") {
         await initializeClient(client, recipe.adapterID, signal);
@@ -921,6 +923,7 @@ export class DebugSessionManager {
   #handleNodeReverseRequest(
     session: DebugSession,
     connectChild: () => Promise<DapClient>,
+    ownedOutFiles?: unknown,
   ): (request: DapReverseRequest) => Promise<unknown> {
     return async (request) => {
       if (request.command !== "startDebugging") {
@@ -928,10 +931,9 @@ export class DebugSessionManager {
       }
       const arguments_ = asRecord(request.arguments);
       const configuration = asRecord(arguments_.configuration);
-      const owner = this.#owner(session);
       const child = await connectChild();
       session.clients?.push(child);
-      child.onReverseRequest(this.#handleNodeReverseRequest(session, connectChild));
+      child.onReverseRequest(this.#handleNodeReverseRequest(session, connectChild, ownedOutFiles));
       await initializeClient(child, "pwa-node");
       const initialized = child.waitForEvent("initialized");
       const launch = child.request(
@@ -940,12 +942,8 @@ export class DebugSessionManager {
           ...configuration,
           sourceMaps: true,
           pauseForSourceMap: true,
-          outFiles: [
-            path.join(
-              path.dirname(owner?.serverPath(session.options.program) ?? session.options.program),
-              "**",
-              "*.js",
-            ),
+          outFiles: ownedOutFiles ?? [
+            path.join(path.dirname(session.options.program), "**", "*.js"),
           ],
         },
       );

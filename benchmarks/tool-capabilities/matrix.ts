@@ -359,6 +359,8 @@ const groups: [string[], string[]][] = [
   [["search.compaction-numbered"], ["search-compaction-numbered"]],
   [["search.compaction-all"], ["search-compaction-all"]],
   // Result-input paths accept the same file as a scalar or an array; both keep real reuse checks.
+  // These cases use local fixtures. The Windows SSH code-intelligence integration test
+  // checks native target paths for AST, outline, symbols and diagnostics.
   [["outline.file"], ["ast-capture-rename", "outline-search-edit"]],
   [["search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
   // Both routes require { id: "<bare capture UUID>" }, stripping RESULT# even in Codemode.
@@ -432,6 +434,7 @@ const groups: [string[], string[]][] = [
     ],
     ["debug-controls"],
   ],
+  // Paid DAP cases are local. Scripted Windows SSH coverage exercises selected native adapters.
   [["debug.backend-vscode-refusal", "debug.backend-native"], ["debug-backend-fallback"]],
   // Rust has a separate no-build route; the TypeScript route does not prove Cargo safety.
   [["read.rust-diagnostics-no-build"], ["rust-diagnostics-no-build"]],
@@ -468,6 +471,7 @@ const groups: [string[], string[]][] = [
   // This paid case checks a successful Write. The real-Pi edit-window-writes tests
   // check stale Write recovery on both routes, including applying a fresh anchor.
   [["write.json-text"], ["write-json-text"]],
+  // The local web case does not probe target-owned raw fetch, rendering or Doctor.
   [["web.read", "web.search"], ["web-read-search"]],
 ];
 

@@ -4,6 +4,8 @@ This checks whether agents and models can carry out the IDE tools' contracts wit
 
 Each task supplies a runnable recipe. Use actual returned references where a value must come from an earlier call, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass. In a Git fixture, the commit and index must also stay as prepared; expected worktree changes, such as deleting a tracked directory, are part of the final bytes.
 
+The paid runner has no provisioned Windows SSH target. The local AST, outline, LSP, diagnostics, debug and web cases do not establish Windows SSH coverage. Opt-in scripted Pi tests use a provisioned Windows target to check code intelligence, native debugging, raw and rendered web reads, and `/agent-ide-doctor`. No paid Windows SSH route has been verified.
+
 ## Free checks
 
 ```bash

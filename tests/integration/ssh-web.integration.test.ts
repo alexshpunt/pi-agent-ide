@@ -213,7 +213,7 @@ test.each(["playwright", "chromium"] as const)(
       await expect(
         readSshBrowserPage(target, url, source, { timeoutMs: 5000 }),
       ).rejects.toMatchObject({
-        code: "CAPABILITY_UNAVAILABLE",
+        code: missing === "playwright" ? "PLAYWRIGHT_UNAVAILABLE" : "CHROMIUM_UNAVAILABLE",
         source,
       });
     } finally {

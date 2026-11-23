@@ -2,9 +2,17 @@ import path from "node:path";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import { LINUX_SSH_DEBUG_BROKERS } from "#src/plugins/pi-agent-ide-debugger/src/catalog.ts";
+import {
+  WINDOWS_SSH_ELIXIR_DEBUG_COMMAND,
+  WINDOWS_SSH_LUA_DEBUG_PATH,
+  WINDOWS_SSH_PHP_DEBUG_PATH,
+} from "#src/plugins/pi-agent-ide-debugger/src/adapter-executables.ts";
 import type { DebugWorkspaceOwnerResolver } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.ts";
 import type { SshBackendRegistry } from "./registry.ts";
-import { remoteLocation } from "./identity.ts";
+import { remoteLocation, type SshTargetOs } from "./identity.ts";
+import { sshNativePath } from "./native-path.ts";
+import { remotePython, targetOs } from "./ssh-transport.ts";
 import { SshBackendError, type SshBackend } from "./ssh.ts";
 import { startSshDapTransport } from "./dap-transport.ts";
 import { startSshTcpDapTransport } from "./dap-tcp-transport.ts";
@@ -12,9 +20,12 @@ import { prepareSshNodeDebugger } from "./dap-node-transport.ts";
 import { prepareSshJavaDebugger } from "./dap-java-transport.ts";
 import type { DebugSessionOptions } from "#src/plugins/pi-agent-ide-debugger/src/session-manager.ts";
 import { packagedSource } from "./packaged-source.ts";
+import { resolveSshDebuggerExecutable } from "./dap-executables.ts";
 
 const rWorker = packagedSource(new URL("./dap-r-worker.py", import.meta.url));
 const powershellWorker = packagedSource(new URL("./dap-powershell-worker.py", import.meta.url));
+
+const linuxBrokers = new Set(LINUX_SSH_DEBUG_BROKERS.values());
 
 type StdioRecipe = {
   readonly command: string;
@@ -22,6 +33,8 @@ type StdioRecipe = {
   readonly args: readonly string[];
   readonly adapterID: string;
   readonly launch: Record<string, unknown>;
+  readonly files?: readonly string[];
+  readonly dependency?: string;
 };
 
 const nodePathsSchema = Type.Object(
@@ -42,14 +55,24 @@ async function nodeStdioRecipe(
   options: DebugSessionOptions,
   program: string,
   cwd: string,
+  project: string,
+  os: SshTargetOs,
   signal?: AbortSignal,
 ): Promise<StdioRecipe> {
+  const pathOps = os === "windows" ? path.win32 : path.posix;
   const selections = {
-    phpDebug: ["PI_PHP_DEBUG_PATH", "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js"],
+    phpDebug: [
+      "PI_PHP_DEBUG_PATH",
+      os === "windows"
+        ? WINDOWS_SSH_PHP_DEBUG_PATH
+        : "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js",
+    ],
     php: ["PI_PHP_PATH", "php"],
     luaDebug: [
       "PI_LUA_DEBUG_PATH",
-      "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js",
+      os === "windows"
+        ? WINDOWS_SSH_LUA_DEBUG_PATH
+        : "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js",
     ],
     lua: ["PI_LUA_PATH", "lua"],
     bashRoot: ["PI_BASH_DEBUG_ROOT", "/opt/pi-debug-adapters/bash-debug/extension"],
@@ -58,13 +81,11 @@ async function nodeStdioRecipe(
   };
   // Read only known adapter executable paths, never the controller's environment.
   const result = await backend.execute(
-    "python3",
-    [
-      "-c",
+    remotePython(
       "import json,os,sys; fields=json.loads(sys.argv[1]); print(json.dumps({k:os.environ.get(v[0],v[1]) for k,v in fields.items()}))",
-      JSON.stringify(selections),
-    ],
-    cwd,
+    ),
+    [JSON.stringify(selections)],
+    project,
     { signal },
   );
   if (result.exitCode !== 0)
@@ -89,6 +110,8 @@ async function nodeStdioRecipe(
       command: "node",
       overrides: [],
       args: [selected.phpDebug],
+      files: [selected.phpDebug],
+      dependency: "Node and vscode-php-debug (PI_PHP_DEBUG_PATH)",
       adapterID: "php",
       launch: {
         ...common,
@@ -106,12 +129,14 @@ async function nodeStdioRecipe(
       command: "node",
       overrides: [],
       args: [selected.luaDebug],
+      files: [selected.luaDebug],
+      dependency: "Node and local-lua-debugger-vscode (PI_LUA_DEBUG_PATH)",
       adapterID: "lua-local",
       launch: {
         ...common,
         type: "lua-local",
         program: { lua: selected.lua, file: program },
-        extensionPath: path.posix.dirname(path.posix.dirname(selected.luaDebug)),
+        extensionPath: pathOps.dirname(pathOps.dirname(pathOps.resolve(cwd, selected.luaDebug))),
         workspacePath: cwd,
       },
     };
@@ -145,6 +170,7 @@ function stdioRecipe(
   program: string,
   cwd: string,
   source: string,
+  os: SshTargetOs,
 ): StdioRecipe {
   const common = {
     name: "Pi Agent IDE debug session",
@@ -159,6 +185,7 @@ function stdioRecipe(
         command: "python3",
         overrides: ["PI_PYTHON_PATH"],
         args: ["-m", "debugpy.adapter"],
+        dependency: "Python with debugpy installed (project virtual environment or PI_PYTHON_PATH)",
         adapterID: "debugpy",
         launch: { ...common, type: "python", console: "internalConsole", justMyCode: false },
       };
@@ -207,7 +234,10 @@ function stdioRecipe(
     }
     case "elixir": {
       return {
-        command: "/opt/pi-debug-adapters/elixir-ls/debug_adapter.sh",
+        command:
+          os === "windows"
+            ? WINDOWS_SSH_ELIXIR_DEBUG_COMMAND
+            : "/opt/pi-debug-adapters/elixir-ls/debug_adapter.sh",
         overrides: ["PI_ELIXIR_LS_DEBUG_PATH"],
         args: [],
         adapterID: "mix_task",
@@ -226,7 +256,7 @@ function stdioRecipe(
     case "lldb-dap": {
       const swift = path.posix.extname(source).toLowerCase() === ".swift";
       return {
-        command: swift ? "lldb-dap" : "lldb-dap-18",
+        command: swift || os === "windows" ? "lldb-dap" : "lldb-dap-18",
         overrides: swift ? ["PI_SWIFT_LLDB_DAP_PATH", "PI_LLDB_DAP_PATH"] : ["PI_LLDB_DAP_PATH"],
         args: [],
         adapterID: "lldb-dap",
@@ -256,13 +286,20 @@ export function createSshDebuggerWorkspaceOwner(
       return owner;
     };
     const { id, host, workspace, configFile } = root.backend.target;
+    const os = targetOs(root.backend.target);
+    const pathOps = os === "windows" ? path.win32 : path.posix;
+    const serverPath = (source: string) => sshNativePath(resolve(source).location.path, os);
     return {
-      key: JSON.stringify([id, host, workspace, configFile ?? null]),
-      serverPath: (source) => resolve(source).location.path,
+      key: JSON.stringify([id, host, workspace, configFile ?? null, os]),
+      serverPath,
       resourcePath(nativePath) {
-        if (!path.posix.isAbsolute(nativePath) || nativePath.includes("\0"))
+        if (os === "windows" && !/^[A-Za-z]:[\\/]/u.test(nativePath))
           throw new SshBackendError("INVALID_RESPONSE", root.location.source, "not-applied");
-        return remoteLocation(root.location.target, nativePath).source;
+        try {
+          return remoteLocation(root.location.target, nativePath, os).source;
+        } catch {
+          throw new SshBackendError("INVALID_RESPONSE", root.location.source, "not-applied");
+        }
       },
       async readText(source) {
         const owner = resolve(source);
@@ -272,9 +309,18 @@ export function createSshDebuggerWorkspaceOwner(
       },
       async prepare(options, signal) {
         signal?.throwIfAborted();
-        const program = resolve(options.program).location.path;
-        const nativeCwd = resolve(options.cwd).location.path;
-        const source = resolve(options.sourceFile).location.path;
+        const program = serverPath(options.program);
+        const nativeCwd = serverPath(options.cwd);
+        const source = serverPath(options.sourceFile);
+        if (os === "windows" && linuxBrokers.has(options.adapter)) {
+          const error = new SshBackendError(
+            "CAPABILITY_UNAVAILABLE",
+            root.location.source,
+            "not-applied",
+          );
+          error.message += ` (${options.adapter} requires the Linux SSH debugger broker)`;
+          throw error;
+        }
         if (options.adapter === "java")
           return await prepareSshJavaDebugger(
             registry,
@@ -328,7 +374,9 @@ export function createSshDebuggerWorkspaceOwner(
               stopOnEntry: true,
               sourceMaps: true,
               pauseForSourceMap: true,
-              outFiles: [path.posix.join(path.posix.dirname(program), "**", "*.js")],
+              outFiles: [
+                pathOps.join(pathOps.dirname(program), "**", "*.js").replaceAll(pathOps.sep, "/"),
+              ],
             },
             signal,
           );
@@ -336,8 +384,8 @@ export function createSshDebuggerWorkspaceOwner(
         if (options.adapter === "r") {
           const worker = await rWorker;
           const transport = await startSshDapTransport(registry, root.location.source, {
-            command: "python3",
-            args: ["-c", worker],
+            command: remotePython(worker),
+            args: [],
             signal,
           });
           return {
@@ -364,8 +412,8 @@ export function createSshDebuggerWorkspaceOwner(
         if (options.adapter === "powershell") {
           const worker = await powershellWorker;
           const transport = await startSshDapTransport(registry, root.location.source, {
-            command: "python3",
-            args: ["-c", worker],
+            command: remotePython(worker),
+            args: [],
             signal,
           });
           return {
@@ -387,17 +435,32 @@ export function createSshDebuggerWorkspaceOwner(
         }
         const recipe =
           options.adapter === "php" || options.adapter === "lua" || options.adapter === "shell"
-            ? await nodeStdioRecipe(root.backend, options, program, nativeCwd, signal)
-            : stdioRecipe(options, program, nativeCwd, source);
+            ? await nodeStdioRecipe(
+                root.backend,
+                options,
+                program,
+                nativeCwd,
+                root.location.path,
+                os,
+                signal,
+              )
+            : stdioRecipe(options, program, nativeCwd, source, os);
+        const { command } = await resolveSshDebuggerExecutable(
+          root.backend,
+          root.location.path,
+          options.program,
+          {
+            command: recipe.command,
+            overrides: recipe.overrides,
+            python: options.adapter === "debugpy",
+            files: recipe.files,
+            dependency: recipe.dependency ?? [recipe.command, ...recipe.overrides].join(" / "),
+          },
+          signal,
+        );
         const transport = await startSshDapTransport(registry, root.location.source, {
-          command: "python3",
-          args: [
-            "-c",
-            "import json,os,sys; names=json.loads(sys.argv[1]); p=next((os.environ[n] for n in names if os.environ.get(n)),sys.argv[2]); args=json.loads(sys.argv[3]); os.execvpe(p,[p,*args],os.environ)",
-            JSON.stringify(recipe.overrides),
-            recipe.command,
-            JSON.stringify(recipe.args),
-          ],
+          command,
+          args: recipe.args,
           signal,
         });
         return {

@@ -40,6 +40,8 @@ const workerFiles = [
   "ssh_channel_common.py",
   "ssh_channel_posix.py",
   "ssh_channel_windows.py",
+  "ssh_windows_commands.py",
+  "process-metadata-windows.py",
   "ssh-worker.py",
   "ssh_worker_common.py",
   "ssh_worker_posix.py",
@@ -103,21 +105,27 @@ export function sshWorkerBundle(os: SshTargetOs, kind: keyof typeof workers): Pr
   if (!bundle) {
     const worker = workers[kind];
     const platform: WorkerFile = `${worker.platform}_${os === "windows" ? "windows" : "posix"}.py`;
-    // Only the Windows file worker needs the shared Windows primitives.
     const files =
       os === "windows" && kind === "file" ? workerSource(`${windowsFiles}.py`) : undefined;
+    const windowsChannel = os === "windows" && kind === "channel";
+    const commands = windowsChannel ? workerSource("ssh_windows_commands.py") : undefined;
+    const process = windowsChannel ? workerSource("process-metadata-windows.py") : undefined;
     bundle = Promise.all([
       workerSource(worker.entry),
       workerSource(`${worker.common}.py`),
       workerSource("ssh_paths.py"),
       workerSource(platform),
       files,
-    ]).then(([entry, common, paths, native, windows]) =>
+      commands,
+      process,
+    ]).then(([entry, common, paths, native, windows, commands, process]) =>
       bundlePython(entry, {
         [worker.common]: common,
         ssh_paths: paths,
         [`${worker.platform}_platform`]: native,
         ...(windows === undefined ? {} : { [windowsFiles]: windows }),
+        ...(commands === undefined ? {} : { ssh_windows_commands: commands }),
+        ...(process === undefined ? {} : { pi_windows_process: process }),
       }),
     );
     bundles.set(key, bundle);

@@ -35,6 +35,32 @@ test("owned resolution checks remote root markers without consulting local files
     registry.resolveOwned("ssh://other/workspace/note.ts", async () => true),
   ).rejects.toMatchObject({ code: "UNSUPPORTED_SOURCE" });
 });
+test("owner marker search stops at a Windows drive root", async () => {
+  const registry = LspServerRegistry.fromConfig(
+    parseLspConfig({
+      version: 1,
+      servers: {
+        owned: {
+          ...server(".ts", "owned"),
+          rootMarkers: ["project.json"],
+          requireRootMarker: true,
+        },
+      },
+    }),
+    "ssh://fixture/C:/",
+  );
+  const requests: string[] = [];
+  expect(
+    await registry.resolveOwned("ssh://fixture/C:/src/note.ts", async (source) => {
+      // More probes would mean walking outside the configured drive root.
+      if (requests.length >= 2) throw new Error("Reached a directory outside the project");
+      requests.push(decodeURIComponent(new URL(source).pathname));
+      return false;
+    }),
+  ).toEqual([]);
+  expect(requests).toEqual(["/C:/src/project.json", "/C:/project.json"]);
+});
+
 test("owner availability probes do not open concurrent remote connections", async () => {
   let active = false;
   let probes = 0;

@@ -5,6 +5,7 @@ import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { sshProjectEnvironment } from "./process-environment.ts";
 import { stopOwnedSshProcess } from "./owned-process-stop.ts";
+import type { SshCommand } from "./ssh-transport.ts";
 
 /** Exact target stdio and native lifetime metadata, never a controller process ID. */
 export interface SshDapTransport extends DapTransport {
@@ -16,7 +17,7 @@ export async function startSshDapTransport(
   registry: SshBackendRegistry,
   cwd: string,
   input: {
-    readonly command: string;
+    readonly command: SshCommand;
     readonly args: readonly string[];
     readonly env?: Readonly<Record<string, string>>;
     readonly signal?: AbortSignal;
@@ -25,15 +26,16 @@ export async function startSshDapTransport(
   input.signal?.throwIfAborted();
   const owner = registry.resolve(cwd);
   if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", cwd, "not-applied");
-  const environment = Object.entries(
-    await sshProjectEnvironment(owner.backend, owner.location.path, input.env, input.signal),
-  ).map(([key, value]) => `${key}=${value}`);
-  const channel = await owner.backend.startProcess(
-    "env",
-    [...environment, input.command, ...input.args],
+  const env = await sshProjectEnvironment(
+    owner.backend,
     owner.location.path,
-    { signal: input.signal },
+    input.env,
+    input.signal,
   );
+  const channel = await owner.backend.startProcess(input.command, input.args, owner.location.path, {
+    signal: input.signal,
+    env,
+  });
   // Adapter stderr is not protocol. Drain it without retaining or exposing transport diagnostics.
   channel.stderr.resume();
   const writable = new Writable({

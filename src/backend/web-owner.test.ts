@@ -1,7 +1,9 @@
 import { expect, test, vi } from "vitest";
+import type { AgentContent } from "pi-agent-resource";
 import { createWebResolver } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/src/resolver.ts";
 import { createSshWebResolver, parseSshWebSource } from "./web-owner.ts";
 import { SshBackendRegistry } from "./registry.ts";
+import * as http from "./web-http.ts";
 
 const source = "web:ssh://fixture/https://example.test/note";
 
@@ -49,6 +51,40 @@ test("target web parsing preserves the nested URL and refuses non-HTTP or ambigu
     "web:ssh://fixture/",
   ])
     expect(() => parseSshWebSource(invalid)).toThrow("INVALID_SOURCE");
+});
+
+test("a Windows web target uses its configured drive workspace without a file path in the URL", async () => {
+  const target = {
+    id: "fixture",
+    host: "fixture-alias",
+    workspace: "/C:/Program Files/work",
+    os: "windows" as const,
+  };
+  const fetch = vi
+    .spyOn(http, "fetchSshWebResponse")
+    .mockImplementation(
+      async () => new Response("owned text", { headers: { "Content-Type": "text/plain" } }),
+    );
+  const convert = vi.fn(async (): Promise<AgentContent> => [{ type: "text", text: "owned text" }]);
+  try {
+    const resolver = createSshWebResolver({ convert }, new SshBackendRegistry([target]));
+    const result = await resolver.tryResolve(source, { cwd: "/controller" });
+    if (result.kind !== "resolved")
+      throw new Error("Windows target was not resolved", {
+        cause: result.kind === "failed" ? result.error : undefined,
+      });
+    await expect(result.resource.read?.({})).resolves.toEqual([
+      { type: "text", text: "owned text" },
+    ]);
+    expect(fetch).toHaveBeenCalledWith(
+      target,
+      new URL("https://example.test/note"),
+      source,
+      expect.any(AbortSignal),
+    );
+  } finally {
+    fetch.mockRestore();
+  }
 });
 
 test("an unknown web target preserves the requested source without probing another endpoint", async () => {

@@ -5,6 +5,7 @@ import type { SshCommand } from "./ssh-transport.ts";
 /** Bounds for one owned, buffered read service. Both output streams share the byte budget. */
 export interface OwnedReadCommandOptions {
   readonly signal?: AbortSignal;
+  readonly gracefulStop?: boolean;
   readonly timeoutMs: number;
   readonly maxBytes: number;
 }

@@ -8,6 +8,7 @@ import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { createSshLspTransport } from "./lsp-transport.ts";
+import { missingSshExecutable } from "./process-environment.ts";
 
 /** Workspace reads, marker checks and stdio remain on their configured SSH owner. */
 export function createSshLspWorkspaceOwner(registry: SshBackendRegistry): LspWorkspaceOwner {
@@ -54,12 +55,13 @@ export function createSshLspWorkspaceOwner(registry: SshBackendRegistry): LspWor
     },
     async filesContaining(root, word, extensions, signal) {
       const owner = resolve(root);
-      const result = await owner.backend.execute(
-        "rg",
-        [...filesContainingArguments(word, extensions)],
-        owner.location.path,
-        { signal },
-      );
+      const result = await owner.backend
+        .execute("rg", [...filesContainingArguments(word, extensions)], owner.location.path, {
+          signal,
+        })
+        .catch((error: unknown) => {
+          throw missingSshExecutable(error, "rg", owner.location.target);
+        });
       // ripgrep exits with 1 when no file matches.
       if (result.exitCode !== 0 && result.exitCode !== 1)
         throw new Error(
@@ -67,7 +69,11 @@ export function createSshLspWorkspaceOwner(registry: SshBackendRegistry): LspWor
         );
       return filesContainingOutput(result.stdout.toString("utf8")).map(
         (file) =>
-          remoteLocation(owner.location.target, path.posix.join(owner.location.path, file)).source,
+          remoteLocation(
+            owner.location.target,
+            path.posix.join(owner.location.path, file),
+            owner.backend.target.os,
+          ).source,
       );
     },
   };

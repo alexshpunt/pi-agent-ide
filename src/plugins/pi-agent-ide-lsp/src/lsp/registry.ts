@@ -240,7 +240,8 @@ export class LspServerRegistry {
           matches.push(candidate);
           break;
         }
-        if (directory === rootPath) break;
+        // A drive root ends with "/", but dirname("/C:/file") is "/C:".
+        if (path.posix.relative(rootPath, directory) === "") break;
         directory = path.posix.dirname(directory);
       }
     }

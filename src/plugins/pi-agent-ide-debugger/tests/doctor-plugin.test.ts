@@ -25,6 +25,64 @@ test("Doctor distinguishes a missing adapter from an available runtime", async (
   expect(result.actions?.map(({ category }) => category)).toContain("missing-adapter");
 });
 
+function windowsSshWorkspace(cwd: string) {
+  const unexpected = async (): Promise<never> => {
+    throw new Error("Unexpected workspace probe");
+  };
+  return {
+    source: cwd,
+    platform: "win32" as const,
+    files: unexpected,
+    readText: unexpected,
+    writeText: unexpected,
+    configPaths: unexpected,
+    exists: unexpected,
+    evidence: unexpected,
+    executableAvailability: unexpected,
+    run: unexpected,
+    withProbeCopy: unexpected,
+    start: unexpected,
+    toNativeUri: (source: string) => source,
+    fromNativeUri: (uri: string) => uri,
+  };
+}
+
+test("Doctor reports the Delve broker limit on Windows SSH without probing executables", async () => {
+  const cwd = "ssh://fixture/C:/work";
+  const result = await inspectDebuggerSetup({
+    ...context("go", {}),
+    cwd,
+    workspace: windowsSshWorkspace(cwd),
+  });
+  expect(result.actions).toMatchObject([
+    { id: "debugger-delve-platform", category: "unsupported-platform" },
+  ]);
+});
+
+test.each([undefined, "elixir-custom.bat"])(
+  "Doctor finds the Windows SSH Elixir adapter by its launch command (%s)",
+  async (override) => {
+    const cwd = "ssh://fixture/C:/work";
+    const available = new Set(["elixir", "mix", override ?? "debug_adapter.bat"]);
+    const env = override === undefined ? {} : { PI_ELIXIR_LS_DEBUG_PATH: override };
+    const result = await inspectDebuggerSetup({
+      ...context("elixir", env),
+      cwd,
+      workspace: {
+        ...windowsSshWorkspace(cwd),
+        toNativeUri: () => "file:///C:/work",
+        async exists() {
+          return false;
+        },
+        async executableAvailability(configs) {
+          return configs.map(({ command }) => available.has(command[0] ?? ""));
+        },
+      },
+    });
+    expect(result.actions).toEqual([]);
+  },
+);
+
 test.skipIf(process.platform === "win32")(
   "Doctor distinguishes adapter startup failure",
   async () => {

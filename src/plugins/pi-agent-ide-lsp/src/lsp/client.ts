@@ -956,6 +956,8 @@ export class LspClient {
   /** Resolve an owned document to the server path for raw, non-LSP protocol commands. */
   serverDocumentPath(uri: string): string {
     const canonical = this.toUri(uri);
+    const native = this._ownerTransport?.toServerPath?.(canonical);
+    if (native !== undefined) return native;
     const wireUri = this._ownerTransport?.toServerUri(canonical) ?? canonical;
     return this._ownerTransport
       ? decodeURIComponent(new URL(wireUri).pathname)
@@ -963,6 +965,8 @@ export class LspClient {
   }
   /** Convert a raw protocol result path to an owned LSP document URI. */
   serverPathToDocumentUri(file: string): string {
+    const owned = this._ownerTransport?.fromServerPath?.(file);
+    if (owned !== undefined) return owned;
     const uri = URI.file(file).toString();
     return this._ownerTransport?.fromServerUri(uri) ?? uri;
   }

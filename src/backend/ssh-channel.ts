@@ -59,6 +59,8 @@ const INPUT_QUEUE_BYTES = INPUT_WINDOW_FRAMES * INPUT_FRAME_BYTES;
 /** Service startup and optional remote terminal dimensions. */
 export interface SshProcessContext extends BackendOperationContext {
   readonly pty?: { readonly cols: number; readonly rows: number };
+  /** Overrides the target environment for this command; the host environment is never forwarded. */
+  readonly env?: Readonly<Record<string, string>>;
   /** The command exits once its input ends. On a stop or a lost connection, a Windows target
    * closes its input and kills it only after a grace period, so it can remove temporary files.
    * POSIX targets always send SIGTERM first and need no flag. */
@@ -69,7 +71,7 @@ export interface SshProcessChannel {
   /** Canonical remote cwd and remote process leader, never the local SSH transport PID. */
   readonly source: string;
   readonly pid: number;
-  /** Boot ID and start ticks captured from the child; absent when native metadata is unavailable. */
+  /** Native process creation identity; absent when the target cannot report it. */
   readonly identity?: string;
   readonly stdout: Readable;
   readonly stderr: Readable;
@@ -112,6 +114,7 @@ export async function startSshProcess(
     args,
     cwd,
     ...(context.pty ? { pty: context.pty } : {}),
+    ...(context.env === undefined ? {} : { env: context.env }),
     ...(context.gracefulStop === true ? { gracefulStop: true } : {}),
   });
   // Initial argv is separate from the small interactive control frames.

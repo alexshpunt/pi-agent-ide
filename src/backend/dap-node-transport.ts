@@ -1,13 +1,22 @@
+import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { DapClient } from "#src/plugins/pi-agent-ide-debugger/src/dap-client.ts";
+import { WINDOWS_SSH_JS_DEBUG_PATH } from "#src/plugins/pi-agent-ide-debugger/src/adapter-executables.ts";
 import type { OwnedDebugAdapter } from "#src/plugins/pi-agent-ide-debugger/src/workspace-owner.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
 import { startSshDapTransport, type SshDapTransport } from "./dap-transport.ts";
 import { packagedSource } from "./packaged-source.ts";
+import { bundlePython, remotePython, targetOs } from "./ssh-transport.ts";
+import { resolveSshDebuggerExecutable } from "./dap-executables.ts";
 
 const unixWorker = packagedSource(new URL("./dap-unix-worker.py", import.meta.url));
+const windowsWorker = Promise.all([
+  packagedSource(new URL("./dap-windows-pipe-worker.py", import.meta.url)),
+  packagedSource(new URL("./process-metadata-windows.py", import.meta.url)),
+]).then(([entry, metadata]) => bundlePython(entry, { pi_windows_process: metadata }));
 
-/** Keep Node parent and reverse child connections on one exact target-owned Unix server. */
+/** Keep Node parent and reverse child connections on one exact target-owned IPC server. */
 export async function prepareSshNodeDebugger(
   registry: SshBackendRegistry,
   cwd: string,
@@ -17,15 +26,36 @@ export async function prepareSshNodeDebugger(
   signal?.throwIfAborted();
   const owner = registry.resolve(cwd);
   if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", cwd, "not-applied");
+  const windows = targetOs(owner.backend.target) === "windows";
+  const executable = windows
+    ? await resolveSshDebuggerExecutable(
+        owner.backend,
+        owner.location.path,
+        cwd,
+        {
+          command: "node",
+          fileOverrides: [["PI_JS_DEBUG_PATH", WINDOWS_SSH_JS_DEBUG_PATH]],
+          dependency: "Node and js-debug-dap (PI_JS_DEBUG_PATH)",
+        },
+        signal,
+      )
+    : undefined;
   const created = await owner.backend.execute(
-    "python3",
-    ["-c", "import tempfile; print(tempfile.mkdtemp(prefix='pi-agent-ide-node-',dir='/tmp'))"],
+    remotePython(
+      windows
+        ? "import json,tempfile; print(json.dumps(tempfile.mkdtemp(prefix='pi-agent-ide-node-')))"
+        : "import tempfile; print(tempfile.mkdtemp(prefix='pi-agent-ide-node-',dir='/tmp'))",
+    ),
+    [],
     owner.location.path,
     { signal },
   );
-  const directory = created.stdout.toString("utf8").trim();
-  if (created.exitCode !== 0 || !/^\/tmp\/pi-agent-ide-node-[A-Za-z0-9_-]+$/u.test(directory))
+  const directory = tempDirectory(created.stdout.toString("utf8").trim(), windows);
+  if (created.exitCode !== 0 || directory === undefined)
     throw new SshBackendError("INVALID_RESPONSE", cwd, "unknown");
+  const endpoint = windows
+    ? `\\\\.\\pipe\\pi-agent-ide-node-${randomUUID()}`
+    : `${directory}/dap.sock`;
   let server: SshDapTransport | undefined;
   const connections = new Set<SshDapTransport>();
   const startingConnections = new Set<Promise<SshDapTransport>>();
@@ -33,8 +63,8 @@ export async function prepareSshNodeDebugger(
   const isStopping = (): boolean => stopping !== undefined;
   const cleanup = async (): Promise<void> => {
     const removed = await owner.backend.execute(
-      "python3",
-      ["-c", "import shutil,sys; shutil.rmtree(sys.argv[1])", directory],
+      remotePython("import shutil,sys; shutil.rmtree(sys.argv[1])"),
+      [directory],
       owner.location.path,
     );
     if (removed.exitCode !== 0) throw new SshBackendError("CLEANUP_FAILED", cwd, "unknown");
@@ -60,18 +90,30 @@ export async function prepareSshNodeDebugger(
     return stopping;
   };
   try {
-    const worker = await unixWorker;
-    server = await startSshDapTransport(registry, cwd, {
-      command: "python3",
-      args: [
-        "-c",
-        "import os,sys; script=os.environ.get('PI_JS_DEBUG_PATH','/opt/pi-debug-adapters/js-debug/src/dapDebugServer.js'); os.execvpe('node',['node',script,sys.argv[1]],os.environ)",
-        `${directory}/dap.sock`,
-      ],
-      env: { TMPDIR: directory },
-      signal,
-    });
-    // Server status output is not DAP. Each client uses a separately guarded Unix connection.
+    const worker = await (windows ? windowsWorker : unixWorker);
+    const directoryEnv: Readonly<Record<string, string>> = windows
+      ? { TEMP: directory, TMP: directory }
+      : { TMPDIR: directory };
+    server = await startSshDapTransport(
+      registry,
+      cwd,
+      executable !== undefined
+        ? {
+            command: executable.command,
+            args: [...executable.files, endpoint],
+            env: directoryEnv,
+            signal,
+          }
+        : {
+            command: remotePython(
+              "import os,sys; script=os.environ.get('PI_JS_DEBUG_PATH','/opt/pi-debug-adapters/js-debug/src/dapDebugServer.js'); os.execvpe('node',['node',script,sys.argv[1]],os.environ)",
+            ),
+            args: [endpoint],
+            env: directoryEnv,
+            signal,
+          },
+    );
+    // Server status output is not DAP. Each client verifies the connected server process.
     server.readable.resume();
     const adapter = server;
     const identity = adapter.remote.identity;
@@ -79,8 +121,8 @@ export async function prepareSshNodeDebugger(
     const connect = async (): Promise<SshDapTransport> => {
       if (isStopping()) throw new SshBackendError("SESSION_CLOSED", cwd, "not-applied");
       const starting = startSshDapTransport(registry, cwd, {
-        command: "python3",
-        args: ["-c", worker, `${directory}/dap.sock`, String(adapter.remote.pid), identity],
+        command: remotePython(worker),
+        args: [endpoint, String(adapter.remote.pid), identity],
         signal,
       });
       startingConnections.add(starting);
@@ -111,4 +153,22 @@ export async function prepareSshNodeDebugger(
     await stop();
     throw error;
   }
+}
+
+function tempDirectory(receipt: string, windows: boolean): string | undefined {
+  if (!windows)
+    return /^\/tmp\/pi-agent-ide-node-[A-Za-z0-9_-]+$/u.test(receipt) ? receipt : undefined;
+  try {
+    const directory: unknown = JSON.parse(receipt);
+    if (
+      typeof directory === "string" &&
+      /^[A-Za-z]:[\\/]/u.test(directory) &&
+      path.win32.normalize(directory) === directory &&
+      /^pi-agent-ide-node-[A-Za-z0-9_-]+$/u.test(path.win32.basename(directory))
+    )
+      return directory;
+  } catch {
+    // Malformed target reply.
+  }
+  return undefined;
 }
