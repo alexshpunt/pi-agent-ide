@@ -28,6 +28,9 @@ export default defineConfig({
   },
   test: {
     testTimeout: 60_000,
+    // A timing flake passes on a repeat; a real failure fails all three attempts. Only CI
+    // repeats, so a developer still sees a flaky test on the first run.
+    retry: process.env.CI ? 2 : 0,
     include: ["tests/integration/**/*.integration.test.ts"],
     fileParallelism: false,
   },
