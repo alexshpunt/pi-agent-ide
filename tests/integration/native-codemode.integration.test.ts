@@ -11,10 +11,13 @@ import {
   text,
   toolCall,
 } from "pi-coding-agent-test";
-import { expect, test } from "vitest";
+import { afterAll, expect, test } from "vitest";
 import { recoveryReadArguments } from "#integration/support/recovery-read.ts";
 import { codemodeFailures } from "#integration/support/codemode-failures.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+
+afterAll(forceStandaloneIntegrationFile());
 
 const initial = "alpha\nbeta\ngamma\nomega\n";
 
