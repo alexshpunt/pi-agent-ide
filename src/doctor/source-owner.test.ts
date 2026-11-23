@@ -224,16 +224,23 @@ test("Doctor browser readiness comes from its owner and never a controller insta
   expect(
     result.sections.find((section) => section.pluginId === "web-browser")?.findings,
   ).toMatchObject([{ status: "pass", detail: "Owned Playwright and Chromium started" }]);
+  expect(result.actions).toHaveLength(0);
+
   const missing = await runDoctor(core.snapshot(), project, {}, undefined, workspaceFixture());
   expect(
     missing.sections.find((section) => section.pluginId === "web-browser")?.findings,
-  ).toMatchObject([
-    {
-      status: "warn",
-      message: "Browser reads are unavailable",
-      detail: "Project owner does not provide a browser probe",
-    },
-  ]);
+  ).toMatchObject([{ status: "warn" }]);
+  expect(missing.actions).toHaveLength(0);
+
+  const failure = { ok: false, detail: "fixture-target-browser-unavailable" };
+  const broken = await runDoctor(core.snapshot(), project, {}, undefined, {
+    ...workspace,
+    probeBrowser: async () => failure,
+  });
+  expect(
+    broken.sections.find((section) => section.pluginId === "web-browser")?.findings,
+  ).toMatchObject([{ status: "warn", detail: failure.detail }]);
+  expect(broken.actions).toMatchObject([{ id: "browser-unavailable", pluginId: "web-browser" }]);
 });
 
 test.each([
