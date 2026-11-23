@@ -339,7 +339,12 @@ function compactRenderInput(state: ReadPanelState, width: number): CompactRender
     : { state, hasHiddenRows: false };
 }
 function renderContentRows(state: ReadPanelState, width: number): string[] {
-  const lines = readLines(state.details);
+  // Text documents split on LF only. Hide the CR in CRLF here, not in the saved source lines.
+  const lines = readLines(state.details)?.map((line) =>
+    line.lineEnding === "\n" && line.content.endsWith("\r")
+      ? { ...line, content: line.content.slice(0, -1) }
+      : line,
+  );
   const text = cleanText(state.result, lines, state.details, !state.expanded);
 
   if (

@@ -4506,7 +4506,7 @@ add(
     { tool: "delete", reuse: reuse(0, "path", "debug"), after: [1, 5, 6] },
   ],
   {
-    files: { "task.py": "value = 42\nprint(value)\n" },
+    files: { "task.py": "value = 42\r\nprint(value)\r\n" },
     answer: "42",
     prerequisite: "python3 -c 'import debugpy'",
   },
