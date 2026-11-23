@@ -9,6 +9,7 @@ import {
 import { retryWhenSourceChanged } from "#src/core/source-change-retry.ts";
 import { TextSelectionAnchor } from "#src/api/text-selection-anchor.ts";
 import { TextMutationInputError, withoutEmptyOptionalAnchors } from "#src/api/mutation-tool.ts";
+import { withTextEditOrigin } from "./text-edit-origin.ts";
 import { isResultInput } from "./result-transfer.ts";
 import { isWholeFileInvocation } from "./file-operation-tools.ts";
 import {
@@ -255,18 +256,20 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
       );
       return { edits, selections } satisfies TextBatchParams;
     },
-    execute: (_toolCallId, parameters, signal, onUpdate, context, reporter) =>
-      executeRegisteredTextBatch(
-        core,
-        registrations,
-        asTextBatchParams(parameters),
-        signal,
-        onUpdate,
-        context,
-        reporter,
-        renderArguments,
-        undefined,
-        resultTargets,
+    execute: (toolCallId, parameters, signal, onUpdate, context, reporter) =>
+      withTextEditOrigin(core, toolCallId, () =>
+        executeRegisteredTextBatch(
+          core,
+          registrations,
+          asTextBatchParams(parameters),
+          signal,
+          onUpdate,
+          context,
+          reporter,
+          renderArguments,
+          undefined,
+          resultTargets,
+        ),
       ),
     splitResult: splitTextBatchResult,
     onRenderArguments: renderArguments,

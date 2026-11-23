@@ -46,6 +46,26 @@ test("file Write without a completion still returns a compact uncertain receipt"
   expect(receipt.details).toBe(result.details);
 });
 
+test("a refused Write reports the complete hook reason", () => {
+  const reason = "fixture-".repeat(32) + "first\nsecond\n\n  third?!";
+  const result: AgentToolResult<FileMutationBatchResult> = {
+    content: [],
+    details: {
+      results: [
+        new FileMutationResult({
+          ok: false,
+          path: "fixture.txt",
+          errors: [{ path: "fixture.txt", code: "MUTATION_REJECTED", reason }],
+        }),
+      ],
+      effect: "not-applied",
+    },
+  };
+  const receipt = writeAgentResult(result, [], "fixture.txt");
+  const block = receipt.content[0];
+  expect(block?.type === "text" ? block.text : undefined).toContain(reason);
+});
+
 // A completion-hook remark is not proof that post-edit processing was interrupted.
 test.each(
   (["muted", "warning", "error"] as const).flatMap((tone) =>

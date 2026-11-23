@@ -1,5 +1,6 @@
 import path from "node:path";
 import { localFileTransferAccess } from "#src/api/native-files.ts";
+import type { DirectoryTransferPlan } from "./file-operation-guards.ts";
 import type {
   FileObjectEntry,
   FileObjectSnapshot,
@@ -26,6 +27,7 @@ export async function prepareFileTransfer(
   cwd: string,
   context: DeletePolicyContext,
   signal?: AbortSignal,
+  guardDirectory?: (plan: DirectoryTransferPlan) => Promise<void>,
 ): Promise<{ source: string; target: string; sourceKind: TransferKind }> {
   const guard = await prepareObjectTransfer(
     operation,
@@ -33,6 +35,7 @@ export async function prepareFileTransfer(
     { path: target, cwd, files: localFileTransferAccess },
     context,
     signal,
+    guardDirectory,
   );
   return { source: guard.source.path, target: guard.target.path, sourceKind: guard.sourceKind };
 }
@@ -44,6 +47,7 @@ export async function prepareObjectTransfer(
   target: FileTransferEndpoint,
   context: DeletePolicyContext,
   signal?: AbortSignal,
+  guardDirectory?: (plan: DirectoryTransferPlan) => Promise<void>,
 ): Promise<FileTransferGuard> {
   signal?.throwIfAborted();
   const before = await inspectTransfer(operation, source, target, signal);
@@ -67,6 +71,15 @@ export async function prepareObjectTransfer(
           signal,
         )
       : [];
+  if (before.sourceKind === "directory")
+    await guardDirectory?.({
+      operation,
+      source,
+      target,
+      sourceSnapshot: before.source,
+      targetSnapshot: before.target,
+      caseRename: before.caseRename,
+    });
   const sourceGuard = guards[0];
   // Rechecks only read, so they run together; a guard failure still comes first.
   const recheck = inspectTransfer(operation, source, target, signal);

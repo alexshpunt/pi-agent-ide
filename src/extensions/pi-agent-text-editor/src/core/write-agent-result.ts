@@ -61,8 +61,11 @@ export function writeAgentResult(
           : "Write failed; no file was written.";
   const error = outcome.errors[0];
   const conflict = error?.code === "CONFLICT";
-  // Preserve the complete recovery call, including long paths.
-  const reason = conflict ? error.message : error?.message.split(/\r?\n/u)[0]?.slice(0, 200);
+  // Keep complete recovery calls and hook reasons, which may contain several independent checks.
+  const reason =
+    conflict || error?.code === "MUTATION_REJECTED"
+      ? error.message
+      : error?.message.split(/\r?\n/u)[0]?.slice(0, 200);
   const lines = [
     status,
     ...((source ?? fallback) ? [`Path: ${source ?? fallback}`] : []),

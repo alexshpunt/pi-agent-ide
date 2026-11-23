@@ -11,6 +11,7 @@ import {
   type FileOperationContext,
 } from "#src/core/file-operations.ts";
 import {
+  guardDirectoryTransfer,
   guardFileChanges,
   guardFileOperation,
   type FileGuardSnapshot,
@@ -105,7 +106,7 @@ import type {
   TextAnchorInspectionOutcome,
   TextAnchorInspectionRequest,
 } from "#src/api/anchor-inspection.ts";
-import { currentTextEditOrigin } from "./text-edit-origin.ts";
+import { currentTextEditOrigin, currentTextEditToolCallId } from "./text-edit-origin.ts";
 import type {
   TextEditCompletion,
   TextEditCompletionListener,
@@ -121,7 +122,11 @@ import type {
   TextMutationPreviewRequest,
 } from "#src/api/mutation-preview.ts";
 
-import type { BeforeDeleteEvent, DeleteGuardRegistration } from "#src/api/delete-guard.ts";
+import type {
+  BeforeDeleteEvent,
+  DeleteCompletionListener,
+  DeleteGuardRegistration,
+} from "#src/api/delete-guard.ts";
 type PluginStatus = "active" | "pending";
 
 interface PluginLifecycle {
@@ -246,6 +251,7 @@ interface PluginContributionDraft {
   readonly editCompletionListeners?: TextEditCompletionListener[];
   readonly mutationGuards?: TextMutationGuardRegistration[];
   readonly deleteGuards?: DeleteGuardRegistration[];
+  readonly deleteCompletionListeners?: DeleteCompletionListener[];
   readonly toolRenderers?: TextEditorToolRendererRegistration[];
   readonly fileOperationResolvers?: FileOperationResolver[];
 }
@@ -533,6 +539,7 @@ export function createTextEditorCore(
   const editCompletionListeners = new Set<TextEditCompletionListener>();
   const mutationGuards: TextMutationGuardRegistration[] = [];
   const deleteGuards: DeleteGuardRegistration[] = [];
+  const deleteCompletionListeners: DeleteCompletionListener[] = [];
   const toolRenderers = new Map<TextEditorToolId, TextEditorToolRendererRegistration>();
   const fileOperationResolvers: FileOperationResolver[] = [];
   let registrationQueue = Promise.resolve();
@@ -627,6 +634,7 @@ export function createTextEditorCore(
     semanticHandlers.push(...(draft.semanticHandlers ?? []));
     mutationGuards.push(...(draft.mutationGuards ?? []));
     deleteGuards.push(...(draft.deleteGuards ?? []));
+    deleteCompletionListeners.push(...(draft.deleteCompletionListeners ?? []));
     promptContributions.push(...draft.promptContributions);
     writablePromptContributions.push(...draft.writablePromptContributions);
 
@@ -660,6 +668,15 @@ export function createTextEditorCore(
     }
   };
 
+  const fileSnapshot = (source: string, context: ResourceResolverContext) =>
+    readFileGuardSnapshot(
+      source,
+      context,
+      [...resolvers].sort(
+        (left, right) => left.priority - right.priority || left.order - right.order,
+      ),
+    );
+
   const guardOwnedFiles = async (
     operation: FileOperation,
     input: FileOperationInput,
@@ -669,15 +686,8 @@ export function createTextEditorCore(
     await guardFileOperation(
       operation,
       input,
-      { ...context, intent: "mixed" },
-      (source) =>
-        readFileGuardSnapshot(
-          source,
-          context,
-          [...resolvers].sort(
-            (left, right) => left.priority - right.priority || left.order - right.order,
-          ),
-        ),
+      mutationContext(context, "mixed"),
+      (source) => fileSnapshot(source, context),
       [...mutationGuards],
     );
   };
@@ -818,32 +828,53 @@ export function createTextEditorCore(
         waitFor: scope === undefined ? "the file operation reservation" : scope.sources.join(", "),
       });
     },
-    executeFileOperation: (operation, input, cwd, signal, deletion) =>
-      executeFileOperation(
+    async executeFileOperation(operation, input, cwd, signal, deletion) {
+      const context = { cwd, signal };
+      const toolCallId = currentTextEditToolCallId();
+      let removed: BeforeDeleteEvent | undefined;
+      const outcome = await executeFileOperation(
         operation,
         input,
         cwd,
         signal,
-        deletion,
+        {
+          ...deletion,
+          async beforeDelete(event) {
+            const identified = { ...event, ...(toolCallId === undefined ? {} : { toolCallId }) };
+            if (operation === "delete") removed = identified;
+            await deletion?.beforeDelete?.(identified);
+          },
+        },
         [...fileOperationResolvers],
-        (kind, args) => guardOwnedFiles(kind, args, { cwd, signal }),
-      ),
-    async writeFiles(files, context) {
-      const read = (source: string) =>
-        readFileGuardSnapshot(
-          source,
-          context,
-          [...resolvers].sort(
-            (left, right) => left.priority - right.priority || left.order - right.order,
+        (kind, args) => guardOwnedFiles(kind, args, context),
+        (plan) =>
+          guardDirectoryTransfer(
+            plan,
+            mutationContext(context, "mixed"),
+            (source) => fileSnapshot(source, context),
+            [...mutationGuards],
           ),
-        );
+      );
+      if (outcome.ok && removed !== undefined) {
+        for (const listener of [...deleteCompletionListeners]) {
+          try {
+            await listener(removed);
+          } catch {
+            // The object is already gone. Observers cannot change the operation's result.
+          }
+        }
+      }
+      return outcome;
+    },
+    async writeFiles(files, context) {
+      const read = (source: string) => fileSnapshot(source, context);
       const changes = await Promise.all(
         files.map(async (file) => ({ before: await read(file.source), after: file.bytes })),
       );
       await guardFileChanges(
         changes,
         changes.map((change) => change.before),
-        { ...context, intent: "edit" },
+        mutationContext(context, "edit"),
         read,
         [...mutationGuards],
       );
@@ -1625,6 +1656,7 @@ async function editTextResources<Result>(
             {
               source: item.resource.source,
               existed: item.existed,
+              deleted: false,
               before: item.before,
               after: createTextDocument(item.resource.source, result.content),
               changes: result.changes,
@@ -1637,7 +1669,7 @@ async function editTextResources<Result>(
     let outcome;
 
     try {
-      outcome = await registration.guard(plan, context);
+      outcome = await registration.guard(plan, mutationContext(context, context.intent));
     } catch (error) {
       return {
         kind: "failed",
@@ -1820,6 +1852,14 @@ async function editTextResources<Result>(
     };
   }
   return { kind: "completed", resources: outcomes, result: mutation.result };
+}
+
+function mutationContext(
+  context: TextResourcesEditContext,
+  intent: TextMutationGuardContext["intent"],
+): TextMutationGuardContext {
+  const toolCallId = currentTextEditToolCallId();
+  return { ...context, intent, ...(toolCallId === undefined ? {} : { toolCallId }) };
 }
 
 async function readFileGuardSnapshot(
@@ -2007,6 +2047,7 @@ async function prepareTextResource(
 
 interface FinalizeTextResourceRequest<Result> {
   readonly parentToolCallId?: string;
+  readonly toolCallId?: string;
   readonly postProcessingFinal?: boolean;
   readonly savedText?: string;
   readonly requestedSource: string;
@@ -2061,6 +2102,7 @@ async function finalizeTextResource<Result>(
   const parentToolCallId = request.postProcessingFinal
     ? request.parentToolCallId
     : currentTextEditOrigin();
+  const toolCallId = request.postProcessingFinal ? request.toolCallId : currentTextEditToolCallId();
   const deferred =
     !skipPostEdit &&
     !request.postProcessingFinal &&
@@ -2076,6 +2118,7 @@ async function finalizeTextResource<Result>(
         },
         savedText,
         ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
+        ...(toolCallId === undefined ? {} : { toolCallId }),
         postProcessingFinal: true,
       }),
     );
@@ -2142,6 +2185,7 @@ async function finalizeTextResource<Result>(
 
   const finalAfter = createTextDocument(request.resource.source, finalText);
   const completion: TextEditCompletion = {
+    ...(toolCallId === undefined ? {} : { toolCallId }),
     ...(parentToolCallId === undefined ? {} : { parentToolCallId }),
     source: request.requestedSource,
     resourceSource: request.resource.source,
@@ -2562,6 +2606,7 @@ function createPluginContributionController(
     editCompletionListeners: [],
     mutationGuards: [],
     deleteGuards: [],
+    deleteCompletionListeners: [],
     toolRenderers: [],
     fileOperationResolvers: [],
   };
@@ -2733,6 +2778,25 @@ function createPluginContributionController(
         writablePromptContributions: [],
         tools: [],
         deleteGuards: [registration],
+      });
+    },
+    onDidDelete(listener): void {
+      assertAvailable();
+      if (typeof listener !== "function") {
+        throw new TypeError(`Plugin ${pluginId} provided an invalid delete completion listener`);
+      }
+      if (state === "setup") {
+        requiredValue(setupDraft.deleteCompletionListeners).push(listener);
+        return;
+      }
+      registerContributions({
+        resolvers: [],
+        anchorResolvers: [],
+        handlers: [],
+        promptContributions: [],
+        writablePromptContributions: [],
+        tools: [],
+        deleteCompletionListeners: [listener],
       });
     },
     addMutationGuard(registration): void {

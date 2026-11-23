@@ -16,7 +16,7 @@ import type {
 } from "#src/api/anchor-inspection.ts";
 import type { TextEditCompletionListener } from "#src/api/edit-completion.ts";
 import type { TextEditorToolPluginApi } from "#src/api/edit-pipeline.ts";
-import type { DeleteGuardRegistration } from "#src/api/delete-guard.ts";
+import type { DeleteCompletionListener, DeleteGuardRegistration } from "#src/api/delete-guard.ts";
 import type { TextMutationGuardRegistration } from "#src/api/mutation-guard.ts";
 import type {
   TextMutationPreviewOutcome,
@@ -117,6 +117,7 @@ export interface TextEditorPluginApi {
   addMutationGuard(registration: TextMutationGuardRegistration): void;
   /** Add a fail-closed policy for whole-object filesystem deletion, not text removal. */
   addDeleteGuard(registration: DeleteGuardRegistration): void;
+  onDidDelete(listener: DeleteCompletionListener): void;
   addToolRenderer(registration: TextEditorToolRendererRegistration): void;
   onMutationTool(listener: TextMutationToolListener): () => void;
   onDidEdit(listener: TextEditCompletionListener): () => void;
