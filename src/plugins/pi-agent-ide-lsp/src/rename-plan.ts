@@ -17,7 +17,7 @@ import type { LspClient } from "./lsp/client.ts";
 import type { LspPosition, LspTextEdit } from "./lsp/types.ts";
 import { documentUri } from "./lsp/document-uri.ts";
 import { assertLspLines } from "./lsp/line-breaks.ts";
-import { loadQueryProject } from "./lsp/navigation.ts";
+import { loadQueryProject } from "./lsp/project.ts";
 import { diagnosticErrors, textInRange, withoutCorrectedNames } from "./lsp/corrected-names.ts";
 import {
   CLANG_LANGUAGES,
