@@ -43,9 +43,11 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools, including calls through native Codemode. A denial or thrown error leaves every Resource unchanged.
+The hook receives one complete plan after Resource and anchor resolution but before the first write. It covers standalone mutation tools, including calls through native Codemode. A denial or thrown error leaves every Resource unchanged. The agent receives the full `deny` reason, including line breaks.
 
-Whole-file move plans include both the source removal and the destination replacement. Copy plans include the modified destination. For non-UTF-8 files, `resource.binary.before` and `resource.binary.after` contain exact bytes; the text documents are empty instead of showing a lossy conversion. The guard runs before publication or source removal, and changed participants are rejected before effects.
+Each resource has a `deleted` flag. It is `true` for removal and `false` for a file saved with zero bytes. Copy plans list the destination files being created or replaced. Directory copies include nested regular files and leave destination-only files untouched. Move plans also list source file removals and any destination-only regular files removed when replacing a directory. The edit plan does not represent directory entries or symlinks as files.
+
+For non-UTF-8 files, `resource.binary.before` and `resource.binary.after` contain exact bytes; the text documents are empty. The guard runs before publication or source removal. If a participant changes during preflight, the transfer is rejected.
 
 ## Protect whole objects from deletion
 
@@ -94,5 +96,15 @@ export default function (pi: ExtensionAPI) {
 ```
 
 This hook runs after post-processing and the final reread. Feedback appears in the agent result and beside the diff, including in compact Write receipts and silent Codemode writes. A remark does not mean processing was interrupted. Errors are reported as feedback; a successful write is never rolled back. Write still leaves file text, diffs, and successful formatting details out of the agent receipt; use Read for the saved content.
+
+## Observe successful deletions
+
+Register `connectAfterDeleteHook(pi, { id, run })` from `pi-agent-ide/api/hooks`. Its event has the same fields as the before-delete event. It runs once after a successful whole-object Delete, including a recursive Delete. It does not run for a denied or failed call, selected-text deletion, or a removal within Move. An observer error does not change the Delete result.
+
+## Match events to tool calls
+
+Before-edit, after-edit, before-delete, and after-delete events carry `toolCallId` when a tool call owns the change. Use it to match a plan with its effects or group callbacks from the same call. An edit plan can cover several resources; after-edit reports each saved text resource separately. After-edit does not report individual files transferred by a whole-directory Copy or Move.
+
+Direct sibling edits keep separate IDs when a before-edit or after-edit hook is registered. In native Codemode, immediate child operations use their child call IDs. A coalesced text edit uses the enclosing Codemode call ID because that call publishes the batch. Calls made outside tool execution may omit the ID.
 
 Hooks run in registration order. The first denial stops a before hook chain. IDs must be unique within each hook kind. Registrations belong to the Pi session and are removed on shutdown or reload.
