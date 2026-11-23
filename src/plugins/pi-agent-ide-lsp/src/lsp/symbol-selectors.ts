@@ -153,18 +153,29 @@ export function declarationsForWorkspaceSymbol(
   if (textAtRange !== undefined && textAtRange === tail) {
     const found = declarationAt(outline, range);
     if (found === undefined) return [undefined];
-    if (qualifiedName(found[0]?.name ?? "") === qualified) return [found];
+    if (found[0] !== undefined && isQualifiedAs(found[0], qualified)) return [found];
   }
   const all = (items: readonly LspCodeSymbol[]): LspCodeSymbol[] =>
     items.flatMap((symbol) => [symbol, ...all(symbol.children)]);
-  return groupDeclarations(
-    all(outline).filter((symbol) => qualifiedName(symbol.name) === qualified),
-  );
+  return groupDeclarations(all(outline).filter((symbol) => isQualifiedAs(symbol, qualified)));
 }
 
 /** A name without receiver parentheses, pointer stars, type arguments and spaces. */
 function qualifiedName(name: string): string {
   return name.replace(/\[[^\]]*\]/gu, "").replace(/[()*\s]/gu, "");
+}
+
+/**
+ * Whether `qualified` names the symbol the way a server's index does: by its own name, as gopls
+ * spells a method `(*Engine).Start`, or by the names on its path, as gopls lists a struct field
+ * `Holder.Value` in the index and `Value` under `Holder` in the outline. A server that matches a
+ * fuzzy query against the full name may put the package first, as in `pkg.Holder.Value`; a name
+ * with a container tolerates such a prefix, a bare name cannot tell it from a container.
+ */
+function isQualifiedAs(symbol: LspCodeSymbol, qualified: string): boolean {
+  return [qualifiedName(symbol.name), symbol.selector.map(qualifiedName).join(".")].some(
+    (name) => qualified === name || (name.includes(".") && qualified.endsWith(`.${name}`)),
+  );
 }
 
 /** The declaration entries that contain `range` as their name range. */
