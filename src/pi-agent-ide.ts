@@ -1,5 +1,6 @@
 import { BUILTIN_EXTENSIONS } from "#src/composite/builtin-extensions.ts";
 import {
+  configuredFeatureFlags,
   readPiAgentIdeExtensionsConfig,
   resolvePiAgentIdeExtensionsConfigPaths,
 } from "#src/composite/extensions-config.ts";
@@ -27,8 +28,10 @@ import { registerOperationApproval } from "pi-agent-tool-ui/operation-approval";
 import { createAgentIdeSettingsRegistry } from "#src/composite/settings-registry.ts";
 import { readAgentIdeSetting } from "#src/api/settings.ts";
 import { listenPresentationPreference } from "#src/composite/live-presentation.ts";
-import { createLiveFeatureFlag } from "#src/core/live-feature-flag.ts";
-
+import { createLiveFeatureFlag, IDE_FEATURE_FLAGS_CHANGED } from "#src/core/live-feature-flag.ts";
+import { createIdeProblemReports, PROBLEM_REPORTS_FLAG } from "#src/composite/problem-reports.ts";
+import { saveModuleChoices } from "#src/composite/module-settings-store.ts";
+import { registerBuiltinModules } from "#src/composite/module-registration.ts";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { getCurrentTools } from "@earendil-works/pi-ai";
 import { assertSupportedHost, hostOwnsToolLoadout } from "#src/composite/host-version.ts";
@@ -37,9 +40,25 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 /**
 Registers the configured built-ins as one Pi Agent IDE extension.
 */
-export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promise<void> {
+export default async function registerUnifiedPiAgentIde(host: ExtensionAPI): Promise<void> {
   assertSupportedHost(VERSION);
-  const config = await readPiAgentIdeExtensionsConfig(resolvePiAgentIdeExtensionsConfigPaths());
+  const configPaths = resolvePiAgentIdeExtensionsConfigPaths();
+  const config = await readPiAgentIdeExtensionsConfig(configPaths);
+  let problemReportsEnabled = () => true;
+  const problems = createIdeProblemReports(host, {
+    enabled: () => problemReportsEnabled(),
+    async disable() {
+      await saveModuleChoices(
+        configPaths.globalPath,
+        new Map(),
+        new Map([[PROBLEM_REPORTS_FLAG, false]]),
+      );
+      const effective = await readPiAgentIdeExtensionsConfig(configPaths);
+      host.events.emit(IDE_FEATURE_FLAGS_CHANGED, { flags: configuredFeatureFlags(effective) });
+    },
+  });
+  // Every hook registered below reports internal errors instead of ending Pi from a frame.
+  const pi = problems.guard(host, { id: "core" });
   const livePreferences: Record<string, string> = { ...config.preferences };
   for (const id of ["ui.codemode", "ui.read", "ui.search", "ui.diffs", "ui.terminal"]) {
     listenPresentationPreference(pi, id, (value) => {
@@ -172,6 +191,20 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
       "Use the packaged skill to propose reusable rules from user review feedback. Save only after confirmation.",
     default: false,
   });
+  flags.register({
+    id: PROBLEM_REPORTS_FLAG,
+    name: "Problem reports",
+    description:
+      "After an internal Pi Agent IDE error, offer a prefilled GitHub issue above the editor. Nothing is sent until you submit it.",
+    group: "ui",
+    default: true,
+  });
+  problemReportsEnabled = createLiveFeatureFlag(pi, PROBLEM_REPORTS_FLAG, true);
+  const stopProblemRefresh = pi.events.on(IDE_FEATURE_FLAGS_CHANGED, () => {
+    // The live flag reads the same event; refresh after it has.
+    queueMicrotask(() => problems.reporter.refresh());
+  });
+  pi.on("session_shutdown", stopProblemRefresh);
   const settings = createAgentIdeSettingsRegistry(
     pi,
     [
@@ -219,12 +252,13 @@ export default async function registerUnifiedPiAgentIde(pi: ExtensionAPI): Promi
     config.enabled,
   );
   const staticEditPreviews = createLiveFeatureFlag(pi, "pi-agent-ide-no-animations");
-  for (const extension of enabled) {
-    await extension.register(capabilities.api, {
-      preferences: livePreferences,
-      animationsEnabled: () => !staticEditPreviews(),
-    });
-  }
+  // One module that fails to register must not take the others down with it.
+  await registerBuiltinModules(
+    enabled,
+    capabilities.api,
+    { preferences: livePreferences, animationsEnabled: () => !staticEditPreviews() },
+    problems,
+  );
   capabilities.finalize(() => availability.reconcile(true, [], true));
   nestedRendering.finalize();
   pi.on("tool_result", explainCodemodeDiscoveryError);

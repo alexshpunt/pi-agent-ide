@@ -14,6 +14,7 @@ const LIVE_FLAGS = new Set([
   "pi-agent-ide-no-animations",
   "pi-agent-ide-code-review",
   "pi-agent-ide-code-review-capture",
+  "pi-agent-ide-problem-reports",
 ]);
 const LIVE_PREFERENCES = new Set([
   "search.semantic.engine",
