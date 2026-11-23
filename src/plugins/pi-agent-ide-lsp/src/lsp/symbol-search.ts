@@ -112,6 +112,12 @@ interface Snapshot {
   readonly version: string;
 }
 
+/** A workspace symbol with no usable declaration anchor in the current file. */
+export interface SkippedSymbol {
+  readonly name: string;
+  readonly source: string;
+}
+
 /** Symbols found by {@link searchSymbols}. */
 export interface SymbolSearchResult {
   readonly hits: SymbolHit[];
@@ -128,6 +134,7 @@ export interface SymbolSearchResult {
    * listed; their places are left out. Present only when there are such files.
    */
   readonly missing?: readonly string[];
+  readonly skipped?: readonly SkippedSymbol[];
 }
 
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
@@ -322,6 +329,7 @@ async function searchSymbolsOnce(
   // The server's index can keep places in files deleted since, such as another session's scratch
   // copy of a source. The search leaves them out and names the files it could have listed.
   const missing = new Set<string>();
+  const skipped = new Map<string, SkippedSymbol>();
   const exists = async (source: string): Promise<boolean> => {
     try {
       await snapshotOf(source);
@@ -354,19 +362,14 @@ async function searchSymbolsOnce(
     );
     for (const definition of definitions) {
       signal?.throwIfAborted();
-      if (!withinScope(sourceOf(definition.location.uri, cwd), cwd, {})) continue;
-      if (!(await exists(sourceOf(definition.location.uri, cwd)))) continue;
+      const source = sourceOf(definition.location.uri, cwd);
+      if (!withinScope(source, cwd, {})) continue;
+      if (!(await exists(source))) continue;
       const workspaceMatch = await toMatch(definition.location, client).catch((error: unknown) => {
         if ((error as { code?: unknown } | null)?.code === "SOURCE_CHANGED") return undefined;
         throw error;
       });
-      const opened = await manager.openFile(
-        sourceOf(definition.location.uri, cwd),
-        cwd,
-        "symbols",
-        signal,
-        readText,
-      );
+      const opened = await manager.openFile(source, cwd, "symbols", signal, readText);
       if (opened === null)
         throw new Error("LSP references are unavailable for a discovered declaration.");
       // The server's symbol index can lag behind edits, so its range may belong to an older text.
@@ -377,10 +380,11 @@ async function searchSymbolsOnce(
       const declarations: (readonly LspCodeSymbol[] | undefined)[] = fresh
         ? [declarationAt(outline, definition.location.range)]
         : declarationsNamed(outline, definition.name);
-      if (declarations.length === 0)
-        throw sourceChanged(
-          `LSP declaration "${definition.name}" is not among the current symbols of its file.`,
-        );
+      if (declarations.length === 0) {
+        // Without an anchor we cannot ask for its references or rule out a hit inside the scope.
+        skipped.set(JSON.stringify([source, definition.name]), { name: definition.name, source });
+        continue;
+      }
       for (const entries of declarations) {
         signal?.throwIfAborted();
         // A declaration's references and renames are the same from each of its entries; its
@@ -535,7 +539,12 @@ async function searchSymbolsOnce(
     contents: new Map(
       returned.map((hit) => [hit.source, requiredValue(mappedOnto.get(hit.source))]),
     ),
-    complete: (resultScope?.complete ?? true) && kept.length <= limit && coverageComplete(coverage),
+    complete:
+      (resultScope?.complete ?? true) &&
+      kept.length <= limit &&
+      coverageComplete(coverage) &&
+      skipped.size === 0,
+    ...(skipped.size > 0 && { skipped: [...skipped.values()] }),
     ...(coverage !== undefined && !coverageComplete(coverage) && { coverage }),
     ...(missing.size > 0 && { missing: [...missing].sort() }),
   };
