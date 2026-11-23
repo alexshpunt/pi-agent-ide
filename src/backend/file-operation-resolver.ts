@@ -24,28 +24,26 @@ export function createSshFileOperationResolver(
       return transferObject(registry, operation, input, context, deletion, captured);
     }
     if (source === undefined) return undefined;
-    const entry = await source.backend.lstat(source.location.path, context);
-    checkCapturedRevision(source.location.source, entry.revision, captured);
-    {
-      if (deletion === undefined)
-        throw new SshBackendError("DELETE_POLICY_REQUIRED", source.location.source, "not-applied");
-      const project = registry.resolve(context.cwd, context.cwd);
-      if (project !== undefined && project.location.target !== source.location.target)
-        throw new SshBackendError("UNSUPPORTED_SOURCE", source.location.source, "not-applied");
-      const cwd = project?.location.path ?? source.backend.target.workspace;
+    if (deletion === undefined)
+      throw new SshBackendError("DELETE_POLICY_REQUIRED", source.location.source, "not-applied");
+    const project = registry.resolve(context.cwd, context.cwd);
+    if (project !== undefined && project.location.target !== source.location.target)
+      throw new SshBackendError("UNSUPPORTED_SOURCE", source.location.source, "not-applied");
+    const cwd = project?.location.path ?? source.backend.target.workspace;
+    return source.backend.withDeleteWorker(source.location.path, context, async (backend) => {
+      const entry = await backend.lstat(source.location.path, context);
+      checkCapturedRevision(source.location.source, entry.revision, captured);
       const prepared = await deletion.prepare(source.location.path, cwd, {
-        temporaryEnvironment: (signal) =>
-          source.backend.temporaryEnvironment({ ...context, signal }),
-        realpath: (file) => source.backend.realpath(file, context),
-        inspect: (file) => source.backend.lstat(file, context),
-        read: async (file) => (await source.backend.read(file, context)).bytes.toString("utf8"),
-        git: (directory, args, signal) =>
-          source.backend.queryGit(directory, args, { ...context, signal }),
+        temporaryEnvironment: (signal) => backend.temporaryEnvironment({ ...context, signal }),
+        realpath: (file) => backend.realpath(file, context),
+        inspect: (file) => backend.lstat(file, context),
+        read: async (file) => (await backend.read(file, context)).bytes.toString("utf8"),
+        git: (directory, args, signal) => backend.queryGit(directory, args, { ...context, signal }),
         source: (file) => remoteLocation(source.location.target, file).source,
       });
       if (prepared.revision !== entry.revision)
         throw new SshBackendError("DELETE_TARGET_CHANGED", source.location.source, "not-applied");
-      await source.backend.removeObject(prepared.resolvedPath, prepared.revision, context);
+      await backend.removeObject(prepared.resolvedPath, prepared.revision, context);
       return {
         kind: "file-operation",
         operation,
@@ -53,6 +51,6 @@ export function createSshFileOperationResolver(
         effect: "applied",
         path: source.location.source,
       };
-    }
+    });
   };
 }

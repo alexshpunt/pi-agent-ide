@@ -11,6 +11,7 @@ import { runOwnedSshCommand } from "./owned-command.ts";
 import { startSshProcess, type SshProcessChannel, type SshProcessContext } from "./ssh-channel.ts";
 import { describeSshConnectionLoss, type SshConnectionLoss } from "./ssh-connection-loss.ts";
 import { readSshFileStream } from "./ssh-file-stream.ts";
+import { WindowsDeleteWorker } from "./ssh-windows-delete.ts";
 import {
   neutralDirectory,
   remotePython,
@@ -125,6 +126,10 @@ const objectSnapshotSchema = Type.Object({
     }),
   ),
 });
+const deleteTimeoutSchema = Type.Object({
+  removed: Type.Array(Type.String({ minLength: 1 })),
+  next: Type.String({ minLength: 1 }),
+});
 const replySchema = Type.Union([
   Type.Object({ ok: Type.Literal(true), data: Type.Unknown() }),
   Type.Object({
@@ -142,12 +147,34 @@ type Reply = Static<typeof replySchema>;
 /** Short SSH operations with explicit snapshots; long-lived service channels are separate. */
 export class SshBackend {
   readonly target: SshTarget;
+  #deleteWorker?: WindowsDeleteWorker;
 
   constructor(target: SshTarget) {
     validateSshTarget(target);
     // Windows workspaces become `/C:/...` once, so every later path uses one form.
     const workspace = remoteLocation(target.id, target.workspace, targetOs(target)).path;
     this.target = { ...target, workspace };
+  }
+
+  /** Keep one Windows SSH process open across this delete's policy checks and mutation. */
+  async withDeleteWorker<T>(
+    path: string,
+    context: BackendOperationContext,
+    use: (backend: SshBackend) => Promise<T>,
+  ): Promise<T> {
+    if (targetOs(this.target) !== "windows") return use(this);
+    const backend = new SshBackend(this.target);
+    const worker = await WindowsDeleteWorker.start(
+      this.target,
+      remoteLocation(this.target.id, path).source,
+      context,
+    );
+    backend.#deleteWorker = worker;
+    try {
+      return await use(backend);
+    } finally {
+      await worker.close();
+    }
   }
 
   /** Inspect remote type and permissions without downloading content. */
@@ -489,6 +516,19 @@ export class SshBackend {
       true,
       context,
     );
+    if (this.#deleteWorker && Value.Check(deleteTimeoutSchema, data)) {
+      const source = remoteLocation(this.target.id, filePath).source;
+      const error = new SshBackendError(
+        "DELETE_TIMEOUT",
+        source,
+        data.removed.length === 0 ? "not-applied" : "unknown",
+      );
+      error.message +=
+        data.removed.length === 0
+          ? "; nothing was removed."
+          : `; removed relative paths: ${data.removed.map((name) => JSON.stringify(name)).join(", ")}. The root remains; this delete left all other entries untouched, starting at ${JSON.stringify(data.next)}.`;
+      throw error;
+    }
     this.checked(Type.Null(), data, filePath, true);
   }
   /** Remove the regular entry after an lstat metadata check, without downloading content. */
@@ -616,6 +656,28 @@ export class SshBackend {
     if (!Number.isFinite(deadline) || deadline <= 0)
       throw new TypeError("SSH operation deadline must be positive");
     context.signal?.throwIfAborted();
+    const output = this.#deleteWorker
+      ? await this.#deleteWorker.request(input, source, mutation, deadline)
+      : await this.requestOnce(input, source, filePath, mutation, context, deadline);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(output);
+    } catch {
+      throw new SshBackendError("INVALID_RESPONSE", source, mutation ? "unknown" : "not-applied");
+    }
+    if (!isReply(parsed))
+      throw new SshBackendError("INVALID_RESPONSE", source, mutation ? "unknown" : "not-applied");
+    if (!parsed.ok) throw new SshBackendError(parsed.code, source, parsed.effect);
+    return parsed.data;
+  }
+  private async requestOnce(
+    input: Readonly<Record<string, unknown>>,
+    source: string,
+    filePath: string,
+    mutation: boolean,
+    context: BackendOperationContext,
+    deadline: number,
+  ): Promise<string> {
     const program = await sshWorkerBundle(targetOs(this.target), "file");
     // Filesystem operands are absolute. A neutral existing cwd must not turn the workspace
     // into a sandbox or prevent creation beneath a missing parent.
@@ -640,16 +702,7 @@ export class SshBackend {
         source,
         mutation ? "unknown" : "not-applied",
       );
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(result.stdout.toString("utf8"));
-    } catch {
-      throw new SshBackendError("INVALID_RESPONSE", source, mutation ? "unknown" : "not-applied");
-    }
-    if (!isReply(parsed))
-      throw new SshBackendError("INVALID_RESPONSE", source, mutation ? "unknown" : "not-applied");
-    if (!parsed.ok) throw new SshBackendError(parsed.code, source, parsed.effect);
-    return parsed.data;
+    return result.stdout.toString("utf8");
   }
 }
 

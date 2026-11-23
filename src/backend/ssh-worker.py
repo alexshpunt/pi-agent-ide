@@ -3,7 +3,12 @@
 The host bundles this entry with `ssh_worker_common` and the target's platform module,
 published as `ssh_worker_platform`.
 """
+import sys
+
 import ssh_worker_common
 import ssh_worker_platform
 
-ssh_worker_common.run(ssh_worker_platform)
+if sys.argv[1:] == ["windows-delete"]:
+    ssh_worker_platform.run_delete_session()
+else:
+    ssh_worker_common.run(ssh_worker_platform)

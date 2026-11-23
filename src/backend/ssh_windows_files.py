@@ -170,25 +170,35 @@ def discard(path):
         force_unlink(path)
 
 
-def remove_tree(path):
+def remove_tree(path, progress=None):
     """Delete a directory tree without following links; each level checks the type first."""
+    if progress is not None:
+        progress.check(path)
     info = os.lstat(path)
     if kind_of(info) != "directory":
         raise Failure("DELETE_TARGET_CHANGED")
     with os.scandir(path) as entries:
         children = [entry.path for entry in entries]
     for child in children:
+        if progress is not None:
+            progress.check(child)
         child_info = os.lstat(child)
         if kind_of(child_info) == "directory":
-            remove_tree(child)
+            remove_tree(child, progress)
         else:
             force_unlink(child, child_info)
+            if progress is not None:
+                progress.record(child)
     now = os.lstat(path)
     if kind_of(now) != "directory" or (now.st_dev, now.st_ino) != (info.st_dev, info.st_ino):
         raise Failure("DELETE_TARGET_CHANGED")
+    if progress is not None:
+        progress.check(path)
     if attributes(now) & FILE_ATTRIBUTE_READONLY:
         set_attributes(path, attributes(now) & ~FILE_ATTRIBUTE_READONLY)
     os.rmdir(path)
+    if progress is not None:
+        progress.record(path)
 
 
 def lock_key(path):
