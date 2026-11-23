@@ -345,6 +345,55 @@ check(result!==null,"Observed span was refused");`,
   );
 });
 
+test("paged Reads authorize a wide Replace above the snapshot limit", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const file = "large.txt";
+    const range = [begin, ...Array.from({ length: 498 }, (_, i) => `int part_${i};`), end];
+    const rest = `${"x".repeat(2048)}\n`.repeat(8192);
+    await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
+    await writeFile(
+      path.join(cwd, ".pi/pi-agent-ide/extensions.json"),
+      JSON.stringify({ disabled: ["ide.lsp", "ide.lint"] }),
+    );
+    await writeFile(path.join(cwd, file), `${range.join("\n")}\n${rest}`);
+    const call = (name: string, id: string, args: Record<string, unknown>) =>
+      assistantMessage([toolCall({ id, name, arguments: { path: file, ...args } })], {
+        stopReason: "toolUse",
+      });
+    const replace = { from: begin, through: end, text: "int updated;" };
+    const run = await new PiIntegrationTest({
+      testName: "observed-paged-large-span",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      tuiSize: { cols: 120, rows: 32 },
+      extensions: [path.resolve("src/pi-agent-ide.ts")],
+      tools: ["read", "replace"],
+      conversation: [
+        call("replace", "unseen", replace),
+        call("read", "first-page", { offset: 1, limit: 250 }),
+        call("replace", "partial", replace),
+        call("read", "second-page", { offset: 251, limit: 250 }),
+        call("replace", "observed", replace),
+        assistantMessage([text("Done.")]),
+      ],
+    }).run("Replace the selected region in the large file");
+    for (const id of ["unseen", "partial"]) {
+      const refused = getToolExecution(run, id);
+      expect(refused.isError).toBe(true);
+      expect(getToolExecutionDetails(refused)).toMatchObject({
+        results: [{ data: { errors: [{ code: "UNSEEN_EDIT_SPAN" }] } }],
+      });
+    }
+    expect(getToolResultText(run, "first-page")).toContain(range[249]);
+    expect(getToolResultText(run, "second-page")).toContain(end);
+    expect(getToolExecution(run, "observed").isError, getToolResultText(run, "observed")).toBe(
+      false,
+    );
+    expect((await readFile(path.join(cwd, file), "utf8")) === `int updated;\n${rest}`).toBe(true);
+  });
+});
+
 test("whole lines from individual search hits cover the selected span", async () => {
   await runCase(
     "observed-whole-search-lines",
