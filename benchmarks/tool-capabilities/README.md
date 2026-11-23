@@ -29,6 +29,8 @@ The `line-anchor-range-interior-change` case checks that Delete refuses a pair o
 
 The `unseen-edit-span` case checks that literal endpoints on separate Read pages do not authorize an unseen interior, then uses the offered anchored Read before retrying the edit. `oversized-paged-edit-span` checks the refusal and retries after two Read pages cover the selected range in a file over 16 Mi UTF-16 code units. `read-fragment-recovery` uses the offered Read for an ambiguous fragment. `codemode-overlap-recovery` reads the committed file after a move overlaps an accepted replacement. The paid routes remain unverified.
 
+The `delete-objects` case covers local recursive removal and link safety. A separate scripted real-Pi case exercises Windows SSH Delete, including the time for one tree and ten concurrent trees, read-only entries and junction targets. The paid case does not cover SSH timing or timeout receipts.
+
 The `stale-whole-file-write` case checks refusal after a peer changes a file, then a fresh Read and successful Write that preserves the peer’s change. Scripted Pi cases also cover a partial Read, a changed whole-file result, and creation. The direct and Codemode paid routes remain unverified.
 
 The direct-only `parallel-same-file-replace` case checks six independent literal replacements sent together and verifies every resulting byte. The paid route can coalesce the calls; the separate `standalone-edit-wait` real-Pi regression forces standalone execution and holds the first file reservation beyond the old five-second limit. The paid route remains unverified.
