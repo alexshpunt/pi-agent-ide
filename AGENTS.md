@@ -30,3 +30,5 @@ Run `pnpm check:capabilities` without inference. See `benchmarks/tool-capabiliti
 # Editing tools design
 
 Before changing how `replace`, `insert`, `delete`, `copy` or `move` select text, match a literal, or report an error, read [`editing-principles.md`](src/extensions/pi-agent-text-editor/docs/editing-principles.md). Matching is tolerant and writing is strict: any heuristic stays general and is measured on the byte-exact edit benchmark and the classic Explicit Edit suite.
+
+After you delete or rename an exported symbol, search the whole repository for it, including `tests/integration` and `benchmarks/`, before you push. Focused checks do not compile every consumer, and a stale call breaks the typecheck of `develop`.
