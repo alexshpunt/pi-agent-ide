@@ -3,7 +3,13 @@ import path from "node:path";
 
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-import { assistantMessage, PiIntegrationTest, testArtifactsDir, text } from "pi-coding-agent-test";
+import {
+  assistantMessage,
+  PiIntegrationTest,
+  testArtifactsDir,
+  text,
+  type TraceEvent,
+} from "pi-coding-agent-test";
 import { integrationChromiumPath } from "#integration/support/browser-runtime.ts";
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 
@@ -134,7 +140,7 @@ test("Doctor rechecks the current browser and accepts the executable inherited b
   expect(before.exitCode).toBe(0);
   expect(before.providerRequests).toHaveLength(1);
   expect(JSON.stringify(before.providerRequests)).toContain("PI_AGENT_IDE_BROWSER_PATH");
-  const beforeReports = doctorReports(before.messages);
+  const beforeReports = doctorReports(before.traceEvents);
   expect(beforeReports).toHaveLength(2);
   for (const report of beforeReports) {
     expect(report).toContain(missing);
@@ -145,7 +151,7 @@ test("Doctor rechecks the current browser and accepts the executable inherited b
   const chromium = integrationChromiumPath();
   const after = await run("doctor-browser-configured", chromium);
   expect(after.exitCode).toBe(0);
-  const afterReports = doctorReports(after.messages);
+  const afterReports = doctorReports(after.traceEvents);
   expect(afterReports).toHaveLength(2);
   for (const report of afterReports) {
     expect(report).toContain(chromium);
@@ -154,8 +160,10 @@ test("Doctor rechecks the current browser and accepts the executable inherited b
   expect(after.tuiRenderedOutput).toContain(path.basename(chromium));
 });
 
-function doctorReports(messages: readonly unknown[]): string[] {
-  return messages.flatMap((message) =>
+function doctorReports(events: readonly TraceEvent[]): string[] {
+  const branch = events.findLast((event) => event.type === "session_snapshot")?.branch;
+  if (!Array.isArray(branch)) throw new Error("Missing test session snapshot");
+  return branch.flatMap((message: unknown) =>
     typeof message === "object" &&
     message !== null &&
     "customType" in message &&
