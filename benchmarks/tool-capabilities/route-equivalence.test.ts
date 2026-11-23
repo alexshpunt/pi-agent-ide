@@ -1212,6 +1212,46 @@ void test("Search :line replacement keeps the line only with its sent separator,
     );
   }
 });
+void test("the nested TypeScript workspace route requires declaration and reference roles", () => {
+  const route = steps("lsp-typescript-projects");
+  const theme: Call = {
+    tool: "lsp_search",
+    args: { query: "initTheme", path: "frontend/src" },
+    value: {
+      complete: true,
+      matches: [
+        { path: "frontend/src/composables/useTheme.ts", text: "initTheme", role: "definition" },
+      ],
+    },
+  };
+  const uses = {
+    path: "frontend/src/App.ts",
+    text: "useRoleLabel",
+    role: "reference",
+  };
+  const definition = {
+    path: "frontend/src/composables/useRoleLabel.ts",
+    text: "useRoleLabel",
+    role: "definition",
+  };
+  const role: Call = {
+    tool: "lsp_search",
+    args: { query: "useRoleLabel", path: "frontend/src" },
+  };
+  for (const mode of ["direct", "codemode"]) {
+    const roleResult = (matches: Record<string, string>[]): Call => ({
+      ...role,
+      value:
+        mode === "direct" ? { data: { matches, complete: true } } : { matches, complete: true },
+    });
+    assert.ok(check(route, [theme, roleResult([uses, uses, definition])], mode));
+    assert.ok(!check(route, [theme, roleResult([uses, uses])], mode));
+    assert.ok(
+      !check(route, [theme, roleResult([uses, { ...uses, role: "definition" }, definition])], mode),
+    );
+  }
+});
+
 for (const mode of ["direct", "codemode"]) {
   void test(`lsp-read accepts a recovered references call after independent operations in ${mode}`, () => {
     const route = steps("lsp-read");

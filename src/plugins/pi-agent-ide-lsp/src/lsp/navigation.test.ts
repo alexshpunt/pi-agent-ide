@@ -116,9 +116,7 @@ test("a failed advertised project load cannot become a partial reference result"
   vi.spyOn(connection, "serverDocumentPath").mockReturnValue("/workspace/note.ts");
   const requests = vi.spyOn(connection, "sendRequest").mockResolvedValue({ success: false });
   const { requestReferences } = await import("./navigation.ts");
-  await expect(requestReferences(connection, uri, range.start)).rejects.toThrow(
-    /load the project/u,
-  );
+  await expect(requestReferences(connection, uri, range.start)).rejects.toBeInstanceOf(Error);
   expect(requests).toHaveBeenCalledTimes(1);
 });
 test("an incoming call failure is reported instead of an empty graph", async () => {

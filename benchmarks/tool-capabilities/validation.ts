@@ -184,8 +184,8 @@ export interface RouteStep {
   /** Exercise literal text selection without pinning a boundary spelling; outcomes check bytes. */
   exactText?: readonly string[];
   contains?: string;
-  /** Complete Search/AST match set, independent of request scope and readable rendering. */
-  issuedMatches?: readonly { path: string; text: string }[];
+  /** Complete match set, independent of request scope and readable rendering. */
+  issuedMatches?: readonly { path: string; text: string; role?: "definition" | "reference" }[];
   /**
    * Match the public value delivered to a Codemode script, not human-facing text: an object's
    * fields, a string, or a RegExp that a string value must match.
@@ -366,7 +366,11 @@ function issuedMatches(expected: NonNullable<RouteStep["issuedMatches"]>, end: R
       const match = entry as Record<string, unknown>;
       return (
         match.textTruncated !== true &&
-        matches(wanted, { path: match.path ?? match.source, text: match.text ?? match.matchedText })
+        matches(wanted, {
+          path: match.path ?? match.source,
+          text: match.text ?? match.matchedText,
+          role: match.role,
+        })
       );
     });
     if (index < 0) return false;

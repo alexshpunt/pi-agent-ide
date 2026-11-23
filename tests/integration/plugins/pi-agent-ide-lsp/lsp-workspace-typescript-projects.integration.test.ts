@@ -12,7 +12,6 @@ import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "vitest";
-import builtInServers from "#src/api/tool-config/lsp-servers.json" with { type: "json" };
 
 const appScope = "frontend/src";
 const seed = `${appScope}/00-tooling.d.ts`;
@@ -62,19 +61,11 @@ async function searchFrontend(vuePlugin?: string) {
       [roleSource]: 'export function useRoleLabel() { return "admin"; }\n',
       [themeSource]: 'export function initTheme() { return "dark"; }\n',
       ...(vuePlugin !== undefined && {
-        ".pi/pi-agent-ide/lsp-servers.json": JSON.stringify({
-          version: 1,
-          servers: {
-            "vue-typescript-language-server": {
-              ...builtInServers.servers["vue-typescript-language-server"],
-              initializationOptions: {
-                plugins: [
-                  { name: "@vue/typescript-plugin", location: vuePlugin, languages: ["vue"] },
-                ],
-              },
-            },
-          },
+        "frontend/node_modules/@vue/typescript-plugin/package.json": JSON.stringify({
+          name: "@vue/typescript-plugin",
+          main: "index.cjs",
         }),
+        "frontend/node_modules/@vue/typescript-plugin/index.cjs": `module.exports = require(${JSON.stringify(vuePlugin)});\n`,
       }),
     });
     const calls = [
@@ -88,6 +79,7 @@ async function searchFrontend(vuePlugin?: string) {
       artifactsDir: testArtifactsDir(import.meta.filename),
       extensions: [path.resolve("src/pi-agent-ide.ts")],
       tools: ["lsp_search"],
+      rawMode: false,
       timeoutMs: 120_000,
       conversation: [
         ...calls.map(({ id, query }) =>

@@ -1,6 +1,7 @@
 import { NAVIGATION_TIMEOUT_MS } from "pi-agent-resource";
 import type { LspClient } from "./client.ts";
 import { isMethodNotFound } from "./errors.ts";
+import { loadQueryProject } from "./project.ts";
 import { sourceChanged } from "./source-changes.ts";
 import type { LspPosition, LspRange } from "./types.ts";
 
@@ -79,30 +80,6 @@ async function unlessUnsupported<T>(request: Promise<T>): Promise<T | undefined>
   }
 }
 
-/** Load unopened TypeScript project files before a workspace-wide query when the server advertises support. */
-export async function loadQueryProject(
-  client: LspClient,
-  uri: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  signal?.throwIfAborted();
-  if (!client.supportsCommand("typescript.tsserverRequest")) return;
-  const project = await client.sendRequest<{ success?: boolean } | null>(
-    "workspace/executeCommand",
-    {
-      command: "typescript.tsserverRequest",
-      arguments: [
-        "projectInfo",
-        { file: client.serverDocumentPath(uri), needFileNameList: true },
-        { isAsync: false, expectsResult: true },
-      ],
-    },
-    signal,
-  );
-  signal?.throwIfAborted();
-  if (project?.success !== true)
-    throw new Error("TypeScript could not load the project for the workspace query.");
-}
 export async function requestReferences(
   client: LspClient,
   uri: string,
