@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   FILE_TEXT_READ_EVENT,
@@ -26,11 +27,28 @@ const unseenLineLimit = 200;
 const unseenCharacterLimit = 128 * 1024;
 const maxRetainedCharacters = 16 * 1024 * 1024;
 const maxRetainedSnapshots = 32;
+const maxRetainedMetadataEntries = 16 * 1024;
 
-interface ObservedSnapshot {
+interface ObservedRanges {
   readonly keys: Set<string>;
+  readonly ranges: readonly TextRange[];
+}
+
+interface RetainedSnapshot extends ObservedRanges {
   readonly document: TextChangeDocument;
-  ranges: readonly TextRange[];
+  readonly digest?: never;
+}
+
+interface DigestSnapshot extends ObservedRanges {
+  readonly document?: never;
+  readonly digest: string;
+}
+
+type ObservedSnapshot = RetainedSnapshot | DigestSnapshot;
+
+function snapshotDigest(content: string): string {
+  // Range offsets and string equality use UTF-16 code units, including lone surrogates.
+  return createHash("sha256").update(content, "utf16le").digest("hex");
 }
 
 function union(ranges: readonly TextRange[]): TextRange[] {
@@ -46,10 +64,9 @@ function union(ranges: readonly TextRange[]): TextRange[] {
 
 /** Keep only bytes on unchanged lines, including when a peer inserted lines before them. */
 function rangesInSnapshot(
-  snapshot: ObservedSnapshot,
+  snapshot: RetainedSnapshot,
   current: TextChangeDocument,
 ): readonly TextRange[] {
-  if (snapshot.document.content === current.content) return snapshot.ranges;
   const map = createLineMap(snapshot.document.content, current.content);
   if (!map) return [];
   const result: TextRange[] = [];
@@ -103,7 +120,7 @@ export class FileWriteObservations {
   readonly #digests = new Map<string, string>();
   readonly #visible: ObservedSnapshot[] = [];
 
-  constructor(pi: ExtensionAPI) {
+  constructor(pi: Pick<ExtensionAPI, "events" | "on">) {
     const unsubscribe = pi.events.on(FILE_TEXT_READ_EVENT, (event) => {
       const { keys, digest, complete, visible } = event as FileTextRead;
       if (visible !== undefined) this.observe({ keys, ...visible });
@@ -127,27 +144,23 @@ export class FileWriteObservations {
   }
 
   observe({ keys, content, ranges }: FileTextVisible): void {
-    if (keys.length === 0 || ranges.length === 0 || content.length > maxRetainedCharacters) return;
+    if (keys.length === 0 || ranges.length === 0) return;
+    const digest = content.length > maxRetainedCharacters ? snapshotDigest(content) : undefined;
     const index = this.#visible.findIndex(
-      (item) => item.document.content === content && keys.some((key) => item.keys.has(key)),
+      (item) =>
+        (digest === undefined ? item.document?.content === content : item.digest === digest) &&
+        keys.some((key) => item.keys.has(key)),
     );
-    const snapshot = this.#visible[index] ?? {
-      keys: new Set<string>(),
-      document: new TextChangeDocument(content),
-      ranges: [],
-    };
+    const existing = this.#visible[index];
+    // Large snapshots need line offsets only while converting this visible window.
+    const document = existing?.document ?? new TextChangeDocument(content);
     const shown = ranges.flatMap(({ start, end, adjusted }) => {
       if (adjusted === true) return [];
       try {
-        const range = snapshot.document.range(
-          start.lineNumber,
-          start.column,
-          end.lineNumber,
-          end.column,
-        );
+        const range = document.range(start.lineNumber, start.column, end.lineNumber, end.column);
         if (range.from === range.to) return [];
         // A result showing the end of a line need not print its LF or CRLF as source text.
-        const lineEnd = snapshot.document.lineRange(end.lineNumber, end.lineNumber).to;
+        const lineEnd = document.lineRange(end.lineNumber, end.lineNumber).to;
         const tail = content.slice(range.to, Math.min(range.to + 2, lineEnd));
         const to =
           (tail === "\n" || tail === "\r\n") && range.to + tail.length === lineEnd
@@ -160,14 +173,21 @@ export class FileWriteObservations {
       }
     });
     if (shown.length === 0) return;
-    for (const key of keys) snapshot.keys.add(key);
-    snapshot.ranges = union([...snapshot.ranges, ...shown]);
+    const coverage = {
+      keys: new Set([...(existing?.keys ?? []), ...keys]),
+      ranges: union([...(existing?.ranges ?? []), ...shown]),
+    };
     if (index !== -1) this.#visible.splice(index, 1);
-    this.#visible.push(snapshot);
-    let budget = maxRetainedCharacters;
+    if (coverage.keys.size + coverage.ranges.length > maxRetainedMetadataEntries) return;
+    this.#visible.push(digest === undefined ? { ...coverage, document } : { ...coverage, digest });
+    let characters = maxRetainedCharacters;
+    let metadata = maxRetainedMetadataEntries;
     for (let i = this.#visible.length - 1; i >= 0; i--) {
-      budget -= this.#visible[i]?.document.length ?? 0;
-      if (budget < 0 || this.#visible.length - i > maxRetainedSnapshots) {
+      const item = this.#visible[i];
+      if (!item) continue;
+      characters -= item.document?.length ?? 0;
+      metadata -= item.keys.size + item.ranges.length;
+      if (characters < 0 || metadata < 0 || this.#visible.length - i > maxRetainedSnapshots) {
         this.#visible.splice(0, i + 1);
         break;
       }
@@ -194,7 +214,13 @@ export class FileWriteObservations {
 
     const keys = await fileTextKeys(source, cwd);
     const matching = this.#visible.filter((snapshot) => keys.some((key) => snapshot.keys.has(key)));
-    const fresh = matching.filter(({ document: seen }) => seen.content === document.content);
+    let digest: string | undefined;
+    const fresh = matching.filter((snapshot) =>
+      snapshot.document === undefined
+        ? document.length > maxRetainedCharacters &&
+          snapshot.digest === (digest ??= snapshotDigest(document.content))
+        : snapshot.document.content === document.content,
+    );
     const countUnseen = (covered: readonly TextRange[]) => {
       let next = from;
       let lines = 0;
@@ -219,10 +245,18 @@ export class FileWriteObservations {
     };
     const small = ({ lines, characters }: ReturnType<typeof countUnseen>) =>
       lines <= unseenLineLimit && characters <= unseenCharacterLimit;
-    if (small(countUnseen(union(fresh.flatMap(({ ranges }) => ranges))))) return;
-    const unseen = countUnseen(
-      union(matching.flatMap((snapshot) => rangesInSnapshot(snapshot, document))),
+    const covered = fresh.flatMap(({ ranges }) => ranges);
+    let unseen = countUnseen(union(covered));
+    if (small(unseen)) return;
+    // Digest-only observations have no lines to remap if the snapshot changed.
+    const stale = matching.filter(
+      (snapshot): snapshot is RetainedSnapshot =>
+        snapshot.document !== undefined && snapshot.document.content !== document.content,
     );
+    if (stale.length > 0)
+      unseen = countUnseen(
+        union([...covered, ...stale.flatMap((seen) => rangesInSnapshot(seen, document))]),
+      );
     if (small(unseen)) return;
     throw new TextMutationInputError(
       "UNSEEN_EDIT_SPAN",
