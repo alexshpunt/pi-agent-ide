@@ -1992,6 +1992,120 @@ add(
   },
 );
 
+const workspaceApp = "frontend/src/App.ts";
+const workspaceDeclaration = "frontend/src/composables/useRoleLabel.ts";
+const workspaceUnopened = "frontend/src/composables/useTheme.ts";
+add(
+  "lsp-typescript-projects",
+  ["lsp.typescript-workspace-projects"],
+  "Use lsp_search with path frontend/src and query initTheme. Also use lsp_search with the same path and query useRoleLabel. Use the directory as the scope in both calls, without reference navigation. Report where initTheme and useRoleLabel are declared. Do not change files.",
+  [
+    {
+      tool: "lsp_search",
+      args: { path: "frontend/src", query: "initTheme" },
+      issuedMatches: [{ path: workspaceUnopened, text: "initTheme", role: "definition" }],
+    },
+    {
+      tool: "lsp_search",
+      args: { path: "frontend/src", query: "useRoleLabel" },
+      issuedMatches: [
+        { path: workspaceDeclaration, text: "useRoleLabel", role: "definition" },
+        { path: workspaceApp, text: "useRoleLabel", role: "reference" },
+        { path: workspaceApp, text: "useRoleLabel", role: "reference" },
+      ],
+    },
+  ],
+  {
+    files: {
+      "frontend/tsconfig.json":
+        '{"files":[],"references":[{"path":"./tsconfig.node.json"},{"path":"./tsconfig.app.json"}]}\n',
+      "frontend/tsconfig.node.json":
+        '{"compilerOptions":{"composite":true},"files":["src/00-tooling.d.ts"]}\n',
+      "frontend/tsconfig.app.json":
+        '{"compilerOptions":{"composite":true,"paths":{"@/*":["./src/*"]}},"include":["src"],"exclude":["src/00-tooling.d.ts"]}\n',
+      "frontend/src/00-tooling.d.ts": "export declare const toolingOnly: unique symbol;\n",
+      [workspaceApp]:
+        'import { useRoleLabel } from "@/composables/useRoleLabel";\nexport const role = useRoleLabel();\n',
+      [workspaceDeclaration]: 'export function useRoleLabel() { return "admin"; }\n',
+      [workspaceUnopened]: 'export function initTheme() { return "dark"; }\n',
+    },
+    answer: workspaceUnopened,
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
+add(
+  "lsp-independent-projects",
+  ["lsp.independent-projects"],
+  "Use lsp_search with query FindInFirstModule, then again with query FindInSecondModule. Search from the repository root for both and do not use reference navigation. Report the file that declares each name. Do not change files.",
+  [
+    {
+      tool: "lsp_search",
+      args: { query: "FindInFirstModule" },
+      issuedMatches: [
+        { path: "a-module/target.go", text: "FindInFirstModule", role: "definition" },
+      ],
+    },
+    {
+      tool: "lsp_search",
+      args: { query: "FindInSecondModule" },
+      issuedMatches: [
+        { path: "b-module/target.go", text: "FindInSecondModule", role: "definition" },
+      ],
+    },
+  ],
+  {
+    files: {
+      "a-module/go.mod": "module example.com/a\n\ngo 1.24\n",
+      "a-module/00-seed.go": "package a\n\nfunc Seed() int { return 0 }\n",
+      "a-module/target.go": "package a\n\nfunc FindInFirstModule() int { return 1 }\n",
+      "b-module/go.mod": "module example.com/b\n\ngo 1.24\n",
+      "b-module/00-seed.go": "package b\n\nfunc Seed() int { return 0 }\n",
+      "b-module/target.go": "package b\n\nfunc FindInSecondModule() int { return 1 }\n",
+    },
+    answer: "b-module/target.go",
+    prerequisite: "command -v gopls && command -v go",
+  },
+);
+
+const cappedGoQuery = { query: "'Cap", path: "target.go", limit: 200 };
+add(
+  "lsp-workspace-candidate-limit",
+  ["lsp.workspace-candidate-limit"],
+  "Use lsp_search to search for 'Cap (including the leading apostrophe) with path target.go and limit 200. Report the server candidate limit and whether the scoped result is complete. Do not change files.",
+  [
+    {
+      tool: "lsp_search",
+      args: cappedGoQuery,
+      modes: ["direct"],
+      contains: "gopls",
+      excludes: ":all:match",
+    },
+    {
+      tool: "lsp_search",
+      args: cappedGoQuery,
+      modes: ["codemode"],
+      scriptResult: {
+        complete: false,
+        candidateLimits: { length: 1, 0: { server: "gopls", limit: 100 } },
+        matches: { length: 1, 0: { path: "target.go", text: "Cap" } },
+      },
+    },
+  ],
+  {
+    files: {
+      "go.mod": "module example.com/capped\n\ngo 1.24\n",
+      "decoys.go":
+        "package capped\n\nconst Cap = 1\n" +
+        Array.from({ length: 110 }, (_, i) => `const Cap${i} = 1\n`).join(""),
+      "target.go":
+        "package capped\n\ntype Holder struct { LongDisplacedDeclarationInTargetCap int }\n\nvar _ = Cap\n",
+    },
+    answer: "100",
+    prerequisite: "command -v gopls && command -v go",
+  },
+);
+
 add(
   "search-literal-operators",
   ["search.literal-operators", "search.script-line-text"],

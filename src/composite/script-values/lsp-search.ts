@@ -1,7 +1,7 @@
 import type { JsonValue } from "@earendil-works/pi-ai";
 
 import { astSearchValue, captureSchema } from "./ast-search.ts";
-import { scriptMatchSchema } from "./match.ts";
+import { scriptMatchPath, scriptMatchSchema } from "./match.ts";
 import { matchEntries, matchListSchema, record } from "./search-matches.ts";
 import { searchValue } from "./search.ts";
 import type { ScriptValue, ScriptValueInput } from "./types.ts";
@@ -11,7 +11,9 @@ const matches = { type: "array", items: scriptMatchSchema } as const;
 /**
  * lsp_search resolves to `{ id, complete, matches }` like Search for `query`, `references` and
  * `declaration`, and to `{ id, complete, matches, incoming, outgoing }` for `calls`: references in
- * `matches`, callers and callees as their whole declarations. `id` selects every reference.
+ * `matches`, callers and callees as their whole declarations. Query results also carry `skipped`
+ * when workspace candidates lack a declaration anchor and `candidateLimits` when a server's
+ * candidate cap is reached. In a call graph, `id` selects every reference.
  */
 export const lspSearchValue: ScriptValue = {
   schema: {
@@ -29,17 +31,41 @@ export const lspSearchValue: ScriptValue = {
         required: ["id", "complete", "matches", "incoming", "outgoing"],
         additionalProperties: false,
       },
-      ...matchListSchema({
-        ...scriptMatchSchema,
-        properties: {
-          ...scriptMatchSchema.properties,
-          captures: {
-            type: "object",
-            properties: { name: { type: "array", items: captureSchema } },
-            additionalProperties: false,
+      ...matchListSchema(
+        {
+          ...scriptMatchSchema,
+          properties: {
+            ...scriptMatchSchema.properties,
+            captures: {
+              type: "object",
+              properties: { name: { type: "array", items: captureSchema } },
+              additionalProperties: false,
+            },
           },
         },
-      }).anyOf,
+        {
+          candidateLimits: {
+            type: "array",
+            description: "Workspace symbol candidate limits reached before scope filtering.",
+            items: {
+              type: "object",
+              properties: { server: { type: "string" }, limit: { type: "integer" } },
+              required: ["server", "limit"],
+              additionalProperties: false,
+            },
+          },
+          skipped: {
+            type: "array",
+            description: "Query candidates with no declaration anchor; the result is incomplete.",
+            items: {
+              type: "object",
+              properties: { name: { type: "string" }, path: { type: "string" } },
+              required: ["name", "path"],
+              additionalProperties: false,
+            },
+          },
+        },
+      ).anyOf,
     ],
   },
   project(input) {
@@ -52,7 +78,25 @@ export const lspSearchValue: ScriptValue = {
       data.matches.some((match: unknown) => record(match) && record(match.captures))
     )
       return astSearchValue.project(input);
-    return searchValue.project(input);
+    const result = searchValue.project(input);
+    if (!record(result) || !record(data)) return result;
+    return {
+      ...result,
+      ...(Array.isArray(data.candidateLimits) && {
+        candidateLimits: data.candidateLimits.flatMap((item: unknown) =>
+          record(item) && typeof item.server === "string" && typeof item.limit === "number"
+            ? [{ server: item.server, limit: item.limit }]
+            : [],
+        ),
+      }),
+      ...(Array.isArray(data.skipped) && {
+        skipped: data.skipped.flatMap((item: unknown) =>
+          record(item) && typeof item.name === "string" && typeof item.source === "string"
+            ? [{ name: item.name, path: scriptMatchPath(item.source, input.cwd) }]
+            : [],
+        ),
+      }),
+    };
   },
 };
 

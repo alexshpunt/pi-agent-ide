@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import {
   bodyEntry,
+  declarationsForWorkspaceSymbol,
   declarationsNamed,
   normalizeDocumentSymbols,
   resolveSymbolDeclaration,
@@ -134,4 +135,132 @@ test("body detection uses a unique definition in the declaration group", () => {
   expect(body("Box/get()")).toBe(5);
   const prototypes = resolveSymbolDeclaration(symbols, ["lerp"], "main.cpp");
   expect(bodyEntry(prototypes, text.replace("{ return a + (b - a) * t; }", ";"))).toBeUndefined();
+});
+
+// gopls names a method `(*Engine).Start` in its outline and `Engine.Start` in its workspace
+// index; both ranges select the identifier `Start`.
+const goLines = ["func (e *Engine) Start() {}", "func (o *Other) Start() {}", "func Start() {}"];
+const goSymbols = normalizeDocumentSymbols(
+  goLines.map((line, index) => {
+    const name = ["(*Engine).Start", "(*Other).Start", "Start"][index] ?? "";
+    const column = line.indexOf("Start");
+    return {
+      name,
+      kind: index < 2 ? 6 : 12,
+      range: {
+        start: { line: index, character: 0 },
+        end: { line: index, character: line.length },
+      },
+      selectionRange: {
+        start: { line: index, character: column },
+        end: { line: index, character: column + 5 },
+      },
+    };
+  }),
+);
+const startAt = (line: number) => ({
+  start: { line, character: goLines[line]?.indexOf("Start") ?? 0 },
+  end: { line, character: (goLines[line]?.indexOf("Start") ?? 0) + 5 },
+});
+const declared = (
+  groups: readonly (readonly { selectionRange: { start: { line: number } } }[] | undefined)[],
+) => groups.map((group) => group?.map((entry) => entry.selectionRange.start.line));
+
+test("a workspace symbol is found by the identifier at its range when the outline qualifies the name", () => {
+  expect(
+    declared(declarationsForWorkspaceSymbol(goSymbols, "Engine.Start", startAt(0), "Start")),
+  ).toEqual([[0]]);
+  expect(
+    declared(declarationsForWorkspaceSymbol(goSymbols, "Other.Start", startAt(1), "Start")),
+  ).toEqual([[1]]);
+  expect(declared(declarationsForWorkspaceSymbol(goSymbols, "Start", startAt(2), "Start"))).toEqual(
+    [[2]],
+  );
+});
+
+test("a stale range finds only the outline declarations that carry the same qualified name", () => {
+  expect(
+    declared(declarationsForWorkspaceSymbol(goSymbols, "Engine.Start", startAt(2), "Start() {")),
+  ).toEqual([[0]]);
+  expect(declarationsForWorkspaceSymbol(goSymbols, "Gone.Start", startAt(0), "gone")).toEqual([]);
+  expect(
+    declared(declarationsForWorkspaceSymbol(goSymbols, "Engine.Start", startAt(2), undefined)),
+  ).toEqual([[0]]);
+});
+
+// gopls lists a struct field under its type in the outline and as `Holder.Field` in the index.
+const fieldLines = [
+  "type Holder struct {",
+  "\tValue int",
+  "}",
+  "type Other struct {",
+  "\tValue int",
+  "}",
+];
+const fieldRange = (line: number) => {
+  const column = fieldLines[line]?.indexOf("Value") ?? 0;
+  return {
+    start: { line, character: column },
+    end: { line, character: column + 5 },
+  };
+};
+const typeEntry = (name: string, line: number): LspDocumentSymbol => ({
+  name,
+  kind: 23,
+  range: { start: { line, character: 0 }, end: { line: line + 2, character: 1 } },
+  selectionRange: {
+    start: { line, character: 5 },
+    end: { line, character: 5 + name.length },
+  },
+  children: [
+    {
+      name: "Value",
+      kind: 8,
+      range: fieldRange(line + 1),
+      selectionRange: fieldRange(line + 1),
+    },
+  ],
+});
+const fieldSymbols = normalizeDocumentSymbols([typeEntry("Holder", 0), typeEntry("Other", 3)]);
+
+test("a workspace field is found under its type when the outline names it without the type", () => {
+  expect(
+    declared(declarationsForWorkspaceSymbol(fieldSymbols, "Holder.Value", fieldRange(1), "Value")),
+  ).toEqual([[1]]);
+  expect(
+    declared(declarationsForWorkspaceSymbol(fieldSymbols, "Other.Value", fieldRange(4), "Value")),
+  ).toEqual([[4]]);
+});
+
+test("a stale field range never anchors the same-named field of another type", () => {
+  // The range now holds `Other.Value`; the symbol named `Holder.Value` is looked up by its path.
+  expect(
+    declared(declarationsForWorkspaceSymbol(fieldSymbols, "Holder.Value", fieldRange(4), "Value")),
+  ).toEqual([[1]]);
+  expect(
+    declared(declarationsForWorkspaceSymbol(fieldSymbols, "Holder.Value", fieldRange(4), "gone")),
+  ).toEqual([[1]]);
+  expect(
+    declarationsForWorkspaceSymbol(fieldSymbols, "Gone.Value", fieldRange(1), "Value"),
+  ).toEqual([]);
+});
+
+test("a package prefix on a qualified workspace name does not change the declaration it names", () => {
+  expect(
+    declared(
+      declarationsForWorkspaceSymbol(fieldSymbols, "pkg.Holder.Value", fieldRange(1), "Value"),
+    ),
+  ).toEqual([[1]]);
+  expect(
+    declared(
+      declarationsForWorkspaceSymbol(fieldSymbols, "pkg.Holder.Value", fieldRange(4), "Value"),
+    ),
+  ).toEqual([[1]]);
+  expect(
+    declared(declarationsForWorkspaceSymbol(goSymbols, "pkg.Engine.Start", startAt(0), "Start")),
+  ).toEqual([[0]]);
+  // A bare name cannot tell a package from a container: `Engine.Start` is not the function.
+  expect(
+    declared(declarationsForWorkspaceSymbol(goSymbols, "Engine.Start", startAt(2), "Start() {")),
+  ).toEqual([[0]]);
 });

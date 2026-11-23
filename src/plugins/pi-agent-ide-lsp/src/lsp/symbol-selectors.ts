@@ -130,6 +130,54 @@ export function declarationsNamed(
   return groupDeclarations(named(symbols));
 }
 
+/**
+ * The declarations of one workspace symbol in the current outline of its file.
+ *
+ * A server can spell the symbol's name differently in its index and in its outline, such as gopls
+ * with `Engine.Start` and `(*Engine).Start`, while both ranges select the identifier `Start`. When
+ * the text at the indexed `range` is the name or its last identifier, the declaration whose name
+ * range is `range` is the symbol, provided its qualified name agrees. Otherwise the index may
+ * describe an older text, and the declarations with the same qualified name are the candidates.
+ * An empty result means the outline has no such declaration. An undefined entry is a fresh range
+ * that no outline entry names; the workspace location then stands for the declaration.
+ */
+export function declarationsForWorkspaceSymbol(
+  outline: readonly LspCodeSymbol[],
+  name: string,
+  range: LspRange,
+  textAtRange: string | undefined,
+): (readonly LspCodeSymbol[] | undefined)[] {
+  const qualified = qualifiedName(name);
+  const tail = qualified.split(/[.:]+/u).at(-1);
+  if (textAtRange === name) return [declarationAt(outline, range)];
+  if (textAtRange !== undefined && textAtRange === tail) {
+    const found = declarationAt(outline, range);
+    if (found === undefined) return [undefined];
+    if (found[0] !== undefined && isQualifiedAs(found[0], qualified)) return [found];
+  }
+  const all = (items: readonly LspCodeSymbol[]): LspCodeSymbol[] =>
+    items.flatMap((symbol) => [symbol, ...all(symbol.children)]);
+  return groupDeclarations(all(outline).filter((symbol) => isQualifiedAs(symbol, qualified)));
+}
+
+/** A name without receiver parentheses, pointer stars, type arguments and spaces. */
+function qualifiedName(name: string): string {
+  return name.replace(/\[[^\]]*\]/gu, "").replace(/[()*\s]/gu, "");
+}
+
+/**
+ * Whether `qualified` names the symbol the way a server's index does: by its own name, as gopls
+ * spells a method `(*Engine).Start`, or by the names on its path, as gopls lists a struct field
+ * `Holder.Value` in the index and `Value` under `Holder` in the outline. A server that matches a
+ * fuzzy query against the full name may put the package first, as in `pkg.Holder.Value`; a name
+ * with a container tolerates such a prefix, a bare name cannot tell it from a container.
+ */
+function isQualifiedAs(symbol: LspCodeSymbol, qualified: string): boolean {
+  return [qualifiedName(symbol.name), symbol.selector.map(qualifiedName).join(".")].some(
+    (name) => qualified === name || (name.includes(".") && qualified.endsWith(`.${name}`)),
+  );
+}
+
 /** The declaration entries that contain `range` as their name range. */
 export function declarationAt(
   symbols: readonly LspCodeSymbol[],

@@ -26,7 +26,12 @@ import {
 import { coverageNotes, mergeCoverage, type ClangCoverage } from "./lsp/clang-coverage.ts";
 import { missingSourcesNotes } from "./lsp/missing-sources.ts";
 import type { LspManager } from "./lsp/manager.ts";
-import { searchSymbols, type SymbolHit } from "./lsp/symbol-search.ts";
+import {
+  searchSymbols,
+  type SkippedSymbol,
+  type SymbolHit,
+  type WorkspaceSymbolCandidateLimit,
+} from "./lsp/symbol-search.ts";
 import { withLspDocuments } from "./lsp/document-leases.ts";
 import { retryWhileSourceChanges, sourceChanged } from "./lsp/source-changes.ts";
 import { lspRangeMatch } from "./lsp/range-match.ts";
@@ -58,6 +63,8 @@ type Payload =
       readonly coverage?: ClangCoverage;
       /** Files the server reported places in that no longer exist. */
       readonly missing?: readonly string[];
+      readonly skipped?: readonly SkippedSymbol[];
+      readonly candidateLimits?: readonly WorkspaceSymbolCandidateLimit[];
       readonly references: boolean;
       readonly data: unknown;
     }
@@ -340,6 +347,8 @@ export function createLspSearchResolver(
           let complete = scope?.complete ?? true;
           const coverages: (ClangCoverage | undefined)[] = [];
           const missing = new Set<string>();
+          const skipped = new Map<string, SkippedSymbol>();
+          const candidateLimits = new Map<string, WorkspaceSymbolCandidateLimit>();
           for (const [manager, { targets, paths }] of groups) {
             const found = await backend.searchSymbols(
               query,
@@ -366,7 +375,11 @@ export function createLspSearchResolver(
             }
             complete = complete && found.complete;
             coverages.push(found.coverage);
+            for (const cap of found.candidateLimits ?? [])
+              candidateLimits.set(JSON.stringify([cap.server, cap.limit]), cap);
             for (const source of found.missing ?? []) missing.add(source);
+            for (const candidate of found.skipped ?? [])
+              skipped.set(JSON.stringify([candidate.source, candidate.name]), candidate);
           }
           for (const source of conflicting) contents.delete(source);
           // The search session keeps these hits and its refresh closure for as long as its anchors
@@ -378,7 +391,13 @@ export function createLspSearchResolver(
               hits: hits.slice(0, limit),
               complete: complete && hits.length <= limit,
               ...(coverage && { coverage }),
+              ...(candidateLimits.size > 0 && { candidateLimits: [...candidateLimits.values()] }),
               ...(missing.size > 0 && { missing: [...missing].sort() }),
+              ...(skipped.size > 0 && {
+                skipped: [...skipped.values()].sort(
+                  (a, b) => a.source.localeCompare(b.source) || a.name.localeCompare(b.name),
+                ),
+              }),
             }),
             contents,
           };
@@ -412,9 +431,13 @@ export function createLspSearchResolver(
             complete: found.complete,
             ...(found.coverage && { coverage: found.coverage }),
             ...(found.missing && { missing: found.missing }),
+            ...(found.candidateLimits && { candidateLimits: found.candidateLimits }),
+            ...(found.skipped && { skipped: found.skipped }),
             references,
             data: {
               ...data,
+              ...(found.candidateLimits && { candidateLimits: found.candidateLimits }),
+              ...(found.skipped && { skipped: found.skipped }),
               matches: data.matches.map((match, index) => ({
                 ...match,
                 role: found.hits[index]?.role,
@@ -458,7 +481,9 @@ export function createLspSearchResolver(
         [
           ...(data.references ? ["LSP reference navigation · may leave input scope"] : []),
           ...coverageNotes(data.coverage, (source) => displaySource(source, data.cwd)),
+          ...candidateLimitNotes(data.candidateLimits),
           ...missingSourcesNotes(data.missing ?? [], (source) => displaySource(source, data.cwd)),
+          ...skippedSymbolNotes(data.skipped, (source) => displaySource(source, data.cwd)),
         ],
         data.hits.map((hit) => `${hit.role} ${hit.symbol.name}`),
       );
@@ -500,7 +525,7 @@ export function createLspSearchResolver(
         : "LSP symbols inside scope";
       const lines =
         result.hits.length === 0
-          ? ["No symbols found."]
+          ? [result.skipped ? "No resolvable symbols found." : "No symbols found."]
           : result.hits.slice(0, 100).map(
               (hit, index) =>
                 `SEARCH#${result.sessionId}:${index + 1}:match ${display(hit.source)}:${hit.lineNumber}:${hit.startColumn + 1} ${hit.role} ${hit.symbol.name} · ${
@@ -514,13 +539,37 @@ export function createLspSearchResolver(
         lines.unshift(`SEARCH#${result.sessionId}:all:match selects all exact symbol matches.`);
       if (result.hits.length > 100) lines.push("Preview shortened; full source targets retained.");
       lines.push(...coverageNotes(result.coverage, display));
+      lines.push(...candidateLimitNotes(result.candidateLimits));
       lines.push(...missingSourcesNotes(result.missing ?? [], display));
+      lines.push(...skippedSymbolNotes(result.skipped, display));
       return {
         content: [{ type: "text", text: [heading, ...lines].join("\n") }],
         details: { ...result, cwd: context.cwd },
       };
     },
   };
+}
+
+function candidateLimitNotes(limits: readonly WorkspaceSymbolCandidateLimit[] = []): string[] {
+  return limits.map(
+    ({ server, limit }) =>
+      `${server} reached its workspace symbol limit (${limit}) before scope filtering. Try a narrower query.`,
+  );
+}
+
+/** Show why coverage is incomplete without letting a large index reply dominate the preview. */
+function skippedSymbolNotes(
+  skipped: readonly SkippedSymbol[] | undefined,
+  display: (source: string) => string,
+): string[] {
+  if (!skipped?.length) return [];
+  const limit = 8;
+  const shown = skipped
+    .slice(0, limit)
+    .map(({ name, source }) => `${name} in ${display(source)}`)
+    .join(", ");
+  const more = skipped.length > limit ? ` (and ${skipped.length - limit} more)` : "";
+  return [`Skipped symbols with no declaration anchor: ${shown}${more}.`];
 }
 
 /** A source as the result names it: relative to the workspace, or its ssh:// URI. */

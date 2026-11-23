@@ -18,6 +18,7 @@ import { requireReferenceReply, requestReferences, type LspLocation } from "./na
 import { lspRangeMatch } from "./range-match.ts";
 import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import { isMissingSource } from "./missing-sources.ts";
+import { hasTypeScriptProjectQueries } from "./project.ts";
 import type { LspPosition } from "./types.ts";
 import {
   clangCoverage,
@@ -27,9 +28,9 @@ import {
   type ClangCoverage,
 } from "./clang-coverage.ts";
 import { requestWorkspaceSymbols, requestDocumentSymbols } from "./symbols.ts";
+import { exactIdentifier, scanDeclarations } from "./declaration-scan.ts";
 import {
-  declarationAt,
-  declarationsNamed,
+  declarationsForWorkspaceSymbol,
   normalizeDocumentSymbols,
   preferredDeclaration,
   type LspCodeSymbol,
@@ -112,6 +113,18 @@ interface Snapshot {
   readonly version: string;
 }
 
+/** A workspace symbol with no usable declaration anchor in the current file. */
+export interface SkippedSymbol {
+  readonly name: string;
+  readonly source: string;
+}
+
+/** A server returned at least its known workspace/symbol candidate limit. */
+export interface WorkspaceSymbolCandidateLimit {
+  readonly server: string;
+  readonly limit: number;
+}
+
 /** Symbols found by {@link searchSymbols}. */
 export interface SymbolSearchResult {
   readonly hits: SymbolHit[];
@@ -128,6 +141,8 @@ export interface SymbolSearchResult {
    * listed; their places are left out. Present only when there are such files.
    */
   readonly missing?: readonly string[];
+  readonly skipped?: readonly SkippedSymbol[];
+  readonly candidateLimits?: readonly WorkspaceSymbolCandidateLimit[];
 }
 
 /** Search workspace declarations/references, keeping real provider ranges and honest completeness. */
@@ -187,6 +202,17 @@ async function searchSymbolsOnce(
     return read;
   };
   const readText = async (file: string) => (await snapshotOf(sourceOf(file, cwd))).document.content;
+  const outlines = new Map<LspClient, Map<string, Promise<LspCodeSymbol[]>>>();
+  const outlineOf = (client: LspClient, uri: string) => {
+    const byUri = outlines.get(client) ?? new Map<string, Promise<LspCodeSymbol[]>>();
+    outlines.set(client, byUri);
+    let outline = byUri.get(uri);
+    if (outline === undefined) {
+      outline = requestDocumentSymbols(client, uri, signal).then(normalizeDocumentSymbols);
+      byUri.set(uri, outline);
+    }
+    return outline;
+  };
   const roots = resultScope?.targets.map((target) => target.source) ??
     scope.paths ?? [scope.path ?? cwd];
   const clients = new Set(
@@ -208,6 +234,22 @@ async function searchSymbolsOnce(
     throw new Error(
       "LSP symbol search is unavailable: no provider supports workspace/symbol in this scope.",
     );
+  // An exact name is looked up in the files that write it, whatever the servers' indexes hold.
+  const word = exactIdentifier(query);
+  const scan =
+    word === undefined
+      ? undefined
+      : await scanDeclarations({
+          manager,
+          cwd,
+          roots,
+          word,
+          accepts: (source) => withinScope(source, cwd, scope),
+          readText,
+          outlineOf,
+          ...(signal && { signal }),
+        });
+  for (const client of scan?.declarations.keys() ?? []) clients.add(client);
   // The result scope as the text each hit was read from. Another session may have written the file
   // since the scope was resolved, before or while the server answered; the scope follows its
   // region through unchanged lines, and the call fails when the region is gone.
@@ -322,6 +364,7 @@ async function searchSymbolsOnce(
   // The server's index can keep places in files deleted since, such as another session's scratch
   // copy of a source. The search leaves them out and names the files it could have listed.
   const missing = new Set<string>();
+  const skipped = new Map<string, SkippedSymbol>();
   const exists = async (source: string): Promise<boolean> => {
     try {
       await snapshotOf(source);
@@ -332,55 +375,57 @@ async function searchSymbolsOnce(
       return false;
     }
   };
-  const coverages: (ClangCoverage | undefined)[] = [];
+  const coverages: (ClangCoverage | undefined)[] = [scan?.coverage];
+  const candidateLimits: WorkspaceSymbolCandidateLimit[] = [];
   // Declarations already listed, by file and the name position of their first entry.
-  const listed = new Set<string>();
-  const outlines = new Map<string, Promise<LspCodeSymbol[]>>();
-  const outlineOf = (client: LspClient, uri: string) => {
-    let outline = outlines.get(uri);
-    if (outline === undefined) {
-      outline = requestDocumentSymbols(client, uri, signal).then(normalizeDocumentSymbols);
-      outlines.set(uri, outline);
-    }
-    return outline;
-  };
+  const listed = new Map<LspClient, Set<string>>();
   for (const client of clients) {
+    const typescript = hasTypeScriptProjectQueries(client);
     signal?.throwIfAborted();
-    const definitions = await requestWorkspaceSymbols(
-      client,
-      query,
-      Number.MAX_SAFE_INTEGER,
-      signal,
-    );
+    const indexed = await requestWorkspaceSymbols(client, query, Number.MAX_SAFE_INTEGER, signal);
+    // Count the raw reply. Candidates omitted here could have had declarations or references
+    // inside the scope. The exact-name scan cannot recover all of the server's fuzzy matches.
+    const candidateLimit = client.workspaceSymbolCandidateLimit;
+    if (candidateLimit !== undefined && indexed.length >= candidateLimit)
+      candidateLimits.push({ server: client.commandName, limit: candidateLimit });
+    const definitions = [...indexed, ...(scan?.declarations.get(client) ?? [])];
     for (const definition of definitions) {
       signal?.throwIfAborted();
-      if (!withinScope(sourceOf(definition.location.uri, cwd), cwd, {})) continue;
-      if (!(await exists(sourceOf(definition.location.uri, cwd)))) continue;
+      const source = sourceOf(definition.location.uri, cwd);
+      if (!withinScope(source, cwd, {})) continue;
+      if (!(await exists(source))) continue;
       const workspaceMatch = await toMatch(definition.location, client).catch((error: unknown) => {
         if ((error as { code?: unknown } | null)?.code === "SOURCE_CHANGED") return undefined;
         throw error;
       });
-      const opened = await manager.openFile(
-        sourceOf(definition.location.uri, cwd),
-        cwd,
-        "symbols",
-        signal,
-        readText,
-      );
+      // The Vue-backed TypeScript project can see references that the plain TS server cannot.
+      const extension = path.extname(decodeURIComponent(new URL(definition.location.uri).pathname));
+      const opened = typescript
+        ? await manager.openClientFile(
+            client,
+            source,
+            manager.languageId(extension),
+            signal,
+            readText,
+          )
+        : await manager.openFile(source, cwd, "symbols", signal, readText);
       if (opened === null)
         throw new Error("LSP references are unavailable for a discovered declaration.");
       // The server's symbol index can lag behind edits, so its range may belong to an older text.
       // The file's current symbols then name every declaration with that name, each overload
       // apart; a prototype and its definition are one declaration.
       const outline = await outlineOf(opened.client, opened.uri);
-      const fresh = workspaceMatch?.matchedText === definition.name;
-      const declarations: (readonly LspCodeSymbol[] | undefined)[] = fresh
-        ? [declarationAt(outline, definition.location.range)]
-        : declarationsNamed(outline, definition.name);
-      if (declarations.length === 0)
-        throw sourceChanged(
-          `LSP declaration "${definition.name}" is not among the current symbols of its file.`,
-        );
+      const declarations = declarationsForWorkspaceSymbol(
+        outline,
+        definition.name,
+        definition.location.range,
+        workspaceMatch?.matchedText,
+      );
+      if (declarations.length === 0) {
+        // Without an anchor we cannot ask for its references or rule out a hit inside the scope.
+        skipped.set(JSON.stringify([source, definition.name]), { name: definition.name, source });
+        continue;
+      }
       for (const entries of declarations) {
         signal?.throwIfAborted();
         // A declaration's references and renames are the same from each of its entries; its
@@ -401,11 +446,17 @@ async function searchSymbolsOnce(
           opened.uri,
           (entries?.[0]?.selectionRange ?? definition.location.range).start,
         ]);
-        if (listed.has(identity)) continue;
-        listed.add(identity);
+        const seenDeclarations = listed.get(opened.client) ?? new Set<string>();
+        listed.set(opened.client, seenDeclarations);
+        if (seenDeclarations.has(identity)) continue;
+        seenDeclarations.add(identity);
         const declared = await toMatch(location, opened.client);
         const symbol: SearchSymbol = {
-          id: JSON.stringify([client.serverId, declared.source, location.range]),
+          id: JSON.stringify([
+            typescript ? "typescript" : client.serverId,
+            declared.source,
+            location.range,
+          ]),
           name: entry?.name ?? definition.name,
           kind: String(entry?.kind ?? definition.kind),
           ...(entry !== undefined && { selector: entry.selector }),
@@ -535,7 +586,14 @@ async function searchSymbolsOnce(
     contents: new Map(
       returned.map((hit) => [hit.source, requiredValue(mappedOnto.get(hit.source))]),
     ),
-    complete: (resultScope?.complete ?? true) && kept.length <= limit && coverageComplete(coverage),
+    complete:
+      (resultScope?.complete ?? true) &&
+      kept.length <= limit &&
+      coverageComplete(coverage) &&
+      skipped.size === 0 &&
+      candidateLimits.length === 0,
+    ...(candidateLimits.length > 0 && { candidateLimits }),
+    ...(skipped.size > 0 && { skipped: [...skipped.values()] }),
     ...(coverage !== undefined && !coverageComplete(coverage) && { coverage }),
     ...(missing.size > 0 && { missing: [...missing].sort() }),
   };

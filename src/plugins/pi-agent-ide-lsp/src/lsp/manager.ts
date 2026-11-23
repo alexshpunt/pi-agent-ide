@@ -11,11 +11,15 @@ import { SharedStartup, waitWithSignal } from "./abort.ts";
 import { documentUri } from "./document-uri.ts";
 import { sourceChanged } from "./source-changes.ts";
 import type { LspWorkspaceOwner } from "./workspace-owner.ts";
-import { prepareProjectQuery } from "./project.ts";
+import { hasTypeScriptProjectQueries, loadQueryProject } from "./project.ts";
 import { retainForCurrentOperation } from "./document-leases.ts";
 import { localFilesContaining } from "./files-containing.ts";
 
-import { resolveInitializationOptions } from "./initialization-options.ts";
+import {
+  resolveInitializationOptions,
+  usesWorkspaceVuePlugin,
+  vuePluginDirectory,
+} from "./initialization-options.ts";
 import { toDiagnostic } from "./diagnostics.ts";
 import { type LspDiagnostic, type ResolvedServer } from "./types.ts";
 
@@ -164,7 +168,27 @@ export class LspManager {
         : resolved.find((s) => s.config.capabilities.includes(capability));
     if (!match) return null;
     const rootUri = remote ? cwd : URI.file(cwd).toString();
-    const clientKey = `${match.serverId}:${rootUri}`;
+    const options = match.config.initializationOptions;
+    const project = remote
+      ? decodeURIComponent(new URL(rootUri).pathname)
+      : URI.parse(rootUri).fsPath;
+    const vueRoot =
+      options &&
+      match.serverId === "vue-typescript-language-server" &&
+      usesWorkspaceVuePlugin(options)
+        ? await vuePluginDirectory(
+            remote
+              ? decodeURIComponent(new URL(documentUri(extension, rootUri)).pathname)
+              : path.resolve(cwd, extension),
+            project,
+            remote ? path.posix : path,
+            owner
+              ? (file) => owner.exists(documentUri(file, rootUri), signal)
+              : async (file) => (await stat(file).catch(() => undefined))?.isFile() === true,
+          )
+        : project;
+    signal?.throwIfAborted();
+    const clientKey = JSON.stringify([match.serverId, rootUri, vueRoot]);
     const pending = this._clientStarts.get(clientKey);
     if (pending) {
       if (pending.controller.signal.aborted) {
@@ -182,7 +206,14 @@ export class LspManager {
       return client;
     }
     const startup = new SharedStartup((startupSignal) =>
-      this._startClient(clientKey, rootUri, match, client, startupSignal),
+      this._startClient(
+        clientKey,
+        rootUri,
+        match,
+        client,
+        options && resolveInitializationOptions(options, project, vueRoot),
+        startupSignal,
+      ),
     );
     this._clientStarts.set(clientKey, startup);
     const settled = () => {
@@ -213,6 +244,7 @@ export class LspManager {
     rootUri: string,
     match: ResolvedServer,
     client: LspClient | undefined,
+    initOptions: Record<string, unknown> | undefined,
     signal: AbortSignal,
   ): Promise<LspClient> {
     const startingClient =
@@ -228,14 +260,7 @@ export class LspManager {
         ...(!rootUri.startsWith("ssh://") &&
           this._options.sharedServers && { sharedServers: this._options.sharedServers }),
         ...(match.config.env && { env: match.config.env }),
-        ...(match.config.initializationOptions && {
-          initOptions: resolveInitializationOptions(
-            match.config.initializationOptions,
-            rootUri.startsWith("ssh://")
-              ? decodeURIComponent(new URL(rootUri).pathname)
-              : URI.parse(rootUri).fsPath,
-          ),
-        }),
+        ...(initOptions && { initOptions }),
         ...(match.config.settings && { settings: match.config.settings }),
         ...(match.config.timeoutMs && { timeoutMs: match.config.timeoutMs }),
         ...(this._options.idleTimeoutMs !== undefined && {
@@ -309,135 +334,104 @@ export class LspManager {
       return this.requireOwner().filesContaining?.(client.rootUri, word, extensions, signal);
     return localFilesContaining(URI.parse(client.rootUri).fsPath, word, extensions, signal);
   }
-
-  /** Start symbol servers only for language families with files in this workspace. */
-  async getWorkspaceClients(
+  /**
+   * Sources under `root` of the workspace `cwd` whose text has `word` as a whole word, among files
+   * with a configured language server. A file `root` is its own only candidate. Undefined when the
+   * workspace owner has no text search.
+   */
+  async filesContainingInScope(
     cwd: string,
-    capability: "symbols" = "symbols",
+    root: string,
+    word: string,
+    signal?: AbortSignal,
+  ): Promise<readonly string[] | undefined> {
+    signal?.throwIfAborted();
+    const remote = cwd.startsWith("ssh://");
+    const selected = remote ? documentUri(root, cwd) : path.resolve(cwd, root);
+    if (await this.isSourceFile(selected, cwd, signal)) return [selected];
+    const extensions = [...this._registry.knownExtensions];
+    if (extensions.length === 0) return [];
+    return remote
+      ? this.requireOwner().filesContaining?.(selected, word, extensions, signal)
+      : localFilesContaining(selected, word, extensions, signal);
+  }
+
+  /**
+   * Seed native workspace indexes. Most servers need one document per language extension;
+   * TypeScript needs one for each project represented in the scope.
+   */
+  async prepareWorkspaceSymbols(
+    cwd: string,
     scope = cwd,
     acceptsFile: (source: string) => boolean = () => true,
     signal?: AbortSignal,
     readText?: SourceTextReader,
   ): Promise<LspClient[]> {
     signal?.throwIfAborted();
-    if (cwd.startsWith("ssh://")) {
-      const owner = this._owner;
-      if (!owner)
-        throw Object.assign(new Error("No language server workspace owner"), {
-          code: "UNSUPPORTED_SOURCE",
-        });
-      const clients = new Set<LspClient>();
-      const remaining = new Set(this._registry.knownExtensions);
-      const ignored = new Set([".git", ".cache", "node_modules", "dist", "build"]);
-      const visit = async (source: string): Promise<void> => {
-        signal?.throwIfAborted();
-        if (remaining.size === 0) return;
-        for (const entry of await owner.entries(source, signal)) {
-          signal?.throwIfAborted();
-          const uri = documentUri(entry.name, `${source}/`);
-          if (entry.kind === "directory") {
-            if (!ignored.has(entry.name)) await visit(uri);
-          } else if (entry.kind === "file") {
-            const extension = path.posix.extname(entry.name).toLowerCase();
-            if (!remaining.has(extension) || !acceptsFile(uri)) continue;
-            const opened = await this.openFile(uri, cwd, capability, signal, readText);
-            if (opened) {
-              clients.add(opened.client);
-              remaining.delete(extension);
-            }
-          }
-        }
-      };
-      const selected = documentUri(scope, cwd);
-      if (await owner.isFile(selected, signal)) {
-        if (!acceptsFile(selected)) return [];
-        const opened = await this.openFile(selected, cwd, capability, signal, readText);
-        return opened ? [opened.client] : [];
-      }
-      await visit(selected);
-      return [...clients];
-    }
+    const remote = cwd.startsWith("ssh://");
+    const owner = remote ? this.requireOwner() : undefined;
+    const remaining = new Set(this._registry.knownExtensions);
+    const projectFiles = new Map<LspClient, Set<string>>();
+    const typeScriptByExtension = new Map<string, LspClient>();
     const clients = new Set<LspClient>();
-    const remainingExtensions = new Set(this._registry.knownExtensions);
-    const ignoredDirectories = new Set([".git", ".cache", "node_modules", "dist", "build"]);
+    const ignored = new Set([".git", ".cache", "node_modules", "dist", "build"]);
+    const extensionOf = (source: string) =>
+      (remote
+        ? path.posix.extname(decodeURIComponent(new URL(source).pathname))
+        : path.extname(source)
+      ).toLowerCase();
 
-    const visit = async (directory: string): Promise<void> => {
-      signal?.throwIfAborted();
-      if (remainingExtensions.size === 0) {
-        return;
-      }
-
-      let entries;
-
-      try {
-        entries = await readdir(directory, { withFileTypes: true });
-      } catch {
-        return;
-      }
-
-      for (const entry of entries) {
-        signal?.throwIfAborted();
-        if (remainingExtensions.size === 0) {
+    const seed = async (source: string, extension: string) => {
+      if (!acceptsFile(source)) return;
+      const known = typeScriptByExtension.get(extension);
+      if (known && projectFiles.get(known)?.has(known.serverDocumentPath(source))) return;
+      const opened = await this.openFile(source, cwd, "symbols", signal, readText);
+      if (opened === null) return;
+      const { client, uri } = opened;
+      if (client.hasWorkspaceSymbolCapability) {
+        clients.add(client);
+        if (hasTypeScriptProjectQueries(client)) {
+          const covered = projectFiles.get(client) ?? new Set<string>();
+          typeScriptByExtension.set(extension, client);
+          projectFiles.set(client, covered);
+          for (const file of await loadQueryProject(client, uri, signal)) covered.add(file);
           return;
         }
-
-        if (entry.isDirectory()) {
-          if (!ignoredDirectories.has(entry.name)) {
-            await visit(path.join(directory, entry.name));
-          }
-
-          continue;
-        }
-
-        if (!entry.isFile()) {
-          continue;
-        }
-
-        const extension = path.extname(entry.name).toLowerCase();
-
-        if (!remainingExtensions.has(extension)) {
-          continue;
-        }
-
-        const filePath = path.join(directory, entry.name);
-        if (!acceptsFile(filePath)) continue;
-        const opened = await this.openFile(filePath, cwd, capability, signal, readText);
-
-        if (opened) {
-          remainingExtensions.delete(extension);
-          if (opened.client.hasWorkspaceSymbolCapability) {
-            await prepareProjectQuery(opened.client, filePath);
-            clients.add(opened.client);
-          }
+      }
+      remaining.delete(extension);
+    };
+    const localEntries = async (directory: string) => {
+      const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+      return entries.map((entry) => ({
+        name: entry.name,
+        kind: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
+      }));
+    };
+    const visit = async (directory: string): Promise<void> => {
+      if (remaining.size === 0) return;
+      const entries = owner
+        ? await owner.entries(directory, signal)
+        : await localEntries(directory);
+      for (const entry of entries) {
+        signal?.throwIfAborted();
+        if (remaining.size === 0) return;
+        const source = remote
+          ? documentUri(entry.name, `${directory}/`)
+          : path.join(directory, entry.name);
+        if (entry.kind === "directory") {
+          if (!ignored.has(entry.name)) await visit(source);
+        } else if (entry.kind === "file") {
+          const extension = extensionOf(source);
+          if (remaining.has(extension)) await seed(source, extension);
         }
       }
     };
 
-    const selected = path.resolve(cwd, scope);
-    if ((await stat(selected)).isFile()) {
-      if (!acceptsFile(selected)) return [];
-      const opened = await this.openFile(selected, cwd, capability, signal, readText);
-      if (opened === null || !opened.client.hasWorkspaceSymbolCapability) return [];
-      await prepareProjectQuery(opened.client, selected);
-      return [opened.client];
-    }
-    await visit(selected);
+    const selected = remote ? documentUri(scope, cwd) : path.resolve(cwd, scope);
+    if (await this.isSourceFile(selected, cwd, signal)) await seed(selected, extensionOf(selected));
+    else await visit(selected);
     signal?.throwIfAborted();
     return [...clients];
-  }
-
-  /**
-   * Open matching source files before querying workspace symbols; excluded files start no server.
-   * `readText` supplies the text each opened file is published with, as in {@link openFile}.
-   */
-  async prepareWorkspaceSymbols(
-    cwd: string,
-    scope = cwd,
-    acceptsFile?: (source: string) => boolean,
-    signal?: AbortSignal,
-    readText?: SourceTextReader,
-  ): Promise<LspClient[]> {
-    return this.getWorkspaceClients(cwd, "symbols", scope, acceptsFile, signal, readText);
   }
 
   /**
@@ -543,16 +537,32 @@ export class LspManager {
       return null;
     }
 
-    const uri = client.toUri(absolutePath);
-    retainForCurrentOperation(client, uri);
     const owner = remote ? this.requireOwner() : undefined;
     const resolved = owner
       ? await this._registry.resolveOwned(absolutePath, (source) => owner.exists(source, signal))
       : this._registry.resolve(absolutePath);
-    const languageId = resolved[0]?.languageId ?? "plaintext";
+    const languageId =
+      resolved.find((match) => match.serverId === client.serverId)?.languageId ??
+      resolved[0]?.languageId ??
+      "plaintext";
+    return this.openClientFile(client, absolutePath, languageId, signal, readText);
+  }
+
+  /** Publish a declaration in the same project that discovered it. */
+  async openClientFile(
+    client: LspClient,
+    source: string,
+    languageId: string,
+    signal?: AbortSignal,
+    readText?: SourceTextReader,
+  ): Promise<{ client: LspClient; uri: string; languageId: string }> {
+    signal?.throwIfAborted();
+    const uri = client.toUri(source);
+    retainForCurrentOperation(client, uri);
+    const owner = uri.startsWith("ssh://") ? this.requireOwner() : undefined;
 
     if (owner) {
-      const text = readText ? await readText(absolutePath) : await owner.readText(uri, signal);
+      const text = readText ? await readText(source) : await owner.readText(uri, signal);
       signal?.throwIfAborted();
       client.syncDocument(uri, text, languageId);
       await client.waitUntilLoaded(signal);
@@ -563,8 +573,8 @@ export class LspManager {
     try {
       const { readFile } = await import("node:fs/promises");
       const text = readText
-        ? await readText(absolutePath)
-        : await readFile(absolutePath, { encoding: "utf8", signal });
+        ? await readText(source)
+        : await readFile(source, { encoding: "utf8", signal });
       signal?.throwIfAborted();
       client.syncDocument(uri, text, languageId);
     } catch (error) {

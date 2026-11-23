@@ -155,6 +155,9 @@ const groups: [string[], string[]][] = [
     ["file-search-script-paths"],
   ],
   [["lsp_search.path-list"], ["lsp-path-list"]],
+  [["lsp.typescript-workspace-projects"], ["lsp-typescript-projects"]],
+  [["lsp.independent-projects"], ["lsp-independent-projects"]],
+  [["lsp.workspace-candidate-limit"], ["lsp-workspace-candidate-limit"]],
   [["search.literal-operators", "search.script-line-text"], ["search-literal-operators"]],
   [
     // Engine switching is a settings-menu lifecycle, checked in real Pi rather than a model route.
@@ -428,6 +431,7 @@ const groups: [string[], string[]][] = [
   // Rust has a separate no-build route; the TypeScript route does not prove Cargo safety.
   [["read.rust-diagnostics-no-build"], ["rust-diagnostics-no-build"]],
   [
+    // lsp-read uses a stable TypeScript index. lsp-query-partial tests a stale candidate in real Pi.
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],
   ],

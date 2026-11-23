@@ -148,8 +148,12 @@ export function withinTypoDistance(typo: string, name: string): boolean {
   return (previous[name.length] ?? Infinity) <= bound;
 }
 
-/** Text of an LSP range in `content`, or an empty string when the range does not fit it. */
-export function textInRange(content: string, range: LspRange): string {
+/**
+ * Reads LSP ranges from `content`; each reader returns the range's text, or an empty string when
+ * the range does not fit. The line table is built once, so a caller that reads many ranges of one
+ * file, such as every declaration of a large outline, pays for the file once.
+ */
+export function rangeTextReader(content: string): (range: LspRange) => string {
   const starts = [0];
   for (let index = content.indexOf("\n"); index !== -1; index = content.indexOf("\n", index + 1))
     starts.push(index + 1);
@@ -157,9 +161,16 @@ export function textInRange(content: string, range: LspRange): string {
     const start = starts[position.line];
     return start === undefined ? undefined : start + position.character;
   };
-  const from = offset(range.start);
-  const to = offset(range.end);
-  return from === undefined || to === undefined || to < from ? "" : content.slice(from, to);
+  return (range) => {
+    const from = offset(range.start);
+    const to = offset(range.end);
+    return from === undefined || to === undefined || to < from ? "" : content.slice(from, to);
+  };
+}
+
+/** Text of an LSP range in `content`, or an empty string when the range does not fit it. */
+export function textInRange(content: string, range: LspRange): string {
+  return rangeTextReader(content)(range);
 }
 
 /** Errors from the current diagnostics of each document that `open` synchronizes, read once. */

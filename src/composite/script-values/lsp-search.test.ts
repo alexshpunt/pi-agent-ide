@@ -83,6 +83,26 @@ describe("lspSearchValue", () => {
     });
   });
 
+  test("an incomplete query reports unanchored candidates with paths but no ids", () => {
+    const skipped = Array.from({ length: 110 }, (_, index) => ({
+      name: `startStale${String(index)}`,
+      source: "/work/src/stale.ts",
+    }));
+    const data = { ...selectionData([hit(3, "start")], false, "AB12", targets(1)), skipped };
+    const value = lspSearchValue.project(input(data));
+    const projected = skipped.map(({ name }) => ({ name, path: "src/stale.ts" }));
+    expect(value).toMatchObject({
+      complete: false,
+      matches: [{ id: "RESULT#match-0" }],
+      skipped: projected,
+    });
+    expect(data.all).toBeUndefined();
+    expect(selectionPreview(data)).toMatchObject({
+      truncated: true,
+      skipped: skipped.slice(0, 100),
+    });
+  });
+
   const graph = (complete: boolean) => {
     const list = (line: number, text: string, name: string) =>
       selectionData([hit(line, text)], complete, "AB12", targets(1, name));

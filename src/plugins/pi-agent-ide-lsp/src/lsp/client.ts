@@ -181,6 +181,29 @@ export class LspClient {
   get commandName(): string {
     return configuredExecutableName(this._command);
   }
+  /** Known workspace/symbol cap for the server started by this client. */
+  get workspaceSymbolCandidateLimit(): number | undefined {
+    switch (this.commandName.replace(/\.exe$/iu, "")) {
+      case "gopls": {
+        return 100;
+      }
+      case "rust-analyzer": {
+        // rust-analyzer replaces its initialize options with a nonempty reply to
+        // workspace/configuration, requesting the "rust-analyzer" section.
+        const [settings] = configurationItems(this._settings, [{ section: "rust-analyzer" }]);
+        const options =
+          typeof settings === "object" && settings !== null && Object.keys(settings).length > 0
+            ? settings
+            : this._initOptions;
+        const [limit] = configurationItems(options, [{ section: "workspace.symbol.search.limit" }]);
+        return typeof limit === "number" && Number.isSafeInteger(limit) && limit >= 0 ? limit : 128;
+      }
+      default: {
+        return undefined;
+      }
+    }
+  }
+
   get diagnosticMode(): "unknown" | "pull" | "push" {
     return this._diagnosticMode;
   }
@@ -937,6 +960,11 @@ export class LspClient {
     return this._ownerTransport
       ? decodeURIComponent(new URL(wireUri).pathname)
       : URI.parse(wireUri).fsPath;
+  }
+  /** Convert a raw protocol result path to an owned LSP document URI. */
+  serverPathToDocumentUri(file: string): string {
+    const uri = URI.file(file).toString();
+    return this._ownerTransport?.fromServerUri(uri) ?? uri;
   }
   openDocument(uri: string, text: string, languageId: string, version = 1): void {
     const currentVersion = this._documentVersions.get(uri);
