@@ -8,6 +8,7 @@ import type { LspClient } from "./client.ts";
 import type { LspManager } from "./manager.ts";
 import type { LspRange } from "./types.ts";
 import { sourceChanged } from "./source-changes.ts";
+import { hasTypeScriptProjectQueries, requestTsserver } from "./project.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -97,6 +98,64 @@ export interface LspWorkspaceSymbol {
   containerName?: string;
 }
 
+interface TsNavigateToItem {
+  readonly name: string;
+  readonly kind: string;
+  readonly file: string;
+  readonly start: { readonly line: number; readonly offset: number };
+  readonly end: { readonly line: number; readonly offset: number };
+}
+
+// Match typescript-language-server's SymbolKind conversion when no outline entry is available.
+const TS_SYMBOL_KIND = new Map([
+  ["file", 1],
+  ["module", 2],
+  ["class", 5],
+  ["local class", 5],
+  ["method", 6],
+  ["getter", 6],
+  ["setter", 6],
+  ["property", 7],
+  ["JSX attribute", 7],
+  ["field", 8],
+  ["constructor", 9],
+  ["enum", 10],
+  ["interface", 11],
+  ["function", 12],
+  ["local function", 12],
+  ["const", 14],
+  ["enum member", 14],
+]);
+
+async function requestTypeScriptSymbols(
+  client: LspClient,
+  query: string,
+  signal?: AbortSignal,
+): Promise<LspWorkspaceSymbol[]> {
+  // TLS passes its first open file to navto, which can select an unrelated project or a
+  // document retained by another session. Omitting file searches all of its loaded projects.
+  const items = await requestTsserver<TsNavigateToItem[]>(
+    client,
+    ["navto", { searchValue: query }],
+    signal,
+  );
+  const position = ({ line, offset }: TsNavigateToItem["start"]) => ({
+    line: line - 1,
+    character: offset - 1,
+  });
+  // LSP erases tsserver's distinction between import aliases and real declarations.
+  return (items ?? [])
+    .filter(({ kind }) => kind !== "alias")
+    .map((item) => ({
+      name: item.name,
+      kind: TS_SYMBOL_KIND.get(item.kind) ?? 13,
+      location: {
+        uri: client.serverPathToDocumentUri(item.file),
+        range: { start: position(item.start), end: position(item.end) },
+      },
+    }));
+}
+
 /**
 Request workspace symbols from one native LSP server.
 */
@@ -106,6 +165,8 @@ export async function requestWorkspaceSymbols(
   limit = 100,
   signal?: AbortSignal,
 ): Promise<LspWorkspaceSymbol[]> {
+  if (hasTypeScriptProjectQueries(client))
+    return (await requestTypeScriptSymbols(client, query, signal)).slice(0, limit);
   const result = await client.sendRequest<LspWorkspaceSymbol[] | null>(
     "workspace/symbol",
     {

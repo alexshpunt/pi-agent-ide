@@ -938,6 +938,11 @@ export class LspClient {
       ? decodeURIComponent(new URL(wireUri).pathname)
       : URI.parse(wireUri).fsPath;
   }
+  /** Convert a raw protocol result path to an owned LSP document URI. */
+  serverPathToDocumentUri(file: string): string {
+    const uri = URI.file(file).toString();
+    return this._ownerTransport?.fromServerUri(uri) ?? uri;
+  }
   openDocument(uri: string, text: string, languageId: string, version = 1): void {
     const currentVersion = this._documentVersions.get(uri);
 

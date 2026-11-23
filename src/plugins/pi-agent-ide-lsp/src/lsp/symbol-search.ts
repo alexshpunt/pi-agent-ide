@@ -18,6 +18,7 @@ import { requireReferenceReply, requestReferences, type LspLocation } from "./na
 import { lspRangeMatch } from "./range-match.ts";
 import { diagnosticErrors, withoutCorrectedNames } from "./corrected-names.ts";
 import { isMissingSource } from "./missing-sources.ts";
+import { hasTypeScriptProjectQueries } from "./project.ts";
 import type { LspPosition } from "./types.ts";
 import {
   clangCoverage,
@@ -342,17 +343,20 @@ async function searchSymbolsOnce(
   };
   const coverages: (ClangCoverage | undefined)[] = [];
   // Declarations already listed, by file and the name position of their first entry.
-  const listed = new Set<string>();
-  const outlines = new Map<string, Promise<LspCodeSymbol[]>>();
+  const listed = new Map<LspClient, Set<string>>();
+  const outlines = new Map<LspClient, Map<string, Promise<LspCodeSymbol[]>>>();
   const outlineOf = (client: LspClient, uri: string) => {
-    let outline = outlines.get(uri);
+    const byUri = outlines.get(client) ?? new Map<string, Promise<LspCodeSymbol[]>>();
+    outlines.set(client, byUri);
+    let outline = byUri.get(uri);
     if (outline === undefined) {
       outline = requestDocumentSymbols(client, uri, signal).then(normalizeDocumentSymbols);
-      outlines.set(uri, outline);
+      byUri.set(uri, outline);
     }
     return outline;
   };
   for (const client of clients) {
+    const typescript = hasTypeScriptProjectQueries(client);
     signal?.throwIfAborted();
     const definitions = await requestWorkspaceSymbols(
       client,
@@ -369,7 +373,17 @@ async function searchSymbolsOnce(
         if ((error as { code?: unknown } | null)?.code === "SOURCE_CHANGED") return undefined;
         throw error;
       });
-      const opened = await manager.openFile(source, cwd, "symbols", signal, readText);
+      // The Vue-backed TypeScript project can see references that the plain TS server cannot.
+      const extension = path.extname(decodeURIComponent(new URL(definition.location.uri).pathname));
+      const opened = typescript
+        ? await manager.openClientFile(
+            client,
+            source,
+            manager.languageId(extension),
+            signal,
+            readText,
+          )
+        : await manager.openFile(source, cwd, "symbols", signal, readText);
       if (opened === null)
         throw new Error("LSP references are unavailable for a discovered declaration.");
       // The server's symbol index can lag behind edits, so its range may belong to an older text.
@@ -405,11 +419,17 @@ async function searchSymbolsOnce(
           opened.uri,
           (entries?.[0]?.selectionRange ?? definition.location.range).start,
         ]);
-        if (listed.has(identity)) continue;
-        listed.add(identity);
+        const seenDeclarations = listed.get(opened.client) ?? new Set<string>();
+        listed.set(opened.client, seenDeclarations);
+        if (seenDeclarations.has(identity)) continue;
+        seenDeclarations.add(identity);
         const declared = await toMatch(location, opened.client);
         const symbol: SearchSymbol = {
-          id: JSON.stringify([client.serverId, declared.source, location.range]),
+          id: JSON.stringify([
+            typescript ? "typescript" : client.serverId,
+            declared.source,
+            location.range,
+          ]),
           name: entry?.name ?? definition.name,
           kind: String(entry?.kind ?? definition.kind),
           ...(entry !== undefined && { selector: entry.selector }),

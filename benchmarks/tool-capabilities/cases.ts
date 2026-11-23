@@ -1992,6 +1992,48 @@ add(
   },
 );
 
+const workspaceApp = "frontend/src/App.ts";
+const workspaceDeclaration = "frontend/src/composables/useRoleLabel.ts";
+const workspaceUnopened = "frontend/src/composables/useTheme.ts";
+add(
+  "lsp-typescript-projects",
+  ["lsp.typescript-workspace-projects"],
+  "Use lsp_search with path frontend/src and query initTheme. Also use lsp_search with the same path and query useRoleLabel. Use the directory as the scope in both calls, without reference navigation. Report where initTheme and useRoleLabel are declared. Do not change files.",
+  [
+    {
+      tool: "lsp_search",
+      args: { path: "frontend/src", query: "initTheme" },
+      issuedMatches: [{ path: workspaceUnopened, text: "initTheme", role: "definition" }],
+    },
+    {
+      tool: "lsp_search",
+      args: { path: "frontend/src", query: "useRoleLabel" },
+      issuedMatches: [
+        { path: workspaceDeclaration, text: "useRoleLabel", role: "definition" },
+        { path: workspaceApp, text: "useRoleLabel", role: "reference" },
+        { path: workspaceApp, text: "useRoleLabel", role: "reference" },
+      ],
+    },
+  ],
+  {
+    files: {
+      "frontend/tsconfig.json":
+        '{"files":[],"references":[{"path":"./tsconfig.node.json"},{"path":"./tsconfig.app.json"}]}\n',
+      "frontend/tsconfig.node.json":
+        '{"compilerOptions":{"composite":true},"files":["src/00-tooling.d.ts"]}\n',
+      "frontend/tsconfig.app.json":
+        '{"compilerOptions":{"composite":true,"paths":{"@/*":["./src/*"]}},"include":["src"],"exclude":["src/00-tooling.d.ts"]}\n',
+      "frontend/src/00-tooling.d.ts": "export declare const toolingOnly: unique symbol;\n",
+      [workspaceApp]:
+        'import { useRoleLabel } from "@/composables/useRoleLabel";\nexport const role = useRoleLabel();\n',
+      [workspaceDeclaration]: 'export function useRoleLabel() { return "admin"; }\n',
+      [workspaceUnopened]: 'export function initTheme() { return "dark"; }\n',
+    },
+    answer: workspaceUnopened,
+    prerequisite: "command -v typescript-language-server",
+  },
+);
+
 add(
   "search-literal-operators",
   ["search.literal-operators", "search.script-line-text"],
