@@ -348,6 +348,16 @@ export function createNestedIdeRendering(
     ENTRY_TYPE,
     function renderEntry(entry, options, theme) {
       if (!Array.isArray(entry.data?.calls)) return undefined;
+      // Pi rebuilds resumed history before session_start binds the public UI.
+      // Defer both the visibility decision and tool components until the session is bound.
+      if (!tui)
+        return {
+          render: (width: number): string[] =>
+            tui ? (renderEntry(entry, options, theme)?.render(width) ?? []) : [],
+          invalidate: () => {
+            if (entry.data) components.get(entry.data)?.invalidate();
+          },
+        };
       const compact =
         (typeof hideCodemodeToolResults === "function"
           ? hideCodemodeToolResults()
@@ -361,16 +371,6 @@ export function createNestedIdeRendering(
         const warning = retentionWarning(entry.data);
         return warning ? new Text(theme.fg("warning", warning), 0, 0) : new Container();
       }
-      // Pi rebuilds resumed history before session_start binds the public UI.
-      // Keep the entry mounted and resolve its tool components on the next render.
-      if (!tui)
-        return {
-          render: (width: number): string[] =>
-            tui ? (renderEntry(entry, options, theme)?.render(width) ?? []) : [],
-          invalidate: () => {
-            if (entry.data) components.get(entry.data)?.invalidate();
-          },
-        };
       const warningText = retentionWarning(entry.data);
       let panel = compact ? undefined : components.get(entry.data);
       if (!panel) {

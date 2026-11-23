@@ -66,6 +66,20 @@ export default async function registerUnifiedPiAgentIde(host: ExtensionAPI): Pro
       else livePreferences[id] = value;
     });
   }
+  pi.on("session_start", async (_event, context) => {
+    if (context.mode !== "tui") return;
+    // Pi can load the replacement session's extensions before the process cwd changes.
+    const sessionPaths = resolvePiAgentIdeExtensionsConfigPaths(
+      process.env,
+      undefined,
+      context.cwd,
+    );
+    if (sessionPaths.projectPath === configPaths.projectPath) return;
+    delete livePreferences["ui.codemode"];
+    const sessionConfig = await readPiAgentIdeExtensionsConfig(sessionPaths);
+    const preference = sessionConfig.preferences?.["ui.codemode"];
+    if (preference !== undefined) livePreferences["ui.codemode"] = preference;
+  });
   const nestedRendering = createNestedIdeRendering(
     pi,
     () => livePreferences["ui.codemode"] !== "on",
