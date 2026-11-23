@@ -158,6 +158,12 @@ Both default to `false`. A project boolean overrides the global boolean, includi
 
 `noPostProcessing` skips syntax checks used by the post-edit formatting gate, automatic formatting, and automatic diagnostic scheduling after an edit. Requested edits and their safety checks still run. Explicit diagnostic and AST reads remain available and may run their normal tools. This is useful when a benchmark requires exact byte preservation without automatic formatting or diagnostic cache files.
 
+## Problem reports
+
+The UI tab's **Problem reports** option (`pi-agent-ide-problem-reports`, on by default) controls the panel that offers a prefilled GitHub issue after an internal Pi Agent IDE error. The panel appears when a module fails to load, when an IDE tool, hook or background task fails with a programming error (`TypeError`, `ReferenceError`, `RangeError` and similar, not an expected failure such as a missing file), when an IDE component fails to draw, and at the next start after Pi crashed with a stack inside the Pi Agent IDE package. Nothing is sent: **Open issue** opens the GitHub form with the report filled in, **Copy report** copies it. `/agent-ide-problem open|copy|close|off` performs the same actions in every mode; the panel buttons take clicks only in fullscreen mode. **Don't show again** and `off` save `false` for this option in the global config. The change applies without a reload.
+
+Turning the panel off does not change error handling: a module that fails to load is still skipped while the other modules load, and a component that fails to draw still shows a one-line notice instead of ending Pi. Pi's crash log is read from `crashes.json` in the agent directory; the crashes already offered are recorded in `problem-report/pi-agent-ide.json` there.
+
 ## Search timeout
 
 The `search` tool has a 30-second deadline by default. This includes resolving the scope and formatting results. On timeout, the tool cancels the active resolver and reports the target and elapsed limit. If the search has confirmed matches, it can return them as an incomplete result without editable selections.
