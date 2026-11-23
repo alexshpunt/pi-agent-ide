@@ -127,6 +127,8 @@ export interface TextEditorPluginApi {
 }
 
 export interface TextEditorPlugin {
+  /** Keep sibling Pi calls separate so hooks can associate effects with each call. */
+  readonly preserveToolCallBoundaries?: boolean;
   readonly protocol: typeof TEXT_EDITOR_PROTOCOL;
   readonly apiVersion: typeof TEXT_EDITOR_API_VERSION;
   readonly id: string;
@@ -216,6 +218,7 @@ const textEditorPluginSchema = Type.Object({
   protocol: Type.Literal(TEXT_EDITOR_PROTOCOL),
   apiVersion: Type.Literal(TEXT_EDITOR_API_VERSION),
   id: Type.String(),
+  preserveToolCallBoundaries: Type.Optional(Type.Boolean()),
   setup: functionSchema,
 });
 const textEditorPluginRegistrationRequestSchema = Type.Object({

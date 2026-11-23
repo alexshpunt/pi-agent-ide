@@ -179,6 +179,8 @@ test("file hook plans describe the transaction and correlate its confirmed effec
       "keep-delete": "keep me",
       "remove-dir/file": "remove me",
       "batch.txt": "before",
+      "sibling-a.txt": "A before",
+      "sibling-b.txt": "B before",
     }))
       await writeFile(path.join(cwd, name), content);
     // The allowed directory transfers omit the protected fixture.
@@ -198,6 +200,11 @@ test("file hook plans describe the transaction and correlate its confirmed effec
         id: "replace-denied",
         name: "replace",
         arguments: { path: "protected.txt", at: "protect me", text: "blocked" },
+      }),
+      toolCall({
+        id: "script-write-denied",
+        name: "codemode",
+        arguments: { code: 'await tools.write({path:"protected.txt",content:"blocked"});' },
       }),
       toolCall({
         id: "batch-denied",
@@ -252,6 +259,20 @@ test("file hook plans describe the transaction and correlate its confirmed effec
       ],
       tools: ["codemode", "write", "replace", "copy", "move", "delete"],
       conversation: [
+        assistantMessage(
+          ["a", "b"].map((letter) =>
+            toolCall({
+              id: `sibling-${letter}`,
+              name: "replace",
+              arguments: {
+                path: `sibling-${letter}.txt`,
+                at: `${letter.toUpperCase()} before`,
+                text: `${letter} after`,
+              },
+            }),
+          ),
+          { stopReason: "toolUse" },
+        ),
         ...calls.map((call) => assistantMessage([call], { stopReason: "toolUse" })),
         assistantMessage([text("Done")]),
       ],
@@ -260,6 +281,7 @@ test("file hook plans describe the transaction and correlate its confirmed effec
     for (const id of [
       "write-denied",
       "replace-denied",
+      "script-write-denied",
       "batch-denied",
       "tree-copy-denied",
       "tree-move-denied",
@@ -338,7 +360,24 @@ test("file hook plans describe the transaction and correlate its confirmed effec
     const childWrite = childId("script-write.txt");
     expect(plan(childWrite)).toEqual([change("script-write.txt", "", "child", false)]);
     expect(plan("script")).toEqual([change("batch.txt", "before", "after batch")]);
-    expect(events.filter(({ type }) => type === "after-edit")).toEqual([
+    for (const letter of ["a", "b"]) {
+      const id = `sibling-${letter}`;
+      expect(plan(id)).toEqual([
+        change(`${id}.txt`, `${letter.toUpperCase()} before`, `${letter} after`),
+      ]);
+      expect(events).toContainEqual({
+        type: "after-edit",
+        path: `${id}.txt`,
+        toolCallId: id,
+        content: `${letter} after`,
+      });
+      expect(await saved(`${id}.txt`)).toBe(`${letter} after`);
+    }
+    expect(
+      events.filter(
+        ({ type, toolCallId }) => type === "after-edit" && !toolCallId?.startsWith("sibling-"),
+      ),
+    ).toEqual([
       { type: "after-edit", path: "empty.txt", toolCallId: "empty-write", content: "" },
       { type: "after-edit", path: "script-write.txt", toolCallId: childWrite, content: "child" },
       { type: "after-edit", path: "batch.txt", toolCallId: "script", content: "after batch" },

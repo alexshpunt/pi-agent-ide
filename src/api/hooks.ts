@@ -78,7 +78,7 @@ export interface BeforeReadHook {
 /** A complete, resolved mutation plan before its first write. */
 export interface BeforeEditEvent {
   readonly cwd: string;
-  /** Executing call ID. A coalesced batch uses its carrier call or enclosing Codemode ID. */
+  /** Executing call ID. A coalesced Codemode transaction uses the enclosing call ID. */
   readonly toolCallId?: string;
   readonly intent: "edit" | "restore" | "mixed";
   readonly resources: readonly {
@@ -159,6 +159,7 @@ export function connectBeforeEditHook(
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: `hook/before-edit/${hook.id}`,
+    preserveToolCallBoundaries: true,
     setup(api) {
       api.addMutationGuard({
         id: hook.id,
@@ -202,6 +203,7 @@ export function connectAfterEditHook(pi: ExtensionAPI, hook: AfterEditHook): voi
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: `hook/after-edit/${hook.id}`,
+    preserveToolCallBoundaries: true,
     setup(api) {
       api.onDidEdit(async (completion) => {
         if (completion.postProcessing === "deferred") return;

@@ -486,6 +486,7 @@ export interface TextEditorCore {
       resolveAnchor: ResolveResourceTextAnchor,
     ) => TextResourcesMutationResult<unknown> | Promise<TextResourcesMutationResult<unknown>>,
   ): Promise<TextMutationPreviewOutcome>;
+  preservesToolCallBoundaries(): boolean;
   /** Selected pre-edit planners require the standalone pipeline. */
   hasMatchingPreEditHandler(tool: TextEditorToolId, input: unknown): boolean;
   getSemanticMutationHandler(
@@ -921,6 +922,12 @@ export function createTextEditorCore(
     onDidEdit(listener): () => void {
       editCompletionListeners.add(listener);
       return () => editCompletionListeners.delete(listener);
+    },
+    preservesToolCallBoundaries(): boolean {
+      return [...plugins.values()].some(
+        ({ lifecycle, plugin }) =>
+          lifecycle.status === "active" && plugin.preserveToolCallBoundaries === true,
+      );
     },
     hasMatchingPreEditHandler(tool, input): boolean {
       return handlers.some(
