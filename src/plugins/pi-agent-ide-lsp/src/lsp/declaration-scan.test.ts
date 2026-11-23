@@ -63,6 +63,26 @@ test("a declaration is found by the identifier at its name range, whatever name 
   ]);
 });
 
+test("a file with tens of thousands of declarations is scanned in linear time", async () => {
+  const count = 30_000;
+  const lines = Array.from({ length: count }, (_, index) => `func F${index}() int { return 0 }`);
+  const { client, input } = fixture(["/workspace/big.go"], {
+    "/workspace/big.go": lines.join("\n"),
+  });
+  const outline = lines.map((line, index) =>
+    symbol(`F${index}`, range(index, line.indexOf("F"), line.indexOf("F") + `F${index}`.length)),
+  );
+  const started = performance.now();
+  const scan = await scanDeclarations({
+    ...input,
+    word: "F29999",
+    outlineOf: async () => outline,
+  });
+  expect(scan.declarations.get(client)?.map(({ name }) => name)).toEqual(["F29999"]);
+  // Looking up each name range must not read the whole file again: that took seconds.
+  expect(performance.now() - started).toBeLessThan(2000);
+});
+
 test("files past the limit and an owner that cannot list files make the scan incomplete", async () => {
   const files = Array.from({ length: MAX_SCANNED_FILES + 2 }, (_, index) => `/w/f${index}.go`);
   const { input, manager } = fixture(files, {});
