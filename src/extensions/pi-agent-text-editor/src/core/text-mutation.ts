@@ -2100,7 +2100,10 @@ async function buildToolResult(
       safe === undefined
         ? outcome.failure.message
         : `${safe.code}: ${source}${safe.effect === "unknown" ? "; inspect the resource before retrying" : ""}`;
-    const message = `${reason.replace(/[.!?]+$/u, "")}.${completed}`;
+    const message =
+      outcome.failure.code === "MUTATION_REJECTED"
+        ? reason
+        : `${reason.replace(/[.!?]+$/u, "")}.${completed}`;
     return safe === undefined
       ? buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect)
       : failureToolResult(

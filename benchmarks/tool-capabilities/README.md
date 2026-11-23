@@ -110,6 +110,8 @@ Temporary Delete and Move cases check exact nested names, roots themselves, repl
 
 The `delete-policy-gates` and `directory-transfer-gates` cases check fail-closed approval without a user UI, unchanged targets, and a permitted Read after refusal. Their direct and Codemode routes remain unverified until paid execution.
 
+The `file-hook-denials` routes check that Write and directory Copy and Move return both lines of a before-edit hook's reason without changing any fixture files. The Codemode route also checks the parent result. The scripted user-hook tests cover event payloads and successful mutations; the paid routes do not verify hook lifecycle or call IDs. Both paid routes remain unverified.
+
 The `filesystem-yolo` case explicitly enables the filesystem setting and checks headless Delete/Move, a protected Git-path refusal, and a permitted Read. It checks confirmation bypass without removing technical guards. Its direct and Codemode routes remain unverified until paid execution.
 
 IDE filesystem, GitHub and Linear approvals use the shared operation dialog. Terminal waiting, serialized dialogs and lifecycle cleanup belong to focused real-Pi and live Herdr checks, not this headless runner. These paid cases do not establish provider approval coverage, prove the header or answer a user dialog; GitHub raw REST/GraphQL YOLO remains outside the approval policy.

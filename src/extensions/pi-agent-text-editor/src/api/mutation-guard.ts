@@ -1,4 +1,9 @@
-export type { BeforeDeleteEvent, DeleteGuardRegistration } from "./delete-guard.ts";
+export type {
+  AfterDeleteEvent,
+  BeforeDeleteEvent,
+  DeleteCompletionListener,
+  DeleteGuardRegistration,
+} from "./delete-guard.ts";
 import type { TextEditIntent } from "#src/api/edit-completion.ts";
 import type { AppliedTextChange } from "#src/core/text-change-engine.ts";
 export type { AppliedTextChange } from "#src/core/text-change-engine.ts";
@@ -7,6 +12,8 @@ import type { TextDocument } from "pi-agent-text";
 export interface TextMutationPlanResource {
   readonly source: string;
   readonly existed: boolean;
+  /** True when the regular file will no longer exist; false for a saved empty file. */
+  readonly deleted: boolean;
   readonly before: TextDocument;
   readonly after: TextDocument;
   readonly changes: readonly AppliedTextChange[];
@@ -33,6 +40,7 @@ export type TextMutationGuardOutcome =
 export interface TextMutationGuardContext {
   readonly cwd: string;
   readonly intent?: TextEditIntent;
+  readonly toolCallId?: string;
   readonly signal?: AbortSignal;
 }
 

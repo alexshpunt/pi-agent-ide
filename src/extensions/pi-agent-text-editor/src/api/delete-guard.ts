@@ -8,8 +8,14 @@ export interface BeforeDeleteEvent {
   readonly cwd: string;
   readonly kind: "file" | "directory" | "symlink";
   readonly recursive: boolean;
+  readonly toolCallId?: string;
   readonly signal?: AbortSignal;
 }
+
+/** The object has been successfully removed by a whole-object Delete call. */
+export type AfterDeleteEvent = BeforeDeleteEvent;
+
+export type DeleteCompletionListener = (event: AfterDeleteEvent) => void | Promise<void>;
 
 /** Native file access for whole-object safety checks on the selected filesystem.
  * Paths passed to these methods are native target paths, never controller paths.

@@ -2,7 +2,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TextEditorCore } from "./text-editor-core.ts";
 
-const activeOrigin = new AsyncLocalStorage<string>();
+const activeOrigin = new AsyncLocalStorage<{
+  readonly toolCallId: string;
+  readonly rootToolCallId: string;
+}>();
 const executionRoots = new WeakMap<TextEditorCore, Map<string, string>>();
 
 /** Retain native execution ancestry, never infer ownership from paths or current activity. */
@@ -29,10 +32,20 @@ export function registerTextEditOrigins(pi: ExtensionAPI, core: TextEditorCore):
 
 /** Execute an edit or its delayed batch with the original visible tool-call identity. */
 export function withTextEditOrigin<T>(core: TextEditorCore, toolCallId: string, work: () => T): T {
-  return activeOrigin.run(executionRoots.get(core)?.get(toolCallId) ?? toolCallId, work);
+  return activeOrigin.run(
+    {
+      toolCallId,
+      rootToolCallId: executionRoots.get(core)?.get(toolCallId) ?? toolCallId,
+    },
+    work,
+  );
 }
 
 /** Snapshot this identity before deferring final processing outside its originating call. */
 export function currentTextEditOrigin(): string | undefined {
-  return activeOrigin.getStore();
+  return activeOrigin.getStore()?.rootToolCallId;
+}
+
+export function currentTextEditToolCallId(): string | undefined {
+  return activeOrigin.getStore()?.toolCallId;
 }

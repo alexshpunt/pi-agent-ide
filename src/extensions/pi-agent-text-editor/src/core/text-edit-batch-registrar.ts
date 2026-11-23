@@ -130,7 +130,7 @@ export function registerTextEditBatching(pi: ExtensionAPI, core: TextEditorCore)
     resolveCall(rawCall, inherited, context) {
       const registration = registrations.get(rawCall.name);
 
-      if (registration === undefined) {
+      if (registration === undefined || core.preservesToolCallBoundaries()) {
         return;
       }
       // Batched snapshots bypass the tool argument-preparation boundary.

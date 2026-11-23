@@ -213,6 +213,10 @@ const groups: [string[], string[]][] = [
   [["codemode.silent-write"], ["write-silent"]],
   [["codemode.whole-file-receipts"], ["whole-file-script-receipts"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
+  [
+    ["edit.write-hook-denial", "edit.directory-transfer-hook-denial"],
+    ["file-hook-denials-direct", "file-hook-denials-codemode"],
+  ],
   [["compose.write-large-read"], ["write-large-read"]],
   [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],

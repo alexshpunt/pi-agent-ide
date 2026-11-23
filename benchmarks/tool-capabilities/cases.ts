@@ -958,6 +958,41 @@ add(
   },
 );
 
+const fileHookDenialReason = "Policy marker: KEEP_EXISTING\nPolicy marker: SIBLING_CHECK?!";
+for (const mode of ["direct", "codemode"] as const) {
+  const refusal: Pick<RouteStep, "error" | "contains" | "parentContains"> = {
+    error: true,
+    contains: fileHookDenialReason,
+    ...(mode === "codemode" && { parentContains: fileHookDenialReason.split("\n") }),
+  };
+  add(
+    `file-hook-denials-${mode}`,
+    ["edit.write-hook-denial", "edit.directory-transfer-hook-denial"],
+    `Attempt three independent changes: Write hook-locked-write.txt with "new\\n" (a real newline), Copy copy-tree to hook-locked-copy, and Move move-tree to hook-locked-move. Use whole-object paths without selectors. The fixture enables filesystem YOLO and installs a before-edit hook that refuses all three changes. ${mode === "codemode" ? "Run the tools inside Codemode and inspect the final script result for the refusals. A refused child resolves to null." : "Use the direct tools and inspect each tool receipt."} Leave every file unchanged. Identify each refused call and report the hook's two reason lines verbatim. The repeated reason can be quoted once.`,
+    [
+      { tool: "write", args: { path: "hook-locked-write.txt" }, ...refusal },
+      { tool: "copy", args: { path: "copy-tree", target: "hook-locked-copy" }, ...refusal },
+      { tool: "move", args: { path: "move-tree", target: "hook-locked-move" }, ...refusal },
+    ],
+    {
+      modes: [mode],
+      setup: "file-hook-denials",
+      git: true,
+      files: {
+        "hook-locked-write.txt": "keep write\n",
+        "copy-tree/nested/item.txt": "copy source\n",
+        "hook-locked-copy/nested/item.txt": "keep copy target\n",
+        "move-tree/nested/item.txt": "move source\n",
+        "hook-locked-move/nested/item.txt": "keep move target\n",
+        "hook-locked-move/extra.txt": "keep move-only entry\n",
+        ".pi/pi-agent-ide/extensions.json": JSON.stringify({
+          flags: { "pi-agent-ide-filesystem-yolo": true },
+        }),
+      },
+      answer: fileHookDenialReason,
+    },
+  );
+}
 add(
   "binary-copy-move",
   ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
