@@ -76,6 +76,71 @@ test.each([
   },
 );
 
+test.each([
+  { source: "notes.txt", kind: "source", annotated: false },
+  { source: "notes.txt", kind: "source", annotated: true },
+  { source: "notes.py", kind: "source", annotated: false },
+  { source: "notes.py", kind: "source", annotated: true },
+  { source: "notes.md", kind: "source", annotated: true },
+  { source: "notes.py", kind: "code-view", annotated: true },
+] as const)("previews CRLF like LF in $source ($kind, annotated=$annotated)", (options) => {
+  const render = (end: string, expanded: boolean) => {
+    const content = `example = 42${end}`;
+    const presentation = options.annotated
+      ? { prefix: "2#ABCDE|", compactPrefix: "2 │ ", suffix: " [note]" }
+      : undefined;
+    const result: AgentToolResult<ReadResultDetails> = {
+      content: [
+        {
+          type: "text",
+          text: `${presentation?.prefix ?? ""}${content}${presentation?.suffix ?? ""}\n`,
+        },
+      ],
+      details: {
+        source: options.source,
+        lines: [{ lineNumber: 2, content, lineEnding: "\n", presentation }],
+      },
+    };
+    const preview = createReadResultRenderer({ kind: options.kind })(
+      result,
+      { expanded, isPartial: false },
+      plainTheme,
+      { isError: false, lastComponent: undefined } as never,
+    )
+      .render(80)
+      .join("\n");
+    expect(result.details.lines?.[0]?.content).toBe(content);
+    expect(stripTerminalSequences(preview)).toContain("example = 42");
+    return preview;
+  };
+  for (const expanded of [false, true]) {
+    expect(render("\r", expanded)).toEqual(render("", expanded));
+  }
+});
+
+test("still marks carriage returns that are not part of a CRLF terminator", () => {
+  const result: AgentToolResult<ReadResultDetails> = {
+    content: [{ type: "text", text: "inside\rline\r\r\nlast\r" }],
+    details: {
+      source: "notes.txt",
+      lines: [
+        { lineNumber: 1, content: "inside\rline\r\r", lineEnding: "\n" },
+        { lineNumber: 2, content: "last\r", lineEnding: "" },
+      ],
+    },
+  };
+  const preview = createReadResultRenderer({ kind: "source" })(
+    result,
+    { expanded: true, isPartial: false },
+    plainTheme,
+    { isError: false, lastComponent: undefined } as never,
+  )
+    .render(80)
+    .join("\n");
+  expect(preview).toContain("inside�line� ");
+  expect(preview).toContain("last� ");
+});
+
 test("renders projected view content and expands the complete saved result", () => {
   const lines: ReadTextLine[] = Array.from({ length: 15 }, (_, index) => ({
     lineNumber: index + 1,
