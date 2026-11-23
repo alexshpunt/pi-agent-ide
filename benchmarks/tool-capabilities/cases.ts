@@ -2035,6 +2035,40 @@ add(
 );
 
 add(
+  "lsp-independent-projects",
+  ["lsp.independent-projects"],
+  "Use lsp_search with query FindInFirstModule, then again with query FindInSecondModule. Search from the repository root for both and do not use reference navigation. Report the file that declares each name. Do not change files.",
+  [
+    {
+      tool: "lsp_search",
+      args: { query: "FindInFirstModule" },
+      issuedMatches: [
+        { path: "a-module/target.go", text: "FindInFirstModule", role: "definition" },
+      ],
+    },
+    {
+      tool: "lsp_search",
+      args: { query: "FindInSecondModule" },
+      issuedMatches: [
+        { path: "b-module/target.go", text: "FindInSecondModule", role: "definition" },
+      ],
+    },
+  ],
+  {
+    files: {
+      "a-module/go.mod": "module example.com/a\n\ngo 1.24\n",
+      "a-module/00-seed.go": "package a\n\nfunc Seed() int { return 0 }\n",
+      "a-module/target.go": "package a\n\nfunc FindInFirstModule() int { return 1 }\n",
+      "b-module/go.mod": "module example.com/b\n\ngo 1.24\n",
+      "b-module/00-seed.go": "package b\n\nfunc Seed() int { return 0 }\n",
+      "b-module/target.go": "package b\n\nfunc FindInSecondModule() int { return 1 }\n",
+    },
+    answer: "b-module/target.go",
+    prerequisite: "command -v gopls && command -v go",
+  },
+);
+
+add(
   "search-literal-operators",
   ["search.literal-operators", "search.script-line-text"],
   'Search task.txt with query equal to "flags | MASK", including the two double-quote characters around the phrase, so the vertical bar is literal. Report the full text of the only matching line. In Codemode use the returned match lineText, not text. Do not use Read or another tool to retrieve the line. Do not change files.',
