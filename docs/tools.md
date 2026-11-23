@@ -80,7 +80,7 @@ When a read of a local or SSH text file reaches the last line and the file does 
 
 HTTP(S) pages use a fast direct request first. Failed requests (including HTTP 403 and timeouts), failed HTML conversion, and empty HTML automatically trigger one retry through local Chrome or Chromium within the same `read` call. The browser gets a fresh timeout; caller cancellation stops both attempts. If the browser also fails or is not installed, the read reports both failures. Successful non-HTML reads and non-HTML conversion errors keep their normal behavior. Browser rendering removes hidden elements before the same HTML-to-Markdown conversion runs.
 
-Browser reads discover `google-chrome`, `google-chrome-stable`, `chromium`, or `chromium-browser` on `PATH` and in common Linux locations. Set `PI_AGENT_IDE_BROWSER_PATH` to use another executable. Missing browser support returns a normal read failure and `/agent-ide-doctor` reports it as an optional warning. Browser reads execute page JavaScript. When Pi runs as root, Chromium is launched without its process sandbox; only open sources you trust in that mode.
+If browser fallback is unavailable, run `/agent-ide-doctor` to check the browser and get help with [browser setup](./configuration.md#browser-web-reads). Browser reads execute page JavaScript with the Chromium process sandbox disabled. Only open sources you trust.
 
 When `path` is a typed text resource, `read` returns one independent chunk for each selected range, in resolver order. Each chunk starts at the range's containing line. `offset` and `limit` are applied to every chunk, not across the combined result. The chunks are then joined and the normal aggregate limit of 2,000 lines or 50 KiB is applied.
 

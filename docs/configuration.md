@@ -345,13 +345,15 @@ For automation and tests, `/agent-ide-doctor --apply` accepts suggested mappings
 
 ### Browser web reads
 
-Automatic browser fallback for HTTP(S) reads needs a system Chrome or Chromium executable. Pi Agent IDE checks common command names on `PATH` and common Linux install paths. Set an exact executable when discovery is not enough:
+Automatic browser fallback for HTTP(S) reads needs a system Chrome or Chromium executable. Pi Agent IDE looks for `google-chrome`, `google-chrome-stable`, `chromium`, and `chromium-browser` on `PATH` and checks common Linux install paths. Set an exact executable when discovery is not enough:
 
 ```bash
 export PI_AGENT_IDE_BROWSER_PATH=/path/to/chrome
 ```
 
-Doctor reports browser support as an optional warning. Direct HTTP(S) reads keep working when no browser is installed.
+`/agent-ide-doctor` checks browser support by opening a blank headless page. If the browser is missing or cannot start, Doctor shows an optional warning and offers to hand setup to the agent. The agent asks for separate approval before installing anything or saving `PI_AGENT_IDE_BROWSER_PATH`. Choosing to delegate or passing `--agent` does not grant that approval.
+
+Save the absolute path in the environment that launches Pi. For an explicitly selected SSH project, save it in the environment inherited by the target's non-interactive SSH worker. Doctor rechecks after the agent turn. If the local launch environment changed, relaunch Pi and run Doctor again to verify the new setting. Direct HTTP(S) reads keep working if setup is declined or fails.
 
 ### Doctor setup tip
 
