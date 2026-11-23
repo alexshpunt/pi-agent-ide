@@ -1,14 +1,19 @@
 import { cp, mkdir, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import os from "node:os";
 import { pathToFileURL } from "node:url";
 import type * as PiSdk from "@earendil-works/pi-coding-agent";
 import type { AgentSession, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connectorCatalog, connectorEnvironment, prepareConnector } from "./connectors.ts";
 import { piRuntime } from "./inventory.ts";
 import { CAPABILITY_DEFAULT_TOOLS } from "./run-policy.ts";
-import { prepareTrial, runProcess, sandboxArgs, snapshotSource } from "./sandbox.ts";
+import {
+  isMountedPiPath,
+  prepareTrial,
+  runProcess,
+  sandboxArgs,
+  snapshotSource,
+} from "./sandbox.ts";
 
 const syntheticAccess = "sk-ant-oat01-PREFLIGHT_ONLY_NOT_A_CREDENTIAL";
 const redact = (value: string) => value.split(syntheticAccess).join("[synthetic access]");
@@ -307,11 +312,7 @@ export async function runConnectorPreflight(
     );
     report.connector = { definition, artifact: verified.metadata };
     const runtime = await piRuntime(options.pi ?? "pi");
-    if (
-      !["/usr/", "/opt/", path.join(os.homedir(), ".local/lib") + path.sep].some((root) =>
-        runtime.sdk.startsWith(root),
-      )
-    )
+    if (!isMountedPiPath(runtime.sdk))
       throw Error("Preflight requires an installed Pi inside existing read-only toolchain mounts");
     report.pi = { version: runtime.version, sdk: runtime.sdk, cli: runtime.cli };
     report.status = "infra_error";
@@ -359,7 +360,7 @@ export async function runConnectorPreflight(
     await writeFile(path.join(trial.state, "agent/auth.json"), JSON.stringify(synthetic), {
       mode: 0o600,
     });
-    const args = preflightSandboxArgs(await sandboxArgs(snapshot.source, trial.root, frozen));
+    const args = preflightSandboxArgs(await sandboxArgs(snapshot, trial.root, frozen));
     const execution = await runProcess(
       "bwrap",
       [...args, process.execPath, "/source/benchmarks/tool-capabilities/preflight.ts", "--child"],
