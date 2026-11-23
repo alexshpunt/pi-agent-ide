@@ -12,6 +12,8 @@ Pass exactly one mode:
 
 `<path>` may be relative to the session directory or absolute. The tool runs its resolver through the shared Search execution core, so scopes, SSH owners and selections behave as in `search`; it is not registered as a `search` query form.
 
+A workspace symbol query can reach the server's candidate limit before Pi filters it by path or result scope. Pi reports incomplete coverage when gopls returns 100 candidates or rust-analyzer reaches its known limit (128 by default, or `workspace.symbol.search.limit` in the configuration sent by Pi). Individual matches remain selectable; no all-match anchor is issued. Use a narrower query or an exact `declaration` selector. Raising the tool's `limit` cannot recover candidates the server omitted.
+
 ### Selectors and overloads
 
 A selector segment is a name, or a name with parameter types that names one overload: `clamp(int, int, int)`, `Box/get() const`. Types are compared with the signature the server reports in the document symbol's `detail`, such as clangd's `int (int, int, int)`. Spacing does not matter (`const Vec&` and `const Vec &` are the same), parameter names and default values copied from a declaration are ignored, and `(void)` is `()`. Trailing qualifiers such as `const` tell methods apart; a segment without them prefers the unqualified overload.
