@@ -90,7 +90,18 @@ export const fuzzyDataSchema = Type.Object(
 /** Resolver adapters supply selected domain fields, never renderer details or raw backend objects. */
 export const searchDataSchema = Type.Union([
   Type.Object(
-    { ...selectionProperties, fuzzy: Type.Optional(fuzzyDataSchema) },
+    {
+      ...selectionProperties,
+      fuzzy: Type.Optional(fuzzyDataSchema),
+      skipped: Type.Optional(
+        Type.Array(
+          Type.Object(
+            { name: Type.String(), source: Type.String() },
+            { additionalProperties: false },
+          ),
+        ),
+      ),
+    },
     { additionalProperties: false },
   ),
   Type.Object(
@@ -170,8 +181,9 @@ const preview = { matches: 100, textBytes: 4096 } as const;
  * The record of a call that does not hand its result to a script: the first 100 matches, each with
  * its match and line text when each is at most 4 KB. The record of every call must stay within the 1 MiB
  * limit of structured results, which only a script's call lifts. `truncated` marks a shortened
- * list and `textTruncated` an omitted text. A resolver's own value, such as an lsp_search call
- * graph, keeps each list of matches it holds as a preview. Data of other kinds stays as it is.
+ * list (including skipped candidates) and `textTruncated` an omitted text. A resolver's own value,
+ * such as an lsp_search call graph, keeps each list of matches it holds as a preview. Data of other
+ * kinds stays as it is.
  */
 export function selectionPreview(data: unknown): unknown {
   if (isRecord(data) && data.kind === "custom" && isRecord(data.value))
@@ -183,9 +195,13 @@ export function selectionPreview(data: unknown): unknown {
     };
   if (!isRecord(data) || data.kind !== "matches" || !Array.isArray(data.matches)) return data;
   const matches: unknown[] = data.matches;
+  const skipped: unknown[] | undefined = Array.isArray(data.skipped) ? data.skipped : undefined;
   return {
     ...data,
-    ...(matches.length > preview.matches && { truncated: true }),
+    ...((matches.length > preview.matches || (skipped?.length ?? 0) > preview.matches) && {
+      truncated: true,
+    }),
+    ...(skipped !== undefined && { skipped: skipped.slice(0, preview.matches) }),
     matches: matches.slice(0, preview.matches).map((match) => {
       if (!isRecord(match)) return match;
       const captures = isRecord(match.captures)

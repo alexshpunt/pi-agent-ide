@@ -301,6 +301,37 @@ test("lists each overload with its selector when the symbol index lags behind th
   ]);
 });
 
+test("keeps anchored definitions and references when another workspace candidate cannot be anchored", async () => {
+  const { cwd, manager, sendRequest } = await fixture();
+  const next = sendRequest.getMockImplementation();
+  const source = path.join(cwd, "other.ts");
+  const stale = {
+    name: "sameGone",
+    kind: 12,
+    location: {
+      uri: pathToFileURL(source).href,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 4 } },
+    },
+  };
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const answer: unknown = await next?.(method, parameters);
+    if (method !== "workspace/symbol" || !Array.isArray(answer)) return answer;
+    const definitions: readonly unknown[] = answer;
+    return [stale, ...definitions, stale];
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, {}, manager);
+
+  expect(result.complete).toBe(false);
+  expect(result.skipped).toEqual([{ name: stale.name, source }]);
+  expect(result.hits.map((hit) => [path.basename(hit.source), hit.role, hit.matchedText])).toEqual([
+    ["a.ts", "definition", "same"],
+    ["a.ts", "reference", "same"],
+    ["b.ts", "reference", "same"],
+    ["other.ts", "definition", "same"],
+  ]);
+});
+
 test("does not treat failed reference requests or missing providers as no matches", async () => {
   const { cwd, manager, sendRequest } = await fixture();
   sendRequest.mockImplementation(async (method) => {

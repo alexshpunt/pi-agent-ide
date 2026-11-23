@@ -429,6 +429,7 @@ const groups: [string[], string[]][] = [
   // Rust has a separate no-build route; the TypeScript route does not prove Cargo safety.
   [["read.rust-diagnostics-no-build"], ["rust-diagnostics-no-build"]],
   [
+    // lsp-read uses a stable TypeScript index. lsp-query-partial tests a stale candidate in real Pi.
     ["lsp.symbols", "lsp.references", "lsp.graph", "lsp.diagnostics", "read.diagnostics-view"],
     ["lsp-read"],
   ],

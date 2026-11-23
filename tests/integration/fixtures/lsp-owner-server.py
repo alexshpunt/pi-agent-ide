@@ -93,7 +93,14 @@ while True:
         if params["query"] == "broken":
             send({"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32603, "message": "Owned navigation failure"}})
             continue
-        result = [{"name": "label", "kind": 14, "location": {"uri": state["receivedRoot"] + "/note.ts", "range": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}}] if params["query"] == "label" else []
+        uri = state["receivedRoot"] + "/note.ts"
+        result = []
+        if params["query"] in ("label-family", "missing-label"):
+            # The stale candidate has neither its name at the indexed range nor a
+            # declaration in the fresh outline. List it before the usable candidate.
+            result.append({"name": "removedLabel", "kind": 14, "location": {"uri": uri, "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 21}}}})
+        if params["query"] in ("label", "label-family"):
+            result.append({"name": "label", "kind": 14, "location": {"uri": uri, "range": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}})
     elif method == "$/cancelRequest" and params["id"] in pending_symbols:
         pending_symbols.remove(params["id"])
         record_symbol_request("cancelled", params["id"])
