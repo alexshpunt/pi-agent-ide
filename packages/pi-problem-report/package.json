@@ -1,0 +1,24 @@
+{
+  "name": "pi-problem-report",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Problem panel and prefilled GitHub issue reports for Pi extensions",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./rejection-guard": {
+      "types": "./src/rejection-guard.ts",
+      "default": "./src/rejection-guard.ts"
+    }
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-tui": "1.5.2"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}

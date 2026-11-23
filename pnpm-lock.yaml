@@ -68,6 +68,9 @@ importers:
       pi-agent-tool-ui:
         specifier: workspace:^
         version: link:packages/pi-agent-tool-ui
+      pi-problem-report:
+        specifier: workspace:^
+        version: link:packages/pi-problem-report
       playwright-core:
         specifier: ^1.62.1
         version: 1.62.1
@@ -236,6 +239,19 @@ importers:
         version: 1.3.27
 
   packages/pi-agent-tool-ui:
+    dependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 1.5.2
+        version: 1.5.2(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(ws@8.21.3)
+      '@earendil-works/pi-tui':
+        specifier: 1.5.2
+        version: 1.5.2
+    devDependencies:
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.1(@types/node@24.13.3)(esbuild@0.25.12)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/pi-problem-report:
     dependencies:
       '@earendil-works/pi-coding-agent':
         specifier: 1.5.2
@@ -3228,11 +3244,6 @@ packages:
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  pi-coding-agent-test@0.1.6:
-    resolution: {integrity: sha512-bssAOQRxvQVigDKEFUCIfV+sGRjwCufD7bDS+Cm9AuRZmoxGAYFDYqbzEb8FjKtFzuCthPGv7gherwBQBo+zQw==}
-    engines: {node: '>=22.19.0'}
-    hasBin: true
-
   pi-coding-agent-test@0.1.8:
     resolution: {integrity: sha512-aje0p5KQENr5NkfFFH/ygwUKiqYhQzkCdrO9Q9cBEus3BncCWE7+DWkbYov4IPr/0dwT3dzLEpVIz/NDBjtB/Q==}
     engines: {node: '>=22.19.0'}
@@ -5572,26 +5583,6 @@ snapshots:
       '@napi-rs/canvas': 1.0.9
 
   pi-coding-agent-test@0.1.5(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3):
-    dependencies:
-      '@earendil-works/pi-ai': 1.5.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3)
-      '@xterm/headless': 6.0.0
-      cross-spawn: 7.0.6
-      node-pty: 1.1.0
-      playwright: 1.62.1
-    transitivePeerDependencies:
-      - '@aws-sdk/credential-provider-node'
-      - '@modelcontextprotocol/sdk'
-      - '@smithy/hash-node'
-      - '@smithy/signature-v4'
-      - bufferutil
-      - kerberos
-      - supports-color
-      - undici
-      - utf-8-validate
-      - ws
-      - zod
-
-  pi-coding-agent-test@0.1.6(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3):
     dependencies:
       '@earendil-works/pi-ai': 1.5.0(@aws-sdk/credential-provider-node@3.972.84)(@smithy/signature-v4@5.7.4)(undici@8.12.3)(ws@8.21.3)
       '@xterm/headless': 6.0.0
