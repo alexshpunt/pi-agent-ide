@@ -29,8 +29,7 @@ import {
 } from "./clang-coverage.ts";
 import { requestWorkspaceSymbols, requestDocumentSymbols } from "./symbols.ts";
 import {
-  declarationAt,
-  declarationsNamed,
+  declarationsForWorkspaceSymbol,
   normalizeDocumentSymbols,
   preferredDeclaration,
   type LspCodeSymbol,
@@ -390,10 +389,12 @@ async function searchSymbolsOnce(
       // The file's current symbols then name every declaration with that name, each overload
       // apart; a prototype and its definition are one declaration.
       const outline = await outlineOf(opened.client, opened.uri);
-      const fresh = workspaceMatch?.matchedText === definition.name;
-      const declarations: (readonly LspCodeSymbol[] | undefined)[] = fresh
-        ? [declarationAt(outline, definition.location.range)]
-        : declarationsNamed(outline, definition.name);
+      const declarations = declarationsForWorkspaceSymbol(
+        outline,
+        definition.name,
+        definition.location.range,
+        workspaceMatch?.matchedText,
+      );
       if (declarations.length === 0) {
         // Without an anchor we cannot ask for its references or rule out a hit inside the scope.
         skipped.set(JSON.stringify([source, definition.name]), { name: definition.name, source });
