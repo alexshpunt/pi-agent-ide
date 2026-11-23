@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.0.0 — 2026-11-22
+
+### Breaking changes
+
+- Edit selectors have new names. Update saved calls and Codemode scripts:
+
+  | Tool                                | Before                      | Now                            |
+  | ----------------------------------- | --------------------------- | ------------------------------ |
+  | `replace`, `delete`, `copy`, `move` | `start`                     | `at`                           |
+  | `replace`, `delete`, `copy`, `move` | `start` + `end`             | `from` + `through`             |
+  | `copy`, `move` destination          | `targetStart`               | `targetAfter`                  |
+  | `copy`, `move` destination          | `targetStart` + `targetEnd` | `targetFrom` + `targetThrough` |
+  | `insert`                            | `anchor`                    | `after`                        |
+  | `insert`                            | `anchor` + `before: true`   | `before`                       |
+
+  `from` and `through` include both matches. Use `after` or `before` instead to leave the opening or closing match out of the range. In a destination, `targetAt` replaces one match and `targetBefore` inserts before it. The new text still goes in `text`.
+
+- Codemode scripts get tool-specific values:
+  - `read` returns the full text in `.text`. Pass the Read value or its `id` to another tool to keep the selection. Raw reads return base64 bytes, directory reads return their entries.
+  - `search`, `ast_search` and `lsp_search` return a list of matches. Use a match's `id` or the result's `id`; Search no longer has a `result` field.
+  - `file_search` and `semantic_search` return arrays of paths. `diff` returns the diff as a string.
+  - Terminal calls return `output`, `exit_code` and `session`, plus log and timing fields.
+  - Edits return a selection ID when they can confirm the new text.
+  - A failed call returns `null` and shows up in the script's failure summary. A command that ran and exited with a nonzero code still returns its exit code.
+- Write takes images in the `image` field. `content` is always text, so a JSON string or a path that looks like an image is written as text.
+- Check a file with `diagnostics({ path })` instead of `read({ path: "diagnostics:…" })`. The `diagnostics` view of Read still shows findings next to the code.
+- The `symbol:` edit selector is gone. To rename a symbol, find its declaration with `lsp_search` and replace its name capture with the new name.
+
+### Added
+
+- `outline` lists a file's declarations page by page, without their bodies.
+- `diagnostics` checks a file without reading it.
+- Read accepts several sources in one call. In Codemode it returns one value per source, in order, with `null` for a source that failed.
+- Search takes a list of files and folders as its scope and supports `AND NOT` and a leading `NOT`. Quotes in an ordinary query are matched literally.
+- Terminal sessions can be named, renamed, listed and searched with a regex. The session log stays readable after the process exits.
+- Windows SSH targets support file operations, search, Git changes and PowerShell terminals. On native Windows, local commands run in PowerShell and `remote_bash` runs commands on configured Linux targets.
+- `ast_search` works out of the box: ast-grep ships with the package on supported platforms.
+
+### Changed
+
+- Text copied from Read or Search works as an edit selector, including line anchors. Search's `⟦ ⟧` highlight markers are ignored when the text doesn't match with them.
+- When a selector is missing, outdated or matches several places, the error shows the current lines and a ready call to fix it. To change every occurrence, use an all-match selector.
+- An edit over a large range you haven't read is refused until you read it.
+- Edits change only the selected text. Line endings and look-alike characters elsewhere stay as they were. Replacing whole lines keeps the line ending of the last one, and deleting whole lines removes their line breaks too.
+- Read marks a file that has no final newline. The marker is not part of the text in Codemode and can't be used in an edit.
+- A selection stays valid after edits elsewhere in the file, including moved blocks and appended lines. If an edit can no longer tell repeated matches apart, it stops.
+- Write refuses to overwrite a file that changed since you last read it, and suggests a targeted edit or a fresh Read.
+- Parallel edits to one file wait for each other. In a Codemode batch, an edit whose selection no longer resolves fails on its own, and the result lists the failed edits.
+- `file_search` stops at `limit`: 100 by default in direct calls, no limit in Codemode. After 30 seconds it returns the paths found so far and says the search is incomplete.
+- Search times out after 30 seconds by default; the limit can be raised to 120 seconds. Edit locks, language-server requests and SSH transfers also time out instead of hanging.
+- Search reports loose matches, such as the words found separately, as hints. A hint can't be used as an edit selection.
+- Rust diagnostics no longer start a Cargo build. Compiler checks and Clippy run only when you turn them on.
+- Built-in `rustfmt` uses the project's edition and formats only the edited file, and only if that file was already formatted.
+- SSH reuses Pi's OpenSSH connections, streams large transfers and reconnects if the network drops while connecting.
+
+### Fixed
+
+- C and C++ navigation tells overloads and redeclarations apart. References and renames retry when other edits change the files during the request. When clangd can't cover all the files it needs, the result says so and a rename changes nothing.
+- `lsp_search` skips results in files that no longer exist.
+- On Unix, a terminal keeps the last of its output when the process closes the terminal.
+- If an SSH connection drops during a write, the result says the effect is unknown, so you can check the target before trying again.
+
 ## 0.9.8 — 2026-11-08
 
 ### Fixed
