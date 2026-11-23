@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
+set -eu
 # Runs in every checkout and worktree, before or without `pnpm install`: core.hooksPath lives in
 # the shared Git config, and the check needs only Node and Git.
 node --experimental-strip-types scripts/check-no-task-evidence.ts --staged
+node --experimental-strip-types scripts/format-staged.ts
