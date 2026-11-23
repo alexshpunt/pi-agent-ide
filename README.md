@@ -264,6 +264,8 @@ Pi Agent IDE is used actively in real development, but I can only reproduce the 
 
 If something breaks, behaves badly, or does not fit your workflow, please [open an issue](https://github.com/alexshpunt/pi-agent-ide/issues). Bug reports, ideas, questions, and pull requests are welcome.
 
+When Pi Agent IDE hits an internal error, a panel above the editor names it and offers a prefilled issue with the error, its stack and the versions. **Open issue** opens the GitHub form, **Copy report** copies the same text, **Close** hides the panel, and **Don't show again** turns these panels off. The buttons take clicks in fullscreen mode; `/agent-ide-problem open|copy|close|off` does the same anywhere. Nothing is sent until you submit the issue yourself. The panel also appears after Pi restarts from a crash caused by Pi Agent IDE. A module that fails to load is skipped, and the other modules keep working. Turn the panels off or on again with the **Problem reports** setting in `/agent-ide-settings`.
+
 ## Documentation
 
 | Document                                               | Contents                                                                 |
