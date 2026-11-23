@@ -129,7 +129,7 @@ test("direct Search anchor refusals distinguish bulk token selections from word 
         getToolResultText(run, callId),
       ).toMatchObject({
         effect: "not-applied",
-        results: [{ ok: false, errors: [{ code }] }],
+        results: [{ data: { ok: false, errors: [{ code }] } }],
       });
       expect(await readFile(path.join(cwd, `${id}.txt`), "utf8")).toBe(content);
     }
