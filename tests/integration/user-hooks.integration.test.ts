@@ -286,7 +286,8 @@ test("file hook plans describe the transaction and correlate its confirmed effec
       "tree-copy-denied",
       "tree-move-denied",
     ])
-      expect(getToolResultText(run, id), id).toContain(editDenial);
+      // Codemode indents the child's message under its failed invocation.
+      expect(getToolResultText(run, id).replaceAll(/\n {2}/gu, "\n"), id).toContain(editDenial);
     for (const id of ["empty-write", "tree-copy", "tree-move", "empty-delete", "script"])
       expect(getToolExecution(run, id).isError, id).toBe(false);
     const saved = (name: string) => readFile(path.join(cwd, name), "utf8");
