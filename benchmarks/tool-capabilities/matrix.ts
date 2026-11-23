@@ -157,6 +157,7 @@ const groups: [string[], string[]][] = [
   [["lsp_search.path-list"], ["lsp-path-list"]],
   [["lsp.typescript-workspace-projects"], ["lsp-typescript-projects"]],
   [["lsp.independent-projects"], ["lsp-independent-projects"]],
+  [["lsp.workspace-candidate-limit"], ["lsp-workspace-candidate-limit"]],
   [["search.literal-operators", "search.script-line-text"], ["search-literal-operators"]],
   [
     // Engine switching is a settings-menu lifecycle, checked in real Pi rather than a model route.

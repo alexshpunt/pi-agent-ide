@@ -181,6 +181,29 @@ export class LspClient {
   get commandName(): string {
     return configuredExecutableName(this._command);
   }
+  /** Known workspace/symbol cap for the server started by this client. */
+  get workspaceSymbolCandidateLimit(): number | undefined {
+    switch (this.commandName.replace(/\.exe$/iu, "")) {
+      case "gopls": {
+        return 100;
+      }
+      case "rust-analyzer": {
+        // rust-analyzer replaces its initialize options with a nonempty reply to
+        // workspace/configuration, requesting the "rust-analyzer" section.
+        const [settings] = configurationItems(this._settings, [{ section: "rust-analyzer" }]);
+        const options =
+          typeof settings === "object" && settings !== null && Object.keys(settings).length > 0
+            ? settings
+            : this._initOptions;
+        const [limit] = configurationItems(options, [{ section: "workspace.symbol.search.limit" }]);
+        return typeof limit === "number" && Number.isSafeInteger(limit) && limit >= 0 ? limit : 128;
+      }
+      default: {
+        return undefined;
+      }
+    }
+  }
+
   get diagnosticMode(): "unknown" | "pull" | "push" {
     return this._diagnosticMode;
   }
