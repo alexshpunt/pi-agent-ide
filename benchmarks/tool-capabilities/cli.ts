@@ -45,10 +45,12 @@ import {
 import {
   cleanupTrial,
   gitState,
+  isMountedPiPath,
   prepareTrial,
   runProcess,
   sandboxArgs,
   snapshotSource,
+  type SourceSnapshot,
   validateFiles,
   fixtureFiles,
 } from "./sandbox.ts";
@@ -182,7 +184,7 @@ function shellQuote(value: string): string {
 }
 
 async function attempt(
-  source: string,
+  snapshot: SourceSnapshot,
   parent: string,
   root: string,
   task: CapabilityCase,
@@ -221,8 +223,8 @@ async function attempt(
       return result;
     }
     const connector = connectorRun?.prepared;
-    prepared = await prepareTrial(parent, source, task);
-    const bwrap = await sandboxArgs(source, prepared.root, connector);
+    prepared = await prepareTrial(parent, snapshot.source, task);
+    const bwrap = await sandboxArgs(snapshot, prepared.root, connector);
     const modelProvider = profile.model.slice(0, profile.model.indexOf("/"));
     const authProvider = connector?.definition.authProvider ?? modelProvider;
     authentication = dedicatedAuth
@@ -703,14 +705,7 @@ async function main(): Promise<void> {
   const inventory = await coverage(command);
   if (!args.includes("--run")) return;
   const runtime = await piRuntime(command);
-  if (
-    ![
-      "/usr/",
-      "/opt/",
-      path.join(os.homedir(), ".local/bin") + path.sep,
-      path.join(os.homedir(), ".local/lib") + path.sep,
-    ].some((mount) => runtime.cli.startsWith(mount))
-  )
+  if (!isMountedPiPath(runtime.cli))
     throw Error(
       "Paid runs need an installed Pi inside the read-only system toolchain mounts. Use --pi to select it.",
     );
@@ -892,7 +887,7 @@ async function main(): Promise<void> {
         runState.attemptsStarted = true;
         console.log(`Running ${profile.id} / ${task.id} / ${route} / attempt ${n}`);
         const result = await attempt(
-          snapshot.source,
+          snapshot,
           parent,
           root,
           task,

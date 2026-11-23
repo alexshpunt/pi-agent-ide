@@ -1,12 +1,12 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 import { piRuntime } from "#capabilities/inventory.ts";
+import { isMountedPiPath } from "#capabilities/sandbox.ts";
+import { sourceIdentity } from "#capabilities/source-identity.ts";
 import { accountStopReason } from "#capabilities/run-policy.ts";
 import { schedule } from "#capabilities/scheduler.ts";
 import { variants } from "./fixtures.ts";
@@ -62,26 +62,6 @@ function select<T extends { id: string }>(all: readonly T[], list: string, kind:
   return selected as T[];
 }
 
-/**
- * Runs mount the checkout read-only instead of copying it, so a run starts in seconds. The
- * revision and a digest of every tracked and unignored file identify the source that ran.
- */
-function sourceIdentity(repository: string): { revision: string; sourceDigest: string } {
-  const git = (args: string[]) => execFileSync("git", args, { cwd: repository, encoding: "utf8" });
-  const hash = createHash("sha256");
-  const files = git(["ls-files", "--cached", "--others", "--exclude-standard", "-z"]).split("\0");
-  for (const file of [...new Set(files)].filter(Boolean).sort()) {
-    let bytes: Buffer;
-    try {
-      bytes = readFileSync(path.join(repository, file));
-    } catch {
-      continue;
-    }
-    hash.update(file).update("\0").update(bytes).update("\0");
-  }
-  return { revision: git(["rev-parse", "HEAD"]).trim(), sourceDigest: hash.digest("hex") };
-}
-
 function positive(value: string, name: string): number {
   const number = Number(value);
   if (!Number.isSafeInteger(number) || number < 1)
@@ -115,19 +95,12 @@ async function main(): Promise<void> {
   const authDir = values["auth-dir"];
   if (!authDir) throw Error("--run requires --auth-dir with a private Pi auth.json snapshot");
   const runtime = await piRuntime(values.pi);
-  if (
-    ![
-      "/usr/",
-      "/opt/",
-      path.join(os.homedir(), ".local/bin") + path.sep,
-      path.join(os.homedir(), ".local/lib") + path.sep,
-    ].some((mount) => runtime.cli.startsWith(mount))
-  )
+  if (!isMountedPiPath(runtime.cli))
     throw Error(
       "Paid runs need an installed Pi inside the read-only system toolchain mounts. Use --pi to select it.",
     );
 
-  const source = sourceIdentity(repository);
+  const source = await sourceIdentity(repository);
   const results = path.resolve(
     values.results ??
       path.join(
@@ -212,7 +185,7 @@ async function main(): Promise<void> {
   await writeFile(path.join(results, "report.md"), report);
   console.log("\n" + report);
   if (stoppedFor) console.log(`Stopped early: ${stoppedFor}`);
-  if (sourceIdentity(repository).sourceDigest !== source.sourceDigest) {
+  if ((await sourceIdentity(repository)).sourceDigest !== source.sourceDigest) {
     console.log("The checkout changed during the run: results may mix two versions of the source.");
     process.exitCode = 1;
   }
