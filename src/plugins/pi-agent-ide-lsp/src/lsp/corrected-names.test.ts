@@ -2,6 +2,7 @@ import { expect, test, vi } from "vitest";
 import {
   isFatalClangError,
   positionKey,
+  rangeTextReader,
   textInRange,
   withinTypoDistance,
   withoutCorrectedNames,
@@ -77,6 +78,19 @@ test("range text spans lines and rejects ranges outside the content", () => {
   expect(
     textInRange(content, { start: { line: 5, character: 0 }, end: { line: 5, character: 1 } }),
   ).toBe("");
+});
+
+test("a range reader answers many ranges of one text like the one-off function", () => {
+  const content = "first\nsecond line\n\nlast";
+  const read = rangeTextReader(content);
+  const ranges = [
+    { start: { line: 1, character: 0 }, end: { line: 1, character: 6 } },
+    { start: { line: 0, character: 2 }, end: { line: 1, character: 3 } },
+    { start: { line: 3, character: 0 }, end: { line: 3, character: 4 } },
+    { start: { line: 9, character: 0 }, end: { line: 9, character: 1 } },
+  ];
+  expect(ranges.map(read)).toEqual(ranges.map((range) => textInRange(content, range)));
+  expect(ranges.map(read)).toEqual(["second", "rst\nsec", "last", ""]);
 });
 
 test("fatal clang errors include the error limit and files that cannot be read", () => {
