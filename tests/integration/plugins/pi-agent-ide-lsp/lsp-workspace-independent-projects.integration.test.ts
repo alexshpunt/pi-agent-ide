@@ -16,6 +16,9 @@ import { expect, test } from "vitest";
 
 const available = (command: string, argument: string) =>
   spawnSync(command, [argument], { stdio: "ignore" }).status === 0;
+/** Whether a program is on PATH, for language servers that reject `--version`. */
+const installed = (command: string) =>
+  spawnSync("sh", ["-c", `command -v ${command}`], { stdio: "ignore" }).status === 0;
 
 interface Project {
   readonly directory: string;
@@ -127,7 +130,7 @@ test.skipIf(!available("clangd", "--version")).each(orders)(
   150_000,
 );
 
-test.skipIf(!available("gopls", "version")).each(orders)(
+test.skipIf(!available("gopls", "version") || !available("go", "version")).each(orders)(
   "finds declarations in two Go modules without a go.work when %s is listed first and %s second",
   async (first, second) => {
     const projects = [
@@ -147,6 +150,63 @@ test.skipIf(!available("gopls", "version")).each(orders)(
       projects.map(({ directory, name }) => ({
         directory,
         definitions: [{ source: `${directory}/target.go`, text: name }],
+      })),
+    );
+  },
+  150_000,
+);
+
+test
+  .skipIf(!available("rust-analyzer", "--version") || !available("cargo", "--version"))
+  .each(orders)(
+  "finds declarations in two Cargo workspaces without a parent workspace when %s is listed first and %s second",
+  async (first, second) => {
+    const projects = [
+      { directory: first, name: "find_in_first_workspace" },
+      { directory: second, name: "find_in_second_workspace" },
+    ];
+    const found = await searchProjects("workspace-cargo-workspaces", projects, () =>
+      Object.fromEntries(
+        projects.flatMap(({ directory, name }) => [
+          [
+            `${directory}/Cargo.toml`,
+            `[package]\nname = "${directory}"\nversion = "0.1.0"\nedition = "2021"\n`,
+          ],
+          [`${directory}/src/lib.rs`, "pub mod target;\npub fn seed() -> i32 {\n    0\n}\n"],
+          [`${directory}/src/target.rs`, `pub fn ${name}() -> i32 {\n    1\n}\n`],
+        ]),
+      ),
+    );
+    expect(found).toEqual(
+      projects.map(({ directory, name }) => ({
+        directory,
+        definitions: [{ source: `${directory}/src/target.rs`, text: name }],
+      })),
+    );
+  },
+  150_000,
+);
+
+test.skipIf(!installed("basedpyright-langserver") && !installed("pyright-langserver")).each(orders)(
+  "finds declarations in two Python projects with their own pyproject.toml when %s is listed first and %s second",
+  async (first, second) => {
+    const projects = [
+      { directory: first, name: "find_in_first_project" },
+      { directory: second, name: "find_in_second_project" },
+    ];
+    const found = await searchProjects("workspace-python-projects", projects, () =>
+      Object.fromEntries(
+        projects.flatMap(({ directory, name }) => [
+          [`${directory}/pyproject.toml`, `[project]\nname = "${directory}"\nversion = "0.1.0"\n`],
+          [`${directory}/seed.py`, "def seed() -> int:\n    return 0\n"],
+          [`${directory}/target.py`, `def ${name}() -> int:\n    return 1\n`],
+        ]),
+      ),
+    );
+    expect(found).toEqual(
+      projects.map(({ directory, name }) => ({
+        directory,
+        definitions: [{ source: `${directory}/target.py`, text: name }],
       })),
     );
   },
