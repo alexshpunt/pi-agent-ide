@@ -31,7 +31,7 @@ test("live settings apply without reload and pending module changes clear when r
       conversation: [assistantMessage([text("Ready")])],
     }).run("/agent-ide-settings");
     const result = JSON.parse(await readFile(output, "utf8")) as {
-      events: { preferences: Record<string, string> }[];
+      codemodeUpdates: (string | null)[][];
       statuses: (string | null)[];
       confirms: boolean[];
       frames: string[][];
@@ -45,16 +45,18 @@ test("live settings apply without reload and pending module changes clear when r
     expect(result.snapshots[3]?.preferences?.["ui.codemode"]).toBe("off");
     expect(result.snapshots[4]?.disabled).not.toContain("ide.core");
     expect(result.snapshots[5]?.preferences?.["search.semantic.engine"]).toBe("vera");
-    expect(result.events[0]?.preferences["ui.codemode"]).toBe("on");
+    expect(result.codemodeUpdates[0]).toEqual(["on"]);
     expect(result.statuses[0]).toBeNull();
     expect(result.statuses[1]).toBeTruthy();
     expect(result.statuses[2]).toBeNull();
     expect(result.statuses[3]).toBeTruthy();
     expect(result.statuses[4]).toBeNull();
     expect(result.statuses[5]).toBeNull();
-    expect(result.events[3]?.preferences["ui.codemode"]).toBe("off");
+    expect(result.codemodeUpdates[3]).toEqual(["off"]);
     expect(result.snapshots[6]?.preferences?.["ui.codemode"]).toBe("off");
     expect(result.snapshots[7]?.preferences?.["ui.codemode"]).toBe("on");
+    expect(result.codemodeUpdates[6]).toEqual([]);
+    expect(result.codemodeUpdates[7]).toEqual(["on"]);
     expect(result.confirms).toEqual([false, false, false, true]);
     expect(result.frames.length).toBeGreaterThan(3);
     expect(run.providerRequests).toHaveLength(1);
