@@ -114,7 +114,7 @@ test("SSH language server stdio maps owned URIs without mapping source text or l
       const opened = await manager.openFile(note, root, "symbols");
       expect(opened?.uri).toBe(note);
       await expect.poll(() => opened?.client.diagnosticPublication(note)?.version).toBe(1);
-      expect(await manager.getWorkspaceClients(root)).toEqual([opened?.client]);
+      expect(await manager.prepareWorkspaceSymbols(root)).toEqual([opened?.client]);
       const compiler = createLspCompiler((cwd, source) => {
         expect(cwd).toBe("/controller");
         expect(source).toBe(note);

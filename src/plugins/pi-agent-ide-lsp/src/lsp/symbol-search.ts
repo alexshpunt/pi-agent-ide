@@ -28,6 +28,7 @@ import {
   type ClangCoverage,
 } from "./clang-coverage.ts";
 import { requestWorkspaceSymbols, requestDocumentSymbols } from "./symbols.ts";
+import { exactIdentifier, scanDeclarations } from "./declaration-scan.ts";
 import {
   declarationAt,
   declarationsNamed,
@@ -195,6 +196,17 @@ async function searchSymbolsOnce(
     return read;
   };
   const readText = async (file: string) => (await snapshotOf(sourceOf(file, cwd))).document.content;
+  const outlines = new Map<LspClient, Map<string, Promise<LspCodeSymbol[]>>>();
+  const outlineOf = (client: LspClient, uri: string) => {
+    const byUri = outlines.get(client) ?? new Map<string, Promise<LspCodeSymbol[]>>();
+    outlines.set(client, byUri);
+    let outline = byUri.get(uri);
+    if (outline === undefined) {
+      outline = requestDocumentSymbols(client, uri, signal).then(normalizeDocumentSymbols);
+      byUri.set(uri, outline);
+    }
+    return outline;
+  };
   const roots = resultScope?.targets.map((target) => target.source) ??
     scope.paths ?? [scope.path ?? cwd];
   const clients = new Set(
@@ -216,6 +228,22 @@ async function searchSymbolsOnce(
     throw new Error(
       "LSP symbol search is unavailable: no provider supports workspace/symbol in this scope.",
     );
+  // An exact name is looked up in the files that write it, whatever the servers' indexes hold.
+  const word = exactIdentifier(query);
+  const scan =
+    word === undefined
+      ? undefined
+      : await scanDeclarations({
+          manager,
+          cwd,
+          roots,
+          word,
+          accepts: (source) => withinScope(source, cwd, scope),
+          readText,
+          outlineOf,
+          ...(signal && { signal }),
+        });
+  for (const client of scan?.declarations.keys() ?? []) clients.add(client);
   // The result scope as the text each hit was read from. Another session may have written the file
   // since the scope was resolved, before or while the server answered; the scope follows its
   // region through unchanged lines, and the call fails when the region is gone.
@@ -341,29 +369,14 @@ async function searchSymbolsOnce(
       return false;
     }
   };
-  const coverages: (ClangCoverage | undefined)[] = [];
+  const coverages: (ClangCoverage | undefined)[] = [scan?.coverage];
   // Declarations already listed, by file and the name position of their first entry.
   const listed = new Map<LspClient, Set<string>>();
-  const outlines = new Map<LspClient, Map<string, Promise<LspCodeSymbol[]>>>();
-  const outlineOf = (client: LspClient, uri: string) => {
-    const byUri = outlines.get(client) ?? new Map<string, Promise<LspCodeSymbol[]>>();
-    outlines.set(client, byUri);
-    let outline = byUri.get(uri);
-    if (outline === undefined) {
-      outline = requestDocumentSymbols(client, uri, signal).then(normalizeDocumentSymbols);
-      byUri.set(uri, outline);
-    }
-    return outline;
-  };
   for (const client of clients) {
     const typescript = hasTypeScriptProjectQueries(client);
     signal?.throwIfAborted();
-    const definitions = await requestWorkspaceSymbols(
-      client,
-      query,
-      Number.MAX_SAFE_INTEGER,
-      signal,
-    );
+    const indexed = await requestWorkspaceSymbols(client, query, Number.MAX_SAFE_INTEGER, signal);
+    const definitions = [...indexed, ...(scan?.declarations.get(client) ?? [])];
     for (const definition of definitions) {
       signal?.throwIfAborted();
       const source = sourceOf(definition.location.uri, cwd);
