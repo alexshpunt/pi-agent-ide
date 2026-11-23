@@ -1,5 +1,13 @@
 import { isExecutableAvailable } from "pi-agent-doctor/api/executable";
 
+/** Default ElixirLS adapter command on a native Windows SSH target. */
+export const WINDOWS_SSH_ELIXIR_DEBUG_COMMAND = "debug_adapter.bat";
+export const WINDOWS_SSH_JS_DEBUG_PATH = ".pi/debug-adapters/js-debug/src/dapDebugServer.js";
+/** Target project defaults for managed Node-based adapters on Windows SSH. */
+export const WINDOWS_SSH_PHP_DEBUG_PATH = ".pi/debug-adapters/php-debug/extension/out/phpDebug.js";
+export const WINDOWS_SSH_LUA_DEBUG_PATH =
+  ".pi/debug-adapters/lua-debug/extension/extension/debugAdapter.js";
+
 /** A debugger runtime command and arguments that precede adapter-specific arguments. */
 export interface DebuggerRuntimeCommand {
   readonly command: string;

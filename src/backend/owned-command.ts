@@ -1,9 +1,9 @@
-import { startSshProcess, type SshProcessChannel } from "./ssh-channel.ts";
+import { startSshProcess, type SshProcessChannel, type SshProcessContext } from "./ssh-channel.ts";
 import { SshBackendError, type SshTarget } from "./ssh.ts";
 import type { SshCommand } from "./ssh-transport.ts";
 
 /** Bounds for one owned, buffered command. Both output streams share the byte budget. */
-export interface OwnedCommandOptions {
+export interface OwnedCommandOptions extends Pick<SshProcessContext, "env" | "gracefulStop"> {
   readonly signal?: AbortSignal;
   /** A read refusal has no user-file effect; an interrupted mutating command may already have written. */
   readonly effect: "not-applied" | "unknown";
@@ -47,6 +47,8 @@ export async function runOwnedSshCommand(
     channel = await startSshProcess(target, command, args, target.workspace, {
       signal: operationSignal,
       timeoutMs: options.timeoutMs,
+      env: options.env,
+      gracefulStop: options.gracefulStop,
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];

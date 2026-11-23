@@ -598,7 +598,7 @@ export class SshBackend {
     command: SshCommand,
     args: readonly string[],
     cwd: string,
-    context: BackendOperationContext = {},
+    context: BackendOperationContext & Pick<SshProcessContext, "env"> = {},
   ) {
     return runOwnedSshCommand(
       { ...this.target, workspace: cwd },
@@ -608,6 +608,7 @@ export class SshBackend {
       {
         signal: context.signal,
         timeoutMs: context.timeoutMs ?? 30_000,
+        env: context.env,
         maxBytes: 32 * 1024 * 1024,
         limitCode: "CONTENT_LIMIT",
         closeInput: true,

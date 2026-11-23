@@ -10,7 +10,8 @@ import { packagedSource } from "./packaged-source.ts";
 
 const pageSchema = Type.Object({ html: Type.String(), source: Type.String() });
 const refusalCodes = new Set([
-  "CAPABILITY_UNAVAILABLE",
+  "PLAYWRIGHT_UNAVAILABLE",
+  "CHROMIUM_UNAVAILABLE",
   "INVALID_SOURCE",
   "BYTE_LIMIT",
   "TIMEOUT",
@@ -72,7 +73,12 @@ async function runBrowser(
         JSON.stringify({ kind, url: url.href, timeoutMs: options.timeoutMs }),
       ],
       source,
-      { signal: options.signal, timeoutMs: options.timeoutMs, maxBytes: 32 * 1024 * 1024 },
+      {
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        maxBytes: 32 * 1024 * 1024,
+        gracefulStop: target.os === "windows",
+      },
     );
     if (result.exitCode !== 0) throw new SshBackendError("BROWSER_FAILED", source, "not-applied");
     let reply: unknown;
@@ -93,7 +99,7 @@ async function runBrowser(
   } catch (error) {
     if (error instanceof SshBackendError)
       throw new SshBackendError(
-        error.code === "ENOENT" ? "CAPABILITY_UNAVAILABLE" : error.code,
+        error.code === "ENOENT" ? "NODE_UNAVAILABLE" : error.code,
         source,
         error.effect,
       );

@@ -456,8 +456,9 @@ add(
 add(
   "ssh-guide",
   ["read.ssh-guide"],
-  "The workspace has no configured SSH targets. Read docs:ssh through Read to learn how to configure a target. Do not open a connection or change any settings.",
-  [{ tool: "read", args: { path: "docs:ssh" } }],
+  "The workspace has no configured SSH targets. Read docs:ssh through Read and report the os value and absolute workspace shape for a native Windows target. Do not open a connection or change any settings.",
+  [{ tool: "read", args: { path: "docs:ssh" }, contains: "C:/Users/name" }],
+  { answer: "windows" },
 );
 add(
   "delete-objects",

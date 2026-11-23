@@ -1,4 +1,18 @@
 import type { ToolRecipe } from "pi-agent-doctor/api/catalog";
+import type { DebugSessionOptions } from "./session-manager.ts";
+
+/** Catalog IDs and launch IDs of adapters that require a Linux SSH broker. */
+export const LINUX_SSH_DEBUG_BROKERS: ReadonlyMap<string, DebugSessionOptions["adapter"]> = new Map(
+  [
+    ["delve", "delve"],
+    ["java-debug", "java"],
+    ["julia-debug-adapter", "julia"],
+    ["powershell-editor-services-debug", "powershell"],
+    ["vsc-debugger", "r"],
+    ["rdbg", "ruby"],
+    ["vscode-bash-debug", "shell"],
+  ],
+);
 
 /** One executable language and the debug adapter selected for its Linux verification track. */
 export interface DebuggerLanguageMatrixEntry {

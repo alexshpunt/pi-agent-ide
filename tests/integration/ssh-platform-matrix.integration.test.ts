@@ -58,20 +58,49 @@ describe.each(selectedDirections())("SSH direction %s", (direction) => {
     });
   });
 
-  test("runs a program with exact arguments, cwd, binary output and exit status", async () => {
+  test("runs a program with exact arguments, cwd, environment, binary output and exit status", async () => {
     const result = await backend.execute(
       remotePython(
-        "import json,os,sys\nsys.stdout.buffer.write(bytes([0,255,13,10]))\nprint(json.dumps([os.getcwd(),sys.argv[1:]]),file=sys.stderr)\nsys.exit(7)",
+        "import json,os,sys\nsys.stdout.buffer.write(bytes([0,255,13,10]))\nprint(json.dumps([os.getcwd(),sys.argv[1:],os.environ['PI_TEST_CHANNEL_VALUE']]),file=sys.stderr)\nsys.exit(7)",
       ),
       ["two words", "café", "semi;colon"],
       fixture.canonical("nested café"),
+      { env: { PI_TEST_CHANNEL_VALUE: 'a=b; café "quoted"' } },
     );
     expect(result.exitCode).toBe(7);
     expect(result.stdout).toEqual(Buffer.from([0, 255, 13, 10]));
-    const [cwd, args] = JSON.parse(result.stderr.toString("utf8")) as [string, string[]];
+    const [cwd, args, value] = JSON.parse(result.stderr.toString("utf8")) as [
+      string,
+      string[],
+      string,
+    ];
     expect(cwd.replaceAll("\\", "/").endsWith("/nested café")).toBe(true);
     expect(args).toEqual(["two words", "café", "semi;colon"]);
+    expect(value).toBe('a=b; café "quoted"');
   });
+
+  test.runIf(targetOs === "windows")(
+    "finds project commands through Windows PATH and explicit relative paths",
+    async () => {
+      await fixture.put("local bin/pi-channel-fixture.cmd", "@echo channel-fixture\r\n");
+      const bin = fixture.canonical("local bin").slice(1);
+      const result = await backend.execute("pi-channel-fixture", [], fixture.workspace, {
+        env: { path: bin, pathext: ".CMD" },
+      });
+      expect(result.stdout.toString("utf8").trim()).toBe("channel-fixture");
+      const relative = await backend.execute(
+        "./local bin/pi-channel-fixture.cmd",
+        [],
+        fixture.workspace,
+      );
+      expect(relative.stdout.toString("utf8").trim()).toBe("channel-fixture");
+      await expect(
+        backend.execute("pi-channel-fixture", [], fixture.canonical("local bin"), {
+          env: { PATH: "", PATHEXT: ".CMD" },
+        }),
+      ).rejects.toMatchObject({ code: "ENOENT", effect: "not-applied" });
+    },
+  );
 
   test("streams stdin and stdout through a service channel", async () => {
     const channel = await backend.startProcess(
@@ -95,13 +124,13 @@ describe.each(selectedDirections())("SSH direction %s", (direction) => {
     const shell = remoteShellProfile(targetOs);
     const command =
       targetOs === "windows"
-        ? '1..60 | ForEach-Object { Start-Sleep -Seconds 1; "tick $_" }; exit 3'
-        : 'for i in $(seq 1 60); do sleep 1; echo "tick $i"; done; exit 3';
+        ? '$env:PI_TEST_PTY_VALUE; 1..60 | ForEach-Object { Start-Sleep -Seconds 1; "tick $_" }; exit 3'
+        : 'printf "%s\\n" "$PI_TEST_PTY_VALUE"; for i in $(seq 1 60); do sleep 1; echo "tick $i"; done; exit 3';
     const channel = await backend.startProcess(
       shell.executable,
       shell.commandArgs(command),
       fixture.workspace,
-      { pty: { cols: 120, rows: 30 } },
+      { pty: { cols: 120, rows: 30 }, env: { PI_TEST_PTY_VALUE: "pty-env-marker" } },
     );
     const chunks: Buffer[] = [];
     channel.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -110,6 +139,7 @@ describe.each(selectedDirections())("SSH direction %s", (direction) => {
     await expect(channel.completion).resolves.toEqual({ exitCode: 3 });
     expect(performance.now() - started).toBeGreaterThan(55_000);
     const output = Buffer.concat(chunks).toString("utf8");
+    expect(output).toContain("pty-env-marker\r\n");
     expect(output).toContain("tick 1\r\n");
     expect(output).toContain("tick 60\r\n");
   }, 120_000);

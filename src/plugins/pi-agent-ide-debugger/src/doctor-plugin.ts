@@ -1,6 +1,8 @@
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   projectExecutableAvailable,
-  probeProjectExecutable,
+  probeProjectExecutable as runProjectProbe,
   projectFileExists,
 } from "pi-agent-doctor/api/project-probes";
 import {
@@ -13,11 +15,18 @@ import {
   type DoctorSetupInspection,
 } from "pi-agent-doctor/api/plugin-protocol";
 
-import { resolvePythonDebuggerCommand } from "./adapter-executables.ts";
+import {
+  resolvePythonDebuggerCommand,
+  WINDOWS_SSH_ELIXIR_DEBUG_COMMAND,
+  WINDOWS_SSH_JS_DEBUG_PATH,
+  WINDOWS_SSH_LUA_DEBUG_PATH,
+  WINDOWS_SSH_PHP_DEBUG_PATH,
+} from "./adapter-executables.ts";
 import { JavaDebugRuntime, javaDebuggerFiles, javaExecutable } from "./java-runtime.ts";
 import {
   DEBUGGER_LANGUAGE_MATRIX,
   DEBUGGER_RECIPES,
+  LINUX_SSH_DEBUG_BROKERS,
   debuggerRecipeForLanguage,
 } from "./catalog.ts";
 import {
@@ -79,11 +88,18 @@ export async function inspectDebuggerSetup(
     if (debuggerRecipe === undefined) continue;
     const supportedPlatform =
       platform === "linux" || platform === "darwin" || platform === "win32" ? platform : undefined;
-    if (supportedPlatform === undefined || !debuggerRecipe.platforms.includes(supportedPlatform)) {
+    const brokerUnavailable = needsLinuxSshBroker(recipe.id, context);
+    if (
+      brokerUnavailable ||
+      supportedPlatform === undefined ||
+      !debuggerRecipe.platforms.includes(supportedPlatform)
+    ) {
       actions.push({
         id: `debugger-${recipe.id}-platform`,
         category: "unsupported-platform",
-        message: `${recipe.name} does not support the ${platform} debugger recipe`,
+        message: brokerUnavailable
+          ? `${recipe.name} requires the Linux SSH debugger broker`
+          : `${recipe.name} does not support the ${platform} debugger recipe`,
       });
       continue;
     }
@@ -123,6 +139,10 @@ export async function inspectDebuggerSetup(
   return { selections, actions };
 }
 
+function needsLinuxSshBroker(id: string, context: DoctorContext): boolean {
+  return context.workspace?.platform === "win32" && LINUX_SSH_DEBUG_BROKERS.has(id);
+}
+
 async function checkDebuggerAdapters(context: DoctorContext): Promise<readonly DoctorFinding[]> {
   const recipes = [
     ...new Map(
@@ -137,6 +157,11 @@ async function checkDebuggerAdapters(context: DoctorContext): Promise<readonly D
   }
   return Promise.all(
     recipes.map(async (recipe): Promise<DoctorFinding> => {
+      if (needsLinuxSshBroker(recipe.id, context))
+        return {
+          status: "skip",
+          message: `${recipe.name} requires the Linux SSH debugger broker`,
+        };
       let result = await probeAdapter(recipe.id, context);
       if (recipe.id === "java-debug" && result.ok && context.workspace === undefined) {
         const runtime = new JavaDebugRuntime();
@@ -218,6 +243,28 @@ async function probeJavaFiles(
     return { ok: false, detail: error instanceof Error ? error.message : String(error) };
   }
 }
+/** A missing native runtime is a failed adapter probe, not a failed report. */
+async function probeProjectExecutable(
+  context: DoctorContext,
+  command: string,
+  args: readonly string[],
+): ReturnType<typeof runProjectProbe> {
+  try {
+    return await runProjectProbe(context, command, args);
+  } catch (error) {
+    context.signal?.throwIfAborted();
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT" &&
+      "effect" in error &&
+      error.effect === "not-applied"
+    )
+      return { ok: false, detail: error.message };
+    throw error;
+  }
+}
+
 async function firstMissingExecutable(
   executables: readonly string[],
   context: DoctorContext,
@@ -234,7 +281,10 @@ async function adapterInstalled(
 ): Promise<boolean> {
   const { env } = context;
   if (id === "elixir-ls-debug-adapter") {
-    return adapterFileExists(context, env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH);
+    const command = elixirDebuggerCommand(context);
+    return context.workspace?.platform === "win32"
+      ? projectExecutableAvailable(context, command)
+      : adapterFileExists(context, command);
   }
   if (id === "vsc-debugger") {
     return (
@@ -247,7 +297,7 @@ async function adapterInstalled(
     ).ok;
   }
   if (id === "vscode-js-debug") {
-    return adapterFileExists(context, env.PI_JS_DEBUG_PATH ?? DEFAULT_JS_DEBUG_PATH);
+    return adapterFileExists(context, jsDebuggerPath(context));
   }
   if (id.startsWith("lldb-dap")) {
     return (
@@ -286,11 +336,8 @@ async function adapterInstalled(
     return projectExecutableAvailable(context, env.PI_NETCOREDBG_PATH ?? "netcoredbg");
   if (id === "rdbg") return projectExecutableAvailable(context, env.PI_RUBY_DEBUG_PATH ?? "rdbg");
   const adapterFiles: Record<string, string> = {
-    "vscode-php-debug":
-      env.PI_PHP_DEBUG_PATH ?? "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js",
-    "local-lua-debugger":
-      env.PI_LUA_DEBUG_PATH ??
-      "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js",
+    "vscode-php-debug": phpDebuggerPath(context),
+    "local-lua-debugger": luaDebuggerPath(context),
     "vscode-bash-debug":
       env.PI_BASH_DEBUG_PATH ?? "/opt/pi-debug-adapters/bash-debug/extension/out/bashDebug.js",
     "powershell-editor-services-debug": `${env.PI_POWERSHELL_EDITOR_SERVICES_PATH ?? "/opt/pi-debug-adapters/powershell-editor-services"}/PowerShellEditorServices/Start-EditorServices.ps1`,
@@ -323,7 +370,12 @@ async function probeAdapter(
 ) {
   const { env } = context;
   if (id === "elixir-ls-debug-adapter") {
-    return probeAdapterFile(env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH, context);
+    const command = elixirDebuggerCommand(context);
+    if (context.workspace?.platform === "win32") {
+      const ok = await projectExecutableAvailable(context, command);
+      return { ok, detail: ok ? command : `Target executable ${command} is unavailable` };
+    }
+    return probeAdapterFile(command, context);
   }
   if (id === "vsc-debugger") {
     return probeProjectExecutable(context, env.PI_R_PATH ?? "R", [
@@ -403,22 +455,11 @@ async function probeAdapter(
       "-r",
       "exit(extension_loaded('xdebug') ? 0 : 1);",
     ]);
-    return runtime.ok
-      ? probeAdapterFile(
-          env.PI_PHP_DEBUG_PATH ?? "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js",
-          context,
-        )
-      : runtime;
+    return runtime.ok ? probeAdapterFile(phpDebuggerPath(context), context) : runtime;
   }
   if (id === "local-lua-debugger") {
     const runtime = await probeProjectExecutable(context, env.PI_LUA_PATH ?? "lua", ["-v"]);
-    return runtime.ok
-      ? probeAdapterFile(
-          env.PI_LUA_DEBUG_PATH ??
-            "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js",
-          context,
-        )
-      : runtime;
+    return runtime.ok ? probeAdapterFile(luaDebuggerPath(context), context) : runtime;
   }
   if (id === "vscode-bash-debug") {
     const runtime = await probeProjectExecutable(context, env.PI_BASH_PATH ?? "bash", [
@@ -444,7 +485,7 @@ async function probeAdapter(
   if (id !== "vscode-js-debug") {
     return { ok: false as const, detail: `Unknown debugger adapter: ${id}` };
   }
-  const server = env.PI_JS_DEBUG_PATH ?? DEFAULT_JS_DEBUG_PATH;
+  const server = jsDebuggerPath(context);
   if (!(await adapterFileExists(context, server)))
     return { ok: false as const, detail: `${server} does not exist` };
   return probeProjectExecutable(context, context.workspace ? "node" : process.execPath, [
@@ -470,10 +511,43 @@ async function pythonCommand(context: DoctorContext, platform: NodeJS.Platform) 
   );
 }
 
+function elixirDebuggerCommand(context: DoctorContext): string {
+  if (context.workspace?.platform === "win32")
+    return context.env.PI_ELIXIR_LS_DEBUG_PATH || WINDOWS_SSH_ELIXIR_DEBUG_COMMAND;
+  return context.env.PI_ELIXIR_LS_DEBUG_PATH ?? DEFAULT_ELIXIR_LS_DEBUG_PATH;
+}
+
+function phpDebuggerPath(context: DoctorContext): string {
+  return (
+    context.env.PI_PHP_DEBUG_PATH ??
+    (context.workspace?.platform === "win32"
+      ? WINDOWS_SSH_PHP_DEBUG_PATH
+      : "/opt/pi-debug-adapters/php-debug/extension/out/phpDebug.js")
+  );
+}
+
+function luaDebuggerPath(context: DoctorContext): string {
+  return (
+    context.env.PI_LUA_DEBUG_PATH ??
+    (context.workspace?.platform === "win32"
+      ? WINDOWS_SSH_LUA_DEBUG_PATH
+      : "/opt/pi-debug-adapters/lua-debug/extension/extension/debugAdapter.js")
+  );
+}
+
+function jsDebuggerPath(context: DoctorContext): string {
+  return (
+    context.env.PI_JS_DEBUG_PATH ||
+    (context.workspace?.platform === "win32" ? WINDOWS_SSH_JS_DEBUG_PATH : DEFAULT_JS_DEBUG_PATH)
+  );
+}
+
 async function adapterFileExists(context: DoctorContext, file: string): Promise<boolean> {
-  if (!context.workspace) return projectFileExists(context, file);
-  const base = context.workspace.toNativeUri(context.cwd).replace(/\/?$/u, "/");
-  const nativePath = file.split("/").map(encodeURIComponent).join("/");
-  const source = context.workspace.fromNativeUri(new URL(nativePath, base).href);
-  return projectFileExists(context, source);
+  const workspace = context.workspace;
+  if (!workspace) return projectFileExists(context, file);
+  const windows = workspace.platform === "win32";
+  const paths = windows ? path.win32 : path.posix;
+  const base = fileURLToPath(workspace.toNativeUri(context.cwd), { windows });
+  const uri = pathToFileURL(paths.resolve(base, file), { windows });
+  return projectFileExists(context, workspace.fromNativeUri(uri.href));
 }

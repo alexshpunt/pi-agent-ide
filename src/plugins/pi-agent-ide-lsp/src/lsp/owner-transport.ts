@@ -22,6 +22,9 @@ export interface LspOwnerTransport {
   }): Promise<LspOwnedProcess>;
   toServerUri(uri: string): string;
   fromServerUri(uri: string): string;
+  /** Native filesystem paths used by server-specific commands outside standard LSP. */
+  toServerPath?(uri: string): string;
+  fromServerPath?(file: string): string;
   /** Create lazy native subscriptions on this owner, never on the controller filesystem. */
   fileWatchers?(
     rootUri: string,

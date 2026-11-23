@@ -24,6 +24,13 @@ export class SshBackendRegistry {
     return [...this.#backends.values()].some((backend) => targetOs(backend.target) === os);
   }
 
+  /** Look up an owner for services that name a target but do not have a filesystem path. */
+  backendForTarget(target: string, source: string): SshBackend {
+    const backend = this.#backends.get(target);
+    if (!backend) throw new SshBackendError("UNKNOWN_TARGET", source, "not-applied");
+    return backend;
+  }
+
   /** Claim SSH resources, reject unknown targets, and leave local/protocol sources alone. */
   resolve(source: string, cwd?: string): ResolvedSshSource | undefined {
     const location = resolveRemoteLocation(
@@ -32,8 +39,6 @@ export class SshBackendRegistry {
       (target) => this.#backends.get(target)?.target.os,
     );
     if (!location) return undefined;
-    const backend = this.#backends.get(location.target);
-    if (!backend) throw new SshBackendError("UNKNOWN_TARGET", location.source, "not-applied");
-    return { location, backend };
+    return { location, backend: this.backendForTarget(location.target, location.source) };
   }
 }

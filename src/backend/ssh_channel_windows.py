@@ -12,7 +12,6 @@ import json
 import os
 import queue
 import re
-import shutil
 import subprocess
 import sys
 import threading
@@ -20,8 +19,10 @@ import time
 from ctypes import wintypes
 
 from ssh_channel_common import (CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, STOP_GRACE_SECONDS, ChannelError,
-                                command_line, emit, error_code, initial_request)
+                                command_environment, command_line, emit, error_code, initial_request)
 from ssh_paths import InvalidPath, windows_native
+from pi_windows_process import identity as process_identity
+from ssh_windows_commands import find_executable
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 ntdll = ctypes.WinDLL("ntdll")
@@ -59,6 +60,7 @@ JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 CREATE_SUSPENDED = 0x4
 EXTENDED_STARTUPINFO_PRESENT = 0x80000
+CREATE_UNICODE_ENVIRONMENT = 0x400
 STARTF_USESTDHANDLES = 0x100
 PROC_THREAD_ATTRIBUTE_JOB_LIST = 0x2000D
 PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x20016
@@ -198,7 +200,7 @@ class PtyInput:
 class PtyProcess:
     """A process attached to a ConPTY and started directly inside the job."""
 
-    def __init__(self, argv, cwd, cols, rows, job):
+    def __init__(self, argv, cwd, cols, rows, job, environment):
         try:
             self.console = kernel32.CreatePseudoConsole
         except AttributeError:
@@ -230,13 +232,13 @@ class PtyProcess:
             kernel32.CloseHandle(input_read)
             kernel32.CloseHandle(output_write)
         try:
-            self.process_handle, self.pid = self.spawn(argv, cwd, job)
+            self.process_handle, self.pid = self.spawn(argv, cwd, job, environment)
         except BaseException:
             self.close_console()
             self.stdin.close()
             raise
 
-    def spawn(self, argv, cwd, job):
+    def spawn(self, argv, cwd, job, environment):
         size = ctypes.c_size_t()
         kernel32.InitializeProcThreadAttributeList(None, 2, 0, ctypes.byref(size))
         attributes = ctypes.create_string_buffer(size.value)
@@ -256,8 +258,12 @@ class PtyProcess:
             startup.lpAttributeList = ctypes.cast(attributes, ctypes.c_void_p)
             information = ProcessInformation()
             command = ctypes.create_unicode_buffer(subprocess.list2cmdline(argv))
+            # Windows expects sorted UTF-16 name=value entries and a double NUL terminator.
+            entries = "\0".join(f"{key}={value}" for key, value in sorted(environment.items()))
+            block = ctypes.create_unicode_buffer(entries + "\0")
             checked(kernel32.CreateProcessW(
-                None, command, None, None, False, EXTENDED_STARTUPINFO_PRESENT, None, cwd,
+                None, command, None, None, False, EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                block, cwd,
                 ctypes.byref(startup), ctypes.byref(information)))
         finally:
             kernel32.DeleteProcThreadAttributeList(attributes)
@@ -296,7 +302,7 @@ SHIM_TARGET = re.compile(r'"%_prog%"\s+(?:\S+\s+)*?"%dp0%\\(?P<script>[^"]+)"\s+
 BATCH_UNSAFE = re.compile(r'[%^&|<>"!\r\n]')
 
 
-def resolve_argv(argv):
+def resolve_argv(argv, cwd, environment):
     """Find the executable the way a shell does: PATH and PATHEXT, without the current directory.
 
     CreateProcess only starts `.exe` files by bare name, so tools installed as `.cmd` shims
@@ -304,8 +310,7 @@ def resolve_argv(argv):
     directly. Any other batch file goes through cmd.exe, which cannot quote arguments safely,
     so arguments with batch metacharacters are refused.
     """
-    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
-    found = shutil.which(argv[0])
+    found = find_executable(argv[0], cwd, environment)
     if found is None:
         raise FileNotFoundError(errno.ENOENT, "command not found", argv[0])
     if not found.lower().endswith((".cmd", ".bat")):
@@ -316,7 +321,7 @@ def resolve_argv(argv):
     if match is not None:
         script = os.path.join(directory, match.group("script"))
         node = os.path.join(directory, "node.exe")
-        node = node if os.path.exists(node) else shutil.which("node")
+        node = node if os.path.isfile(node) else find_executable("node", cwd, environment)
         if node is not None and os.path.exists(script):
             return [node, script, *argv[1:]]
     if any(BATCH_UNSAFE.search(argument) for argument in argv[1:]):
@@ -373,19 +378,20 @@ def run():
     global process, job, graceful_inputs
     request = initial_request()
     dimensions = request.get("pty")
-    # `python3` on Windows may be the Store alias; reuse the interpreter that runs this worker.
-    argv, preamble = command_line(request, sys.executable)
-    if "command" in request:
-        # CreateProcess ignores PATHEXT, so npm shims such as `server.cmd` need the lookup.
-        argv = resolve_argv(argv)
     try:
         cwd = windows_native(request["cwd"])
     except InvalidPath:
         raise ChannelError("INVALID_PATH")
+    environment = command_environment(request, windows=True)
+    environment["NODEFAULTCURRENTDIRECTORYINEXEPATH"] = "1"
+    # `python3` on Windows may be the Store alias; reuse the interpreter running this worker.
+    argv, preamble = command_line(request, sys.executable)
+    if "command" in request:
+        argv = resolve_argv(argv, cwd, environment)
     job = Job()
     if dimensions is None:
         process = subprocess.Popen(
-            argv, cwd=cwd,
+            argv, cwd=cwd, env=environment,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW | CREATE_SUSPENDED,
         )
@@ -400,9 +406,16 @@ def run():
     else:
         if preamble:
             raise ChannelError("INVALID_REQUEST")
-        process = PtyProcess(argv, cwd, dimensions["cols"], dimensions["rows"], job)
+        process = PtyProcess(argv, cwd, dimensions["cols"], dimensions["rows"], job, environment)
         outputs = {"stdout"}
-    emit({"kind": "ready", "pid": process.pid})
+    ready = {"kind": "ready", "pid": process.pid}
+    try:
+        handle = process.process_handle if dimensions is not None else int(process._handle)
+        ready["identity"] = process_identity(handle)
+    except OSError:
+        # Other pipe services can still run; consumers that require identity fail closed.
+        pass
+    emit(ready)
     events = queue.Queue()
     inputs = queue.Queue()
     if request.get("gracefulStop") is True and dimensions is None:

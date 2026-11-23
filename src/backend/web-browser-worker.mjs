@@ -1,7 +1,7 @@
 // @ts-check
 // Run only the target's installed Playwright and Chromium; no local browser or shared profile.
 import { constants } from "node:fs";
-import { access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -16,12 +16,18 @@ const stop = () => {
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);
 process.on("SIGHUP", stop);
+// Stop closes stdin on Windows; the Job Object is the fallback if Playwright cannot exit.
+if (process.platform === "win32") {
+  process.stdin.once("end", stop);
+  process.stdin.resume();
+}
 
 class Refused extends Error {}
 
 /** @param {string} candidate */
 async function executable(candidate) {
   try {
+    if (!(await stat(candidate)).isFile()) return undefined;
     await access(candidate, constants.X_OK);
     return candidate;
   } catch {
@@ -29,21 +35,37 @@ async function executable(candidate) {
   }
 }
 
-async function browserPath() {
-  if (process.env.PI_AGENT_IDE_BROWSER_PATH)
-    return (
-      (await executable(path.resolve(process.env.PI_AGENT_IDE_BROWSER_PATH))) ??
-      Promise.reject(new Refused("CAPABILITY_UNAVAILABLE"))
-    );
+/** @param {import("playwright-core").BrowserType} chromium */
+async function browserPath(chromium) {
+  const override = process.env.PI_AGENT_IDE_BROWSER_PATH;
+  if (override) {
+    const candidate = await executable(path.resolve(override));
+    if (candidate) return candidate;
+    throw new Refused("CHROMIUM_UNAVAILABLE");
+  }
+
+  const managed = await executable(chromium.executablePath());
+  if (managed) return managed;
+  const windows = process.platform === "win32";
+  const names = windows
+    ? ["chrome.exe", "chromium.exe"]
+    : ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"];
   for (const directory of (process.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
-    for (const name of ["google-chrome-stable", "google-chrome", "chromium", "chromium-browser"]) {
-      const candidate = await executable(path.join(directory, name));
+    for (const name of names) {
+      const candidate = await executable(path.join(directory.replace(/^"|"$/gu, ""), name));
       if (candidate) return candidate;
     }
   }
-  const candidate = await executable("/opt/google/chrome/chrome");
-  if (candidate) return candidate;
-  throw new Refused("CAPABILITY_UNAVAILABLE");
+  const standard = windows
+    ? [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA]
+        .filter((directory) => directory !== undefined)
+        .map((directory) => path.join(directory, "Google", "Chrome", "Application", "chrome.exe"))
+    : ["/opt/google/chrome/chrome"];
+  for (const location of standard) {
+    const candidate = await executable(location);
+    if (candidate) return candidate;
+  }
+  throw new Refused("CHROMIUM_UNAVAILABLE");
 }
 
 /** @param {URL} url */
@@ -84,13 +106,21 @@ async function render(request) {
   let chromium;
   try {
     const require = createRequire(path.join(process.cwd(), "package.json"));
-    ({ chromium } = /** @type {typeof import("playwright-core")} */ (
-      require(process.env.PI_AGENT_IDE_PLAYWRIGHT_PATH ?? "playwright-core")
-    ));
+    const moduleName = process.env.PI_AGENT_IDE_PLAYWRIGHT_PATH || "playwright-core";
+    const entry = require.resolve(moduleName);
+    if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+      // Let the owning package use a hermetic Playwright install without global SSH setup.
+      const hermetic = path.join(path.dirname(entry), ".local-browsers");
+      if ((await stat(hermetic).catch(() => undefined))?.isDirectory())
+        process.env.PLAYWRIGHT_BROWSERS_PATH = "0";
+    }
+    const installed = /** @type {Partial<typeof import("playwright-core")>} */ (require(entry));
+    if (!installed.chromium) throw new Refused("PLAYWRIGHT_UNAVAILABLE");
+    chromium = installed.chromium;
   } catch {
-    throw new Refused("CAPABILITY_UNAVAILABLE");
+    throw new Refused("PLAYWRIGHT_UNAVAILABLE");
   }
-  const executablePath = await browserPath();
+  const executablePath = await browserPath(chromium);
   cancellation.signal.throwIfAborted();
   state.browser = await chromium.launch({
     executablePath,
@@ -151,8 +181,9 @@ try {
 } catch (error) {
   // Do not expose native browser diagnostics, proxy credentials or environment values.
   reply = {
-    error:
-      error instanceof Refused
+    error: cancellation.signal.aborted
+      ? "CANCELLED"
+      : error instanceof Refused
         ? error.message
         : error instanceof Error && error.name === "TimeoutError"
           ? "TIMEOUT"
@@ -160,6 +191,7 @@ try {
   };
 } finally {
   if (state.browser) await state.browser.close();
+  if (process.platform === "win32") process.stdin.destroy();
   process.off("SIGTERM", stop);
   process.off("SIGINT", stop);
   process.off("SIGHUP", stop);

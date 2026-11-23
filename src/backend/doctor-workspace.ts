@@ -8,7 +8,7 @@ import { createSshToolConfigAccess } from "./tool-config-access.ts";
 import { createSshConfiguredProcessAccess } from "./configured-process.ts";
 import { createSshLspTransport } from "./lsp-transport.ts";
 import { sshProjectExecutableAvailability } from "./process-environment.ts";
-import { remotePython } from "./ssh-transport.ts";
+import { bundlePython, remotePython, targetOs } from "./ssh-transport.ts";
 import { inspectSshRecipeEvidence } from "./recipe-evidence.ts";
 import { remoteLocation } from "./identity.ts";
 import { readOwnedSshCommand } from "./owned-read-command.ts";
@@ -23,6 +23,10 @@ const workers = {
     new URL("./doctor-inventory-worker.py", import.meta.url),
   ),
   "doctor-probe-worker.py": packagedSource(new URL("./doctor-probe-worker.py", import.meta.url)),
+  "doctor-probe-worker-windows.py": packagedSource(
+    new URL("./doctor-probe-worker-windows.py", import.meta.url),
+  ),
+  "ssh_paths.py": packagedSource(new URL("./ssh_paths.py", import.meta.url)),
 };
 
 const probeSchema = Type.Object({
@@ -52,6 +56,16 @@ export async function createSshDoctorWorkspace(
   if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", source, "not-applied");
   const root = owner.location;
   const backend = owner.backend;
+  const os = targetOs(backend.target);
+  const target = { ...backend.target, workspace: root.path };
+  const probeWorker = async () => {
+    if (os === "linux") return workers["doctor-probe-worker.py"];
+    const [entry, paths] = await Promise.all([
+      workers["doctor-probe-worker-windows.py"],
+      workers["ssh_paths.py"],
+    ]);
+    return bundlePython(entry, { ssh_paths: paths });
+  };
   if ((await backend.stat(root.path, { signal })).kind !== "directory")
     throw new SshBackendError("NOT_DIRECTORY", root.source, "not-applied");
   const resolve = (resource: string) => {
@@ -61,7 +75,7 @@ export async function createSshDoctorWorkspace(
     return location.location.path;
   };
   const pathReceipt = await readOwnedSshCommand(
-    { ...backend.target, workspace: root.path },
+    target,
     remotePython(
       "import json,os,sys; keys=json.loads(sys.argv[1]); print(json.dumps({k:os.environ[k] for k in keys if k in os.environ}))",
     ),
@@ -85,15 +99,14 @@ export async function createSshDoctorWorkspace(
   const transport = createSshLspTransport(registry, root.source);
   const snapshots = new Map<string, { content: string; version: string }>();
   const executeWorker = async (
-    name: "doctor-inventory-worker.py" | "doctor-probe-worker.py",
+    script: Promise<string>,
     args: readonly string[],
     requestSignal?: AbortSignal,
   ): Promise<unknown> => {
     requestSignal?.throwIfAborted();
-    const script = await workers[name];
     const result = await readOwnedSshCommand(
-      backend.target,
-      remotePython(script),
+      target,
+      remotePython(await script),
       args,
       root.source,
       { signal: requestSignal, timeoutMs: 30000, maxBytes: 32 * 1024 * 1024 },
@@ -109,7 +122,7 @@ export async function createSshDoctorWorkspace(
     requestSignal?: AbortSignal,
   ): Promise<void> => {
     requestSignal?.throwIfAborted();
-    const script = await workers["doctor-probe-worker.py"];
+    const script = await probeWorker();
     const deadline = new AbortController();
     const operationSignal = requestSignal
       ? AbortSignal.any([requestSignal, deadline.signal])
@@ -124,11 +137,11 @@ export async function createSshDoctorWorkspace(
     let received: Static<typeof probeSchema> | undefined;
     try {
       channel = await startSshProcess(
-        backend.target,
+        target,
         remotePython(script),
         [JSON.stringify({ operation: "create", source: file })],
-        backend.target.workspace,
-        { signal: operationSignal },
+        root.path,
+        { signal: operationSignal, gracefulStop: os === "windows" },
       );
       let outputLength = 0;
       const consume = (bytes: Buffer) => {
@@ -216,7 +229,7 @@ export async function createSshDoctorWorkspace(
     lease.cleanup = Promise.resolve()
       .then(async () => {
         if (lease.created) {
-          const data = await executeWorker("doctor-probe-worker.py", [
+          const data = await executeWorker(probeWorker(), [
             JSON.stringify({ operation: "remove-container", ...lease.created }),
           ]);
           if (data !== null)
@@ -230,18 +243,14 @@ export async function createSshDoctorWorkspace(
   };
   return {
     source: root.source,
-    platform: "linux",
+    platform: os === "windows" ? "win32" : "linux",
     toolPaths,
     async probeBrowser(requestSignal) {
-      await probeSshBrowser(
-        { ...backend.target, workspace: root.path },
-        root.source,
-        requestSignal,
-      );
+      await probeSshBrowser(target, root.source, requestSignal);
       return { ok: true, detail: "Target Playwright and Chromium started without navigation" };
     },
     async files(requestSignal) {
-      const data = await executeWorker("doctor-inventory-worker.py", [root.path], requestSignal);
+      const data = await executeWorker(workers["doctor-inventory-worker.py"], [], requestSignal);
       if (!Value.Check(Type.Array(Type.String()), data))
         throw new SshBackendError(
           typeof data === "object" &&
@@ -255,9 +264,10 @@ export async function createSshDoctorWorkspace(
         );
       return data.map((name) => {
         const file = path.posix.resolve(root.path, name);
-        if (path.posix.isAbsolute(name) || !(file.startsWith(`${root.path}/`) || root.path === "/"))
+        const prefix = root.path.endsWith("/") ? root.path : `${root.path}/`;
+        if (!name || path.posix.isAbsolute(name) || !file.startsWith(prefix) || file === root.path)
           throw new SshBackendError("INVALID_RESPONSE", root.source, "not-applied");
-        return remoteLocation(root.target, file).source;
+        return remoteLocation(root.target, file, os).source;
       });
     },
     async readText(resource, requestSignal) {
@@ -341,14 +351,14 @@ export async function createSshDoctorWorkspace(
         const original = await backend.lstat(file, { signal: requestSignal });
         await backend.copy(file, probe, original.revision, null, { signal: requestSignal });
         requestSignal?.throwIfAborted();
-        values.push({ value: await use(remoteLocation(root.target, probe).source) });
+        values.push({ value: await use(remoteLocation(root.target, probe, os).source) });
       } catch (error) {
         failure = error;
       }
       const cleanupErrors: unknown[] = [];
       if (probeData) {
         try {
-          const cleaned = await executeWorker("doctor-probe-worker.py", [
+          const cleaned = await executeWorker(probeWorker(), [
             JSON.stringify({ operation: "remove", ...probeData, name }),
           ]);
           if (cleaned !== null)
