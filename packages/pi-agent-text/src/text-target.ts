@@ -68,9 +68,15 @@ export function isTextTargetResolutionAttempt(
     return (
       rejection !== null &&
       typeof rejection === "object" &&
-      ["invalid", "stale", "missing", "ambiguous", "outside-scope"].includes(
-        (rejection as Record<string, unknown>).code as string,
-      ) &&
+      [
+        "invalid",
+        "stale",
+        "missing",
+        "ambiguous",
+        "outside-scope",
+        "search-token-selection",
+        "search-word-hint",
+      ].includes((rejection as Record<string, unknown>).code as string) &&
       typeof (rejection as Record<string, unknown>).reason === "string"
     );
   }

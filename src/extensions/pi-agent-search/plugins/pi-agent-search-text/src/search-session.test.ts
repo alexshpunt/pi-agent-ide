@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { expect, test, onTestFinished } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
-import { isTextAnchorResolutionAttempt } from "pi-agent-text";
+import { isTextAnchorResolutionAttempt, isTextTargetResolutionAttempt } from "pi-agent-text";
 import { isTextAnchorResourceResolutionAttempt } from "pi-agent-text-editor/api/plugin-protocol";
 
 import {
@@ -205,6 +205,7 @@ test("separate-word fallback matches are readable location hints that no referen
     });
     expect(resource, selector).toMatchObject(rejection);
     expect(isTextAnchorResourceResolutionAttempt(resource), selector).toBe(true);
+    expect(isTextTargetResolutionAttempt(resource), selector).toBe(true);
   }
   await expect(
     store.resolveSearchScope(`SEARCH#${session.id}:1:line`, { cwd }),
