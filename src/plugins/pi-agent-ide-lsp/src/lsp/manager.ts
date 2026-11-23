@@ -334,6 +334,27 @@ export class LspManager {
       return this.requireOwner().filesContaining?.(client.rootUri, word, extensions, signal);
     return localFilesContaining(URI.parse(client.rootUri).fsPath, word, extensions, signal);
   }
+  /**
+   * Sources under `root` of the workspace `cwd` whose text has `word` as a whole word, among files
+   * with a configured language server. A file `root` is its own only candidate. Undefined when the
+   * workspace owner has no text search.
+   */
+  async filesContainingInScope(
+    cwd: string,
+    root: string,
+    word: string,
+    signal?: AbortSignal,
+  ): Promise<readonly string[] | undefined> {
+    signal?.throwIfAborted();
+    const remote = cwd.startsWith("ssh://");
+    const selected = remote ? documentUri(root, cwd) : path.resolve(cwd, root);
+    if (await this.isSourceFile(selected, cwd, signal)) return [selected];
+    const extensions = [...this._registry.knownExtensions];
+    if (extensions.length === 0) return [];
+    return remote
+      ? this.requireOwner().filesContaining?.(selected, word, extensions, signal)
+      : localFilesContaining(selected, word, extensions, signal);
+  }
 
   /**
    * Seed native workspace indexes. Most servers need one document per language extension;
