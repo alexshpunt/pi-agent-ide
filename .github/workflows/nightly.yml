@@ -109,9 +109,12 @@ jobs:
             exit 0
           fi
           gh label create nightly --repo "$repo" --color B60205 --description 'Develop nightly is failing' --force
+          gh api "repos/$repo/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out")' > "$RUNNER_TEMP/failed-jobs.json"
+          # Jobs marked "non-blocking" may fail without failing the run; name them apart from the cause.
           # shellcheck disable=SC2016 # jq string interpolation, not shell
-          jobs="$(gh api "repos/$repo/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
-            --jq '.jobs[] | select(.conclusion == "failure" or .conclusion == "timed_out") | "- [\(.name)](\(.html_url))"')"
+          jobs="$(jq -r 'select(.name | test("non-blocking") | not) | "- [\(.name)](\(.html_url))"' "$RUNNER_TEMP/failed-jobs.json")"
+          flaky="$(jq -rs 'map(select(.name | test("non-blocking")) | .name) | join("; ")' "$RUNNER_TEMP/failed-jobs.json")"
           body="$RUNNER_TEMP/nightly-issue.md"
           {
             if [[ "$SIMULATED" == true ]]; then
@@ -124,6 +127,10 @@ jobs:
             echo
             echo 'Failed jobs:'
             echo "${jobs:-- none listed; see the run}"
+            if [[ -n "$flaky" ]]; then
+              echo
+              echo "Also failed, without failing the run: $flaky."
+            fi
             echo
             echo 'While this issue is open, each failed nightly adds a comment. The next passing nightly closes it.'
           } > "$body"
