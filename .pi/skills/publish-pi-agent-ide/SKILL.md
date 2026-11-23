@@ -19,7 +19,7 @@ CI may run automatically on `develop`, but it is not a merge requirement. Do not
 
 1. Identify the approved source commit and record its full SHA. “Current develop” means the commit selected now, not every later commit that reaches develop.
 2. If release preparation needs changes, use a separate worktree and follow the feature-delivery rules in `AGENTS.md`. Finish all required deliveries without waiting for optional develop CI, then record the resulting develop commit as the release cut.
-3. If the cut is not yet on main, create a separate promotion branch from that exact commit, such as `chore/promote-X.Y.Z`. Open its PR to main. Do not use the moving `develop` branch as the promotion PR head.
+3. If the cut is not yet on main, create a separate promotion branch from that exact commit plus one empty commit of its own, such as `chore/promote-X.Y.Z`: `git switch -c chore/promote-X.Y.Z <cut>`, `git commit --allow-empty -m "Promote the pinned X.Y.Z cut <cut>"`, push. Open its PR to main. Never use the moving `develop` branch or a develop commit as the PR head: that commit has a push run on develop, a later develop push cancels it, and its cancelled required `Validate` check blocks the merge even when the PR run passes. The `Validate` check fails such a head early.
 4. Leave the promotion branch pinned while its CI runs. New develop merges belong to later work unless the user explicitly changes this release's scope. Do not merge or rebase newer develop commits into the promotion branch by default.
 5. Merge the verified promotion PR using its expected head SHA. Check that **Synchronize main into develop** succeeds before starting the versioned release.
 
