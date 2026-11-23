@@ -332,6 +332,39 @@ test("keeps anchored definitions and references when another workspace candidate
   ]);
 });
 
+test("anchors a workspace symbol whose index name is qualified differently from its outline name", async () => {
+  const { cwd, manager, sendRequest } = await fixture();
+  const next = sendRequest.getMockImplementation();
+  const range = { start: { line: 0, character: 6 }, end: { line: 0, character: 10 } };
+  sendRequest.mockImplementation(async (method, parameters) => {
+    const answer: unknown = await next?.(method, parameters);
+    if (method === "workspace/symbol" && Array.isArray(answer)) {
+      const definitions: readonly { location: { uri: string } }[] = answer;
+      return definitions.slice(0, 1).map((definition) => ({
+        ...definition,
+        name: "Box.same",
+      }));
+    }
+    const input = parameters as { textDocument?: { uri: string } };
+    if (
+      method === "textDocument/documentSymbol" &&
+      input.textDocument?.uri.endsWith("/a.ts") === true
+    )
+      return [{ name: "(*Box).same", kind: 6, range, selectionRange: range }];
+    return answer;
+  });
+
+  const result = await searchSymbols("same", cwd, 100, undefined, {}, manager);
+
+  expect(result.complete).toBe(true);
+  expect(result.skipped).toBeUndefined();
+  expect(result.hits.map((hit) => [path.basename(hit.source), hit.role, hit.symbol.name])).toEqual([
+    ["a.ts", "definition", "(*Box).same"],
+    ["a.ts", "reference", "(*Box).same"],
+    ["b.ts", "reference", "(*Box).same"],
+  ]);
+});
+
 test("does not treat failed reference requests or missing providers as no matches", async () => {
   const { cwd, manager, sendRequest } = await fixture();
   sendRequest.mockImplementation(async (method) => {
