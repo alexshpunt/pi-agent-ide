@@ -77,7 +77,8 @@ while True:
     elif method == "matrix/unregisterWatch":
         send({"jsonrpc": "2.0", "id": 778, "method": "client/unregisterCapability", "params": {"unregisterations": [{"id": "owned-watch", "method": "workspace/didChangeWatchedFiles"}]}})
     elif method == "textDocument/documentSymbol":
-        result = [{"name": "label", "kind": 14, "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 21}}, "selectionRange": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}]
+        # Only note.ts declares `label`; reference.ts merely uses it.
+        result = [{"name": "label", "kind": 14, "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 21}}, "selectionRange": {"start": {"line": 0, "character": 6}, "end": {"line": 0, "character": 11}}}] if params["textDocument"]["uri"].endswith("/note.ts") else []
     elif method == "workspace/symbol":
         if params["query"] == state.get("holdSymbolQuery"):
             pending_symbols.add(message["id"])
