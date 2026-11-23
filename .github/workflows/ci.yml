@@ -126,6 +126,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.base_ref == 'main'
         env:
           PR_HEAD: ${{ github.head_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: node --experimental-strip-types scripts/release/merge-policy.ts
 
