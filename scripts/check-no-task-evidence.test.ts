@@ -1,5 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { afterEach, expect, test } from "vitest";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
@@ -85,8 +94,29 @@ test("the installed pre-commit hook blocks reports and allows an ordinary commit
   expect(refused.stderr).toContain(file);
   expect(spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd }).status).not.toBe(0);
   execFileSync("git", ["rm", "--cached", "--", file], { cwd });
-  writeFileSync(path.join(cwd, "source.ts"), "export {};\n");
-  execFileSync("git", ["add", "source.ts"], { cwd });
+  copyFileSync(
+    path.join(root, "scripts/format-staged.ts"),
+    path.join(cwd, "scripts/format-staged.ts"),
+  );
+  symlinkSync(path.join(root, "node_modules"), path.join(cwd, "node_modules"), "junction");
+  writeFileSync(path.join(cwd, ".oxfmtrc.json"), '{"semi":false}\n');
+  writeFileSync(path.join(cwd, "source [1].ts"), "export const  staged=1;\n");
+  writeFileSync(path.join(cwd, "clean.ts"), "export const  clean=2;\n");
+  writeFileSync(path.join(cwd, "notes.md"), "#    Heading\n");
+  writeFileSync(path.join(cwd, "untracked.ts"), "not valid TypeScript !\n");
+  execFileSync("git", ["add", ".oxfmtrc.json", "source [1].ts", "clean.ts", "notes.md"], { cwd });
+  const unstaged = "export const unstaged = 3\n";
+  writeFileSync(path.join(cwd, "source [1].ts"), unstaged);
+  writeFileSync(path.join(cwd, ".oxfmtrc.json"), '{"semi":true}\n');
   const accepted = spawnSync("git", ["commit", "-qm", "fixture"], { cwd, encoding: "utf8" });
-  expect(accepted.status).toBe(0);
-});
+  expect(accepted.status, accepted.stderr).toBe(0);
+  expect(
+    execFileSync("git", ["show", "HEAD:source [1].ts"], { cwd, encoding: "utf8" }),
+    accepted.stdout + accepted.stderr,
+  ).toBe("export const staged = 1\n");
+  expect(readFileSync(path.join(cwd, "source [1].ts"), "utf8")).toBe(unstaged);
+  expect(readFileSync(path.join(cwd, "clean.ts"), "utf8")).toBe("export const clean = 2\n");
+  expect(readFileSync(path.join(cwd, "notes.md"), "utf8")).toBe("# Heading\n");
+  expect(readFileSync(path.join(cwd, "untracked.ts"), "utf8")).toBe("not valid TypeScript !\n");
+  expect(readFileSync(path.join(cwd, ".oxfmtrc.json"), "utf8")).toBe('{"semi":true}\n');
+}, 45_000);
