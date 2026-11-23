@@ -420,6 +420,7 @@ const groups: [string[], string[]][] = [
       "debug.delete",
       "discovery.debug",
     ],
+    // Uses CRLF source to exercise anchor reuse; deterministic real-Pi coverage checks the preview.
     ["debug-roundtrip"],
   ],
   [
