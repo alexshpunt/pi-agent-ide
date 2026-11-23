@@ -229,7 +229,7 @@ The runner mirrors public lifecycle, finalized-message and execution events for 
 
 ## Isolation
 
-A run freezes the checkout's current source and dependencies in a disposable clone and records its revision and source digest. Each case gets a fresh clone, fixture directory, private Pi home, and process namespace. Only that case's workspace/state and sandbox temporary directories are writable. Source and system tools are read-only; host checkouts, personal context, extensions, skills, and MCP configuration are not loaded.
+A run freezes the checkout's current source in a disposable clone and records its revision and source digest. Bubblewrap mounts the checkout's installed `node_modules` directories read-only at the same relative paths in that clone. The install is not frozen; do not reinstall or update dependencies during a run. Each case gets a fresh clone, fixture directory, private Pi home, and process namespace. Only that case's workspace/state and sandbox temporary directories are writable. Source and system tools are read-only; host checkouts, personal context, extensions, skills, and MCP configuration are not loaded.
 
 Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Snapshot credentials are copied into private case state and removed with it. Explicit dedicated-auth files are mounted separately and survive cleanup with their refresh rotations. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
 
