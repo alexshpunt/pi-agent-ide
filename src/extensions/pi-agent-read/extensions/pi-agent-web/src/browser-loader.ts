@@ -50,15 +50,7 @@ export function createSystemBrowserHtmlLoader(
         options.environment ?? process.env,
       );
       const executablePath = await executable;
-      loadOptions.signal?.throwIfAborted();
-      const { chromium } = await import("playwright-core");
-      loadOptions.signal?.throwIfAborted();
-      const browser = await chromium.launch({
-        executablePath,
-        headless: true,
-        chromiumSandbox: false,
-        timeout: loadOptions.timeoutMs,
-      });
+      const browser = await launchSystemBrowser(executablePath, loadOptions);
       const closeOnAbort = (): void => {
         void browser.close();
       };
@@ -97,6 +89,39 @@ export function createSystemBrowserHtmlLoader(
       }
     },
   };
+}
+
+/** Check the installed browser without navigating or using a persistent profile. */
+export async function probeSystemBrowser(
+  executablePath: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const timeoutMs = 10_000;
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const probeSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+  const browser = await launchSystemBrowser(executablePath, { timeoutMs, signal: probeSignal });
+  const closeOnAbort = () => void browser.close().catch(() => {});
+  probeSignal.addEventListener("abort", closeOnAbort, { once: true });
+  try {
+    probeSignal.throwIfAborted();
+    await browser.newPage();
+    probeSignal.throwIfAborted();
+  } finally {
+    probeSignal.removeEventListener("abort", closeOnAbort);
+    await browser.close().catch(() => {});
+  }
+}
+
+async function launchSystemBrowser(executablePath: string, options: BrowserLoadOptions) {
+  options.signal?.throwIfAborted();
+  const { chromium } = await import("playwright-core");
+  options.signal?.throwIfAborted();
+  return chromium.launch({
+    executablePath,
+    headless: true,
+    chromiumSandbox: false,
+    timeout: options.timeoutMs,
+  });
 }
 
 /** Finds the Chrome/Chromium executable used by browser reads. */
