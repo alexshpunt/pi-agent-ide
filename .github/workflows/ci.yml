@@ -277,6 +277,9 @@ jobs:
       - name: Setup Linux tests
         uses: ./.github/actions/setup-linux-tests
 
+      - name: Install integration Chromium
+        run: pnpm test:integration:install-browser --with-deps
+
       - name: Run integration shard
         run: bash scripts/test-integration-ci.sh "${{ matrix.shard }}/4"
 
@@ -366,6 +369,9 @@ jobs:
 
       - name: Setup Linux tests
         uses: ./.github/actions/setup-linux-tests
+
+      - name: Install integration Chromium
+        run: pnpm test:integration:install-browser --with-deps
 
       - name: Prepare unprivileged SSH account
         run: |

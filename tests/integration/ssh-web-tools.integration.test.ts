@@ -23,7 +23,9 @@ const restore = forceStandaloneIntegrationFile();
 afterAll(restore);
 
 // Protect the actual extension loader, ordinary tools, converter and native Codemode owner routing.
-test("ordinary explicit target web reads and searches retain their owner while browser fallback renders native DOM", async () => {
+test("ordinary explicit target web reads and searches retain their owner while browser fallback renders native DOM", async ({
+  onTestFinished,
+}) => {
   const requests: string[] = [];
   const media = createCanvas(4, 3);
   const paint = media.getContext("2d");
@@ -51,6 +53,12 @@ test("ordinary explicit target web reads and searches retain their owner while b
     );
   });
   proxy.listen(0, "127.0.0.1");
+  onTestFinished(async () => {
+    proxy.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      proxy.close((error) => (error ? reject(error) : resolve())),
+    );
+  });
   await once(proxy, "listening");
   const address = proxy.address();
   if (!address || typeof address === "string") throw new Error("No private proxy address");
@@ -245,10 +253,6 @@ test("ordinary explicit target web reads and searches retain their owner while b
     try {
       await fixture.stop();
     } finally {
-      proxy.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        proxy.close((error) => (error ? reject(error) : resolve())),
-      );
       await rm(cwd, { recursive: true, force: true });
     }
   }

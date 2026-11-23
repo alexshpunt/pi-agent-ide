@@ -15,6 +15,7 @@ import {
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import { generateReadExtensions } from "pi-agent-read/testing";
+import { integrationChromiumPath } from "#integration/support/browser-runtime.ts";
 
 const generatedExtensions = await generateReadExtensions([
   "src/extensions/pi-agent-read/extensions/pi-agent-web/plugins/pi-agent-web-image/index.ts",
@@ -159,7 +160,14 @@ test("returns a bounded preview for unsupported binary content", async () => {
 });
 
 test("recovers HTTP 403 through real Chromium within one read call", async () => {
-  const run = await runRead("/browser-fallback", "web-browser-fallback");
+  const run = await runSource(
+    `${baseUrl}/browser-fallback`,
+    "web-browser-fallback",
+    {},
+    {
+      PI_AGENT_IDE_BROWSER_PATH: integrationChromiumPath(),
+    },
+  );
   expect(getToolResultMessage(run, "read").isError).toBe(false);
   expect(getToolResultText(run)).toContain("automatic-browser-fallback-marker");
   expect(getToolCallNames(run)).toEqual(["read"]);
@@ -178,6 +186,7 @@ function runSource(
   source: string,
   testName: string,
   range: { readonly offset?: number; readonly limit?: number } = {},
+  environment?: Record<string, string>,
 ) {
   return new PiIntegrationTest({
     artifactsDir: testArtifactsDir(expect.getState().testPath),
@@ -185,6 +194,7 @@ function runSource(
     // Allow both 30-second transport attempts and Pi startup and cleanup.
     timeoutMs: 90_000,
     cwd,
+    environment,
     extensions: generatedExtensions.paths,
     tools: ["read"],
     conversation: [

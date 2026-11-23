@@ -223,6 +223,7 @@
     "test:benchmarks": "node --test \"benchmarks/**/*.test.ts\"",
     "test:unit:report": "vitest run --reporter=default --reporter=junit --outputFile.junit=.agents/tmp/test-results/unit.xml",
     "test:integration": "pi-test run -- vitest run --config vitest.integration.config.mjs",
+    "test:integration:install-browser": "node tests/integration/support/browser-runtime.ts",
     "test:integration:shards": "bash scripts/test-integration-shards.sh",
     "test:integration:live": "oxnode scripts/live-integration-test.ts",
     "test:integration:live:test": "oxnode scripts/live-integration-test.ts --named-test",
