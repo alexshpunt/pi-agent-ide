@@ -22,10 +22,39 @@ export function canMergeIntoMain(
   );
 }
 
+/**
+ * Whether `sha` is a commit of develop, which `origin/develop` must already hold. Such a commit has
+ * a push run on develop that the next develop push cancels, and a cancelled required `Validate`
+ * check on it blocks a merge even when the pull request run passed.
+ */
+export function isDevelopCommit(
+  sha: string,
+  options: { cwd?: string; ref?: string } = {},
+): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", sha, options.ref ?? "origin/develop"], {
+      ...(options.cwd !== undefined && { cwd: options.cwd }),
+      stdio: "ignore",
+    });
+    return true;
+  } catch (error) {
+    // Exit status 1 means "not an ancestor"; any other failure is a real error.
+    if ((error as { status?: unknown }).status === 1) return false;
+    throw error;
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const repository = process.env.GITHUB_REPOSITORY;
   const head = process.env.PR_HEAD;
   if (!repository || !head) throw new Error("Missing repository or PR head");
+  const headSha = process.env.PR_HEAD_SHA;
+  if (headSha && isDevelopCommit(headSha)) {
+    throw new Error(
+      `The head of a pull request into main is ${headSha}, a commit of develop. Promote a cut ` +
+        "through its own commit: push the cut plus `git commit --allow-empty`, not the cut itself.",
+    );
+  }
   const refs = execFileSync("git", ["ls-remote", "origin", "refs/heads/release/*"], {
     encoding: "utf8",
   });
