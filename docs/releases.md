@@ -14,6 +14,10 @@ Squash-merging `develop` into `main` makes their histories diverge. The **Synchr
 
 See [Develop nightly](nightly.md). Nightlies test a pinned `develop` commit and keep an installable package and test reports in GitHub Actions for 30 days. They do not publish to npm.
 
+## Flaky tests
+
+In CI, Vitest repeats a failed test up to two more times, for unit and integration tests alike. A timing flake, such as a toolchain that starts slowly on a cold runner, passes on a repeat and does not reject a release candidate. A test that fails all three attempts is a real failure and still blocks. The repeats are off outside CI, so a developer sees a flaky test on the first run. Failed steps that run no tests, such as a runner setup, are not repeated; rerun the failed jobs of the run instead.
+
 ## Flaky debugger checks
 
 Real debugger integration tests and adapter/platform jobs still run, but their results are non-blocking and kept outside the shared CI test totals and badges. They have separate jobs and reports marked flaky. A failed debugger job does not reject a release candidate. Pure debugger unit tests, other source/runtime checks, and editor tests remain blocking. In particular, Delete is not part of this exception.
