@@ -4145,6 +4145,46 @@ add(
   ],
   { files: { "task.txt": wideRangeFixture }, expected: { "task.txt": "NEW\nkeep\n" } },
 );
+const oversizedRangePadding = `${"x".repeat(4095)}\n`.repeat(17 * 256);
+const pagedRangeReplace = { path: "task.txt", from: "BEGIN", through: "END", text: "NEW" };
+add(
+  "oversized-paged-edit-span",
+  ["edit.unseen-edit-span", "compose.oversized-paged-edit"],
+  "Replace only lines 1 through 502 of task.txt, leaving its large suffix intact. First read just lines 1 and 502 in separate calls, then call Replace with literal from BEGIN, literal through END, and text NEW. It must refuse. After the refusal, read the selected span in two pages: offset 1 with limit 251, then offset 252 with limit 251. Wait for both pages before retrying that same Replace. In Codemode, finish the first script to see the refusal before reading either page. Preserve every byte after END.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 }, contains: "BEGIN" },
+    { tool: "read", args: { path: "task.txt", offset: 502, limit: 1 }, contains: "END" },
+    {
+      tool: "replace",
+      args: pagedRangeReplace,
+      exactText: ["from", "through"],
+      error: true,
+      after: [0, 1],
+    },
+    {
+      tool: "read",
+      args: { path: "task.txt", offset: 1, limit: 251 },
+      contains: "body 249",
+      after: [2],
+    },
+    {
+      tool: "read",
+      args: { path: "task.txt", offset: 252, limit: 251 },
+      contains: "END",
+      after: [3],
+    },
+    {
+      tool: "replace",
+      args: pagedRangeReplace,
+      exactText: ["from", "through"],
+      after: [4],
+    },
+  ],
+  {
+    files: { "task.txt": wideRangeFixture + oversizedRangePadding },
+    expected: { "task.txt": "NEW\nkeep\n" + oversizedRangePadding },
+  },
+);
 add(
   "result-selector-scope",
   ["compose.result-selector-scope"],
