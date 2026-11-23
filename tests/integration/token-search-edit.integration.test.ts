@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -68,6 +69,73 @@ test.each([false, true])(
     });
   },
 );
+test("direct Search anchor refusals distinguish bulk token selections from word hints", async () => {
+  await withTempWorkspace(async (cwd) => {
+    const cases = [
+      {
+        id: "boolean",
+        query: "red AND blue",
+        content: "red blue\n",
+        anchor: "$issued-searchallmatch:boolean",
+        code: "search-token-selection",
+      },
+      {
+        id: "words",
+        query: "const x = await f",
+        content: "const alpha\nawait beta\n",
+        anchor: "$issued-searchmatch:words:1",
+        code: "search-word-hint",
+      },
+    ];
+    for (const { id, content } of cases) {
+      await writeFile(path.join(cwd, `${id}.txt`), content);
+    }
+    const run = await new PiIntegrationTest({
+      testName: "token-search-anchor-refusals",
+      artifactsDir: testArtifactsDir(import.meta.filename),
+      cwd,
+      rawMode: false,
+      isolateUserResources: true,
+      extensions: [
+        path.resolve("tests/integration/fixtures/issued-reference-provider.ts"),
+        path.resolve("src/pi-agent-ide.ts"),
+      ],
+      tools: ["search", "replace"],
+      conversation: [
+        ...cases.flatMap(({ id, query, anchor }) => [
+          assistantMessage(
+            [toolCall({ id, name: "search", arguments: { path: `${id}.txt`, query } })],
+            { stopReason: "toolUse" },
+          ),
+          assistantMessage(
+            [
+              toolCall({
+                id: `replace-${id}`,
+                name: "replace",
+                arguments: { path: `${id}.txt`, at: anchor, text: "BAD" },
+              }),
+            ],
+            { stopReason: "toolUse" },
+          ),
+        ]),
+        assistantMessage([text("Done")]),
+      ],
+    }).run("Attempt an edit through each refused Search anchor");
+
+    for (const { id, code, content } of cases) {
+      const callId = `replace-${id}`;
+      expect(
+        getToolExecutionDetails(getToolExecution(run, callId)),
+        getToolResultText(run, callId),
+      ).toMatchObject({
+        effect: "not-applied",
+        results: [{ data: { ok: false, errors: [{ code }] } }],
+      });
+      expect(await readFile(path.join(cwd, `${id}.txt`), "utf8")).toBe(content);
+    }
+  });
+});
+
 test("token search selections cannot silently rewrite every match", async () => {
   await withTempWorkspace(async (cwd) => {
     await mkdir(path.join(cwd, ".pi/pi-agent-ide"), { recursive: true });
