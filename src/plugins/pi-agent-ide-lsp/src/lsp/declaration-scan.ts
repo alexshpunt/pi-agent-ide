@@ -1,6 +1,6 @@
 import type { LspClient } from "./client.ts";
 import type { ClangCoverage } from "./clang-coverage.ts";
-import { textInRange } from "./corrected-names.ts";
+import { rangeTextReader } from "./corrected-names.ts";
 import { isMethodNotFound } from "./errors.ts";
 import type { LspManager } from "./manager.ts";
 import { isMissingSource } from "./missing-sources.ts";
@@ -82,11 +82,12 @@ export async function scanDeclarations(input: {
     });
     if (outline === undefined) return undefined;
     const found: LspWorkspaceSymbol[] = [];
+    const textAt = rangeTextReader(text);
     const visit = (symbols: readonly LspCodeSymbol[]) => {
       for (const symbol of symbols) {
         // The name range holds the identifier even when the server decorates the symbol's name,
         // such as gopls with `(*Engine).Start` or clangd with a destructor's `~`.
-        if (textInRange(text, symbol.selectionRange) === word)
+        if (textAt(symbol.selectionRange) === word)
           found.push({
             name: symbol.name,
             kind: symbol.kind,
