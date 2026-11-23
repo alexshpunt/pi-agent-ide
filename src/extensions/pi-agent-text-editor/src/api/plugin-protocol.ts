@@ -173,6 +173,8 @@ const textAnchorResourceResolutionAttemptSchema = Type.Union([
           Type.Literal("stale"),
           Type.Literal("missing"),
           Type.Literal("ambiguous"),
+          Type.Literal("search-token-selection"),
+          Type.Literal("search-word-hint"),
         ]),
         reason: Type.String(),
         contextRange: Type.Optional(

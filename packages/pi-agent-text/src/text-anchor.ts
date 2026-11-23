@@ -254,6 +254,8 @@ const rejectionSchema = Type.Object({
     Type.Literal("outside-scope"),
     Type.Literal("before-start"),
     Type.Literal("ambiguous"),
+    Type.Literal("search-token-selection"),
+    Type.Literal("search-word-hint"),
   ]),
   reason: Type.String(),
   searchHighlightRetry: Type.Optional(Type.String()),
