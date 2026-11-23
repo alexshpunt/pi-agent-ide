@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1 — 2026-11-23
+
+### Fixed
+
+- `lsp_search` no longer aborts a whole query when one workspace symbol cannot be anchored. It returns the hits it can resolve and lists the skipped symbols.
+- `lsp_search` finds the declarations of an exact name in every project under the searched directory. Before, a language server that indexes only the projects it has loaded (clangd with several compilation databases, gopls with several modules, TypeScript with several projects) could miss a declaration in a sibling project and still report a complete result. The files that write the name are now opened so their own server answers; files past a limit of 64 are reported as unchecked and make the result incomplete.
+- Vue and TypeScript projects: a declaration in a nested TypeScript project is found, and an import binding is no longer reported as the definition of the symbol it imports.
+- Go and Rust: qualified names that the server's index spells differently from the file outline are anchored to their real declaration. This covers Go methods with a pointer receiver (`Engine.Start` for `(*Engine).Start`), struct fields (`Holder.Value`) and Rust alias entries. Two types with a member of the same name stay distinct, and a stale range never anchors a different declaration.
+- When a server caps its `workspace/symbol` reply (gopls at 100 candidates, rust-analyzer at 128 by default), `lsp_search` marks the result incomplete, names the server, and does not offer an anchor for all matches.
+
 ## 1.0.0 — 2026-11-22
 
 ### Breaking changes
