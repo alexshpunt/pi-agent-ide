@@ -1089,8 +1089,12 @@ function wholeFileFailureCause(code: string): string {
     case "NO_EDITABLE_TEXT": {
       return "this result is read-only; read the source file to edit it";
     }
+    case "search-token-selection":
     case "UNSAFE_TOKEN_SELECTION": {
       return "search selected separate tokens, not one phrase";
+    }
+    case "search-word-hint": {
+      return "search matches are separate-word location hints";
     }
     case "RESULT_INPUT_REJECTED": {
       return "result input was rejected";

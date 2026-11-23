@@ -2425,7 +2425,7 @@ function formatRejectedAnchorMessage(
         ? "has no match after the start selector"
         : code === "missing"
           ? "was not found"
-          : code === "invalid"
+          : code === "invalid" || code === "search-token-selection" || code === "search-word-hint"
             ? "was rejected"
             : "could not be resolved";
   const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${quoteAnchorExcerpt(failure.anchor)} ${state} in "${failure.source}"`;

@@ -76,7 +76,15 @@ export interface TextAnchorRecoveryRange {
 /** Why an anchor could not resolve safely. */
 export interface TextAnchorRejection {
   /** outside-scope means the selector matches the source, but not within the requested ranges. */
-  readonly code: "invalid" | "stale" | "missing" | "ambiguous" | "outside-scope" | "before-start";
+  readonly code:
+    | "invalid"
+    | "stale"
+    | "missing"
+    | "ambiguous"
+    | "outside-scope"
+    | "before-start"
+    | "search-token-selection"
+    | "search-word-hint";
   readonly reason: string;
   /** The literal after removing Search highlight delimiters, for suggestions only. */
   readonly searchHighlightRetry?: string;
