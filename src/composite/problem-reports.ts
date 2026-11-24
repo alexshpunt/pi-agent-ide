@@ -19,6 +19,7 @@ import {
   installRejectionGuard,
   isProgrammingError,
   ProblemReporter,
+  recordExtensionApiWrapper,
   stackMentions,
   takeUnreportedCrashes,
   type Problem,
@@ -380,7 +381,7 @@ export function guardExtensionApi<TApi extends ExtensionAPI>(
       }),
   };
 
-  return {
+  const guarded: TApi = {
     ...api,
     on,
     events,
@@ -391,4 +392,7 @@ export function guardExtensionApi<TApi extends ExtensionAPI>(
     registerEntryRenderer,
     registerToolRenderer,
   };
+  // Each module gets its own wrapper; state shared between modules keys on the wrapped API.
+  recordExtensionApiWrapper(guarded, api);
+  return guarded;
 }
