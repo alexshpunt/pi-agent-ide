@@ -22,3 +22,4 @@ export {
   type TakeUnreportedCrashesOptions,
 } from "./crash-log.ts";
 export { installRejectionGuard, type RejectionGuardOptions } from "./rejection-guard.ts";
+export { extensionApiIdentity, recordExtensionApiWrapper } from "./api-identity.ts";
