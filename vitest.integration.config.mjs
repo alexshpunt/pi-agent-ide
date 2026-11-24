@@ -33,13 +33,18 @@ export function integrationWorkerLimit({ pooled = false } = {}) {
 }
 
 function requirePoolLimit(ceiling) {
-  let capacity;
+  /** @type {unknown} */
+  let endpoint;
   try {
-    capacity = JSON.parse(process.env.PI_INTEGRATION_TEST_RUNNER ?? "null")?.maxPi;
+    endpoint = JSON.parse(process.env.PI_INTEGRATION_TEST_RUNNER ?? "null");
   } catch {
     throw new Error("Invalid pi-test runner endpoint.");
   }
-  if (!Number.isSafeInteger(capacity) || capacity < 1) {
+  const capacity =
+    typeof endpoint === "object" && endpoint !== null && "maxPi" in endpoint
+      ? endpoint.maxPi
+      : undefined;
+  if (typeof capacity !== "number" || !Number.isSafeInteger(capacity) || capacity < 1) {
     throw new Error(
       "Pooled mode needs a pi-test runner that advertises maxPi. Set PI_TEST_CLI to a compatible executable, or use --parallel.",
     );
