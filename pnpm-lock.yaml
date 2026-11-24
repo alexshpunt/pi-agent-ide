@@ -638,6 +638,9 @@ importers:
       pi-agent-tool-ui:
         specifier: workspace:*
         version: link:../../../packages/pi-agent-tool-ui
+      pi-problem-report:
+        specifier: workspace:^
+        version: link:../../../packages/pi-problem-report
       typebox:
         specifier: ^1.3.27
         version: 1.3.27
