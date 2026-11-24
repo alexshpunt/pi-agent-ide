@@ -1,7 +1,13 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test, vi } from "vitest";
 import { type Component, type TuiMouseEvent, Text } from "@earendil-works/pi-tui";
 
-import { AgentIdeProcessRegistry } from "#src/plugins/pi-agent-ide-processes/src/registry.ts";
+import { registerBuiltinModules } from "#src/composite/module-registration.ts";
+import { guardExtensionApi } from "#src/composite/problem-reports.ts";
+import {
+  AgentIdeProcessRegistry,
+  agentIdeProcessRegistry,
+} from "#src/plugins/pi-agent-ide-processes/src/registry.ts";
 import {
   AgentIdeProcessesUi,
   renderProcessWidget,
@@ -368,6 +374,47 @@ describe("process list after compaction", () => {
     });
 
     expect(registry.compactionNotice("current")).toBeUndefined();
+  });
+});
+
+describe("Agent IDE process registry across built-in modules", () => {
+  test("a process added by one module reaches the display of another", async () => {
+    const host: Pick<ExtensionAPI, "on" | "events"> = {
+      on: () => () => undefined,
+      events: { on: () => () => undefined, emit: () => undefined },
+    };
+    let shown: AgentIdeProcessRegistry | undefined;
+    const failed = await registerBuiltinModules(
+      [
+        {
+          id: "ide.processes",
+          dependencies: [],
+          register: (api) => {
+            shown = agentIdeProcessRegistry(api);
+          },
+        },
+        {
+          id: "ide.terminal",
+          dependencies: ["ide.processes"],
+          register: (api) => {
+            agentIdeProcessRegistry(api).add({
+              id: "terminal",
+              list: () => [process("shell:watch", "terminal")],
+              onDidChange: () => () => undefined,
+            });
+          },
+        },
+      ],
+      host as ExtensionAPI,
+      { preferences: {} },
+      {
+        guard: (api, owner) => guardExtensionApi(api, owner, () => undefined),
+        report: () => undefined,
+      },
+    );
+
+    expect([...failed]).toEqual([]);
+    expect(shown?.list().map(({ source }) => source)).toEqual(["shell:watch"]);
   });
 });
 
