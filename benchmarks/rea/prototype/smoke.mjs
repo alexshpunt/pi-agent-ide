@@ -9,17 +9,18 @@ import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 const execute = promisify(execFile);
-const ideRoot = "/root/dev/pi/pi-agent-ide";
 const worktree = findRepositoryRoot(import.meta.url);
+// The user explicitly selected this worktree for local verification; do not load the shared checkout too.
+const ideRoot = worktree;
 const cliRun = path.resolve(process.argv[2] ?? path.join(worktree, ".tmp/rea-baseline/run-QhoZGN"));
 const report = JSON.parse(await readFile(path.join(cliRun, "result.json"), "utf8"));
 await execute("git", ["-C", ideRoot, "fetch", "origin", "develop"]);
 const revision = async (ref) =>
   (await execute("git", ["-C", ideRoot, "rev-parse", ref])).stdout.trim();
 const commit = await revision("HEAD");
-assert.equal(commit, await revision("origin/develop"));
+const developCommit = await revision("origin/develop");
 const version = JSON.parse(await readFile(path.join(ideRoot, "package.json"), "utf8")).version;
-const beforeSource = await captureIdeSource(ideRoot);
+const beforeSource = await captureIdeSource(ideRoot, false);
 const require = createRequire(path.join(ideRoot, "package.json"));
 const { PiIntegrationTest, assistantMessage, toolCall, text, getToolExecution } = await import(
   pathToFileURL(
@@ -55,10 +56,10 @@ await writeFile(
   `import { installRea } from ${JSON.stringify(path.join(import.meta.dirname, "extension.ts"))};
 import { captureIdeSource } from ${JSON.stringify(path.join(import.meta.dirname, "ide-source.mjs"))};
 import { writeFile } from "node:fs/promises";
-export default async function(pi) {
+export default async function(pi: Parameters<typeof installRea>[0]) {
   await installRea(pi, ${JSON.stringify(config)});
   pi.on("session_start", async () => {
-    const loaded = await captureIdeSource();
+    const loaded = await captureIdeSource(${JSON.stringify(ideRoot)}, false);
     await writeFile(${JSON.stringify(path.join(root, "loaded-ide.json"))}, JSON.stringify({...loaded, extension:${JSON.stringify(path.join(ideRoot, "src/pi-agent-ide.ts"))}, tools:pi.getAllTools().map(tool=>tool.name)}, null, 2));
   });
 }
@@ -72,6 +73,8 @@ await writeFile(
       modelCalls: 0,
       ide: {
         source: ideRoot,
+        sourceMode: "user-approved-local-worktree",
+        developCommit,
         version,
         commit,
         extension: path.join(ideRoot, "src/pi-agent-ide.ts"),
@@ -173,7 +176,7 @@ const result = await new PiIntegrationTest({
     assistantMessage([text("Research smoke complete")]),
   ],
 }).run("Run the scripted REA resource smoke without inference");
-const afterSource = await captureIdeSource(ideRoot);
+const afterSource = await captureIdeSource(ideRoot, false);
 await writeFile(path.join(root, "ide-after.json"), JSON.stringify(afterSource, null, 2));
 const loaded = JSON.parse(await readFile(path.join(root, "loaded-ide.json"), "utf8"));
 assert.equal(loaded.sourceDigest, beforeSource.sourceDigest, "IDE changed before startup");

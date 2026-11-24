@@ -8,11 +8,11 @@ import { promisify } from "node:util";
 const execute = promisify(execFile);
 
 /** Record the actual current IDE source, including shared uncommitted work; a commit alone is not a clean-source claim. */
-export async function captureIdeSource(root = "/root/dev/pi/pi-agent-ide") {
+export async function captureIdeSource(root = "/root/dev/pi/pi-agent-ide", requireDevelop = true) {
   const git = async (...args) =>
     (await execute("git", ["-C", root, ...args], { maxBuffer: 16 * 1024 * 1024 })).stdout;
   const commit = (await git("rev-parse", "HEAD")).trim();
-  assert.equal(
+  if (requireDevelop) assert.equal(
     commit,
     (await git("rev-parse", "origin/develop")).trim(),
     "IDE is not at the fetched develop commit",

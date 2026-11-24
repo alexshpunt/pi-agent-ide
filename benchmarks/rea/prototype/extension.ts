@@ -1,10 +1,9 @@
-/* oxlint-disable import/no-absolute-path -- Load only the current develop IDE, never this worktree as a second IDE source. */
 import {
   connectReadPlugin,
   READ_PROTOCOL,
   READ_API_VERSION,
   type ReadPostReadHandler,
-} from "/root/dev/pi/pi-agent-ide/src/api/read.ts";
+} from "#src/api/read.ts";
 import {
   connectResultTargets,
   type ResultRange,
@@ -12,7 +11,7 @@ import {
   type ResultSourceTarget,
   type ResourceResolverContext,
   type ResourceOperationContext,
-} from "/root/dev/pi/pi-agent-ide/src/api/resource.ts";
+} from "#src/api/resource.ts";
 import {
   connectSearchPlugin,
   SEARCH_PROTOCOL,
@@ -22,7 +21,7 @@ import {
   type SearchContext,
   type SearchRequest,
   type SearchSelectionMatch,
-} from "/root/dev/pi/pi-agent-ide/src/api/search.ts";
+} from "#src/api/search.ts";
 import { ReaOwner } from "./owner.mjs";
 import { literalMatches } from "./matches.mjs";
 import { connectRea } from "./connection.mjs";
@@ -186,8 +185,8 @@ export async function installRea(pi: ExtensionAPI, config: ResearchConfig) {
       apiVersion: SEARCH_API_VERSION,
       id: resolverId,
       setup(api) {
-        api.describe(
-          "For rea:// sources and their unchanged results, Search accepts literal text, caseSensitive, wholeWord and limit only. Matches are static snapshot text, not native symbol resolution; use text Select, not JS/TS structural operations.",
+        api.addPromptGuideline(
+          "Search rea:// sources and their unchanged results with literal text, caseSensitive, wholeWord and limit only. Treat matches as static snapshot text, not native symbol resolution. Use text Select, not JS/TS structural operations.",
         );
         api.addResolver({
           priority: -20,

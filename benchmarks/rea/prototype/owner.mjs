@@ -76,7 +76,9 @@ export class ReaOwner {
   #closed = false;
   #lifetime = new AbortController();
   #session = randomUUID();
+  /** @type {Map<string, Readonly<{source:string, text:string, input:string, stamp:string}>>} */
   #snapshots = new Map();
+  /** @type {Map<string, Readonly<{source:string, text:string, input:string, stamp:string}>>} */
   #aliases = new Map();
   #nativeOpen = false;
   #config;
@@ -101,7 +103,11 @@ export class ReaOwner {
     if (this.#closed) throw new Error("REA research session closed; retained sources expired");
   }
 
-  /** Resolve configured aliases or exact retained URIs; analysis never runs for a guessed Evidence URI. */
+  /** Resolve configured aliases or exact retained URIs; analysis never runs for a guessed Evidence URI.
+   * @param {string} source
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<Readonly<{source:string, text:string, input:string, stamp:string}>>}
+   */
   resolve(source, signal) {
     return this.#serial(async () => {
       this.#assertOpen(signal);
@@ -206,7 +212,11 @@ export class ReaOwner {
     this.#assertOpen(signal);
   }
 
-  /** Reread only an exact snapshot of this live owner; used by Read/Search/Select freshness checks. */
+  /** Reread only an exact snapshot of this live owner; used by Read/Search/Select freshness checks.
+   * @param {string} source
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<string>}
+   */
   read(source, signal) {
     return this.#serial(async () => {
       this.#assertOpen(signal);
