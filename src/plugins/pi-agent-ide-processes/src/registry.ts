@@ -1,6 +1,8 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import type { Component } from "@earendil-works/pi-tui";
 
+import { extensionApiIdentity } from "pi-problem-report/api-identity";
+
 export type AgentIdeProcessStatus = "configured" | "running" | "stopping" | "paused";
 
 /** One active process contributed by an Agent IDE capability. */
@@ -129,11 +131,13 @@ const registries = new WeakMap<ExtensionAPI, AgentIdeProcessRegistry>();
  * that named them.
  */
 export function agentIdeProcessRegistry(pi: ExtensionAPI): AgentIdeProcessRegistry {
-  let registry = registries.get(pi);
+  // Built-in modules each get their own API wrapper; they must still share one registry.
+  const runtime = extensionApiIdentity(pi);
+  let registry = registries.get(runtime);
   if (registry === undefined) {
     const created = new AgentIdeProcessRegistry();
     registry = created;
-    registries.set(pi, created);
+    registries.set(runtime, created);
     pi.on("session_compact", (_event, context) => {
       const content = created.compactionNotice(context.sessionManager.getSessionId());
       if (content === undefined) return;

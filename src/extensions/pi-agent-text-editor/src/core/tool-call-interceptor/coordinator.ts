@@ -4,6 +4,7 @@ Runtime for intercepting streamed Pi tool calls.
 
 import { Allow } from "partial-json";
 import { assertJsonData, resultError, withStructuredResult } from "pi-agent-resource";
+import { extensionApiIdentity } from "pi-problem-report/api-identity";
 import { mutationDataSchema } from "#src/core/structured-result.ts";
 import {
   isToolCallAnnotation,
@@ -1175,14 +1176,16 @@ function makeRecoveryResult(
 const coordinators = new WeakMap<ExtensionAPI, ToolCallInterceptor>();
 
 function coordinatorFor(pi: ExtensionAPI): ToolCallInterceptor {
-  const existing = coordinators.get(pi);
+  // Built-in modules each get their own API wrapper; interceptors and sinks must still meet.
+  const runtime = extensionApiIdentity(pi);
+  const existing = coordinators.get(runtime);
 
   if (existing) {
     return existing;
   }
 
   const coordinator = new InterceptorImpl(pi);
-  coordinators.set(pi, coordinator);
+  coordinators.set(runtime, coordinator);
   registerStreamingInterceptorProvider(
     pi,
     (event, context) => coordinator.processStreamEvent(event, context),
@@ -1222,8 +1225,9 @@ export function registerToolCallAnnotationSink(
   pi: ExtensionAPI,
   sink?: ToolCallAnnotationSink,
 ): void {
-  toolCallAnnotationSinkUnsubscribers.get(pi)?.();
-  toolCallAnnotationSinkUnsubscribers.delete(pi);
+  const runtime = extensionApiIdentity(pi);
+  toolCallAnnotationSinkUnsubscribers.get(runtime)?.();
+  toolCallAnnotationSinkUnsubscribers.delete(runtime);
 
   if (sink === undefined) {
     return;
@@ -1240,7 +1244,7 @@ export function registerToolCallAnnotationSink(
 
     sink(event.toolCallId, event.annotation);
   });
-  toolCallAnnotationSinkUnsubscribers.set(pi, unsubscribe);
+  toolCallAnnotationSinkUnsubscribers.set(runtime, unsubscribe);
 }
 
 export function registerBlockedToolCallSink(

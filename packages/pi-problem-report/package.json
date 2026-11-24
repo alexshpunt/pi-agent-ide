@@ -9,6 +9,10 @@
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./api-identity": {
+      "types": "./src/api-identity.ts",
+      "default": "./src/api-identity.ts"
+    },
     "./rejection-guard": {
       "types": "./src/rejection-guard.ts",
       "default": "./src/rejection-guard.ts"
