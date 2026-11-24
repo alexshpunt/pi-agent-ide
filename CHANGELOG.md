@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.0 — 2026-11-24
+
+### Added
+
+- Problem reports. When Pi Agent IDE hits an internal error, a panel above the editor names the problem and offers **Open issue** (a prefilled GitHub issue), **Copy report**, **Don't show again** and **Close**. Nothing is sent automatically. A built-in module that fails to register is reported and switched off, the modules that depend on it are skipped, and the rest still load. A component that throws while drawing shows a one-line notice instead of ending Pi. If Pi crashed inside the IDE, the crash is offered once at the next start. The **Problem reports** setting turns this off (on by default). `/agent-ide-problem open|copy|close|off` works outside fullscreen mode, where panel buttons take no clicks.
+- Native Windows SSH targets now support `lsp_search`, diagnostics, `ast:` searches and outlines, the debugger with debugpy and js-debug, static and rendered `web:` reads, and Doctor. Doctor reports dependencies that are missing on the target. The Bash, Java, Delve, Ruby, Julia, R and PowerShell debug adapters and the VS Code debugger backend remain unavailable over Windows SSH.
+- Doctor checks that the browser can open a headless page, not only that it prints a version. If it cannot, Doctor offers to have the agent set up a browser on the selected host and checks again afterwards. Installing anything or changing persistent configuration needs a separate approval. Direct HTTP(S) reads keep working without a browser.
+- File hooks:
+  - Hook events and edit plans carry the `toolCallId` of the call that changes the file.
+  - Plans mark a removal with `deleted`, so a policy can tell a deleted file from an empty one.
+  - Directory copy and move run the before-edit hook for every regular file they create or replace.
+  - A new after-delete hook (`connectAfterDeleteHook`) runs after a successful Delete.
+  - Write shows a hook's complete denial reason instead of clipping it.
+
+### Fixed
+
+- Delete on Windows SSH targets is much faster: removing a directory of 24 files took 12.65 s and now takes 0.80 s. If a removal reaches its deadline, the result lists the paths it removed and where it stopped.
+- Wide edits in files larger than 16 Mi UTF-16 code units are accepted after the agent has read the affected lines across several Read pages of the same unchanged file. Before, such edits were refused even after every page was read.
+- When Search refuses an edit through one of its anchors (a bulk token selection or a separate-word location hint), the TUI shows the actual reason instead of a generic invalid-anchor error.
+- A session resumed in a shared Pi process uses its own project's Codemode panel setting, so Codemode child panels show or stay hidden as configured.
+- Read previews of CRLF files and debugger source no longer show `�` at the end of each line.
+
 ## 1.0.1 — 2026-11-23
 
 ### Fixed
