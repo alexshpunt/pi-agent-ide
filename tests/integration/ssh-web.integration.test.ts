@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
-import { expect, test, vi } from "vitest";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { createSshWebResolver } from "#src/backend/web-owner.ts";
 import { createHtmlContentConverter } from "#src/extensions/pi-agent-read/extensions/pi-agent-web/plugins/pi-agent-web-html/src/html-converter.ts";
 import { readFile } from "node:fs/promises";
@@ -155,6 +155,12 @@ test("target browser fallback runs page JavaScript and reuses readable HTML conv
     </script></body></html>`);
   });
   proxy.listen(0, "127.0.0.1");
+  onTestFinished(async () => {
+    proxy.closeAllConnections();
+    await new Promise<void>((resolve, reject) =>
+      proxy.close((error) => (error ? reject(error) : resolve())),
+    );
+  });
   await once(proxy, "listening");
   const address = proxy.address();
   if (!address || typeof address === "string") throw new Error("No private proxy address");
@@ -184,14 +190,7 @@ test("target browser fallback runs page JavaScript and reuses readable HTML conv
     expect(selected.resource.source).toBe(source);
     expect(selected.resource.write).toBeUndefined();
   } finally {
-    try {
-      await fixture.stop();
-    } finally {
-      proxy.closeAllConnections();
-      await new Promise<void>((resolve, reject) =>
-        proxy.close((error) => (error ? reject(error) : resolve())),
-      );
-    }
+    await fixture.stop();
   }
   // The target browser has its own 30 s deadline; the test budget adds SSH fixture startup on top.
 }, 60_000);
@@ -214,7 +213,7 @@ test.each(["playwright", "chromium"] as const)(
       await expect(
         readSshBrowserPage(target, url, source, { timeoutMs: 5000 }),
       ).rejects.toMatchObject({
-        code: "CAPABILITY_UNAVAILABLE",
+        code: missing === "playwright" ? "PLAYWRIGHT_UNAVAILABLE" : "CHROMIUM_UNAVAILABLE",
         source,
       });
     } finally {
@@ -235,6 +234,12 @@ test.each(["cancel", "deadline"] as const)(
       else response.end();
     });
     proxy.listen(0, "127.0.0.1");
+    onTestFinished(async () => {
+      proxy.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        proxy.close((error) => (error ? reject(error) : resolve())),
+      );
+    });
     await once(proxy, "listening");
     const address = proxy.address();
     if (!address || typeof address === "string") throw new Error("No private proxy address");
@@ -340,14 +345,7 @@ print(json.dumps(children))`,
     } finally {
       controller.abort();
       interception.mockRestore();
-      try {
-        await fixture.stop();
-      } finally {
-        proxy.closeAllConnections();
-        await new Promise<void>((resolve, reject) =>
-          proxy.close((error) => (error ? reject(error) : resolve())),
-        );
-      }
+      await fixture.stop();
     }
   },
   15_000,

@@ -1,11 +1,12 @@
 import { Writable } from "node:stream";
 import { callbackify } from "node:util";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import type { LspOwnerTransport } from "#src/plugins/pi-agent-ide-lsp/index.ts";
+import { remoteLocationFromFileUri, sshFileUri, sshNativePath } from "./native-path.ts";
+import { targetOs } from "./ssh-transport.ts";
 import { remoteLocation } from "./identity.ts";
 import type { SshBackendRegistry } from "./registry.ts";
 import { SshBackendError } from "./ssh.ts";
-import { sshProjectEnvironment } from "./process-environment.ts";
+import { missingSshExecutable, sshProjectEnvironment } from "./process-environment.ts";
 import { createSshLspFileWatchers } from "./lsp-file-watchers.ts";
 import { stopOwnedSshProcess } from "./owned-process-stop.ts";
 
@@ -16,29 +17,30 @@ export function createSshLspTransport(
 ): LspOwnerTransport {
   const owner = registry.resolve(source);
   if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", source, "not-applied");
+  const os = targetOs(owner.backend.target);
+  const resolve = (uri: string) => {
+    const current = registry.resolve(uri);
+    if (!current || current.location.target !== owner.location.target)
+      throw new SshBackendError("UNSUPPORTED_SOURCE", uri, "not-applied");
+    return current;
+  };
   return {
     async start(input) {
-      const current = registry.resolve(input.rootUri);
-      if (!current || current.location.target !== owner.location.target)
-        throw new SshBackendError("UNSUPPORTED_SOURCE", input.rootUri, "not-applied");
-      const command = input.command.map((part) =>
-        part.replaceAll("{project}", current.location.path),
-      );
-      if (!command[0]) throw new TypeError("Language server command is empty");
-      const environment = Object.entries(
-        await sshProjectEnvironment(
-          current.backend,
-          current.location.path,
-          input.env,
-          input.signal,
-        ),
-      ).map(([key, value]) => `${key}=${value}`);
-      const channel = await current.backend.startProcess(
-        "env",
-        [...environment, ...command],
+      const current = resolve(input.rootUri);
+      const project = sshNativePath(current.location.path, os);
+      const [command, ...args] = input.command.map((part) => part.replaceAll("{project}", project));
+      if (!command) throw new TypeError("Language server command is empty");
+      const env = await sshProjectEnvironment(
+        current.backend,
         current.location.path,
-        { signal: input.signal },
+        input.env,
+        input.signal,
       );
+      const channel = await current.backend
+        .startProcess(command, args, current.location.path, { signal: input.signal, env })
+        .catch((error: unknown) => {
+          throw missingSshExecutable(error, command, current.location.target);
+        });
       const stdin = new Writable({
         write: callbackify(async (chunk: Buffer, _encoding: BufferEncoding): Promise<void> => {
           await channel.write(chunk);
@@ -62,26 +64,30 @@ export function createSshLspTransport(
         },
       };
     },
-    fileWatchers(rootUri, changed, failed) {
-      const current = registry.resolve(rootUri);
-      if (!current || current.location.target !== owner.location.target)
-        throw new SshBackendError("UNSUPPORTED_SOURCE", rootUri, "not-applied");
-      return createSshLspFileWatchers(registry, rootUri, changed, failed);
-    },
+    // The current watcher is backed by Linux inotify, not Windows filesystem events.
+    ...(os === "linux" && {
+      fileWatchers(rootUri, changed, failed) {
+        resolve(rootUri);
+        return createSshLspFileWatchers(registry, rootUri, changed, failed);
+      },
+    }),
     toServerUri(uri) {
       if (!uri.startsWith("ssh://")) {
         if (uri.startsWith("file://"))
           throw new SshBackendError("UNSUPPORTED_SOURCE", uri, "not-applied");
         return uri;
       }
-      const location = registry.resolve(uri);
-      if (!location || location.location.target !== owner.location.target)
-        throw new SshBackendError("UNSUPPORTED_SOURCE", uri, "not-applied");
-      return pathToFileURL(location.location.path).href;
+      return sshFileUri(resolve(uri).location.path, os);
+    },
+    toServerPath(uri) {
+      return sshNativePath(resolve(uri).location.path, os);
+    },
+    fromServerPath(file) {
+      return remoteLocation(owner.location.target, file, os).source;
     },
     fromServerUri(uri) {
       if (!uri.startsWith("file://")) return uri;
-      return remoteLocation(owner.location.target, fileURLToPath(uri)).source;
+      return remoteLocationFromFileUri(owner.location.target, uri, os).source;
     },
   };
 }

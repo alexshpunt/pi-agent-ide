@@ -14,7 +14,7 @@ import termios
 import time
 
 from ssh_channel_common import (CHUNK_SIZE, FRAME_LIMIT, INPUT_WINDOW, STOP_GRACE_SECONDS, ChannelError,
-                                command_line, emit, error_code, initial_request)
+                                command_environment, command_line, emit, error_code, initial_request)
 
 process = None
 master = None
@@ -136,9 +136,10 @@ def run():
     dimensions = request.get("pty")
     # PATH resolves python3 as the bootstrap did, so target-side wrappers apply to workers too.
     argv, preamble = command_line(request, "python3")
+    environment = command_environment(request, defaults={"TERM": "xterm-256color"} if dimensions else None)
     if dimensions is None:
         process = subprocess.Popen(
-            argv, cwd=request["cwd"],
+            argv, cwd=request["cwd"], env=environment,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             start_new_session=True,
         )
@@ -157,7 +158,7 @@ def run():
             process = subprocess.Popen(
                 argv, cwd=request["cwd"],
                 stdin=slave, stdout=slave, stderr=slave,
-                env={**os.environ, "TERM": "xterm-256color"},
+                env=environment,
                 preexec_fn=controlling_terminal,
             )
         finally:

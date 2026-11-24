@@ -34,6 +34,14 @@ Run unit tests after changing a covered component:
 pnpm exec vitest run --config vitest.config.mjs
 ```
 
+Before running the local web fallback or SSH browser integration tests, install the Chromium revision pinned by the checkout's Playwright dependency:
+
+```bash
+pnpm test:integration:install-browser
+```
+
+Run this after `pnpm install` in each checkout. On Linux, append `--with-deps` if the host is missing Chromium's system libraries. The tests use the checkout's executable even when a system Chrome is installed. A missing or unusable executable produces a setup error with the install command.
+
 Run real-Pi integration tests after changing extension loading, tools, hooks, sessions, rendering, or filesystem behavior:
 
 ```bash

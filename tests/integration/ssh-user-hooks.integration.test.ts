@@ -44,6 +44,9 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
     const copiedText = `${root}/copied.fixture`;
     const copySource = path.join(cwd, "copy-source.fixture");
     const local = path.join(cwd, "move-source.txt");
+    const tree = path.join(cwd, "tree");
+    const remoteTree = `${root}/tree`;
+    const remoteTreeLock = `${remoteTree}/nested/locked.txt`;
     try {
       for (const [name, content] of SSH_HOOK_TEXT_FILES)
         await backend.write(`${fixture.workspace}/${name}`, Buffer.from(content), null);
@@ -53,6 +56,11 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
         null,
       );
       await writeFile(local, "local café source\n");
+      if (scenario === "move guards") {
+        await mkdir(path.join(tree, "nested"), { recursive: true });
+        await writeFile(path.join(tree, "nested/locked.txt"), "blocked tree leaf");
+        await writeFile(path.join(tree, "safe.txt"), "safe sibling leaf");
+      }
       await writeFile(copySource, "review copied café\n");
       await backend.write(
         `${fixture.workspace}/copied.fixture`,
@@ -103,6 +111,7 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
           : scenario === "move guards"
             ? [
                 { id: "mixed", name: "move", arguments: { path: local, target: locked } },
+                { id: "mixed-tree", name: "copy", arguments: { path: tree, target: remoteTree } },
                 {
                   id: "code-mixed",
                   name: "codemode",
@@ -201,6 +210,33 @@ test.each(["read guards", "move guards", "saved edits"] as const)(
         expect(plan).toContain(JSON.stringify(local));
         expect(plan).toContain(JSON.stringify("local café source\n"));
         expect(plan).toContain(JSON.stringify("remote café destination\n"));
+        expect(getToolExecution(run, "mixed-tree").isError).toBe(true);
+        expect(getToolResultText(run, "mixed-tree")).toContain(
+          "Owned remote destination is locked",
+        );
+        await expect(backend.lstat(`${fixture.workspace}/tree`)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        const treePlan = events.find((line) => line.includes('"toolCallId":"mixed-tree"'));
+        expect(treePlan ? JSON.parse(treePlan) : null).toMatchObject({
+          kind: "beforeEdit",
+          resources: [
+            {
+              source: remoteTreeLock,
+              existed: false,
+              deleted: false,
+              before: "",
+              after: "blocked tree leaf",
+            },
+            {
+              source: `${remoteTree}/safe.txt`,
+              existed: false,
+              deleted: false,
+              before: "",
+              after: "safe sibling leaf",
+            },
+          ],
+        });
       }
       if (scenario === "saved edits") {
         expect(getToolExecution(run, "binary-copy").isError).toBe(false);

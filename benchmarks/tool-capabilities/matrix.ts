@@ -128,7 +128,8 @@ const groups: [string[], string[]][] = [
   [["edit.repeated-line-anchor-shift"], ["repeated-line-anchor-after-shift"]],
   [["edit.repeated-line-anchor-block-recovery"], ["repeated-line-anchor-after-block-delete"]],
   [["edit.line-anchor-range-interior-change"], ["line-anchor-range-interior-change"]],
-  [["edit.unseen-edit-span"], ["unseen-edit-span"]],
+  [["edit.unseen-edit-span"], ["unseen-edit-span", "oversized-paged-edit-span"]],
+  [["compose.oversized-paged-edit"], ["oversized-paged-edit-span"]],
   [["read.fragment-recovery"], ["read-fragment-recovery"]],
   [["edit.batch-overlap-recovery"], ["codemode-overlap-recovery"]],
   [
@@ -212,6 +213,10 @@ const groups: [string[], string[]][] = [
   [["codemode.silent-write"], ["write-silent"]],
   [["codemode.whole-file-receipts"], ["whole-file-script-receipts"]],
   [["edit.write-hook-feedback", "compose.write-hook-read"], ["write-hook-read"]],
+  [
+    ["edit.write-hook-denial", "edit.directory-transfer-hook-denial"],
+    ["file-hook-denials-direct", "file-hook-denials-codemode"],
+  ],
   [["compose.write-large-read"], ["write-large-read"]],
   [
     ["edit.replace-exact", "compose.mutation-read", "compose.mutation-search"],
@@ -354,6 +359,8 @@ const groups: [string[], string[]][] = [
   [["search.compaction-numbered"], ["search-compaction-numbered"]],
   [["search.compaction-all"], ["search-compaction-all"]],
   // Result-input paths accept the same file as a scalar or an array; both keep real reuse checks.
+  // These cases use local fixtures. The Windows SSH code-intelligence integration test
+  // checks native target paths for AST, outline, symbols and diagnostics.
   [["outline.file"], ["ast-capture-rename", "outline-search-edit"]],
   [["search.ast", "compose.ast-capture-edit"], ["ast-capture-rename"]],
   // Both routes require { id: "<bare capture UUID>" }, stripping RESULT# even in Codemode.
@@ -413,6 +420,7 @@ const groups: [string[], string[]][] = [
       "debug.delete",
       "discovery.debug",
     ],
+    // Uses CRLF source to exercise anchor reuse; deterministic real-Pi coverage checks the preview.
     ["debug-roundtrip"],
   ],
   [
@@ -427,6 +435,7 @@ const groups: [string[], string[]][] = [
     ],
     ["debug-controls"],
   ],
+  // Paid DAP cases are local. Scripted Windows SSH coverage exercises selected native adapters.
   [["debug.backend-vscode-refusal", "debug.backend-native"], ["debug-backend-fallback"]],
   // Rust has a separate no-build route; the TypeScript route does not prove Cargo safety.
   [["read.rust-diagnostics-no-build"], ["rust-diagnostics-no-build"]],
@@ -463,6 +472,7 @@ const groups: [string[], string[]][] = [
   // This paid case checks a successful Write. The real-Pi edit-window-writes tests
   // check stale Write recovery on both routes, including applying a fresh anchor.
   [["write.json-text"], ["write-json-text"]],
+  // The local web case does not probe target-owned raw fetch, rendering or Doctor.
   [["web.read", "web.search"], ["web-read-search"]],
 ];
 

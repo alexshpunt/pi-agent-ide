@@ -16,7 +16,7 @@ import type {
 } from "#src/api/anchor-inspection.ts";
 import type { TextEditCompletionListener } from "#src/api/edit-completion.ts";
 import type { TextEditorToolPluginApi } from "#src/api/edit-pipeline.ts";
-import type { DeleteGuardRegistration } from "#src/api/delete-guard.ts";
+import type { DeleteCompletionListener, DeleteGuardRegistration } from "#src/api/delete-guard.ts";
 import type { TextMutationGuardRegistration } from "#src/api/mutation-guard.ts";
 import type {
   TextMutationPreviewOutcome,
@@ -117,6 +117,7 @@ export interface TextEditorPluginApi {
   addMutationGuard(registration: TextMutationGuardRegistration): void;
   /** Add a fail-closed policy for whole-object filesystem deletion, not text removal. */
   addDeleteGuard(registration: DeleteGuardRegistration): void;
+  onDidDelete(listener: DeleteCompletionListener): void;
   addToolRenderer(registration: TextEditorToolRendererRegistration): void;
   onMutationTool(listener: TextMutationToolListener): () => void;
   onDidEdit(listener: TextEditCompletionListener): () => void;
@@ -126,6 +127,8 @@ export interface TextEditorPluginApi {
 }
 
 export interface TextEditorPlugin {
+  /** Keep sibling Pi calls separate so hooks can associate effects with each call. */
+  readonly preserveToolCallBoundaries?: boolean;
   readonly protocol: typeof TEXT_EDITOR_PROTOCOL;
   readonly apiVersion: typeof TEXT_EDITOR_API_VERSION;
   readonly id: string;
@@ -173,6 +176,8 @@ const textAnchorResourceResolutionAttemptSchema = Type.Union([
           Type.Literal("stale"),
           Type.Literal("missing"),
           Type.Literal("ambiguous"),
+          Type.Literal("search-token-selection"),
+          Type.Literal("search-word-hint"),
         ]),
         reason: Type.String(),
         contextRange: Type.Optional(
@@ -213,6 +218,7 @@ const textEditorPluginSchema = Type.Object({
   protocol: Type.Literal(TEXT_EDITOR_PROTOCOL),
   apiVersion: Type.Literal(TEXT_EDITOR_API_VERSION),
   id: Type.String(),
+  preserveToolCallBoundaries: Type.Optional(Type.Boolean()),
   setup: functionSchema,
 });
 const textEditorPluginRegistrationRequestSchema = Type.Object({

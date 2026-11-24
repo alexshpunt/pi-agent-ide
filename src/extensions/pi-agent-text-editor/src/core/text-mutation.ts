@@ -2100,7 +2100,10 @@ async function buildToolResult(
       safe === undefined
         ? outcome.failure.message
         : `${safe.code}: ${source}${safe.effect === "unknown" ? "; inspect the resource before retrying" : ""}`;
-    const message = `${reason.replace(/[.!?]+$/u, "")}.${completed}`;
+    const message =
+      outcome.failure.code === "MUTATION_REJECTED"
+        ? reason
+        : `${reason.replace(/[.!?]+$/u, "")}.${completed}`;
     return safe === undefined
       ? buildFailedTextMutationResult(core, { ...outcome.failure, message }, context, effect)
       : failureToolResult(
@@ -2425,7 +2428,7 @@ function formatRejectedAnchorMessage(
         ? "has no match after the start selector"
         : code === "missing"
           ? "was not found"
-          : code === "invalid"
+          : code === "invalid" || code === "search-token-selection" || code === "search-word-hint"
             ? "was rejected"
             : "could not be resolved";
   const subject = `[SYSTEM] ${failure.toolName} blocked: ${failure.field === "anchor" ? "anchor" : `${failure.field} anchor`} ${quoteAnchorExcerpt(failure.anchor)} ${state} in "${failure.source}"`;

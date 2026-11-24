@@ -4,6 +4,8 @@ This checks whether agents and models can carry out the IDE tools' contracts wit
 
 Each task supplies a runnable recipe. Use actual returned references where a value must come from an earlier call, and produce the requested result. We check both final bytes or observed values **and** real tool execution events. Calling the same tool names without reusing the required results does not pass. In a Git fixture, the commit and index must also stay as prepared; expected worktree changes, such as deleting a tracked directory, are part of the final bytes.
 
+The paid runner has no provisioned Windows SSH target. The local AST, outline, LSP, diagnostics, debug and web cases do not establish Windows SSH coverage. Opt-in scripted Pi tests use a provisioned Windows target to check code intelligence, native debugging, raw and rendered web reads, and `/agent-ide-doctor`. No paid Windows SSH route has been verified.
+
 ## Free checks
 
 ```bash
@@ -27,7 +29,9 @@ The `replace-search-anchor-list` case issues references before moving a block an
 
 The `line-anchor-range-interior-change` case checks that Delete refuses a pair of line anchors after a same-length interior edit. The scripted Pi regression separately covers a peer moving a neighbour of two identical blocks, plus a successful edit after an unrelated shift. The direct and Codemode paid routes remain unverified.
 
-The `unseen-edit-span` case checks that literal endpoints on separate Read pages do not authorize an unseen interior, then uses the offered anchored Read before retrying the edit. `read-fragment-recovery` uses the offered Read for an ambiguous fragment. `codemode-overlap-recovery` reads the committed file after a move overlaps an accepted replacement. The paid routes remain unverified.
+The `unseen-edit-span` case checks that literal endpoints on separate Read pages do not authorize an unseen interior, then uses the offered anchored Read before retrying the edit. `oversized-paged-edit-span` checks the refusal and retries after two Read pages cover the selected range in a file over 16 Mi UTF-16 code units. `read-fragment-recovery` uses the offered Read for an ambiguous fragment. `codemode-overlap-recovery` reads the committed file after a move overlaps an accepted replacement. The paid routes remain unverified.
+
+The `delete-objects` case covers local recursive removal and link safety. A separate scripted real-Pi case exercises Windows SSH Delete, including the time for one tree and ten concurrent trees, read-only entries and junction targets. The paid case does not cover SSH timing or timeout receipts.
 
 The `stale-whole-file-write` case checks refusal after a peer changes a file, then a fresh Read and successful Write that preserves the peer’s change. Scripted Pi cases also cover a partial Read, a changed whole-file result, and creation. The direct and Codemode paid routes remain unverified.
 
@@ -108,6 +112,8 @@ Temporary Delete and Move cases check exact nested names, roots themselves, repl
 
 The `delete-policy-gates` and `directory-transfer-gates` cases check fail-closed approval without a user UI, unchanged targets, and a permitted Read after refusal. Their direct and Codemode routes remain unverified until paid execution.
 
+The `file-hook-denials` routes check that Write and directory Copy and Move return both lines of a before-edit hook's reason without changing any fixture files. The Codemode route also checks the parent result. The scripted user-hook tests cover event payloads and successful mutations; the paid routes do not verify hook lifecycle or call IDs. Both paid routes remain unverified.
+
 The `filesystem-yolo` case explicitly enables the filesystem setting and checks headless Delete/Move, a protected Git-path refusal, and a permitted Read. It checks confirmation bypass without removing technical guards. Its direct and Codemode routes remain unverified until paid execution.
 
 IDE filesystem, GitHub and Linear approvals use the shared operation dialog. Terminal waiting, serialized dialogs and lifecycle cleanup belong to focused real-Pi and live Herdr checks, not this headless runner. These paid cases do not establish provider approval coverage, prove the header or answer a user dialog; GitHub raw REST/GraphQL YOLO remains outside the approval policy.
@@ -121,6 +127,8 @@ The Codemode-only `shell-script-value` case checks that a script reads `exit_cod
 The `debug-backend-fallback` case checks the explicit VS Code refusal and recovery through the native backend; the sandbox has no VS Code. Debugging through VS Code and DebugMCP needs the user's running VS Code window, so it is checked live, not by a paid route.
 
 Tool loadouts and their prompt guidance are host lifecycle, not a new model operation. On Pi 1.3.0 and newer, Pi restores discovered tools and applies CLI `+name`/`-name` selections; the deterministic `ide-exposure` real-Pi cases check that the IDE keeps those choices and its exclusions. Guidance names enabled IDE capabilities and separates direct discovery from script calls. The `ide-exposure` real-Pi test checks that script discovery leaves deferred tools out of direct declarations. The `discovery.*` capabilities and `deferred-navigation-recovery` case stay fresh-session routes; `read-diff`, AST, Git and debugger cases keep their existing operations. These paid routes do not prove prompt wording or loadout transitions. Unrun direct and Codemode routes remain unverified.
+
+The `debug-roundtrip` case uses CRLF source to exercise breakpoint placement through a returned Read anchor. The scripted `read-crlf-preview` integration checks the native file and debugger previews; the paid case does not inspect the terminal. Unrun direct and Codemode routes remain unverified.
 
 The `compose.shell-first-use-input` and `compose.debug-first-use-controls` capabilities use fresh-session roundtrips after deferred terminal/debugger metadata becomes available. Bash activates terminal guidance on first use. Native `tool_search` activates debugger guidance from its loaded results; Codemode `searchTools` and `describeTool` do not activate it until an actual debug call. These paid routes validate the follow-up operations and reference reuse. Deterministic real-Pi cases check schema publication, composition, restoration and exclusions; a paid route does not inspect serialized schemas or prove cache savings. Unrun direct and Codemode routes remain unverified.
 
@@ -229,7 +237,7 @@ The runner mirrors public lifecycle, finalized-message and execution events for 
 
 ## Isolation
 
-A run freezes the checkout's current source and dependencies in a disposable clone and records its revision and source digest. Each case gets a fresh clone, fixture directory, private Pi home, and process namespace. Only that case's workspace/state and sandbox temporary directories are writable. Source and system tools are read-only; host checkouts, personal context, extensions, skills, and MCP configuration are not loaded.
+A run freezes the checkout's current source in a disposable clone and records its revision and source digest. Bubblewrap mounts the checkout's installed `node_modules` directories read-only at the same relative paths in that clone. The install is not frozen; do not reinstall or update dependencies during a run. Each case gets a fresh clone, fixture directory, private Pi home, and process namespace. Only that case's workspace/state and sandbox temporary directories are writable. Source and system tools are read-only; host checkouts, personal context, extensions, skills, and MCP configuration are not loaded.
 
 Network access is shared for inference and local web fixtures. This is **not** network isolation or a sandbox for hostile code. Snapshot credentials are copied into private case state and removed with it. Explicit dedicated-auth files are mounted separately and survive cleanup with their refresh rotations. Child process groups are stopped on timeout/cancellation. Cleanup never runs `git reset` or `git clean` on the development checkout.
 
@@ -252,7 +260,7 @@ Reports are written after each attempt and preserved on cancellation. Case works
 
 Live semantic engine switching and reload-required settings are session lifecycle behavior, not a model route. The focused `live-settings.integration.test.ts` drives the settings menu in real Pi; the existing semantic cases still cover execution and scoped results for each pre-indexed engine. They do not establish paid coverage of live switching, and unrun routes remain unverified.
 
-The current `ui.codemode` setting is an Off/On switch for extra IDE result panels only. Native Codemode rendering is unchanged. The focused `compact-codemode.integration.test.ts` cases check default suppression, per-tool presentation, expanded history and retained errors. Existing `codemode.silent-write`, `codemode.parallel-edit-effects`, `codemode.store-load`, `compose.cross-call`, and `ide-settings-catalog` cases still cover unchanged execution and model data; this TUI change adds no paid route.
+The current `ui.codemode` setting is an Off/On switch for extra IDE result panels only. Native Codemode rendering is unchanged. The focused `compact-codemode.integration.test.ts` cases check default suppression, per-tool presentation, expanded history and retained errors. `builtin-codemode-alias-rendering.integration.test.ts` checks that switching sessions uses the target project's setting while preserving native alias rendering. Existing `codemode.silent-write`, `codemode.parallel-edit-effects`, `codemode.store-load`, `compose.cross-call`, and `ide-settings-catalog` cases still cover unchanged execution and model data; this TUI change adds no paid route.
 
 Late diagnostic ownership is UI metadata, not a new model operation. The existing diagnostic-read, write/read and parallel-edit cases still cover the unchanged tools and model results. Revision-bound ownership, deferred completion and native presentation are checked by the focused linked-diagnostics integration case, not by a new paid route.
 

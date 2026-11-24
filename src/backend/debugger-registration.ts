@@ -8,6 +8,7 @@ import { readSshTargets, resolveSshConfigPaths } from "./config.ts";
 import { SshBackendRegistry } from "./registry.ts";
 import { remoteLocation } from "./identity.ts";
 import { SshBackendError } from "./ssh.ts";
+import { targetOs } from "./ssh-transport.ts";
 import { createSshDebuggerWorkspaceOwner } from "./debugger-workspace-owner.ts";
 
 /** Resolve ordinary debugger inputs on their selected target without controller path operations. */
@@ -20,8 +21,11 @@ export function createSshDebuggerAccess(registry: SshBackendRegistry): DebuggerW
       const requestedCwd =
         input.cwd ??
         (programOwner
-          ? remoteLocation(programOwner.location.target, programOwner.backend.target.workspace)
-              .source
+          ? remoteLocation(
+              programOwner.location.target,
+              programOwner.backend.target.workspace,
+              targetOs(programOwner.backend.target),
+            ).source
           : contextCwd);
       const cwd = registry.resolve(requestedCwd, contextCwd);
       if (!cwd) {

@@ -2,6 +2,7 @@ packages:
   - "packages/*"
   - "src/extensions/**"
   - "src/plugins/*"
+  - "tests/integration/support/eslint-runtime"
 minimumReleaseAgeExclude:
   - pi-coding-agent-test@0.1.1 || 0.1.3 || 0.1.4 || 0.1.5 || 0.1.6 || 0.1.8
   - run@2.1.4

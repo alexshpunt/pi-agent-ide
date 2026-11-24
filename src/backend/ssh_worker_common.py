@@ -55,7 +55,7 @@ def stream(platform, request, output, started):
     return {"sha256": digest.hexdigest()}
 
 
-def run(platform):
+def run(platform, request_bytes=None, operations=None):
     """Perform one request read from stdin; `platform.effect` reports partial effects."""
     output = sys.stdout.buffer
     streaming = False
@@ -66,8 +66,11 @@ def run(platform):
 
     try:
         try:
-            request = json.loads(sys.stdin.buffer.read(MAX_BYTES * 2))
-            if request.get("operation") == "stream":
+            request = json.loads(sys.stdin.buffer.read(MAX_BYTES * 2) if request_bytes is None else request_bytes)
+            operation = request.get("operation")
+            if operations is not None and operation not in operations:
+                raise OperationError("INVALID_REQUEST")
+            if operation == "stream":
                 data = stream(platform, request, output, started)
             else:
                 data = platform.perform(request)

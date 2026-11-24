@@ -1,5 +1,6 @@
 import { spawn, execFile } from "node:child_process";
 import { access } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { build } from "esbuild";
@@ -66,7 +67,8 @@ ${mode === "exit" ? "process.exit(0);" : "throw Error('Owned fixture owner crash
       daemonPid: parsed.daemonPid,
       startTicks: parsed.startTicks,
     };
-    expect(receipt.root).toMatch(/^\/tmp\/\.tmp\/pi-ide-ssh-[a-zA-Z\d]+$/u);
+    expect(path.dirname(receipt.root)).toBe(path.join(tmpdir(), ".tmp"));
+    expect(path.basename(receipt.root)).toMatch(/^pi-ide-ssh-[a-zA-Z\d]+$/u);
     try {
       expect(exit, stderr).toBe(mode === "exit" ? 0 : 1);
       await vi.waitFor(

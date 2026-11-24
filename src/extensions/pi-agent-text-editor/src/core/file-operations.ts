@@ -1,6 +1,7 @@
 import { rm, unlink } from "node:fs/promises";
 import { prepareFileTransfer, prepareObjectTransfer, type TransferKind } from "./file-transfers.ts";
 import { prepareDeletion, type DeletePolicyContext } from "./delete-policy.ts";
+import type { DirectoryTransferPlan } from "./file-operation-guards.ts";
 import path from "node:path";
 import fs from "fs-extra";
 import { Type } from "typebox";
@@ -87,6 +88,7 @@ export async function executeFileOperation(
   deletion: FileOperationContext = {},
   resolvers: readonly FileOperationResolver[] = [],
   preflight?: (operation: FileOperation, input: FileOperationInput) => Promise<void>,
+  guardDirectory?: (plan: DirectoryTransferPlan) => Promise<void>,
 ): Promise<FileOperationResult> {
   let started = false;
   let source: string | undefined;
@@ -123,7 +125,14 @@ export async function executeFileOperation(
           },
           async prepareTransfer(action, source, target) {
             try {
-              const guard = await prepareObjectTransfer(action, source, target, deletion, signal);
+              const guard = await prepareObjectTransfer(
+                action,
+                source,
+                target,
+                deletion,
+                signal,
+                guardDirectory,
+              );
               if (guard.sourceKind === "file") {
                 await deletion.beforeFileTransfer?.();
                 await preflight?.(operation, args);
@@ -170,7 +179,15 @@ export async function executeFileOperation(
     if (deleteEvent?.kind === "file") await preflight?.(operation, args);
     const transfer =
       operation !== "delete" && target !== undefined
-        ? await prepareFileTransfer(operation, source, target, cwd, deletion, signal)
+        ? await prepareFileTransfer(
+            operation,
+            source,
+            target,
+            cwd,
+            deletion,
+            signal,
+            guardDirectory,
+          )
         : undefined;
     sourceKind = transfer?.sourceKind;
     if (sourceKind === "file") {

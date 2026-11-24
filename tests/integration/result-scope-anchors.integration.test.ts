@@ -1,7 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { JsonValue } from "@earendil-works/pi-ai";
-import { expect, test } from "vitest";
+import { afterAll, expect, test } from "vitest";
 import {
   assistantMessage,
   getToolExecution,
@@ -13,6 +13,9 @@ import {
   toolCall,
 } from "#integration/support/pi-runtime/native-pi-coding-agent-test.ts";
 import { withTempWorkspace } from "#integration/support/pi-runtime/fixtures.ts";
+import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
+
+afterAll(forceStandaloneIntegrationFile());
 
 async function run(
   cwd: string,
@@ -334,7 +337,7 @@ test.each(["direct", "codemode"] as const)(
 test.each(["direct", "codemode"] as const)(
   "%s: result lists with explicit selectors refuse all mutations and can be retried without selectors",
   async (route) => {
-    await withTempWorkspace(async (cwd) => {
+    const workspace = await withTempWorkspace(async (cwd) => {
       const original = "first\nmiddle\nlast\n";
       await writeFile(path.join(cwd, "task.txt"), original);
       const steps: { id: string; name: string; arguments: Record<string, JsonValue> }[] = [
@@ -404,7 +407,11 @@ text(JSON.stringify({ refused, retry: retry !== null }));
       expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
         "first\nNEW\nmiddle\nlast\nNEW\n",
       );
+      // A pooled TUI run returns while Pi can still write into this workspace.
+      expect(result.exitCode).toBeTypeOf("number");
+      return cwd;
     });
+    await expect(access(workspace)).rejects.toMatchObject({ code: "ENOENT" });
   },
 );
 

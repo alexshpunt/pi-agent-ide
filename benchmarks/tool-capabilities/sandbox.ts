@@ -10,12 +10,13 @@ import {
   writeFile,
   stat,
   symlink,
+  realpath,
   lstat,
 } from "node:fs/promises";
-import { createHash } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import type { CapabilityCase } from "./validation.ts";
+import { sourceIdentity } from "./source-identity.ts";
 
 /** A stopped process retains its real status and complete output, including timeouts. */
 export interface ProcessResult {
@@ -153,13 +154,20 @@ export function gitState(cwd: string): string {
   return git(cwd, ["rev-parse", "HEAD"]) + git(cwd, ["ls-files", "--stage", "-z"]);
 }
 
-/** Freeze current source and dependencies in a disposable clone; never reset the development checkout. */
+export interface SourceSnapshot {
+  source: string;
+  revision: string;
+  digest: string;
+  dependencies: readonly { host: string; relative: string }[];
+}
+
+/** Freeze current source bytes; retain paths to the live install for read-only sandbox mounts. */
 export async function snapshotSource(
   repository: string,
   container: string,
-): Promise<{ source: string; revision: string; digest: string }> {
+): Promise<SourceSnapshot> {
   const source = path.join(container, "source");
-  const revision = git(repository, ["rev-parse", "HEAD"]).trim();
+  const checkout = await realpath(repository);
   // Local trial clones copy object files directly. The freeze commit must not start
   // detached maintenance that repacks or removes those files after this returns.
   const cloned = await runProcess("git", [
@@ -174,36 +182,35 @@ export async function snapshotSource(
     source,
   ]);
   if (cloned.code !== 0) throw Error(cloned.stderr || "Source clone failed");
-  const files = git(repository, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"])
-    .split("\0")
-    .filter(
-      (file) =>
-        file &&
-        !file.startsWith(".pi/extensions/") &&
-        !file.startsWith(".pi/npm/") &&
-        file !== ".pi/settings.json",
-    );
-  const hash = createHash("sha256");
-  for (const file of [...new Set(files)].sort()) {
-    const original = path.join(repository, file);
-    const destination = path.join(source, file);
-    if (!(await exists(original))) {
-      await rm(destination, { force: true });
-      continue;
-    }
-    const bytes = await readFile(original);
-    hash.update(file).update("\0").update(bytes).update("\0");
-    await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, bytes);
-  }
-  for (const manifest of files.filter((file) => path.basename(file) === "package.json")) {
-    const relative = path.join(path.dirname(manifest), "node_modules");
-    if (await exists(path.join(repository, relative)))
-      await cp(path.join(repository, relative), path.join(source, relative), {
-        recursive: true,
-        verbatimSymlinks: true,
+  const dependencies: { host: string; relative: string }[] = [];
+  const { revision, sourceDigest } = await sourceIdentity(checkout, {
+    include: (file) =>
+      !file.startsWith(".pi/extensions/") &&
+      !file.startsWith(".pi/npm/") &&
+      file !== ".pi/settings.json",
+    async visit(file, bytes) {
+      const destination = path.join(source, file);
+      if (!bytes) {
+        await rm(destination, { force: true });
+        return;
+      }
+      await mkdir(path.dirname(destination), { recursive: true });
+      await writeFile(destination, bytes);
+      if (path.basename(file) !== "package.json") return;
+      const relative = path.join(path.dirname(file), "node_modules");
+      const host = path.join(checkout, relative);
+      const entry = await lstat(host).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
       });
-  }
+      if (!entry) return;
+      if (!entry.isDirectory() || (await realpath(host)) !== host)
+        throw Error(`Expected a local dependency directory: ${host}`);
+      // Bubblewrap needs the mount point to exist inside the read-only source mount.
+      await mkdir(path.join(source, relative));
+      dependencies.push({ host, relative });
+    },
+  });
   git(source, [
     "-c",
     "user.name=Capability runner",
@@ -223,7 +230,7 @@ export async function snapshotSource(
     "-m",
     "Freeze capability source",
   ]);
-  return { source, revision, digest: hash.digest("hex") };
+  return { source, revision, digest: sourceDigest, dependencies };
 }
 
 /** Prepare a fresh case clone and retain a byte snapshot for unchanged-file verification. */
@@ -399,9 +406,23 @@ export async function validateFiles(
   return problems;
 }
 
+function toolchainRoots(): string[] {
+  return [
+    "/usr",
+    "/opt",
+    path.join(os.homedir(), ".local/bin"),
+    path.join(os.homedir(), ".local/lib"),
+  ];
+}
+
+/** Check whether an installed Pi entrypoint is within the sandbox's toolchain mounts. */
+export function isMountedPiPath(entrypoint: string): boolean {
+  return toolchainRoots().some((root) => entrypoint.startsWith(root + path.sep));
+}
+
 /** Build an OS sandbox with read-only tools and source, and only case-owned writable mounts. */
 export async function sandboxArgs(
-  source: string,
+  source: string | SourceSnapshot,
   root: string,
   connector?: { root: string; executable?: string; definition?: { claudeFileAuth?: boolean } },
 ): Promise<string[]> {
@@ -420,13 +441,7 @@ export async function sandboxArgs(
   ];
   // Claude Code rejects bypass-permissions under root; remap only explicit CLI runs.
   if (connector?.executable) args.push("--uid", "1000", "--gid", "1000");
-  for (const mount of [
-    "/usr",
-    "/etc",
-    "/opt",
-    path.join(os.homedir(), ".local/bin"),
-    path.join(os.homedir(), ".local/lib"),
-  ])
+  for (const mount of ["/etc", ...toolchainRoots()])
     if (await exists(mount)) args.push("--ro-bind", mount, mount);
   for (const directory of ["bin", "sbin", "lib", "lib64"])
     args.push("--symlink", `usr/${directory}`, `/${directory}`);
@@ -446,12 +461,15 @@ export async function sandboxArgs(
       args.push("--dir", "/tools", "--ro-bind", blocker, "/tools/claude");
     }
   }
-  const resolver = await import("node:fs/promises").then((fs) => fs.realpath("/etc/resolv.conf"));
+  const resolver = await realpath("/etc/resolv.conf");
   if (resolver !== "/etc/resolv.conf") args.push("--ro-bind", resolver, resolver);
+  args.push("--ro-bind", typeof source === "string" ? source : source.source, "/source");
+  if (typeof source !== "string") {
+    // Preserve the relative layout used by pnpm's workspace and virtual-store links.
+    for (const { host, relative } of source.dependencies)
+      args.push("--ro-bind", host, `/source/${relative}`);
+  }
   args.push(
-    "--ro-bind",
-    source,
-    "/source",
     "--bind",
     path.join(root, "workspace"),
     "/workspace",

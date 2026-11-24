@@ -15,6 +15,8 @@ import { afterAll, expect, test } from "vitest";
 
 import { generateReadExtensions } from "pi-agent-read/testing";
 
+import { eslintRuntimeEnvironment } from "#integration-tests/support/eslint-runtime/environment.ts";
+
 const generatedExtensions = await generateReadExtensions([
   "src/core/extension.ts",
   "src/extensions/pi-agent-read/extensions/pi-agent-filesystem/plugins/pi-agent-filesystem-text/index.ts",
@@ -59,6 +61,7 @@ test("diagnostics tool combines lint and LSP with source context", async () => {
     const result = await new PiIntegrationTest({
       artifactsDir: testArtifactsDir(expect.getState().testPath),
       testName: "read-combined-diagnostics",
+      environment: eslintRuntimeEnvironment(),
       cwd: directory,
       extensions: generatedExtensions.paths,
       tools: ["diagnostics", "read"],

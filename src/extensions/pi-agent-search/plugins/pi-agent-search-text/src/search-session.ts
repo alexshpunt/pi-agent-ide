@@ -514,9 +514,15 @@ export class SearchSessionStore {
     const session = this.#sessions.get(parsed.id);
     if (session === undefined) return staleAnchor();
     if (parsed.selector !== "all" && session.hintReason !== undefined)
-      return { kind: "rejected", rejection: { code: "invalid", reason: session.hintReason } };
+      return {
+        kind: "rejected",
+        rejection: { code: "search-word-hint", reason: session.hintReason },
+      };
     if (parsed.selector === "all" && session.editWarning !== undefined)
-      return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
+      return {
+        kind: "rejected",
+        rejection: { code: "search-token-selection", reason: session.editWarning },
+      };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     const source = canonicalSource(contextSource);
     let snapshot: SearchSnapshot = session;
@@ -572,7 +578,10 @@ export class SearchSessionStore {
       if (!snapshot.complete) return missingCompleteAnchor(true);
     }
     if (parsed.selector === "all" && snapshot.editWarning !== undefined)
-      return { kind: "rejected", rejection: { code: "invalid", reason: snapshot.editWarning } };
+      return {
+        kind: "rejected",
+        rejection: { code: "search-token-selection", reason: snapshot.editWarning },
+      };
     const contentOf = (candidate: string) =>
       refreshedContents === undefined
         ? candidate === source
@@ -617,9 +626,15 @@ export class SearchSessionStore {
     const session = this.#sessions.get(parsed.id);
     if (session === undefined || session.cwd !== canonicalSource(cwd)) return staleAnchor();
     if (edit !== undefined && parsed.selector !== "all" && session.hintReason !== undefined)
-      return { kind: "rejected", rejection: { code: "invalid", reason: session.hintReason } };
+      return {
+        kind: "rejected",
+        rejection: { code: "search-word-hint", reason: session.hintReason },
+      };
     if (edit !== undefined && parsed.selector === "all" && session.editWarning !== undefined)
-      return { kind: "rejected", rejection: { code: "invalid", reason: session.editWarning } };
+      return {
+        kind: "rejected",
+        rejection: { code: "search-token-selection", reason: session.editWarning },
+      };
     if (parsed.selector === "all" && !session.complete) return missingCompleteAnchor();
     if (parsed.selector !== "all") {
       const bound = this.#resolveBound(value, session.cwd);
@@ -676,7 +691,10 @@ export class SearchSessionStore {
       }
     }
     if (edit !== undefined && parsed.selector === "all" && snapshot.editWarning !== undefined)
-      return { kind: "rejected", rejection: { code: "invalid", reason: snapshot.editWarning } };
+      return {
+        kind: "rejected",
+        rejection: { code: "search-token-selection", reason: snapshot.editWarning },
+      };
     const selected = selectMatches(snapshot, parsed.selector, parsed.mode, (source) =>
       contents.get(source),
     );

@@ -32,3 +32,9 @@ Run `pnpm check:capabilities` without inference. See `benchmarks/tool-capabiliti
 Before changing how `replace`, `insert`, `delete`, `copy` or `move` select text, match a literal, or report an error, read [`editing-principles.md`](src/extensions/pi-agent-text-editor/docs/editing-principles.md). Matching is tolerant and writing is strict: any heuristic stays general and is measured on the byte-exact edit benchmark and the classic Explicit Edit suite.
 
 After you delete or rename an exported symbol, search the whole repository for it, including `tests/integration` and `benchmarks/`, before you push. Focused checks do not compile every consumer, and a stale call breaks the typecheck of `develop`.
+
+# Packaging
+
+The published package runs from bundled chunks in `dist/` (`pi.extensions` is `./dist/pi-agent-ide.js`), not from `src/`. A path computed from `import.meta.url` for a file under `src/<dir>/` points elsewhere there: find the package root by walking up to the `package.json` named `pi-agent-ide`, and check the result with `pnpm check:package`.
+
+After adding a workspace package as a dependency, pnpm 11 may answer `Already up to date` without linking it, because its repeat-install check trusts `node_modules/.pnpm-workspace-state-v1.json`. Run `pnpm install --config.optimistic-repeat-install=false` to link the new package.

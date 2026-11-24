@@ -1,4 +1,4 @@
-import { cp, readFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { expect, test } from "vitest";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackendRegistry } from "#src/backend/registry.ts";
@@ -180,6 +180,10 @@ test("node-backed stdio recipes use target script and runtime paths", async () =
       PI_BASH_PATH: "/native/bash-café",
     },
   );
+  // The target checks that the configured adapter scripts exist before it starts them.
+  await writeFile(`${fixture.workspace}/php-café.js`, "");
+  await mkdir(`${fixture.workspace}/lua-extension/extension`, { recursive: true });
+  await writeFile(`${fixture.workspace}/lua-extension/extension/debugAdapter.js`, "");
   const registry = new SshBackendRegistry([
     { id: "fixture", host: "fixture", workspace: fixture.workspace, configFile: fixture.config },
   ]);

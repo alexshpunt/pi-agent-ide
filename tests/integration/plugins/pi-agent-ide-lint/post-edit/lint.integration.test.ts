@@ -6,6 +6,7 @@ import { getToolExecution, getToolResultText } from "pi-coding-agent-test";
 import { generateReadExtensions } from "pi-agent-read/testing";
 import { afterAll, expect, test } from "vitest";
 
+import { eslintRuntimeEnvironment } from "#integration-tests/support/eslint-runtime/environment.ts";
 import {
   expectTextToolDiff,
   runTextToolScenario,
@@ -78,6 +79,7 @@ test("background lint reports fixable errors without changing the edited file", 
       extensions: generatedExtensions.paths,
       cwd: directory,
       testName: "post-edit-lint-fix",
+      environment: eslintRuntimeEnvironment(),
 
       postflightViews: ["diagnostics"],
       tool: "replace",

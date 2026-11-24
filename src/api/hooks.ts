@@ -8,8 +8,8 @@ import {
   type TextDocument,
 } from "./text-editor.ts";
 
-import type { BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";
-export type { BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";
+import type { AfterDeleteEvent, BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";
+export type { AfterDeleteEvent, BeforeDeleteEvent } from "pi-agent-text-editor/api/mutation-guard";
 
 /** A policy over a whole file, directory, or symlink before removal. */
 export interface BeforeDeleteHook {
@@ -32,6 +32,28 @@ export function connectBeforeDeleteHook(
     },
   });
 }
+/** An observer of a successful whole-object Delete. */
+export interface AfterDeleteHook {
+  readonly id: string;
+  run(event: AfterDeleteEvent): void | Promise<void>;
+}
+
+/** Observe a successful Delete. Observer failures do not change its result. */
+export function connectAfterDeleteHook(
+  pi: ExtensionAPI,
+  hook: AfterDeleteHook,
+): void | Promise<void> {
+  assertHook(hook);
+  return connectTextEditorPlugin(pi, {
+    protocol: TEXT_EDITOR_PROTOCOL,
+    apiVersion: TEXT_EDITOR_API_VERSION,
+    id: `hook/after-delete/${hook.id}`,
+    setup(api) {
+      api.onDidDelete((event) => hook.run(event));
+    },
+  });
+}
+
 /** The decision returned by a file policy hook. */
 export type FileHookDecision =
   | { readonly decision: "allow" }
@@ -56,10 +78,14 @@ export interface BeforeReadHook {
 /** A complete, resolved mutation plan before its first write. */
 export interface BeforeEditEvent {
   readonly cwd: string;
+  /** Executing call ID. A coalesced Codemode transaction uses the enclosing call ID. */
+  readonly toolCallId?: string;
   readonly intent: "edit" | "restore" | "mixed";
   readonly resources: readonly {
     readonly resourceSource: string;
     readonly existed: boolean;
+    /** True for removal, not for a file saved with zero bytes. */
+    readonly deleted: boolean;
     readonly before: TextDocument;
     readonly after: TextDocument;
     readonly changes: readonly AppliedTextChange[];
@@ -76,6 +102,8 @@ export interface BeforeEditHook {
 
 /** A final saved Resource after post-processing and rereading. */
 export interface AfterEditEvent {
+  /** Same ID as the before-edit plan that published this version. */
+  readonly toolCallId?: string;
   readonly source: string;
   readonly resourceSource: string;
   readonly resolvedBy: string;
@@ -131,16 +159,19 @@ export function connectBeforeEditHook(
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: `hook/before-edit/${hook.id}`,
+    preserveToolCallBoundaries: true,
     setup(api) {
       api.addMutationGuard({
         id: hook.id,
         async guard(plan, context) {
           const decision = await hook.run({
             cwd: context.cwd,
+            ...(context.toolCallId === undefined ? {} : { toolCallId: context.toolCallId }),
             intent: context.intent ?? "edit",
             resources: plan.resources.map((resource) => ({
               resourceSource: resource.source,
               existed: resource.existed,
+              deleted: resource.deleted,
               before: resource.before,
               after: resource.after,
               changes: resource.changes,
@@ -172,6 +203,7 @@ export function connectAfterEditHook(pi: ExtensionAPI, hook: AfterEditHook): voi
     protocol: TEXT_EDITOR_PROTOCOL,
     apiVersion: TEXT_EDITOR_API_VERSION,
     id: `hook/after-edit/${hook.id}`,
+    preserveToolCallBoundaries: true,
     setup(api) {
       api.onDidEdit(async (completion) => {
         if (completion.postProcessing === "deferred") return;

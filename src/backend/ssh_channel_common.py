@@ -64,5 +64,19 @@ def command_line(request, interpreter):
     return [request["command"], *request["args"]], b""
 
 
+def command_environment(request, *, windows=False, defaults=None):
+    """Overlay per-command variables on a copy of the target's environment."""
+    overrides = request.get("env", {})
+    if not isinstance(overrides, dict):
+        raise ChannelError("INVALID_REQUEST")
+    environment = dict(os.environ)
+    environment.update(defaults or {})
+    for key, value in overrides.items():
+        if not key or "=" in key or "\0" in key or not isinstance(value, str) or "\0" in value:
+            raise ChannelError("INVALID_REQUEST")
+        environment[key.upper() if windows else key] = value
+    return environment
+
+
 def error_code(error):
     return errno.errorcode.get(error.errno, "REMOTE_OPERATION_FAILED")

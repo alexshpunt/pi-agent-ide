@@ -35,10 +35,12 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     async run(event) {
       await record(event.cwd, {
         kind: "beforeEdit",
+        toolCallId: event.toolCallId,
         intent: event.intent,
         resources: event.resources.map((resource) => ({
           source: resource.resourceSource,
           existed: resource.existed,
+          deleted: resource.deleted,
           before: resource.before.content,
           after: resource.after.content,
           ...(resource.binary === undefined

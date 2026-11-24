@@ -23,7 +23,9 @@ Keep machine-specific targets out of shared Git history unless the user asks.
 ## Windows targets
 
 - Name Windows files with their drive: `ssh://win/C:/Users/name/file.txt`. Relative paths may use `\` or `/`.
-- Windows targets support `read`, `raw:`, directory listings, the write and edit tools, `delete`, `copy`, `move`, `undo`, copies between a target and local paths, and terminal sessions through `remote_powershell`. Other operations on a Windows target report `CAPABILITY_UNAVAILABLE`.
+- Windows targets run AST, outline, LSP and diagnostics helpers on the target. Install each helper on Windows. LSP dynamic workspace file watching is unavailable; some servers may not notice changes made outside Pi until the file is reopened.
+- Fetch raw pages with `web:ssh://win/https://example.com`. Rendered reads resolve `playwright-core` from the configured target workspace and launch Chromium on Windows. Install Node on the target's SSH PATH. Set `PI_AGENT_IDE_BROWSER_PATH` in the target environment only to override browser discovery.
+- Use `/agent-ide-doctor ssh://win/C:/path/to/project` to inspect Windows project dependencies and test browser startup without page navigation. A missing tool is reported on that project; the check does not install it.
 - `remote_powershell` runs Windows PowerShell in a terminal session with resize, control keys such as Ctrl+C, background sessions and `shell:` references. Stopping a session ends everything it started.
 - `search` and `file_search` need ripgrep (`rg`) and `ast_search` needs `ast-grep` on the target's PATH for SSH sessions; for example `winget install BurntSushi.ripgrep.MSVC` and `npm install --global @ast-grep/cli`. A missing tool is reported by name with this hint. An npm `.cmd` shim works.
 - The `changes` view, `stage` and `unstage` use the target's Git. With `core.autocrlf` or an `eol` attribute, a CRLF file is compared to Git's LF blobs. `undo` with a `CHANGE#` anchor rewrites the file, so it needs file writes on the target; it restores CRLF only in a file that is uniformly CRLF.

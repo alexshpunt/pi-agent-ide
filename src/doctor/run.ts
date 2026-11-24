@@ -154,6 +154,12 @@ export async function runDoctor(
   ];
   return {
     ...setup,
+    actions: [
+      ...setup.actions,
+      ...checks.flatMap(({ pluginId, findings }) =>
+        findings.flatMap(({ setupAction }) => (setupAction ? [{ ...setupAction, pluginId }] : [])),
+      ),
+    ],
     sections: [{ title: "Project", pluginId: "doctor", findings: projectFindings }, ...checks],
   };
 }
@@ -227,6 +233,9 @@ export function buildDoctorAgentPrompt(run: DoctorRun): string {
     evidence: candidate.evidence,
     documentation: candidate.recipe.documentation,
   }));
+  const actionInstructions = run.actions.flatMap((action) =>
+    action.agentInstructions ? [`[${action.pluginId}] ${action.agentInstructions}`] : [],
+  );
   return [
     "Finish configuring Pi Agent IDE for this project.",
     "Preserve existing formatter, linter, compiler, and style rules. Do not invent or replace native project settings.",
@@ -235,6 +244,7 @@ export function buildDoctorAgentPrompt(run: DoctorRun): string {
     "Use only the relevant plugin contributions listed below; each owner remains responsible for its own scope.",
     "",
     formatDoctorReport(run),
+    ...(actionInstructions.length > 0 ? ["", "Setup instructions:", ...actionInstructions] : []),
     "",
     "Relevant registered recipes:",
     JSON.stringify(relevantRecipes, null, 2),

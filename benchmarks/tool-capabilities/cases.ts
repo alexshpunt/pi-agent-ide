@@ -456,8 +456,9 @@ add(
 add(
   "ssh-guide",
   ["read.ssh-guide"],
-  "The workspace has no configured SSH targets. Read docs:ssh through Read to learn how to configure a target. Do not open a connection or change any settings.",
-  [{ tool: "read", args: { path: "docs:ssh" } }],
+  "The workspace has no configured SSH targets. Read docs:ssh through Read and report the os value and absolute workspace shape for a native Windows target. Do not open a connection or change any settings.",
+  [{ tool: "read", args: { path: "docs:ssh" }, contains: "C:/Users/name" }],
+  { answer: "windows" },
 );
 add(
   "delete-objects",
@@ -958,6 +959,41 @@ add(
   },
 );
 
+const fileHookDenialReason = "Policy marker: KEEP_EXISTING\nPolicy marker: SIBLING_CHECK?!";
+for (const mode of ["direct", "codemode"] as const) {
+  const refusal: Pick<RouteStep, "error" | "contains" | "parentContains"> = {
+    error: true,
+    contains: fileHookDenialReason,
+    ...(mode === "codemode" && { parentContains: fileHookDenialReason.split("\n") }),
+  };
+  add(
+    `file-hook-denials-${mode}`,
+    ["edit.write-hook-denial", "edit.directory-transfer-hook-denial"],
+    `Attempt three independent changes: Write hook-locked-write.txt with "new\\n" (a real newline), Copy copy-tree to hook-locked-copy, and Move move-tree to hook-locked-move. Use whole-object paths without selectors. The fixture enables filesystem YOLO and installs a before-edit hook that refuses all three changes. ${mode === "codemode" ? "Run the tools inside Codemode and inspect the final script result for the refusals. A refused child resolves to null." : "Use the direct tools and inspect each tool receipt."} Leave every file unchanged. Identify each refused call and report the hook's two reason lines verbatim. The repeated reason can be quoted once.`,
+    [
+      { tool: "write", args: { path: "hook-locked-write.txt" }, ...refusal },
+      { tool: "copy", args: { path: "copy-tree", target: "hook-locked-copy" }, ...refusal },
+      { tool: "move", args: { path: "move-tree", target: "hook-locked-move" }, ...refusal },
+    ],
+    {
+      modes: [mode],
+      setup: "file-hook-denials",
+      git: true,
+      files: {
+        "hook-locked-write.txt": "keep write\n",
+        "copy-tree/nested/item.txt": "copy source\n",
+        "hook-locked-copy/nested/item.txt": "keep copy target\n",
+        "move-tree/nested/item.txt": "move source\n",
+        "hook-locked-move/nested/item.txt": "keep move target\n",
+        "hook-locked-move/extra.txt": "keep move-only entry\n",
+        ".pi/pi-agent-ide/extensions.json": JSON.stringify({
+          flags: { "pi-agent-ide-filesystem-yolo": true },
+        }),
+      },
+      answer: fileHookDenialReason,
+    },
+  );
+}
 add(
   "binary-copy-move",
   ["edit.copy-binary", "edit.move-binary", "compose.binary-copy-refusal"],
@@ -4145,6 +4181,46 @@ add(
   ],
   { files: { "task.txt": wideRangeFixture }, expected: { "task.txt": "NEW\nkeep\n" } },
 );
+const oversizedRangePadding = `${"x".repeat(4095)}\n`.repeat(17 * 256);
+const pagedRangeReplace = { path: "task.txt", from: "BEGIN", through: "END", text: "NEW" };
+add(
+  "oversized-paged-edit-span",
+  ["edit.unseen-edit-span", "compose.oversized-paged-edit"],
+  "Replace only lines 1 through 502 of task.txt, leaving its large suffix intact. First read just lines 1 and 502 in separate calls, then call Replace with literal from BEGIN, literal through END, and text NEW. It must refuse. After the refusal, read the selected span in two pages: offset 1 with limit 251, then offset 252 with limit 251. Wait for both pages before retrying that same Replace. In Codemode, finish the first script to see the refusal before reading either page. Preserve every byte after END.",
+  [
+    { tool: "read", args: { path: "task.txt", offset: 1, limit: 1 }, contains: "BEGIN" },
+    { tool: "read", args: { path: "task.txt", offset: 502, limit: 1 }, contains: "END" },
+    {
+      tool: "replace",
+      args: pagedRangeReplace,
+      exactText: ["from", "through"],
+      error: true,
+      after: [0, 1],
+    },
+    {
+      tool: "read",
+      args: { path: "task.txt", offset: 1, limit: 251 },
+      contains: "body 249",
+      after: [2],
+    },
+    {
+      tool: "read",
+      args: { path: "task.txt", offset: 252, limit: 251 },
+      contains: "END",
+      after: [3],
+    },
+    {
+      tool: "replace",
+      args: pagedRangeReplace,
+      exactText: ["from", "through"],
+      after: [4],
+    },
+  ],
+  {
+    files: { "task.txt": wideRangeFixture + oversizedRangePadding },
+    expected: { "task.txt": "NEW\nkeep\n" + oversizedRangePadding },
+  },
+);
 add(
   "result-selector-scope",
   ["compose.result-selector-scope"],
@@ -4430,7 +4506,7 @@ add(
     { tool: "delete", reuse: reuse(0, "path", "debug"), after: [1, 5, 6] },
   ],
   {
-    files: { "task.py": "value = 42\nprint(value)\n" },
+    files: { "task.py": "value = 42\r\nprint(value)\r\n" },
     answer: "42",
     prerequisite: "python3 -c 'import debugpy'",
   },

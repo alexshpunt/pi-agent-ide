@@ -35,19 +35,18 @@ export function createSshWebResolver(
         const selected = parseSshWebSource(source);
         if (!selected) return { kind: "not-handled" };
         context.signal?.throwIfAborted();
-        const owner = registry.resolve(`ssh://${selected.target}/`);
-        if (!owner) throw new SshBackendError("UNSUPPORTED_SOURCE", selected.source, "not-applied");
+        const backend = registry.backendForTarget(selected.target, selected.source);
         const resolver = createWebResolver(host, {
           fetch: async (_input, init) =>
             fetchSshWebResponse(
-              owner.backend.target,
+              backend.target,
               selected.url,
               selected.source,
               init?.signal ?? undefined,
             ),
           browser: {
             load(url, options) {
-              return readSshBrowserPage(owner.backend.target, url, selected.source, options);
+              return readSshBrowserPage(backend.target, url, selected.source, options);
             },
           },
         });

@@ -15,6 +15,7 @@ import {
 import { forceStandaloneIntegrationFile } from "#integration/support/pi-runtime/standalone.ts";
 import { startSshFixture } from "#integration/support/ssh-fixture.ts";
 import { SshBackend } from "#src/backend/ssh.ts";
+import { bundledAstGrepPath } from "#src/plugins/pi-agent-ide-ast/src/ast-grep-binary.ts";
 
 const restore = forceStandaloneIntegrationFile();
 afterAll(restore);
@@ -30,8 +31,12 @@ const user = (name: string) =>
   `#include "lib/lib.h"\nint use_${name}() { return call_normalize_routine(1); }\n`;
 
 /** Run `steps` against an SSH target with `lib/`, `a/`, `b/` and `c/`; `root` is its workspace URL. */
-async function runOnTarget(name: string, steps: (root: string) => readonly Step[]) {
-  const fixture = await startSshFixture({}, { PI_CODING_AGENT_DIR: "{workspace}/agent-home" });
+async function runOnTarget(
+  name: string,
+  tools: Readonly<Record<string, string>>,
+  steps: (root: string) => readonly Step[],
+) {
+  const fixture = await startSshFixture(tools, { PI_CODING_AGENT_DIR: "{workspace}/agent-home" });
   const base = path.resolve(".tmp/ssh-search-path-list");
   await mkdir(base, { recursive: true });
   const cwd = await mkdtemp(path.join(base, "workspace-"));
@@ -93,7 +98,11 @@ async function runOnTarget(name: string, steps: (root: string) => readonly Step[
 }
 
 test("text, file and AST search take a list of SSH paths as one scope", async () => {
-  const { run, root } = await runOnTarget("ssh-search-path-list", (root): Step[] => {
+  const astGrep = bundledAstGrepPath();
+  if (astGrep === undefined)
+    throw new Error("The SSH AST search fixture needs the platform binary from @ast-grep/cli.");
+  const tools = { "ast-grep": astGrep };
+  const { run, root } = await runOnTarget("ssh-search-path-list", tools, (root): Step[] => {
     // b/b.cpp is inside b and is searched once.
     const listed = [`${root}/a`, `${root}/b`, `${root}/b/b.cpp`];
     return [
@@ -113,21 +122,35 @@ test("text, file and AST search take a list of SSH paths as one scope", async ()
   });
   for (const id of ["text", "files", "ast"])
     expect(getToolExecution(run, id).isError, getToolResultText(run, id)).toBe(false);
-  const textOutput = getToolResultText(run, "text");
-  expect(textOutput).toContain("2 matches in 2 files");
-  expect(textOutput).not.toContain("c.cpp");
+  expect(getToolExecutionDetails(getToolExecution(run, "text"))).toMatchObject({
+    payload: {
+      matchCount: 2,
+      fileCount: 2,
+      complete: true,
+      storedFiles: [
+        { path: `${root}/a/a.cpp`, matchCount: 1 },
+        { path: `${root}/b/b.cpp`, matchCount: 1 },
+      ],
+    },
+  });
   expect(getToolExecutionDetails(getToolExecution(run, "files"))).toMatchObject({
     payload: { files: [`${root}/a/a.cpp`, `${root}/b/b.cpp`], complete: true },
   });
   const astOutput = getToolResultText(run, "ast");
-  expect(astOutput.match(/\/[ab]\/[ab]\.cpp:2:/gu), astOutput).toHaveLength(2);
+  expect(astOutput.match(/\/[ab]\/[ab]\.cpp:2:/gu)?.sort(), astOutput).toEqual([
+    "/a/a.cpp:2:",
+    "/b/b.cpp:2:",
+  ]);
   expect(astOutput).not.toContain("c.cpp");
-  expect(getToolExecution(run, "machines").isError).toBe(true);
-  expect(getToolResultText(run, "machines")).toContain("must be on one machine");
+  const mixedMachines = getToolExecution(run, "machines");
+  expect(mixedMachines.isError).toBe(true);
+  expect(getToolExecutionDetails(mixedMachines)).toMatchObject({
+    failure: { code: "INVALID_REQUEST" },
+  });
 }, 240000);
 
 test("LSP search takes a list of SSH directories as one scope", async () => {
-  const { run, root } = await runOnTarget("ssh-lsp-search-path-list", (root): Step[] => [
+  const { run, root } = await runOnTarget("ssh-lsp-search-path-list", {}, (root): Step[] => [
     // clangd answers symbol searches from an index it fills after parsing the opened file.
     {
       id: "warm",

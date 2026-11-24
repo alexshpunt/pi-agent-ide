@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { expect, test, onTestFinished } from "vitest";
 import { ResultTargetStore } from "pi-agent-resource";
+import { isTextAnchorResolutionAttempt, isTextTargetResolutionAttempt } from "pi-agent-text";
+import { isTextAnchorResourceResolutionAttempt } from "pi-agent-text-editor/api/plugin-protocol";
 
 import {
   allocateSearchSessionId,
@@ -150,7 +152,11 @@ test("token selections reject bulk edits but remain readable and individually ed
   });
   expect(resolution.kind).toBe("rejected");
   if (resolution.kind !== "rejected") throw new Error("Expected a rejected anchor");
+  expect(resolution.rejection).toMatchObject({ code: "search-token-selection" });
   expect(resolution.rejection.reason).toContain(query);
+  await expect(
+    store.resourceResolver().tryResolve(all, { cwd, edit: { attempt: 0 } }),
+  ).resolves.toMatchObject({ kind: "rejected", rejection: { code: "search-token-selection" } });
 });
 test("separate-word fallback matches are readable location hints that no reference can edit", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "pi-search-word-hints-"));
@@ -185,7 +191,21 @@ test("separate-word fallback matches are readable location hints that no referen
       lines: content.split("\n"),
       cwd,
     });
-    expect(resolution.kind, selector).toBe("rejected");
+    const rejection = {
+      kind: "rejected",
+      rejection: {
+        code: selector.startsWith("all:") ? "search-token-selection" : "search-word-hint",
+      },
+    };
+    expect(resolution, selector).toMatchObject(rejection);
+    expect(isTextAnchorResolutionAttempt(resolution), selector).toBe(true);
+    const resource = await store.resourceResolver().tryResolve(`SEARCH#${session.id}:${selector}`, {
+      cwd,
+      edit: { attempt: 0 },
+    });
+    expect(resource, selector).toMatchObject(rejection);
+    expect(isTextAnchorResourceResolutionAttempt(resource), selector).toBe(true);
+    expect(isTextTargetResolutionAttempt(resource), selector).toBe(true);
   }
   await expect(
     store.resolveSearchScope(`SEARCH#${session.id}:1:line`, { cwd }),
@@ -218,7 +238,16 @@ test("an all anchor cannot broaden from a phrase to tokens during refresh", asyn
   });
   expect(resolution.kind).toBe("rejected");
   if (resolution.kind !== "rejected") throw new Error("Expected a rejected resource");
+  expect(resolution.rejection).toMatchObject({ code: "search-token-selection" });
   expect(resolution.rejection.reason).toContain("alpha beta");
+  await expect(
+    store
+      .anchorResolver()
+      .tryResolve(all, { source, content: "alpha\n", lines: ["alpha", ""], cwd }),
+  ).resolves.toMatchObject({
+    kind: "rejected",
+    rejection: { code: "search-token-selection" },
+  });
   await expect(store.resolveSearchScope(all, { cwd })).resolves.toMatchObject({
     targets: [{ source }],
   });
