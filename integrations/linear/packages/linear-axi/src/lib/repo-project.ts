@@ -1,0 +1,237 @@
+import { readFile, stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { usage } from "#axi/args.ts";
+import { asArrayOfUnknown, asRecord, type InputRecord, type Runtime } from "#axi/types.ts";
+import { formatCommandArg } from "./cli-helpers.ts";
+import { asArray, extractData, hasTool } from "./mcp-tools.ts";
+import { projectMatches } from "./project-match.ts";
+
+export interface RepoProject {
+  project: string;
+  workspace?: string;
+}
+
+interface ProjectOptions {
+  allProjects?: boolean;
+  allProjectsCommand?: string;
+  command?: string;
+  requireProject?: boolean;
+}
+
+export async function applyRepoProjectDefault(
+  toolArgs: InputRecord,
+  runtime: Runtime,
+  options: ProjectOptions = {},
+): Promise<void> {
+  const { allProjects = false, allProjectsCommand, command, requireProject = false } = options;
+
+  if (allProjects && toolArgs.project !== undefined) {
+    throw usage("--project and --all-projects cannot be used together", [
+      `Run \`${command ?? "linear-axi issues list"} --project "<project>"\` to use one project`,
+      allProjectsCommand
+        ? `Run \`${allProjectsCommand}\` to list across all projects`
+        : "Remove --all-projects when using --project",
+    ]);
+  }
+
+  if (allProjects || toolArgs.project !== undefined) return;
+
+  const repoProject = await readRepoProject(runtime.cwd);
+  if (repoProject) {
+    const validated = await validateRepoProject(repoProject, runtime, { command });
+    toolArgs.project = validated.project;
+    return;
+  }
+
+  if (requireProject) {
+    throw usage(
+      "No default Linear project is configured for this repository",
+      uninitializedProjectHelp(command, allProjectsCommand),
+    );
+  }
+}
+
+export function validateRepoProject(
+  repoProject: RepoProject,
+  runtime: Runtime,
+  options?: Pick<ProjectOptions, "command">,
+): Promise<RepoProject>;
+export function validateRepoProject(
+  repoProject: RepoProject | null,
+  runtime: Runtime,
+  options?: Pick<ProjectOptions, "command">,
+): Promise<RepoProject | null>;
+export async function validateRepoProject(
+  repoProject: RepoProject | null,
+  runtime: Runtime,
+  options: Pick<ProjectOptions, "command"> = {},
+): Promise<RepoProject | null> {
+  if (!repoProject) return null;
+  if (!(await canValidateProjects(runtime))) return repoProject;
+
+  const match = await getValidatingProject(repoProject.project, runtime);
+  if (!match) {
+    throw invalidRepoProject(repoProject.project, options.command);
+  }
+
+  const workspace = extractWorkspaceName(match, { allowBareName: false }) ?? repoProject.workspace;
+  if (
+    repoProject.workspace &&
+    workspace &&
+    normalizeWorkspace(repoProject.workspace) !== normalizeWorkspace(workspace)
+  ) {
+    throw invalidRepoProject(repoProject.project, options.command, repoProject.workspace);
+  }
+  return {
+    project: repoProject.project,
+    ...(workspace ? { workspace } : {}),
+  };
+}
+
+async function getValidatingProject(project: string, runtime: Runtime): Promise<unknown> {
+  if (await hasTool(runtime, "get_project")) {
+    const detailed = await runtime.client.callTool("get_project", { query: project });
+    const data = extractData(detailed);
+    if (projectMatches(data, project, { normalizeIdentifiers: true })) return data;
+    if (!(await hasTool(runtime, "list_projects"))) return null;
+  }
+
+  const listed = await runtime.client.callTool("list_projects", { query: project, limit: 10 });
+  const projects = asArray(extractData(listed));
+  return (
+    projects.find((candidate) =>
+      projectMatches(candidate, project, { normalizeIdentifiers: true }),
+    ) ?? null
+  );
+}
+
+export function projectFileValue(repoProject: RepoProject): RepoProject {
+  return repoProject.workspace
+    ? { workspace: repoProject.workspace, project: repoProject.project }
+    : { project: repoProject.project };
+}
+
+export async function readRepoProject(cwd: string): Promise<RepoProject | null> {
+  const repo = await findGitRoot(cwd);
+  if (!repo) return null;
+  return readProjectFile(join(repo, ".linear-project"));
+}
+
+function uninitializedProjectHelp(command?: string, allProjectsCommand?: string): string[] {
+  return [
+    'Run `linear-axi init --project "<project>"` to bind this repo',
+    ...(command ? [`Run \`${command} --project "<project>"\` to choose a project once`] : []),
+    ...(allProjectsCommand ? [`Run \`${allProjectsCommand}\` to list across all projects`] : []),
+    "Run `linear-axi projects list` to find Linear projects",
+  ];
+}
+
+export async function readProjectFile(path: string): Promise<RepoProject | null> {
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch {
+    return null;
+  }
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const value: unknown = JSON.parse(trimmed);
+    const parsed = asRecord(value);
+    if (typeof parsed?.project === "string" && parsed.project.trim()) {
+      const workspace =
+        typeof parsed.workspace === "string" && parsed.workspace.trim()
+          ? parsed.workspace.trim()
+          : null;
+      return {
+        ...(workspace ? { workspace } : {}),
+        project: parsed.project.trim(),
+      };
+    }
+  } catch {
+    if (!trimmed.includes("\n") && !/^\s*[[{]/.test(trimmed)) return { project: trimmed };
+  }
+  throw usage(".linear-project must contain JSON with a project string", [
+    'Run `linear-axi init --project "<project>" --force` to repair it',
+  ]);
+}
+
+async function canValidateProjects(runtime: Runtime): Promise<boolean> {
+  if (typeof runtime.client.listTools !== "function") return false;
+  const tools = await runtime.client.listTools();
+  return tools.some((tool) => tool.name === "get_project" || tool.name === "list_projects");
+}
+
+function invalidRepoProject(project: string, command?: string, workspace?: string) {
+  return usage(
+    `The saved default Linear project does not exist in the authenticated workspace: ${project}`,
+    [
+      `Run \`linear-axi projects list --query ${formatCommandArg(project)} --fields id,name,status\` to search the current workspace`,
+      `Run \`linear-axi init --project "<project>" --force\` to update .linear-project`,
+      ...(workspace ? [`The saved workspace is ${workspace}`] : []),
+      ...(command ? [`Run \`${command} --project "<project>"\` to choose a project once`] : []),
+    ],
+  );
+}
+
+function normalizeWorkspace(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+export function extractWorkspaceName(
+  data: unknown,
+  options: { allowBareName?: boolean } = {},
+): string | null {
+  const { allowBareName = true } = options;
+  const record = asRecord(data);
+  if (!record) return null;
+  for (const key of ["workspace", "organization"]) {
+    const nested = extractWorkspaceName(record[key]);
+    if (nested) return nested;
+  }
+  if (typeof record.url === "string") {
+    const workspace = workspaceFromLinearUrl(record.url);
+    if (workspace) return workspace;
+  }
+  if (allowBareName && typeof record.name === "string" && record.name.trim())
+    return record.name.trim();
+  for (const key of ["projects", "teams", "nodes", "items", "data"]) {
+    const items = asArrayOfUnknown(record[key]);
+    if (!items) continue;
+    for (const item of items) {
+      const nested = extractWorkspaceName(item, { allowBareName: false });
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+export function workspaceFromLinearUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname !== "linear.app") return null;
+    const workspace = parsed.pathname.split("/").find(Boolean);
+    return workspace || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function findGitRoot(cwd: string): Promise<string | null> {
+  let current = resolve(cwd);
+  for (;;) {
+    if (await pathExists(join(current, ".git"))) return current;
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}

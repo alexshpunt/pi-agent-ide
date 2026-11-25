@@ -1,0 +1,85 @@
+{
+  "name": "pi-agent-linear",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Linear tools for Pi Coding Agent: read, search and update your workspace, with or without Pi Agent IDE.",
+  "keywords": [
+    "agent-tools",
+    "coding-agent",
+    "issue-tracking",
+    "linear",
+    "linear-api",
+    "oauth",
+    "pi",
+    "pi-agent",
+    "pi-coding-agent",
+    "pi-extension",
+    "pi-package",
+    "project-management",
+    "task-management",
+    "typescript"
+  ],
+  "homepage": "https://github.com/alexshpunt/pi-agent-ide/tree/main/integrations/linear#readme",
+  "bugs": {
+    "url": "https://github.com/alexshpunt/pi-agent-ide/issues"
+  },
+  "license": "MIT",
+  "author": "Alex Shpunt",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexshpunt/pi-agent-ide.git",
+    "directory": "integrations/linear"
+  },
+  "files": [
+    "src",
+    "docs",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "imports": {
+    "#linear/*": "./src/*",
+    "#linear-tests/*": "./tests/*",
+    "#linear-scripts/*": "./scripts/*",
+    "#linear-axi/*": "./packages/linear-axi/*",
+    "#linear-package": "./package.json"
+  },
+  "scripts": {
+    "build": "pnpm --filter @nikolauska/linear-axi run build",
+    "typecheck": "tsc --noEmit && pnpm --filter @nikolauska/linear-axi run typecheck",
+    "test:node": "node --test tests/*.node.mjs",
+    "test:axi": "pnpm --filter @nikolauska/linear-axi test",
+    "package:public": "pnpm run build && node scripts/build-public-package.mjs",
+    "check:package": "pnpm run package:public --verify-install"
+  },
+  "dependencies": {
+    "@nikolauska/linear-axi": "workspace:*",
+    "@toon-format/toon-v4": "npm:@toon-format/toon@4.4.0",
+    "jiti": "2.7.0",
+    "pi-agent-ide": "workspace:^1.1.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-tui": "1.5.2",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^24.0.0",
+    "pi-coding-agent-test": "0.1.8",
+    "typebox": "1.3.27",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

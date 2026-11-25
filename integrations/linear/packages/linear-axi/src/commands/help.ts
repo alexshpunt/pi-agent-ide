@@ -1,0 +1,455 @@
+import { fieldHint } from "#axi/lib/linear-format.ts";
+import { DEFAULT_LIMIT, PROJECT_SCOPED_LIST_ALIASES } from "./shared.ts";
+
+export function topHelp() {
+  return `usage: linear-axi [command] [args] [flags]
+commands[15]:
+  (none)=dashboard, init, auth, issues, projects, teams, users, comments, documents, milestones, cycles, statuses, labels, search, resources, assets
+flags[3]:
+  --help, -h, -v/-V/--version
+examples:
+  linear-axi
+  linear-axi init --project "Roadmap"
+  linear-axi auth login
+  linear-axi issues list --assignee me --all-projects --limit 25
+  linear-axi projects create --name "Roadmap" --team ENG
+  linear-axi documents view <id>
+  linear-axi issues update --id LIN-123 --state Done
+  linear-axi comments create --issue LIN-123 --body "Ready for review."
+  linear-axi update --check
+env[17]:
+  LINEAR_AXI_ENV_FILE, LINEAR_AXI_MCP_URL, LINEAR_AXI_MCP_TOKEN, LINEAR_MCP_TOKEN, LINEAR_AXI_AUTH_FILE,
+  CODEX_CONFIG, LINEAR_AXI_GRAPHQL_URL,
+  LINEAR_AXI_TOKEN_URL, LINEAR_AXI_TOKEN_FILE, LINEAR_AXI_TOKEN_SCOPE, LINEAR_AXI_APP_SCOPE_FILE, LINEAR_AXI_CLIENT_ID, LINEAR_AXI_CLIENT_SECRET,
+  LINEAR_AXI_CONNECTION_FILE, LINEAR_AXI_OAUTH_CLIENT_ID, LINEAR_AXI_OAUTH_REDIRECT_URI, LINEAR_AXI_OAUTH_CONFIG_FILE
+`;
+}
+
+export function initHelp() {
+  return `usage: linear-axi init --project <project> [--force]
+description: Validate and save the current Git repository's default Linear project in .linear-project.
+flags:
+  --project <project>  Linear project id, name, or slug to use by default
+  --force             replace an existing .linear-project value
+examples:
+  linear-axi init --project "Roadmap"
+  linear-axi init --project p_123 --force
+`;
+}
+
+export function groupHelp(name: string, subcommands: readonly string[]) {
+  const examples: Record<string, string[]> = {
+    issues: [
+      "linear-axi issues list --assignee me --all-projects --limit 25",
+      "linear-axi issues view LIN-123",
+      'linear-axi issues create --title "Fix auth" --team ENG',
+      "linear-axi issues update --id LIN-123 --state Done",
+    ],
+    projects: [
+      "linear-axi projects list --limit 25",
+      "linear-axi projects view <id-or-slug> --full",
+      'linear-axi projects create --name "Roadmap" --team ENG',
+      'linear-axi projects update --id <id> --summary "Updated scope"',
+      'linear-axi issues create --title "Task" --team ENG --project "Roadmap"',
+    ],
+    documents: [
+      "linear-axi documents list --all-projects --limit 25",
+      "linear-axi documents view <id>",
+      'linear-axi documents create --title "Spec" --team ENG --content-file spec.md',
+      'linear-axi documents update --id <id> --content "Updated"',
+    ],
+    comments: [
+      "linear-axi comments list --issue LIN-123",
+      'linear-axi comments create --issue LIN-123 --body "Ready for review."',
+    ],
+    auth: [
+      "linear-axi auth login",
+      "linear-axi auth login --manual",
+      "linear-axi auth finish --code <code>",
+      "linear-axi auth logout",
+    ],
+    milestones: [
+      'linear-axi milestones list --project "Roadmap"',
+      'linear-axi milestones view --project "Roadmap" "Beta"',
+      'linear-axi milestones create --project "Roadmap" --name "Beta"',
+      'linear-axi milestones update --project "Roadmap" --id <id> --targetDate <yyyy-mm-dd>',
+    ],
+    cycles: ["linear-axi cycles list --team ENG --type current"],
+    statuses: ["linear-axi statuses list --team ENG"],
+  };
+  const flags = groupFlagHelp(name);
+  return `usage: linear-axi ${name} <subcommand> [flags]
+subcommands[${subcommands.length}]:
+  ${subcommands.join(", ")}
+${flags ? `${flags}\n` : ""}examples:
+${(examples[name] ?? [`linear-axi ${name} list`]).map((example) => `  ${example}`).join("\n")}
+`;
+}
+
+export function listAliasHelp(alias: string) {
+  const projectScopedList = PROJECT_SCOPED_LIST_ALIASES.includes(alias);
+  const projectScopeHelp = projectScopedList
+    ? `  --all-projects
+`
+    : "";
+  const projectScopeNote = projectScopedList
+    ? `notes:
+  issues and documents require a valid repo default project from .linear-project, --project, or --all-projects.
+`
+    : "";
+  return `usage: linear-axi ${alias} list [filters] [--full]
+flags:
+  --limit <n> default ${DEFAULT_LIMIT}
+  --cursor <cursor>
+  --query <text>
+  --name <name>
+  --team <name-or-id>
+  --teamId <team-id>
+  --state <name-or-type>
+  --assignee <user>
+  --delegate <user>
+  --member <user>
+  --project <project>
+${projectScopeHelp}  --cycle <cycle>
+  --label <label>
+  --parentId <issue-id>
+  --priority <number>
+  --createdAt <filter>
+  --updatedAt <filter>
+  --orderBy createdAt|updatedAt
+  --includeArchived
+  --includeMembers
+  --includeMilestones
+  --includeStages
+  --includeTeams
+  --fields <comma-separated-fields>
+  --full
+examples:
+  linear-axi ${alias} list ${projectScopedList ? "--all-projects " : ""}--limit 25
+  linear-axi ${alias} list --fields ${fieldHint(alias)}
+  linear-axi ${alias} list --query "auth" --full
+${projectScopeNote}`;
+}
+
+export function commentListHelp() {
+  return `usage: linear-axi comments list --issue <id> [--full]
+flags:
+  --limit <n> default ${DEFAULT_LIMIT}
+  --cursor <cursor>
+  --orderBy createdAt|updatedAt
+  --full
+examples:
+  linear-axi comments list --issue LIN-123
+  linear-axi comments list --issue LIN-123 --full
+`;
+}
+
+export function commentCreateHelp() {
+  return `usage: linear-axi comments create --issue <id> (--body <text> | --body-file <path>)
+examples:
+  linear-axi comments create --issue LIN-123 --body "Ready for review."
+`;
+}
+
+const DOCUMENT_MUTATION_FIELDS_HELP = `  --title <title>
+  --team <team>
+  --project <project>
+  --issue <issue>
+  --initiative <initiative>
+  --cycle <cycle>
+  --color <color>
+  --icon <icon>
+  --content <markdown>
+  --content-file <path>
+`;
+
+export function documentCreateHelp() {
+  return `usage: linear-axi documents create --title <title> [parent] [--content <markdown> | --content-file <path>]
+flags:
+${DOCUMENT_MUTATION_FIELDS_HELP}examples:
+  linear-axi documents create --title "Spec" --team ENG --content-file spec.md
+`;
+}
+
+export function documentUpdateHelp() {
+  return `usage: linear-axi documents update --id <id> [fields]
+flags:
+  --id <id>
+${DOCUMENT_MUTATION_FIELDS_HELP}examples:
+  linear-axi documents update --id <id> --content "Updated"
+`;
+}
+
+export function documentViewHelp() {
+  return `usage: linear-axi documents view <id> [--full]
+examples:
+  linear-axi documents view <id>
+  linear-axi documents view <id> --full
+`;
+}
+
+const PROJECT_MUTATION_FIELDS_HELP = `  --name <name>
+  --team <team>
+  --teamId <team-id>
+  --summary <text>
+  --description <markdown>
+  --state <state>
+  --status <status>
+  --lead <user>
+  --startDate <yyyy-mm-dd>
+  --targetDate <yyyy-mm-dd>
+`;
+
+export function projectCreateHelp() {
+  return `usage: linear-axi projects create --name <name> --team <team> [fields]
+flags:
+${PROJECT_MUTATION_FIELDS_HELP}examples:
+  linear-axi projects create --name "Roadmap" --team ENG
+`;
+}
+
+export function projectUpdateHelp() {
+  return `usage: linear-axi projects update --id <id> [fields]
+flags:
+  --id <id>
+${PROJECT_MUTATION_FIELDS_HELP}  --description-file <path>
+examples:
+  linear-axi projects update --id <id> --summary "Updated scope"
+`;
+}
+
+export function milestoneListHelp() {
+  return `usage: linear-axi milestones list [--project <project>] [--full]
+flags:
+  --project <project>  overrides the repo default project
+  --full
+examples:
+  linear-axi milestones list
+  linear-axi milestones list --project "Roadmap"
+`;
+}
+
+export function milestoneViewHelp() {
+  return `usage: linear-axi milestones view [--project <project>] <milestone>
+flags:
+  --project <project>  overrides the repo default project
+examples:
+  linear-axi milestones view "Beta"
+  linear-axi milestones view --project "Roadmap" "Beta"
+`;
+}
+
+export function milestoneCreateHelp() {
+  return `usage: linear-axi milestones create [--project <project>] --name <name>
+flags:
+  --name <name>
+  --project <project>  overrides the repo default project
+  --description <markdown>
+  --targetDate <yyyy-mm-dd>
+examples:
+  linear-axi milestones create --name "Beta"
+  linear-axi milestones create --project "Roadmap" --name "Beta"
+`;
+}
+
+export function milestoneUpdateHelp() {
+  return `usage: linear-axi milestones update --project <project> --id <id> [fields]
+flags:
+  --id <id>
+  --name <name>
+  --project <project>  overrides the repo default project
+  --description <markdown>
+  --targetDate <yyyy-mm-dd>
+examples:
+  linear-axi milestones update --project "Roadmap" --id <id> --targetDate <yyyy-mm-dd>
+`;
+}
+
+export function cycleListHelp() {
+  return `usage: linear-axi cycles list --team <team> [--type current|previous|next|all] [--full]
+flags:
+  --team <team>
+  --teamId <team-id>
+  --type current|previous|next|all
+  --full
+examples:
+  linear-axi cycles list --team ENG --type current
+`;
+}
+
+export function statusListHelp() {
+  return `usage: linear-axi statuses list --team <team> [--full]
+flags:
+  --team <team>
+  --teamId <team-id>
+  --type <type>
+  --project <project>
+  --initiative <initiative>
+  --user <user>
+  --limit <n>
+  --cursor <cursor>
+  --orderBy createdAt|updatedAt
+  --createdAt <filter>
+  --updatedAt <filter>
+  --includeArchived
+  --full
+examples:
+  linear-axi statuses list --team ENG
+  linear-axi statuses list --team ENG --full
+`;
+}
+
+export function issueViewHelp() {
+  return `usage: linear-axi issues view <id> [--full]
+examples:
+  linear-axi issues view LIN-123
+  linear-axi issues view LIN-123 --full
+`;
+}
+
+export function issueCreateHelp() {
+  return `usage: linear-axi issues create --title <title> --team <team> [fields]
+flags:
+  --title <title>
+  --team <team>
+  --state <state>
+  --assignee <user>
+  --project <project>
+  --cycle <cycle>
+  --parentId <issue-id>
+  --label <label> repeatable
+  --priority <number>
+  --estimate <number>
+  --dueDate <yyyy-mm-dd>
+  --description <markdown>
+  --description-file <path>
+examples:
+  linear-axi issues create --title "Fix auth" --team ENG
+  linear-axi issues create --title "Task" --team ENG --project "Roadmap"
+`;
+}
+
+export function issueUpdateHelp() {
+  return `usage: linear-axi issues update --id <id> [fields]
+flags:
+  --id <id>
+  --title <title>
+  --team <team>
+  --state <state>
+  --assignee <user>
+  --project <project>
+  --cycle <cycle>
+  --parentId <issue-id>
+  --label <label> repeatable
+  --priority <number>
+  --estimate <number>
+  --dueDate <yyyy-mm-dd>
+  --description <markdown>
+  --description-file <path>
+examples:
+  linear-axi issues update --id LIN-123 --state Done
+`;
+}
+
+export function managedAuthHelp() {
+  return `usage: linear-axi auth <action> [flags]
+actions:
+  status   verify the selected identity and show actual capabilities
+  list     list saved names, identities, capabilities and the explicit default
+  select   verify a saved connection by --id without changing the shared default
+  rename   rename --id with --name
+  default  assign --id for new sessions, or --id none to clear it
+  login    add a named browser OAuth connection without logging out
+  import   add a named personal API key or OAuth token from private stdin
+  connect-app add a verified App connection using its existing local cached token
+  enable-app-renewal pin the selected installed App's original client/scopes locally; require --scope
+  finish   complete manual sign-in using a callback URL from private stdin
+  logout   remove the selected saved connection locally for every session
+  revoke   explicitly revoke the selected OAuth grant when supported
+flags:
+  --json                 emit the safe JSON status/event protocol
+  --id <UUID|none>       saved connection ID; none is valid for default only
+  --name <name>          nonsecret connection name, up to 120 characters
+  --actor user|app       default user; app requires your configured OAuth client
+  --method mcp|oauth     MCP OAuth or configured own-app OAuth; MCP is user-only
+  --scope <scopes>        login defaults to read; enable-app-renewal requires the exact original scopes
+  --manual               print the authorization URL without a callback listener
+  --timeout <ms>         callback wait, default 120000; range 100–300000
+private input:
+  Send import JSON with type (api-key or oauth), token and optional name on private stdin.
+  Send finish JSON with callbackUrl on private stdin.
+  Keep tokens and callback URLs out of command arguments, chat and shell history.
+selection:
+  LINEAR_AXI_CONNECTION_ID selects a saved UUID; none explicitly disables access.
+  Without it, use only the explicitly assigned default, never an arbitrary account.
+  Pi keeps active selection per session. Switching does not change another session.
+  Logout removes the selected saved profile for all its sessions and clears its default.
+  Local logout does not revoke access in Linear; revoke is a separate remote action.
+  Adding a connection does not automatically assign a default.
+  MCP OAuth uses PKCE, needs no shared product app and does not guarantee native API/file access.
+  Own-app OAuth uses LINEAR_AXI_OAUTH_CLIENT_ID or LINEAR_AXI_OAUTH_CONFIG_FILE.
+  Never distribute a shared client secret.
+  App renewal requires unchanged LINEAR_AXI_CLIENT_ID, LINEAR_AXI_CLIENT_SECRET and explicit app scopes.
+  Enablement sends no HTTP requests. Renewal verifies the same App/workspace before replacing its token.
+examples:
+  linear-axi auth list --json
+  linear-axi auth login --method mcp --name Personal --scope read --json
+  linear-axi auth login --method oauth --actor app --name App --manual --json
+  linear-axi auth finish --json
+  linear-axi auth select --id <UUID> --json
+  linear-axi auth default --id <UUID> --json
+`;
+}
+export function authLoginHelp() {
+  return `usage: linear-axi auth login [--manual] [--timeout <ms>]
+flags:
+  --manual print the authorization URL and exit so you can paste the code into auth finish
+  --timeout <ms> default 300000
+examples:
+  linear-axi auth login
+  linear-axi auth login --manual
+`;
+}
+
+export function authFinishHelp() {
+  return `usage: linear-axi auth finish --code <code>
+examples:
+  linear-axi auth finish --code <code>
+`;
+}
+
+export function authLogoutHelp() {
+  return `usage: linear-axi auth logout
+description: Remove saved Linear MCP OAuth credentials without changing bearer-token environment variables.
+examples:
+  linear-axi auth logout
+`;
+}
+
+const GROUP_FLAG_HELP: Record<string, string[]> = {
+  issues: [
+    "flags{list}:\n  --assignee <user>, --state <state>, --team <team>, --project <project>, --all-projects, --query <text>, --label <label>, --limit <n> (default 50), --fields <a,b,c>, --full",
+    "flags{view}:\n  --full (show complete description without truncation)",
+    "flags{create}:\n  --title <text> (required), --team <team> (required), --description <markdown> or --description-file <path>, --state <state>, --assignee <user>, --project <project>, --label <label>",
+    "flags{update}:\n  --id <id> (required), --title <text>, --description <markdown> or --description-file <path>, --state <state>, --assignee <user>, --project <project>, --label <label>",
+  ],
+  projects: [
+    "flags{list}:\n  --query <text>, --team <team>, --state <state>, --limit <n> (default 50), --fields <a,b,c>, --full",
+    "flags{create}:\n  --name <text> (required), --team <team> or --teamId <id> (required), --summary <text>, --description <markdown>, --status <status>, --lead <user>",
+    "flags{update}:\n  --id <id> (required), --name <text>, --team <team> or --teamId <id>, --summary <text>, --description <markdown> or --description-file <path>, --status <status>, --lead <user>",
+  ],
+  documents: [
+    "flags{list}:\n  --project <project>, --all-projects, --query <text>, --team <team>, --limit <n> (default 50), --fields <a,b,c>, --full",
+    "flags{view}:\n  --full (show complete content without truncation)",
+    "flags{create}:\n  --title <text> (required), --team <team>, --project <project>, --issue <issue>, --content <markdown> or --content-file <path>",
+    "flags{update}:\n  --id <id> (required), --title <text>, --team <team>, --project <project>, --issue <issue>, --content <markdown> or --content-file <path>",
+  ],
+  comments: [
+    "flags{list}:\n  --issue <id> (required), --limit <n> (default 50), --cursor <cursor>, --full",
+    "flags{create}:\n  --issue <id> (required), --body <text> or --body-file <path> (required)",
+  ],
+};
+
+function groupFlagHelp(name: string) {
+  return Object.hasOwn(GROUP_FLAG_HELP, name) ? GROUP_FLAG_HELP[name].join("\n") : "";
+}

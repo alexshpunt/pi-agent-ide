@@ -120,3 +120,7 @@ runs:
     - name: Install dependencies
       shell: bash
       run: pnpm install --frozen-lockfile
+
+    - name: Build the Linear test backend
+      shell: bash
+      run: pnpm --filter pi-agent-linear run build

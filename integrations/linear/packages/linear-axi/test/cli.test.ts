@@ -1,0 +1,2752 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { main, run } from "#axi/cli.ts";
+import { AxiError } from "#axi/args.ts";
+import type { InputRecord, MainContext, McpClientLike, Runtime } from "#axi/types.ts";
+import { jsonRecord } from "./fixtures/json.ts";
+import { ResourceOperationFailure } from "#axi/lib/resource-failure.ts";
+
+const packageManifest = jsonRecord(
+  await readFile(new URL(import.meta.resolve("#axi-package")), "utf8"),
+);
+
+void test("top help exposes Linear resource commands", async () => {
+  const output = await run(["--help"], runtime({}));
+
+  assert.match(
+    output,
+    /issues, projects, teams, users, comments, documents, milestones, cycles, statuses, labels/,
+  );
+  assert.doesNotMatch(output, /releases/);
+  assert.doesNotMatch(output, /statuses save/);
+  assert.doesNotMatch(output, /statuses delete/);
+  assert.doesNotMatch(output, /tools list/);
+  assert.doesNotMatch(output, /call <tool>/);
+});
+
+void test("main top help includes SDK update built-in", async () => {
+  const output = await runMain(["--help"]);
+
+  assert.match(output, /flags\[3\]:/);
+  assert.match(output, /-v\/-V\/--version/);
+  assert.match(output, /"built-in":/);
+  assert.match(output, /"update --check": Report current vs latest without installing/);
+});
+
+void test("main top-level -h alias renders SDK help", async () => {
+  const output = await runMain(["-h"]);
+
+  assert.match(output, /^usage: linear-axi \[command\]/);
+  assert.match(output, /"built-in":/);
+  assert.doesNotMatch(output, /Flags must come after the command/);
+});
+
+void test("main home uses SDK CLI description header", async () => {
+  const output = await runMain([], {
+    cwd: (await makeNoGitTempDir()) ?? process.cwd(),
+    client: {
+      close: async () => {},
+      listTools: async () => [{ name: "list_teams" }],
+      callTool: async () => ({ structuredContent: { teams: [{ workspace: { name: "Acme" } }] } }),
+    },
+  });
+
+  assert.match(
+    output,
+    /description: Agent ergonomic wrapper around the configured Linear MCP server/,
+  );
+  assert.doesNotMatch(output, /description: Linear project dashboard/);
+});
+
+void test("main prints package version flags", async () => {
+  for (const flag of ["-v", "-V", "--version"]) {
+    const version = packageManifest.version;
+    assert(typeof version === "string");
+    assert.equal(await runMain([flag]), `${version}\n`);
+  }
+});
+
+void test("main exposes update check help without resolving Linear context", async () => {
+  let called = false;
+  const output = await runMain(["update", "--help"], {
+    client: {
+      close: async () => {},
+      callTool: async () => {
+        called = true;
+        return {};
+      },
+    },
+  });
+
+  assert.equal(called, false);
+  assert.match(output, /command: update/);
+  assert.match(output, /"--check": Report current vs latest and exit without installing/);
+  assert.match(output, /update --check/);
+});
+
+void test("home uninitialized repo suggests project setup without global issue count", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "linear-axi-home-"));
+  const repo = join(parent, "linear-axi");
+  await mkdir(join(repo, ".git"), { recursive: true });
+  let issueListCalled = false;
+
+  const output = await run(
+    [],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_teams" }, { name: "list_issues" }],
+      callTool: async (name) => {
+        if (name === "list_teams")
+          return { structuredContent: { teams: [{ workspace: { name: "Acme" } }] } };
+        issueListCalled = true;
+        return { structuredContent: { issues: [{ identifier: "LIN-1", title: "Global issue" }] } };
+      },
+    }),
+  );
+
+  assert.equal(issueListCalled, false);
+  assert.match(output, /description: Linear project dashboard/);
+  assert.match(output, /workspace: Acme\nproject: not initialized\nrepo: linear-axi/);
+  assert.match(output, /project: not initialized/);
+  assert.match(output, /status: No default Linear project is configured for this repository/);
+  assert.match(output, /Run `linear-axi projects list` to find Linear projects/);
+  assert.match(output, /Run `linear-axi init --project "<project>"` to bind this repo/);
+  assert.match(
+    output,
+    /Run `linear-axi issues list --assignee me --all-projects` to list your assigned issues across Linear/,
+  );
+  assert.match(
+    output,
+    /Run `linear-axi <command> <subcommand>` — commands: auth, issues, projects, teams, users, comments, documents/,
+  );
+  assert.doesNotMatch(output, /assigned to me$/m);
+  assert.doesNotMatch(output, /Global issue/);
+});
+
+void test("home does not use project row names as workspace names", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+
+  const output = await run(
+    [],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_projects" }],
+      callTool: async () => ({ structuredContent: { projects: [{ name: "Roadmap" }] } }),
+    }),
+  );
+
+  assert.match(output, /workspace: unknown\nproject: not initialized/);
+  assert.doesNotMatch(output, /workspace: Roadmap/);
+});
+
+void test("home derives workspace names from Linear project URLs", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+
+  const output = await run(
+    [],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_projects" }],
+      callTool: async () => ({
+        structuredContent: {
+          projects: [{ name: "Roadmap", url: "https://linear.app/acme/project/roadmap" }],
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /workspace: acme\nproject: not initialized/);
+});
+
+void test("home auth errors suggest login before list commands for initialized repos", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "linear-axi-home-"));
+  const repo = join(parent, "linear-axi");
+  await mkdir(join(repo, ".git"), { recursive: true });
+  await writeFile(join(repo, ".linear-project"), JSON.stringify({ project: "Roadmap" }), "utf8");
+
+  const output = await run(
+    [],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_teams" }, { name: "list_issues" }],
+      callTool: async (name) => {
+        if (name === "list_teams")
+          return { structuredContent: { teams: [{ workspace: { name: "Acme" } }] } };
+        throw Object.assign(new Error("auth required"), {
+          authorizationUrl: "https://linear.example/authorize?state=expected-state",
+        });
+      },
+    }),
+  );
+
+  assert.match(output, /workspace: Acme\nproject: Roadmap\n/);
+  assert.match(output, /project: Roadmap/);
+  assert.match(output, /error: Linear MCP OAuth authorization required/);
+  assert.match(
+    output,
+    /help\[1\]:\n  Run `linear-axi <command> <subcommand>` — commands: auth, issues, projects, teams, users, comments, documents/,
+  );
+  assert.doesNotMatch(output, /linear-axi init --project/);
+  assert.doesNotMatch(output, /issues list --assignee me --limit 50/);
+});
+
+void test("home project uses .linear-project when configured", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(join(repo, ".linear-project"), JSON.stringify({ project: "Roadmap" }), "utf8");
+
+  const output = await run(
+    [],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_teams" }, { name: "list_issues" }],
+      callTool: async (name) => {
+        if (name === "list_teams")
+          return { structuredContent: { teams: [{ workspace: { name: "Acme" } }] } };
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.match(output, /workspace: Acme\nproject: Roadmap\nrepo: /);
+  assert.match(output, /project: Roadmap/);
+  assert.match(output, /issues: 0 assigned to me in project/);
+  assert.doesNotMatch(output, /issues\[0\]/);
+  assert.match(output, /help\[1\]:/);
+});
+
+void test("home warns when configured project is not in the current workspace", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    JSON.stringify({ workspace: "Acme", project: "Linear AXI" }),
+    "utf8",
+  );
+  let issueListCalled = false;
+
+  const output = await run(
+    [],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_projects" }, { name: "list_issues" }],
+      callTool: async (name, args) => {
+        if (name === "list_projects" && !args.query) {
+          return {
+            structuredContent: {
+              projects: [{ name: "Roadmap", url: "https://linear.app/acme/project/roadmap" }],
+            },
+          };
+        }
+        if (name === "list_projects") return { structuredContent: { projects: [] } };
+        issueListCalled = true;
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.equal(issueListCalled, false);
+  assert.match(output, /workspace: acme\nproject: Linear AXI\n/);
+  assert.match(output, /status: Default Linear project is invalid/);
+  assert.match(
+    output,
+    /error: "The saved default Linear project does not exist in the authenticated workspace: Linear AXI"/,
+  );
+  assert.match(
+    output,
+    /Run `linear-axi projects list --query 'Linear AXI' --fields id,name,status` to search the current workspace/,
+  );
+  assert.match(
+    output,
+    /Run `linear-axi init --project "<project>" --force` to update \.linear-project/,
+  );
+});
+
+void test("home summarizes project-assigned issues instead of listing rows", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(join(repo, ".linear-project"), JSON.stringify({ project: "Roadmap" }), "utf8");
+
+  const output = await run(
+    [],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_teams" }, { name: "list_issues" }],
+      callTool: async (name) => {
+        if (name === "list_teams")
+          return { structuredContent: { teams: [{ workspace: { name: "Acme" } }] } };
+        return {
+          structuredContent: {
+            issues: [
+              { identifier: "LIN-1", title: "Fix auth" },
+              { identifier: "LIN-2", title: "Ship docs" },
+            ],
+            cursor: "next-page",
+          },
+        };
+      },
+    }),
+  );
+
+  assert.match(output, /issues: 2\+ assigned to me in project/);
+  assert.doesNotMatch(output, /issues\[2\]/);
+  assert.doesNotMatch(output, /Fix auth/);
+});
+
+void test("empty lists render as gh-axi-style empty arrays", async () => {
+  const output = await run(
+    ["projects", "list"],
+    runtime({
+      callTool: async () => ({ structuredContent: { projects: [] } }),
+    }),
+  );
+
+  assert.match(output, /count: 0 returned/);
+  assert.match(output, /projects: \[\]/);
+  assert.match(
+    output,
+    /Run `linear-axi projects create --name "\.\.\." --team "<team>"` to create a project/,
+  );
+  assert.doesNotMatch(output, /0 projects found/);
+  assert.doesNotMatch(output, /--fields/);
+});
+
+void test("empty list continuation hints do not leak across calls", async () => {
+  let calls = 0;
+  const client = runtime({
+    callTool: async () => {
+      calls += 1;
+      return calls === 1
+        ? { structuredContent: { projects: [], cursor: "next-page" } }
+        : { structuredContent: { projects: [] } };
+    },
+  });
+
+  const firstOutput = await run(["projects", "list"], client);
+  const secondOutput = await run(["projects", "list"], client);
+
+  assert.match(firstOutput, /--cursor next-page/);
+  assert.doesNotMatch(secondOutput, /--cursor next-page/);
+  assert.match(secondOutput, /help\[1\]:/);
+});
+
+void test("projects list uses list_projects wrapper", async () => {
+  let seen;
+  const output = await run(
+    ["projects", "list", "--query", "roadmap"],
+    runtime({
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return {
+          structuredContent: {
+            projects: [
+              { id: "p-backlog", name: "Later", state: "Backlog" },
+              { id: "p-progress", name: "Roadmap", state: "In Progress" },
+              { id: "p-planned", name: "Next", state: "Planned" },
+            ],
+          },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_projects", args: { query: "roadmap", limit: 50 } });
+  assert.match(
+    output,
+    /projects\[3\]\{status,name,id\}:\n  In Progress,Roadmap,p-progress\n  Planned,Next,p-planned\n  Backlog,Later,p-backlog/,
+  );
+  assert.match(
+    output,
+    /help\[1\]:\n  Run `linear-axi projects list --fields id,name,status` to choose fields/,
+  );
+  assert.doesNotMatch(output, /--full/);
+  assert.doesNotMatch(output, /--query "<text>"/);
+});
+
+void test("list commands support fields and pagination hints", async () => {
+  const output = await run(
+    ["projects", "list", "--fields", "id,name,state", "--query", "roadmap", "--limit", "25"],
+    runtime({
+      callTool: async () => ({
+        structuredContent: {
+          projects: [{ id: "p1", name: "Roadmap", state: "started", ignored: "hidden" }],
+          hasNextPage: true,
+          cursor: "next-page",
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /count: 1 returned \(more available\)/);
+  assert.match(output, /cursor: next-page/);
+  assert.match(output, /projects\[1\]\{id,name,state\}:/);
+  assert.match(output, /p1,Roadmap,started/);
+  assert.doesNotMatch(output, /ignored/);
+  assert.match(output, /help\[2\]:/);
+  assert.match(
+    output,
+    /Run `linear-axi projects list --limit 25 --query roadmap --fields 'id,name,state' --cursor next-page` to continue/,
+  );
+});
+
+void test("list pagination hints shell-escape unsafe values", async () => {
+  const output = await run(
+    ["projects", "list", "--query", "roadmap $(touch /tmp/axi)'$HOME", "--limit", "25"],
+    runtime({
+      callTool: async () => ({
+        structuredContent: {
+          projects: [{ id: "p1", name: "Roadmap" }],
+          cursor: "next $(touch /tmp/cursor)'$TOKEN",
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /cursor: next \$\(touch \/tmp\/cursor\)'\$TOKEN/);
+  assert.match(
+    output,
+    /--query 'roadmap \$\(touch \/tmp\/axi\)'\\''\$HOME' --cursor 'next \$\(touch \/tmp\/cursor\)'\\''\$TOKEN'/,
+  );
+});
+
+void test("list pagination hints are emitted for cursor-only responses", async () => {
+  const output = await run(
+    ["projects", "list", "--limit", "25"],
+    runtime({
+      callTool: async () => ({
+        structuredContent: {
+          projects: [{ id: "p1", name: "Roadmap" }],
+          pageInfo: { endCursor: "next-page" },
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /count: 1 returned \(more available\)/);
+  assert.match(output, /cursor: next-page/);
+  assert.match(output, /Run `linear-axi projects list --limit 25 --cursor next-page` to continue/);
+});
+
+void test("list pagination hints preserve false boolean filters", async () => {
+  const output = await run(
+    ["projects", "list", "--limit", "25", "--includeArchived=false", "--full=false"],
+    runtime({
+      callTool: async () => ({
+        structuredContent: {
+          projects: [{ id: "p1", name: "Roadmap" }],
+          pageInfo: { hasNextPage: true, endCursor: "next-page" },
+        },
+      }),
+    }),
+  );
+
+  assert.match(
+    output,
+    /Run `linear-axi projects list --limit 25 --includeArchived=false --full=false --cursor next-page` to continue/,
+  );
+  assert.doesNotMatch(output, /--includeArchived false/);
+  assert.doesNotMatch(output, /--full false/);
+});
+
+void test("list full counts rows inside response envelopes", async () => {
+  const output = await run(
+    ["projects", "list", "--full"],
+    runtime({
+      callTool: async () => ({
+        structuredContent: {
+          projects: [
+            { id: "p1", name: "Roadmap" },
+            { id: "p2", name: "Inbox" },
+          ],
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /count: 2 returned/);
+  assert.match(output, /projects\[2\]\{id,name\}:/);
+});
+
+void test("issues list requires project scope or all-projects in uninitialized repos", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "list", "--assignee", "me"],
+        runtime({
+          cwd: repo,
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "usage");
+      assert.match(error.message, /No default Linear project is configured for this repository/);
+      assert.deepEqual(error.help, [
+        'Run `linear-axi init --project "<project>"` to bind this repo',
+        'Run `linear-axi issues list --project "<project>"` to choose a project once',
+        "Run `linear-axi issues list --all-projects` to list across all projects",
+        "Run `linear-axi projects list` to find Linear projects",
+      ]);
+      return true;
+    },
+  );
+
+  assert.equal(called, false);
+});
+
+void test("issues list uses list_issues wrapper with explicit all-projects", async () => {
+  let seen;
+  const output = await run(
+    ["issues", "list", "--assignee", "me", "--all-projects"],
+    runtime({
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return {
+          structuredContent: {
+            issues: [
+              {
+                identifier: "LIN-2",
+                title: "Write docs",
+                state: { name: "Todo" },
+                assignee: { name: "Morris" },
+              },
+              {
+                identifier: "LIN-1",
+                title: "Fix auth",
+                state: { name: "In Progress" },
+                assignee: { name: "Morris" },
+              },
+              {
+                identifier: "LIN-3",
+                title: "Plan release",
+                state: { name: "Planned" },
+                assignee: { name: "Morris" },
+              },
+            ],
+          },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_issues", args: { assignee: "me", limit: 50 } });
+  assert.match(
+    output,
+    /issues\[3\]\{state,title,assignee,id\}:\n  In Progress,Fix auth,Morris,LIN-1\n  Planned,Plan release,Morris,LIN-3\n  Todo,Write docs,Morris,LIN-2/,
+  );
+});
+
+void test("all-projects bypasses repo default project for issue lists", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    `${JSON.stringify({ project: "Roadmap" })}\n`,
+    "utf8",
+  );
+
+  let seen;
+  await run(
+    ["issues", "list", "--assignee", "me", "--all-projects"],
+    runtime({
+      cwd: repo,
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_issues", args: { assignee: "me", limit: 50 } });
+});
+
+void test("all-projects conflicts with explicit project", async () => {
+  await assert.rejects(
+    () => run(["issues", "list", "--project", "Roadmap", "--all-projects"], runtime({})),
+    /--project and --all-projects cannot be used together/,
+  );
+});
+
+void test("documents list requires project scope or all-projects in uninitialized repos", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["documents", "list"],
+        runtime({
+          cwd: repo,
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /No default Linear project is configured for this repository/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("documents list all-projects bypasses repo default project", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    `${JSON.stringify({ project: "Roadmap" })}\n`,
+    "utf8",
+  );
+
+  let seen;
+  await run(
+    ["documents", "list", "--all-projects"],
+    runtime({
+      cwd: repo,
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { documents: [] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_documents", args: { limit: 50 } });
+});
+
+void test("all-projects is rejected for non project-scoped lists", async () => {
+  await assert.rejects(
+    () => run(["projects", "list", "--all-projects"], runtime({})),
+    /--all-projects is only supported for issues and documents/,
+  );
+});
+
+void test("init saves repo project and issues list uses it by default", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+
+  const initOutput = await run(["init", "--project", "Roadmap"], runtime({ cwd: repo }));
+  assert.match(initOutput, /project: initialized/);
+  assert.match(initOutput, /file: .+\.linear-project/);
+  assert.doesNotMatch(initOutput, /help\[/);
+  assert.deepEqual(JSON.parse(await readFile(join(repo, ".linear-project"), "utf8")), {
+    project: "Roadmap",
+  });
+
+  let seen;
+  await run(
+    ["issues", "list"],
+    runtime({
+      cwd: repo,
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_issues", args: { project: "Roadmap", limit: 50 } });
+});
+
+void test("init validates the project and saves the authenticated workspace", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+
+  const initOutput = await run(
+    ["init", "--project", "Roadmap"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_projects" }],
+      callTool: async (name, args) => {
+        assert.equal(name, "list_projects");
+        assert.deepEqual(args, { query: "Roadmap", limit: 10 });
+        return {
+          structuredContent: {
+            projects: [{ name: "Roadmap", workspace: { name: "Acme" } }],
+          },
+        };
+      },
+    }),
+  );
+
+  assert.match(initOutput, /workspace: Acme/);
+  assert.deepEqual(JSON.parse(await readFile(join(repo, ".linear-project"), "utf8")), {
+    workspace: "Acme",
+    project: "Roadmap",
+  });
+});
+
+void test("init preserves project ids after validation", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+
+  const initOutput = await run(
+    ["init", "--project", "project-id-1"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_projects" }],
+      callTool: async (name, args) => {
+        assert.equal(name, "list_projects");
+        assert.deepEqual(args, { query: "project-id-1", limit: 10 });
+        return {
+          structuredContent: {
+            projects: [{ id: "project-id-1", name: "Roadmap", workspace: { name: "Acme" } }],
+          },
+        };
+      },
+    }),
+  );
+
+  assert.match(initOutput, /workspace: Acme/);
+  assert.deepEqual(JSON.parse(await readFile(join(repo, ".linear-project"), "utf8")), {
+    workspace: "Acme",
+    project: "project-id-1",
+  });
+});
+
+void test("init validates project uuids with get_project when available", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  const projectId = "5bf051dd-8c53-4fd9-a606-58dbeae18ec4";
+
+  const initOutput = await run(
+    ["init", "--project", projectId],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "get_project" }, { name: "list_projects" }],
+      callTool: async (name, args) => {
+        assert.equal(name, "get_project");
+        assert.deepEqual(args, { query: projectId });
+        return {
+          structuredContent: {
+            id: projectId,
+            name: "Roadmap",
+            workspace: { name: "Acme" },
+          },
+        };
+      },
+    }),
+  );
+
+  assert.match(initOutput, /workspace: Acme/);
+  assert.deepEqual(JSON.parse(await readFile(join(repo, ".linear-project"), "utf8")), {
+    workspace: "Acme",
+    project: projectId,
+  });
+});
+
+void test("init force repairs stale workspace metadata for the same project", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    JSON.stringify({ workspace: "OldCo", project: "Roadmap" }),
+    "utf8",
+  );
+
+  const initOutput = await run(
+    ["init", "--project", "Roadmap", "--force"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_projects" }],
+      callTool: async (name, args) => {
+        assert.equal(name, "list_projects");
+        assert.deepEqual(args, { query: "Roadmap", limit: 10 });
+        return {
+          structuredContent: {
+            projects: [{ name: "Roadmap", workspace: { name: "Acme" } }],
+          },
+        };
+      },
+    }),
+  );
+
+  assert.match(initOutput, /project: initialized/);
+  assert.deepEqual(JSON.parse(await readFile(join(repo, ".linear-project"), "utf8")), {
+    workspace: "Acme",
+    project: "Roadmap",
+  });
+});
+
+void test("repo project default validates before project-scoped list commands", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(join(repo, ".linear-project"), JSON.stringify({ project: "Linear AXI" }), "utf8");
+  let issueListCalled = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "list"],
+        runtime({
+          cwd: repo,
+          listTools: async () => [{ name: "list_projects" }, { name: "list_issues" }],
+          callTool: async (name) => {
+            if (name === "list_projects") return { structuredContent: { projects: [] } };
+            issueListCalled = true;
+            return { structuredContent: { issues: [] } };
+          },
+        }),
+      ),
+    /The saved default Linear project does not exist in the authenticated workspace: Linear AXI/,
+  );
+
+  assert.equal(issueListCalled, false);
+});
+
+void test("repo project validation preserves configured slug for downstream commands", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    JSON.stringify({ project: "roadmap-slug" }),
+    "utf8",
+  );
+  let seen;
+
+  await run(
+    ["issues", "list"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "list_projects" }, { name: "list_issues" }],
+      callTool: async (name, args) => {
+        if (name === "list_projects") {
+          assert.deepEqual(args, { query: "roadmap-slug", limit: 10 });
+          return { structuredContent: { projects: [{ slugId: "roadmap-slug", name: "Roadmap" }] } };
+        }
+        seen = { name, args };
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_issues", args: { project: "roadmap-slug", limit: 50 } });
+});
+
+void test("repo project validation accepts project uuids with get_project", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  const projectId = "5bf051dd-8c53-4fd9-a606-58dbeae18ec4";
+  await writeFile(
+    join(repo, ".linear-project"),
+    JSON.stringify({ workspace: "Acme", project: projectId }),
+    "utf8",
+  );
+  let seen;
+
+  await run(
+    ["issues", "list"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [
+        { name: "get_project" },
+        { name: "list_projects" },
+        { name: "list_issues" },
+      ],
+      callTool: async (name, args) => {
+        if (name === "get_project") {
+          assert.deepEqual(args, { query: projectId });
+          return {
+            structuredContent: { id: projectId, name: "Roadmap", workspace: { name: "Acme" } },
+          };
+        }
+        seen = { name, args };
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_issues", args: { project: projectId, limit: 50 } });
+});
+
+void test("repo project validation falls back to list_projects after get_project misses", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    JSON.stringify({ project: "roadmap-slug" }),
+    "utf8",
+  );
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+
+  await run(
+    ["issues", "list"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [
+        { name: "get_project" },
+        { name: "list_projects" },
+        { name: "list_issues" },
+      ],
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "get_project") return { structuredContent: {} };
+        if (name === "list_projects") {
+          return { structuredContent: { projects: [{ slugId: "roadmap-slug", name: "Roadmap" }] } };
+        }
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(calls, [
+    { name: "get_project", args: { query: "roadmap-slug" } },
+    { name: "list_projects", args: { query: "roadmap-slug", limit: 10 } },
+    { name: "list_issues", args: { project: "roadmap-slug", limit: 50 } },
+  ]);
+});
+
+void test("invalid repo project help quotes saved project tokens", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    JSON.stringify({ project: "$(touch /tmp/pwned)" }),
+    "utf8",
+  );
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "list"],
+        runtime({
+          cwd: repo,
+          listTools: async () => [{ name: "list_projects" }],
+          callTool: async () => ({ structuredContent: { projects: [] } }),
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.match(error.help[0], /--query '\$\(touch \/tmp\/pwned\)' --fields id,name,status/);
+      assert.doesNotMatch(error.help[0], /--query "\$\(touch \/tmp\/pwned\)"/);
+      return true;
+    },
+  );
+});
+
+void test("repo project default applies to issue creates but not updates", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    `${JSON.stringify({ project: "Roadmap" })}\n`,
+    "utf8",
+  );
+
+  let seen;
+  const createOutput = await run(
+    ["issues", "create", "--title", "Fix auth", "--team", "ENG"],
+    runtime({
+      cwd: repo,
+      callTool: async (name, args) => {
+        if (name === "list_issues") return { structuredContent: { issues: [] } };
+        seen = { name, args };
+        return { structuredContent: { identifier: "LIN-1", title: "Fix auth" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, {
+    name: "save_issue",
+    args: { title: "Fix auth", team: "ENG", project: "Roadmap" },
+  });
+  assert.doesNotMatch(createOutput, /help\[/);
+
+  const updateOutput = await run(
+    ["issues", "update", "--id", "LIN-1", "--state", "Done"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "get_issue" }],
+      callTool: async (name, args) => {
+        if (name === "get_issue")
+          return { structuredContent: { identifier: "LIN-1", title: "Fix auth" } };
+        seen = { name, args };
+        return { structuredContent: { identifier: "LIN-1", title: "Fix auth" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "save_issue", args: { id: "LIN-1", state: "Done" } });
+  assert.doesNotMatch(updateOutput, /help\[/);
+});
+
+void test("issue create requires explicit or initialized project", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "create", "--title", "Fix auth", "--team", "ENG"],
+        runtime({
+          cwd: repo,
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /No default Linear project is configured for this repository/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("repo project default applies to document creates but not updates", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    `${JSON.stringify({ project: "Roadmap" })}\n`,
+    "utf8",
+  );
+
+  let seen;
+  await run(
+    ["documents", "create", "--title", "Spec", "--project", "Roadmap"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [{ name: "create_document" }, { name: "update_document" }],
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { id: "doc1", title: "Spec" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "create_document", args: { title: "Spec", project: "Roadmap" } });
+
+  await run(
+    ["documents", "update", "--id", "doc1", "--title", "Updated"],
+    runtime({
+      cwd: repo,
+      listTools: async () => [
+        { name: "create_document" },
+        { name: "update_document" },
+        { name: "get_document" },
+      ],
+      callTool: async (name, args) => {
+        if (name === "get_document") return { structuredContent: { id: "doc1", title: "Spec" } };
+        seen = { name, args };
+        return { structuredContent: { id: "doc1", title: "Updated" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "update_document", args: { id: "doc1", title: "Updated" } });
+});
+
+void test("document create without another parent requires explicit or initialized project", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["documents", "create", "--title", "Spec"],
+        runtime({
+          cwd: repo,
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /No default Linear project is configured for this repository/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("repo project default applies to milestone creates and updates use explicit projects", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    `${JSON.stringify({ project: "Roadmap" })}\n`,
+    "utf8",
+  );
+
+  let seen;
+  await run(
+    ["milestones", "create", "--name", "Beta"],
+    runtime({
+      cwd: repo,
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { id: "m1", name: "Beta" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "save_milestone", args: { name: "Beta", project: "Roadmap" } });
+
+  await run(
+    ["milestones", "update", "--project", "Roadmap", "--id", "m1", "--targetDate", "2026-09-01"],
+    runtime({
+      cwd: repo,
+      callTool: async (name, args) => {
+        if (name === "get_milestone") return { structuredContent: { id: "m1", name: "Beta" } };
+        seen = { name, args };
+        return { structuredContent: { id: "m1", name: "Beta" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, {
+    name: "save_milestone",
+    args: { id: "m1", project: "Roadmap", targetDate: "2026-09-01" },
+  });
+});
+
+void test("milestone list and create require explicit or initialized project", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["milestones", "list"],
+        runtime({
+          cwd: repo,
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /No default Linear project is configured for this repository/,
+  );
+
+  await assert.rejects(
+    () =>
+      run(
+        ["milestones", "create", "--name", "Beta"],
+        runtime({
+          cwd: repo,
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /No default Linear project is configured for this repository/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("repo project discovery walks up from a subdirectory and explicit project wins", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  const child = join(repo, "packages", "app");
+  await mkdir(join(repo, ".git"));
+  await mkdir(child, { recursive: true });
+  await writeFile(
+    join(repo, ".linear-project"),
+    `${JSON.stringify({ project: "Roadmap" })}\n`,
+    "utf8",
+  );
+
+  let seen;
+  await run(
+    ["issues", "list", "--project", "Other"],
+    runtime({
+      cwd: child,
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { issues: [] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_issues", args: { project: "Other", limit: 50 } });
+});
+
+void test("init requires a Git repository before writing .linear-project", async (t) => {
+  const dir = await makeNoGitTempDir();
+  if (!dir) {
+    t.skip("no writable temp parent without a .git ancestor");
+    return;
+  }
+
+  await assert.rejects(
+    () => run(["init", "--project", "Roadmap"], runtime({ cwd: dir })),
+    /current directory is not inside a Git repository/,
+  );
+});
+
+void test("init is idempotent and protects existing project values", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "linear-axi-repo-"));
+  await mkdir(join(repo, ".git"));
+  await writeFile(
+    join(repo, ".linear-project"),
+    `${JSON.stringify({ project: "Roadmap" })}\n`,
+    "utf8",
+  );
+
+  const same = await run(["init", "--project", "Roadmap"], runtime({ cwd: repo }));
+  assert.match(same, /project: already initialized/);
+  assert.doesNotMatch(same, /help\[/);
+
+  await assert.rejects(
+    () => run(["init", "--project", "Other"], runtime({ cwd: repo })),
+    /\.linear-project already exists/,
+  );
+
+  const replaced = await run(["init", "--project", "Other", "--force"], runtime({ cwd: repo }));
+  assert.match(replaced, /project: initialized/);
+  assert.doesNotMatch(replaced, /help\[/);
+  assert.deepEqual(JSON.parse(await readFile(join(repo, ".linear-project"), "utf8")), {
+    project: "Other",
+  });
+});
+
+void test("comments create uses comment-oriented flags", async () => {
+  let seen;
+  const output = await run(
+    ["comments", "create", "--issue", "LIN-1", "--body", "Ready"],
+    runtime({
+      listTools: async () => [{ name: "get_issue" }],
+      callTool: async (name, args) => {
+        if (name === "get_issue")
+          return { structuredContent: { identifier: "LIN-1", title: "Task" } };
+        seen = { name, args };
+        return { structuredContent: { id: "c1", body: "Ready" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "save_comment", args: { issueId: "LIN-1", body: "Ready" } });
+  assert.match(output, /comment:/);
+  assert.match(output, /id: c1/);
+  assert.doesNotMatch(output, /help\[/);
+  assert.doesNotMatch(output, /linear-axi comments list/);
+});
+
+void test("comments create returns compact preview output", async () => {
+  const output = await run(
+    ["comments", "create", "--issue", "LIN-1", "--body", "Ready"],
+    runtime({
+      listTools: async () => [{ name: "get_issue" }],
+      callTool: async (name) => {
+        if (name === "get_issue")
+          return { structuredContent: { identifier: "LIN-1", title: "Task" } };
+        return {
+          structuredContent: {
+            id: "c1",
+            body: "a".repeat(121),
+            author: { name: "Morris" },
+            createdAt: "2026-07-04T12:00:00Z",
+            metadata: "hidden",
+          },
+        };
+      },
+    }),
+  );
+
+  assert.match(output, /comment:/);
+  assert.match(output, /id: c1/);
+  assert.match(output, /author: Morris/);
+  assert.match(output, /created: "2026-07-04T12:00:00Z"/);
+  assert.match(output, /\.\.\. \(truncated, 121 chars total\)/);
+  assert.doesNotMatch(output, /metadata/);
+  assert.match(
+    output,
+    /help\[1\]:\n  Run `linear-axi comments list --issue LIN-1 --full` to show complete comment bodies/,
+  );
+  assert.doesNotMatch(output, /Run `linear-axi comments list --issue LIN-1` to verify comments/);
+});
+
+void test("comments create treats text-only mutation responses as errors", async () => {
+  let mutations = 0;
+  await assert.rejects(
+    () =>
+      run(
+        ["comments", "create", "--issue", "LIN-1", "--body", "Ready"],
+        runtime({
+          listTools: async () => [{ name: "get_issue" }],
+          callTool: async (name: string) => {
+            if (name === "get_issue")
+              return { structuredContent: { identifier: "LIN-1", title: "Task" } };
+            assert.equal(name, "save_comment");
+            mutations++;
+            return { structuredContent: { text: "synthetic-private-text-diagnostic" } };
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert.ok(error instanceof ResourceOperationFailure);
+      assert.equal(error.kind, "operational");
+      assert.equal(error.exitCode, 1);
+      assert.equal(error.message, "LINEAR_OPERATION_UNKNOWN");
+      assert.equal(error.effect, "unknown");
+      assert.equal(error.stage, "OPERATION");
+      assert.equal(error.reason, "UNKNOWN");
+      assert.doesNotMatch(JSON.stringify(error), /synthetic-private-text-diagnostic/);
+      return true;
+    },
+  );
+  assert.equal(mutations, 1);
+});
+
+void test("comments list accepts bare full flag", async () => {
+  let seen;
+  const output = await run(
+    ["comments", "list", "--issue", "LIN-1", "--full"],
+    runtime({
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { comments: [{ id: "c1", body: "Ready", extra: "kept" }] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_comments", args: { issueId: "LIN-1", limit: 50 } });
+  assert.match(output, /comments\[1\]\{id,body,extra\}:/);
+  assert.match(output, /c1,Ready,kept/);
+});
+
+void test("comments list emits pagination hints", async () => {
+  let seen;
+  const output = await run(
+    ["comments", "list", "--issue", "LIN-1", "--orderBy", "createdAt", "--limit", "10", "--full"],
+    runtime({
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return {
+          structuredContent: {
+            comments: [{ id: "c1", body: "Ready" }],
+            pageInfo: { hasNextPage: true, endCursor: "next-comments" },
+          },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, {
+    name: "list_comments",
+    args: { issueId: "LIN-1", limit: 10, orderBy: "createdAt" },
+  });
+  assert.match(output, /count: 1 returned \(more available\)/);
+  assert.match(output, /cursor: next-comments/);
+  assert.match(output, /comments\[1\]\{id,body\}:/);
+  assert.match(
+    output,
+    /Run `linear-axi comments list --issue LIN-1 --limit 10 --orderBy createdAt --full --cursor next-comments` to continue/,
+  );
+});
+
+void test("comments list pagination hints preserve false full flag", async () => {
+  const output = await run(
+    ["comments", "list", "--issue", "LIN-1", "--limit", "10", "--full=false"],
+    runtime({
+      callTool: async () => ({
+        structuredContent: {
+          comments: [{ id: "c1", body: "Ready" }],
+          pageInfo: { hasNextPage: true, endCursor: "next-comments" },
+        },
+      }),
+    }),
+  );
+
+  assert.match(
+    output,
+    /Run `linear-axi comments list --issue LIN-1 --limit 10 --full=false --cursor next-comments` to continue/,
+  );
+  assert.doesNotMatch(output, /--full false/);
+});
+
+void test("comments list marks truncated bodies and shows full escape hatch", async () => {
+  const output = await run(
+    ["comments", "list", "--issue", "LIN-1"],
+    runtime({
+      callTool: async () => ({
+        structuredContent: {
+          comments: [{ id: "c1", body: "a".repeat(121), author: { name: "Morris" } }],
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /count: 1 returned/);
+  assert.match(output, /body\}:/);
+  assert.match(output, /\.\.\. \(truncated, 121 chars total\)/);
+  assert.match(
+    output,
+    /Run `linear-axi comments list --issue LIN-1 --full` to show complete comment bodies/,
+  );
+});
+
+void test("comments reject unsupported parent flags before MCP calls", async () => {
+  let called = false;
+  const client = runtime({
+    callTool: async () => {
+      called = true;
+      return {};
+    },
+  });
+
+  await assert.rejects(
+    () => run(["comments", "list", "--project", "Roadmap"], client),
+    /--project is not supported for comments/,
+  );
+  await assert.rejects(
+    () => run(["comments", "create", "--parentId", "comment-id", "--body", "Reply"], client),
+    /--parentId is not supported for comments/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("comments create requires an issue", async () => {
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["comments", "create", "--body", "Ready"],
+        runtime({
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /comments create requires --issue/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("comments create requires a body before checking the issue", async () => {
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["comments", "create", "--issue", "LIN-1"],
+        runtime({
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /--body or --body-file is required/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("numeric flags reject invalid finite numbers before MCP calls", async () => {
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "list", "--limit", "abc"],
+        runtime({
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "usage");
+      assert.equal(error.exitCode, 2);
+      assert.match(error.message, /--limit must be a finite number/);
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "create", "--title", "Task", "--team", "ENG", "--priority", "Infinity"],
+        runtime({
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /--priority must be a finite number/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("auth login manual prints authorization url without finishing", async () => {
+  let finished = false;
+  const output = await run(
+    ["auth", "login", "--manual"],
+    runtime({
+      listTools: async () => {
+        throw Object.assign(new Error("auth required"), {
+          authorizationUrl:
+            "https://linear.example/authorize?code_challenge=test&state=expected-state",
+        });
+      },
+      finishAuth: async () => {
+        finished = true;
+      },
+    }),
+  );
+
+  assert.match(output, /auth: Linear MCP OAuth authorization required/);
+  assert.match(
+    output,
+    /url: "https:\/\/linear.example\/authorize\?code_challenge=test&state=expected-state"/,
+  );
+  assert.equal(finished, false);
+});
+
+void test("auth login validates localhost callback state before finishing", async () => {
+  const writes: unknown[] = [];
+  const finishedCodes: string[] = [];
+  const login = run(
+    ["auth", "login", "--timeout", "5000"],
+    runtime({
+      stdout: {
+        write: (text: unknown) => {
+          writes.push(text);
+          return true;
+        },
+      },
+      listTools: async () => {
+        throw Object.assign(new Error("auth required"), {
+          authorizationUrl:
+            "https://linear.example/authorize?code_challenge=test&state=expected-state",
+        });
+      },
+      finishAuth: async (code) => {
+        finishedCodes.push(code);
+      },
+    }),
+  );
+
+  await waitFor(() => writes.join("").includes("http://127.0.0.1:14566/oauth/callback"));
+  const rejected = await fetch(
+    "http://127.0.0.1:14566/oauth/callback?code=wrong-code&state=wrong-state",
+  );
+  assert.equal(rejected.status, 400);
+  assert.deepEqual(finishedCodes, []);
+
+  const response = await fetch(
+    "http://127.0.0.1:14566/oauth/callback?code=test-code&state=expected-state",
+  );
+  assert.equal(response.status, 200);
+
+  const output = await login;
+  assert.deepEqual(finishedCodes, ["test-code"]);
+  assert.match(output, /auth: Linear MCP OAuth authorized/);
+});
+
+void test("auth logout clears local OAuth credentials", async () => {
+  let called = false;
+  const output = await run(
+    ["auth", "logout"],
+    runtime({
+      logoutAuth: async () => {
+        called = true;
+        return { removed: true, tokenConfigured: false };
+      },
+    }),
+  );
+
+  assert.equal(called, true);
+  assert.match(output, /auth: Linear MCP OAuth credentials cleared/);
+});
+
+void test("auth logout is an idempotent no-op when credentials are absent", async () => {
+  const output = await run(
+    ["auth", "logout"],
+    runtime({
+      logoutAuth: async () => ({ removed: false, tokenConfigured: true }),
+    }),
+  );
+
+  assert.match(output, /auth: Linear MCP OAuth credentials already absent/);
+  assert.match(output, /note: LINEAR_AXI_MCP_TOKEN or LINEAR_MCP_TOKEN remains configured/);
+});
+
+void test("projects view reads full card resources by native slug without a list fallback", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+  const output = await run(
+    ["projects", "view", "ab12cd34ef56", "--full"],
+    runtime({
+      listTools: async () => [{ name: "get_project" }],
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          structuredContent: {
+            id: "P-ENG-1",
+            name: "IDE",
+            url: "https://linear.app/example/project/ide-ab12cd34ef56",
+            description: `${"x".repeat(1500)} Full description tail`,
+            documents: [{ id: "doc-id", title: "Spec" }],
+          },
+        };
+      },
+    }),
+  );
+  assert.deepEqual(calls, [
+    { name: "get_project", args: { query: "ab12cd34ef56", includeResources: true } },
+  ]);
+  assert.match(output, /project:/);
+  assert.match(output, /Full description tail/);
+  assert.match(output, /Spec/);
+});
+
+void test("teams view reads one matching team using the query schema", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+  const output = await run(
+    ["teams", "view", "ENG", "--full"],
+    runtime({
+      listTools: async () => [{ name: "get_team" }],
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          structuredContent: {
+            id: "team-id",
+            key: "ENG",
+            name: "Tools",
+            description: "Team description",
+          },
+        };
+      },
+    }),
+  );
+  assert.deepEqual(calls, [{ name: "get_team", args: { query: "ENG" } }]);
+  assert.match(output, /team:/);
+  assert.match(output, /Team description/);
+});
+
+void test("full project view refuses unavailable detail instead of returning a truncated list", async () => {
+  let called = false;
+  await assert.rejects(
+    () =>
+      run(
+        ["projects", "view", "project-id", "--full"],
+        runtime({
+          listTools: async () => [{ name: "list_projects" }],
+          callTool: async () => {
+            called = true;
+            return { structuredContent: { projects: [] } };
+          },
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof Error && "toolUnavailable" in error && error.toolUnavailable === true,
+  );
+  assert.equal(called, false);
+});
+
+void test("issues view full returns only matching issue detail", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+  const output = await run(
+    ["issues", "view", "LIN-1", "--full"],
+    runtime({
+      listTools: async () => [{ name: "get_issue" }],
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          structuredContent: {
+            id: "issue-id",
+            identifier: "LIN-1",
+            title: "Right",
+            description: "Full body",
+          },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(calls, [{ name: "get_issue", args: { id: "LIN-1" } }]);
+  assert.match(output, /title: Right/);
+  assert.match(output, /description: Full body/);
+  assert.doesNotMatch(output, /Wrong/);
+});
+
+void test("issues view compact output previews long descriptions", async () => {
+  const description = `${"a".repeat(1001)} tail`;
+  const output = await run(
+    ["issues", "view", "LIN-1"],
+    runtime({
+      listTools: async () => [{ name: "get_issue" }],
+      callTool: async () => ({
+        structuredContent: {
+          identifier: "LIN-1",
+          title: "Right",
+          description,
+          assignee: { name: "Morris" },
+          state: { name: "Todo" },
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /issue:/);
+  assert.match(output, /description: ".+\.\.\. \(truncated, 1006 chars total\)"/);
+  assert.match(
+    output,
+    /help\[1\]:\n  Run `linear-axi issues view LIN-1 --full` to show the complete issue/,
+  );
+});
+
+void test("issues view compact output includes short descriptions without noisy help", async () => {
+  const output = await run(
+    ["issues", "view", "LIN-1"],
+    runtime({
+      listTools: async () => [{ name: "get_issue" }],
+      callTool: async () => ({
+        structuredContent: {
+          identifier: "LIN-1",
+          title: "Right",
+          description: "Short body",
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /description: Short body/);
+  assert.doesNotMatch(output, /--full/);
+});
+
+void test("issues view missing issue returns not found", async () => {
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "view", "LIN-404"],
+        runtime({
+          listTools: async () => [{ name: "get_issue" }],
+          callTool: async () => ({ structuredContent: {} }),
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "not_found");
+      assert.equal(error.code, "NOT_FOUND");
+      assert.equal(error.exitCode, 1);
+      assert.match(error.message, /issue not found: LIN-404/);
+      return true;
+    },
+  );
+});
+
+void test("issues view treats blank issue-shaped responses as not found", async () => {
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "view", "LIN-404"],
+        runtime({
+          listTools: async () => [{ name: "get_issue" }],
+          callTool: async () => ({
+            structuredContent: { identifier: "", title: "", state: "", assignee: "" },
+          }),
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "not_found");
+      assert.equal(error.code, "NOT_FOUND");
+      assert.match(error.message, /issue not found: LIN-404/);
+      return true;
+    },
+  );
+});
+
+void test("issues view falls back to exact list match when get_issue is unavailable", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+  const output = await run(
+    ["issues", "view", "LIN-1", "--full"],
+    runtime({
+      listTools: async () => [{ name: "list_issues" }],
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        return {
+          structuredContent: {
+            issues: [
+              { id: "other", identifier: "LIN-10", title: "Wrong" },
+              { id: "issue-id", identifier: "LIN-1", title: "Right" },
+            ],
+          },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(calls, [{ name: "list_issues", args: { query: "LIN-1", limit: 10 } }]);
+  assert.match(output, /title: Right/);
+  assert.doesNotMatch(output, /Wrong/);
+});
+
+void test("issues view all is rejected instead of returning an empty detail", async () => {
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "view", "all"],
+        runtime({
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /issues view expects one issue id/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("documents create and update use create or update document tools", async () => {
+  let seen;
+  await run(
+    ["documents", "create", "--title", "Spec", "--project", "Roadmap"],
+    runtime({
+      listTools: async () => [{ name: "create_document" }, { name: "update_document" }],
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { id: "doc1", title: "Spec" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "create_document", args: { title: "Spec", project: "Roadmap" } });
+
+  const updateOutput = await run(
+    ["documents", "update", "--id", "doc1", "--content", "Updated"],
+    runtime({
+      listTools: async () => [
+        { name: "get_document" },
+        { name: "create_document" },
+        { name: "update_document" },
+      ],
+      callTool: async (name, args) => {
+        if (name === "get_document") return { structuredContent: { id: "doc1", title: "Spec" } };
+        seen = { name, args };
+        return { structuredContent: { id: "doc1", title: "Spec" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "update_document", args: { id: "doc1", content: "Updated" } });
+  assert.doesNotMatch(updateOutput, /help\[/);
+});
+
+void test("explicit create commands reject id before MCP calls", async () => {
+  for (const [args, message] of [
+    [
+      ["issues", "create", "--id", "LIN-1", "--title", "Task", "--team", "ENG"],
+      /creating an issue does not accept --id/,
+    ],
+    [
+      ["projects", "create", "--id", "p1", "--name", "Roadmap", "--team", "ENG"],
+      /creating a project does not accept --id/,
+    ],
+    [
+      ["documents", "create", "--id", "doc1", "--title", "Spec"],
+      /creating a document does not accept --id/,
+    ],
+    [
+      ["milestones", "create", "--project", "Roadmap", "--id", "m1", "--name", "Beta"],
+      /creating a milestone does not accept --id/,
+    ],
+  ] satisfies Array<[string[], RegExp]>) {
+    let called = false;
+
+    await assert.rejects(
+      () =>
+        run(
+          args,
+          runtime({
+            callTool: async () => {
+              called = true;
+              return {};
+            },
+          }),
+        ),
+      (error: unknown) => {
+        assert(error instanceof AxiError);
+        assert.equal(error.kind, "usage");
+        assert.equal(error.exitCode, 2);
+        assert.match(error.message, message);
+        return true;
+      },
+    );
+
+    assert.equal(called, false);
+  }
+});
+
+void test("documents view uses get_document and rewrites MCP-native truncation hints", async () => {
+  const output = await run(
+    ["documents", "view", "doc1"],
+    runtime({
+      listTools: async () => [{ name: "get_document" }],
+      callTool: async (name, args) => {
+        assert.equal(name, "get_document");
+        assert.deepEqual(args, { id: "doc1" });
+        return {
+          structuredContent: {
+            id: "doc1",
+            title: "Spec",
+            content: "short preview (truncated, use `get_document` for full description)",
+          },
+        };
+      },
+    }),
+  );
+
+  assert.match(output, /document:/);
+  assert.match(output, /title: Spec/);
+  assert.match(output, /linear-axi documents view doc1 --full/);
+  assert.doesNotMatch(output, /get_document/);
+});
+
+void test("document mutations report bounded validation errors without disclosing backend text", async () => {
+  for (const structured of [false, true]) {
+    const error = {
+      error: "invalid_request",
+      message: "content must be shorter than or equal to 250000 characters.",
+      status: 400,
+    };
+    await assert.rejects(
+      () =>
+        run(
+          [
+            "documents",
+            "create",
+            "--title",
+            "Original Request",
+            "--issue",
+            "ENG-414",
+            "--content",
+            "Body",
+          ],
+          runtime({
+            listTools: async () => [{ name: "save_document" }],
+            callTool: async () => ({
+              isError: true,
+              ...(structured
+                ? { structuredContent: error }
+                : { content: [{ type: "text", text: JSON.stringify(error) }] }),
+            }),
+          }),
+        ),
+      (failure: unknown) => {
+        assert(failure instanceof Error);
+        assert.equal(failure.message, "LINEAR_OPERATION_VALIDATION_FAILED");
+        assert.equal(JSON.stringify(failure).includes(error.message), false);
+        return true;
+      },
+    );
+  }
+});
+
+void test("documents list sends the document-specific parent filters", async () => {
+  let seen;
+  await run(
+    ["documents", "list", "--project", "Roadmap", "--team", "ENG"],
+    runtime({
+      listTools: async () => [{ name: "list_documents" }],
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { documents: [] } };
+      },
+    }),
+  );
+  assert.deepEqual(seen, {
+    name: "list_documents",
+    args: { limit: 50, projectId: "Roadmap", teamId: "ENG" },
+  });
+});
+void test("documents create returns compact mutation output", async () => {
+  const output = await run(
+    ["documents", "create", "--title", "Spec", "--team", "ENG", "--content", "Body"],
+    runtime({
+      listTools: async () => [{ name: "create_document" }],
+      callTool: async () => ({
+        structuredContent: {
+          id: "doc1",
+          title: "Spec",
+          content: "Body",
+          url: "https://linear/doc1",
+          extra: "hidden",
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /document:/);
+  assert.match(output, /id: doc1/);
+  assert.match(output, /title: Spec/);
+  assert.doesNotMatch(output, /extra/);
+  assert.doesNotMatch(output, /help\[/);
+  assert.doesNotMatch(output, /linear-axi documents view doc1/);
+});
+
+void test("projects create wraps create_project and returns compact output", async () => {
+  let seen;
+  const output = await run(
+    ["projects", "create", "--name", "Roadmap", "--team", "ENG", "--summary", "Plan"],
+    runtime({
+      listTools: async () => [{ name: "create_project" }],
+      callTool: async (name, args) => {
+        if (name === "list_projects") return { structuredContent: { projects: [] } };
+        seen = { name, args };
+        return {
+          structuredContent: {
+            id: "p1",
+            name: "Roadmap",
+            status: { name: "Planned" },
+            team: { name: "ENG" },
+            extra: "hidden",
+          },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, {
+    name: "create_project",
+    args: { name: "Roadmap", team: "ENG", summary: "Plan" },
+  });
+  assert.match(output, /project:/);
+  assert.match(output, /id: p1/);
+  assert.doesNotMatch(output, /extra/);
+  assert.doesNotMatch(output, /help\[/);
+});
+
+void test("projects create maps team when falling back to save_project create shape", async () => {
+  let seen;
+  const output = await run(
+    ["projects", "create", "--name", "Roadmap", "--team", "ENG", "--summary", "Plan"],
+    runtime({
+      listTools: async () => [{ name: "save_project" }],
+      callTool: async (name, args) => {
+        if (name === "list_projects") return { structuredContent: { projects: [] } };
+        seen = { name, args };
+        return {
+          structuredContent: {
+            id: "p1",
+            name: "Roadmap",
+            status: { name: "Planned" },
+            teams: [{ name: "ENG" }],
+          },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, {
+    name: "save_project",
+    args: { name: "Roadmap", summary: "Plan", setTeams: ["ENG"] },
+  });
+  assert.match(output, /project:/);
+  assert.match(output, /team: ENG/);
+  assert.doesNotMatch(output, /help\[/);
+});
+
+void test("projects create maps team when retrying unknown create_project with save_project", async () => {
+  const seen: Array<{ name: string; args: InputRecord }> = [];
+  await run(
+    ["projects", "create", "--name", "Roadmap", "--teamId", "team-1", "--summary", "Plan"],
+    runtime({
+      callTool: async (name, args) => {
+        if (name === "list_projects") return { structuredContent: { projects: [] } };
+        seen.push({ name, args });
+        if (name === "create_project") throw new Error("unknown tool: create_project");
+        return { structuredContent: { id: "p1", name: "Roadmap" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, [
+    { name: "create_project", args: { name: "Roadmap", teamId: "team-1", summary: "Plan" } },
+    { name: "save_project", args: { name: "Roadmap", summary: "Plan", setTeams: ["team-1"] } },
+  ]);
+});
+
+void test("projects update maps team when update falls back to save_project", async () => {
+  let seen;
+  const updateOutput = await run(
+    ["projects", "update", "--id", "p1", "--team", "ENG", "--summary", "Plan"],
+    runtime({
+      listTools: async () => [{ name: "save_project" }],
+      callTool: async (name, args) => {
+        if (name === "list_projects")
+          return { structuredContent: { projects: [{ id: "p1", name: "Roadmap" }] } };
+        seen = { name, args };
+        return { structuredContent: { id: "p1", name: "Roadmap" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, {
+    name: "save_project",
+    args: { id: "p1", summary: "Plan", addTeams: ["ENG"] },
+  });
+  assert.doesNotMatch(updateOutput, /help\[/);
+});
+
+void test("projects update validates with get_project before mutation", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+
+  await run(
+    ["projects", "update", "--id", "5bf051dd-8c53-4fd9-a606-58dbeae18ec4", "--summary", "Plan"],
+    runtime({
+      listTools: async () => [{ name: "get_project" }, { name: "save_project" }],
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "get_project") {
+          return {
+            structuredContent: { id: "5bf051dd-8c53-4fd9-a606-58dbeae18ec4", name: "Roadmap" },
+          };
+        }
+        return {
+          structuredContent: { id: "5bf051dd-8c53-4fd9-a606-58dbeae18ec4", name: "Roadmap" },
+        };
+      },
+    }),
+  );
+
+  assert.deepEqual(calls, [
+    { name: "get_project", args: { query: "5bf051dd-8c53-4fd9-a606-58dbeae18ec4" } },
+    { name: "save_project", args: { id: "5bf051dd-8c53-4fd9-a606-58dbeae18ec4", summary: "Plan" } },
+  ]);
+});
+
+void test("projects update falls back to list_projects after get_project mismatch", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+
+  await run(
+    ["projects", "update", "--id", "roadmap-slug", "--summary", "Plan"],
+    runtime({
+      listTools: async () => [
+        { name: "get_project" },
+        { name: "list_projects" },
+        { name: "save_project" },
+      ],
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "get_project") return { structuredContent: { id: "other", name: "Other" } };
+        if (name === "list_projects") {
+          return { structuredContent: { projects: [{ slugId: "roadmap-slug", name: "Roadmap" }] } };
+        }
+        return { structuredContent: { slugId: "roadmap-slug", name: "Roadmap" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(calls, [
+    { name: "get_project", args: { query: "roadmap-slug" } },
+    { name: "list_projects", args: { query: "roadmap-slug", limit: 10 } },
+    { name: "save_project", args: { id: "roadmap-slug", summary: "Plan" } },
+  ]);
+});
+
+void test("projects update falls back to list_projects after blank project detail", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+  let toolDiscoveryCalls = 0;
+
+  await run(
+    ["projects", "update", "--id", "roadmap-slug", "--summary", "Plan"],
+    runtime({
+      listTools: async () => {
+        toolDiscoveryCalls += 1;
+        return [{ name: "get_project" }, { name: "list_projects" }, { name: "save_project" }];
+      },
+      callTool: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "get_project") return { structuredContent: {} };
+        if (name === "list_projects") {
+          return { structuredContent: { projects: [{ slugId: "roadmap-slug", name: "Roadmap" }] } };
+        }
+        return { structuredContent: { slugId: "roadmap-slug", name: "Roadmap" } };
+      },
+    }),
+  );
+
+  assert.deepEqual(calls, [
+    { name: "get_project", args: { query: "roadmap-slug" } },
+    { name: "list_projects", args: { query: "roadmap-slug", limit: 10 } },
+    { name: "save_project", args: { id: "roadmap-slug", summary: "Plan" } },
+  ]);
+  assert.equal(toolDiscoveryCalls, 2);
+});
+
+void test("milestones create treats text-only mutation responses as errors", async () => {
+  await assert.rejects(
+    () =>
+      run(
+        ["milestones", "create", "--project", "Roadmap", "--name", "Beta"],
+        runtime({
+          callTool: async () => ({ structuredContent: { text: "Milestone name is required" } }),
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "operational");
+      assert.equal(error.exitCode, 1);
+      assert.match(error.message, /Milestone name is required/);
+      return true;
+    },
+  );
+});
+
+void test("milestones update rejects an empty milestone array before mutation", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+
+  await assert.rejects(
+    () =>
+      run(
+        [
+          "milestones",
+          "update",
+          "--project",
+          "Roadmap",
+          "--id",
+          "m1",
+          "--targetDate",
+          "2026-09-01",
+        ],
+        runtime({
+          callTool: async (name, args) => {
+            calls.push({ name, args });
+            if (name === "get_milestone") return { structuredContent: [] };
+            return { structuredContent: { id: "m1" } };
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "not_found");
+      assert.equal(error.code, "NOT_FOUND");
+      assert.match(error.message, /milestone not found: m1/);
+      return true;
+    },
+  );
+
+  assert.deepEqual(calls, [{ name: "get_milestone", args: { project: "Roadmap", query: "m1" } }]);
+});
+
+void test("mutation text responses become structured errors", async () => {
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "create", "--title", "Task", "--team", "ENG", "--project", "Wrong"],
+        runtime({
+          callTool: async (name) => {
+            if (name === "list_issues") return { structuredContent: { issues: [] } };
+            return { structuredContent: { text: "Project not in same team as issue" } };
+          },
+        }),
+      ),
+    /Project not in same team as issue/,
+  );
+});
+
+void test("issues create rejects an existing issue before mutation", async () => {
+  let mutated = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "create", "--title", "Task", "--team", "ENG", "--project", "Roadmap"],
+        runtime({
+          callTool: async (name) => {
+            if (name === "list_issues") {
+              return {
+                structuredContent: {
+                  issues: [{ identifier: "LIN-1", title: "Task", team: { key: "ENG" } }],
+                },
+              };
+            }
+            mutated = true;
+            return {};
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "operational");
+      assert.match(error.message, /issue already exists: LIN-1 Task/);
+      assert.deepEqual(error.help, [
+        "Run `linear-axi issues view LIN-1` to inspect the existing issue",
+        'Run `linear-axi issues update --id LIN-1 --state "<state>"` to edit it',
+        "Run `linear-axi issues create --title 'Task copy' --team ENG` to create a distinct issue",
+      ]);
+      return true;
+    },
+  );
+
+  assert.equal(mutated, false);
+});
+
+void test("issues update rejects a missing issue before mutation", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+
+  await assert.rejects(
+    () =>
+      run(
+        ["issues", "update", "--id", "LIN-404", "--state", "Done"],
+        runtime({
+          listTools: async () => [{ name: "get_issue" }],
+          callTool: async (name, args) => {
+            calls.push({ name, args });
+            return { structuredContent: {} };
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "not_found");
+      assert.equal(error.code, "NOT_FOUND");
+      assert.match(error.message, /issue not found: LIN-404/);
+      return true;
+    },
+  );
+
+  assert.deepEqual(calls, [{ name: "get_issue", args: { id: "LIN-404" } }]);
+});
+
+void test("projects create rejects an existing project before mutation", async () => {
+  let mutated = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["projects", "create", "--name", "Roadmap", "--team", "ENG"],
+        runtime({
+          callTool: async (name) => {
+            if (name === "list_projects") {
+              return {
+                structuredContent: {
+                  projects: [{ id: "p1", name: "Roadmap", team: { key: "ENG" } }],
+                },
+              };
+            }
+            mutated = true;
+            return {};
+          },
+        }),
+      ),
+    /project already exists: p1 Roadmap/,
+  );
+
+  assert.equal(mutated, false);
+});
+
+void test("projects update rejects a missing project before mutation", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+
+  await assert.rejects(
+    () =>
+      run(
+        ["projects", "update", "--id", "missing", "--summary", "Plan"],
+        runtime({
+          callTool: async (name, args) => {
+            calls.push({ name, args });
+            return { structuredContent: { projects: [] } };
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "not_found");
+      assert.equal(error.code, "NOT_FOUND");
+      assert.match(error.message, /project not found: missing/);
+      return true;
+    },
+  );
+
+  assert.deepEqual(calls, [{ name: "list_projects", args: { query: "missing", limit: 10 } }]);
+});
+
+void test("projects update rejects a missing project from get_project before mutation", async () => {
+  const calls: Array<{ name: string; args: InputRecord }> = [];
+
+  await assert.rejects(
+    () =>
+      run(
+        ["projects", "update", "--id", "missing", "--summary", "Plan"],
+        runtime({
+          listTools: async () => [{ name: "get_project" }, { name: "save_project" }],
+          callTool: async (name, args) => {
+            calls.push({ name, args });
+            return { content: [{ type: "text", text: "Error: Project not found" }], isError: true };
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "not_found");
+      assert.equal(error.code, "NOT_FOUND");
+      assert.match(error.message, /project not found: missing/);
+      return true;
+    },
+  );
+
+  assert.deepEqual(calls, [{ name: "get_project", args: { query: "missing" } }]);
+});
+
+void test("resource group help is available before choosing a subcommand", async () => {
+  const output = await run(["projects", "--help"], runtime({}));
+
+  assert.match(output, /usage: linear-axi projects <subcommand> \[flags\]/);
+  assert.match(output, /subcommands\[4\]:\n  list, view, create, update/);
+  assert.match(
+    output,
+    /flags\{list\}:\n  --query <text>, --team <team>, --state <state>, --limit <n> \(default 50\), --fields <a,b,c>, --full/,
+  );
+  assert.match(
+    output,
+    /flags\{create\}:\n  --name <text> \(required\), --team <team> or --teamId <id> \(required\)/,
+  );
+  assert.match(output, /flags\{update\}:\n  --id <id> \(required\)/);
+});
+
+void test("issue group help summarizes list view create and update flags", async () => {
+  const output = await run(["issues", "--help"], runtime({}));
+
+  assert.match(output, /flags\{list\}:/);
+  assert.match(output, /--assignee <user>.*--fields <a,b,c>.*--full/);
+  assert.match(output, /flags\{view\}:\n  --full \(show complete description without truncation\)/);
+  assert.match(
+    output,
+    /flags\{create\}:\n  --title <text> \(required\), --team <team> \(required\)/,
+  );
+  assert.match(output, /flags\{update\}:\n  --id <id> \(required\)/);
+});
+
+void test("statuses list uses issue status tool", async () => {
+  let seen;
+  await run(
+    ["statuses", "list", "--team", "ENG", "--full"],
+    runtime({
+      listTools: async () => [{ name: "list_issue_statuses" }],
+      callTool: async (name, args) => {
+        seen = { name, args };
+        return { structuredContent: { statuses: [{ id: "s1", name: "Done" }] } };
+      },
+    }),
+  );
+
+  assert.deepEqual(seen, { name: "list_issue_statuses", args: { team: "ENG" } });
+});
+
+void test("statuses list does not fall back to status update tool", async () => {
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["statuses", "list", "--team", "ENG"],
+        runtime({
+          listTools: async () => [{ name: "get_status_updates" }],
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    /Linear MCP server does not expose list_issue_statuses/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("statuses list surfaces missing issue status tool without fallback", async () => {
+  let calls = 0;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["statuses", "list", "--team", "ENG"],
+        runtime({
+          callTool: async (name) => {
+            calls += 1;
+            assert.equal(name, "list_issue_statuses");
+            throw new Error("unknown tool: list_issue_statuses");
+          },
+        }),
+      ),
+    /unknown tool: list_issue_statuses/,
+  );
+
+  assert.equal(calls, 1);
+});
+
+void test("statuses list compacts status arrays from envelope", async () => {
+  const output = await run(
+    ["statuses", "list", "--team", "ENG"],
+    runtime({
+      listTools: async () => [{ name: "list_issue_statuses" }],
+      callTool: async () => ({
+        structuredContent: { statuses: [{ id: "s1", name: "Done", state: "completed" }] },
+      }),
+    }),
+  );
+
+  assert.match(output, /statuses\[1\]\{id,name,state\}:/);
+  assert.match(output, /s1,Done,completed/);
+});
+
+void test("statuses list emits pagination hints", async () => {
+  const output = await run(
+    ["statuses", "list", "--team", "ENG", "--limit", "1", "--orderBy", "createdAt"],
+    runtime({
+      listTools: async () => [{ name: "list_issue_statuses" }],
+      callTool: async () => ({
+        structuredContent: {
+          statuses: [{ id: "s1", name: "Todo", state: "unstarted" }],
+          pageInfo: { hasNextPage: true, endCursor: "next-statuses" },
+        },
+      }),
+    }),
+  );
+
+  assert.match(output, /count: 1 returned \(more available\)/);
+  assert.match(output, /cursor: next-statuses/);
+  assert.match(output, /statuses\[1\]\{id,name,state\}:/);
+  assert.match(
+    output,
+    /Run `linear-axi statuses list --team ENG --limit 1 --orderBy createdAt --cursor next-statuses` to continue/,
+  );
+});
+
+void test("statuses list does not fall back to status updates", async () => {
+  await assert.rejects(
+    () =>
+      run(
+        ["statuses", "list", "--team", "ENG"],
+        runtime({
+          listTools: async () => [{ name: "get_status_updates" }],
+        }),
+      ),
+    /Linear MCP server does not expose list_issue_statuses/,
+  );
+});
+
+void test("unsupported top-level resources use generic unknown-command handling without MCP calls", async () => {
+  let called = false;
+
+  await assert.rejects(
+    () =>
+      run(
+        ["releases", "list"],
+        runtime({
+          callTool: async () => {
+            called = true;
+            return {};
+          },
+        }),
+      ),
+    (error: unknown) => {
+      assert(error instanceof AxiError);
+      assert.equal(error.kind, "usage");
+      assert.match(error.message, /unknown command: releases/);
+      assert(error instanceof AxiError);
+      assert.deepEqual(error.help, [
+        "Run `linear-axi`",
+        'Run `linear-axi init --project "<project>"`',
+        "Run `linear-axi issues list`",
+        "Run `linear-axi projects list`",
+        "Run `linear-axi teams list`",
+      ]);
+      return true;
+    },
+  );
+
+  assert.equal(called, false);
+});
+
+void test("main uses SDK unknown-command handling without MCP calls", async () => {
+  const writes: unknown[] = [];
+  const originalExitCode = process.exitCode;
+  let called = false;
+  process.exitCode = undefined;
+  try {
+    await main(["releases", "list"], {
+      cwd: process.cwd(),
+      env: {},
+      stdout: {
+        write: (text: unknown) => {
+          writes.push(text);
+          return true;
+        },
+      },
+      client: {
+        close: async () => {},
+        listTools: async () => [],
+        callTool: async () => {
+          called = true;
+          return {};
+        },
+      },
+    });
+  } finally {
+    process.exitCode = originalExitCode;
+  }
+
+  const output = writes.join("");
+  assert.equal(called, false);
+  assert.match(output, /error: "Unknown command: releases"/);
+  assert.match(output, /code: VALIDATION_ERROR/);
+  assert.match(output, /Run `--help` to see available commands/);
+  assert.doesNotMatch(output, /type:/);
+});
+
+void test("unsupported subcommands use generic unknown-subcommand handling without MCP calls", async () => {
+  let called = false;
+  const client = runtime({
+    callTool: async () => {
+      called = true;
+      return {};
+    },
+  });
+
+  await assert.rejects(
+    () => run(["statuses", "save", "--type", "project", "--project", "Roadmap"], client),
+    /unknown statuses command: save/,
+  );
+  await assert.rejects(
+    () => run(["statuses", "delete", "--type", "project", "--id", "status-id"], client),
+    /unknown statuses command: delete/,
+  );
+  await assert.rejects(
+    () => run(["issues", "save", "--title", "Task"], client),
+    /unknown issues command: save/,
+  );
+  await assert.rejects(
+    () => run(["projects", "save", "--name", "Roadmap"], client),
+    /unknown projects command: save/,
+  );
+  await assert.rejects(
+    () => run(["documents", "save", "--title", "Spec"], client),
+    /unknown documents command: save/,
+  );
+  await assert.rejects(
+    () => run(["comments", "save", "--issue", "LIN-1"], client),
+    /unknown comments command: save/,
+  );
+  await assert.rejects(
+    () => run(["milestones", "save", "--project", "Roadmap"], client),
+    /unknown milestones command: save/,
+  );
+
+  assert.equal(called, false);
+});
+
+void test("mcp-shaped tools command is not public cli", async () => {
+  await assert.rejects(() => run(["tools", "list"], runtime({})), /unknown command: tools/);
+});
+
+async function waitFor(predicate: () => boolean) {
+  const started = Date.now();
+  while (Date.now() - started < 3000) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("timed out waiting for condition");
+}
+
+async function runMain(
+  args: string[],
+  overrides: Omit<Partial<MainContext>, "client"> & { client?: Partial<McpClientLike> } = {},
+) {
+  const writes: unknown[] = [];
+  const originalExitCode = process.exitCode;
+  process.exitCode = undefined;
+  try {
+    const { client, ...context } = overrides;
+    await main(args, {
+      cwd: process.cwd(),
+      env: {},
+      stdout: {
+        write: (text: unknown) => {
+          writes.push(text);
+          return true;
+        },
+      },
+      ...context,
+      ...(client ? { client: fixtureClient(client) } : {}),
+    });
+    return writes.join("");
+  } finally {
+    process.exitCode = originalExitCode;
+  }
+}
+
+function fixtureClient(overrides: Partial<McpClientLike>): McpClientLike {
+  return {
+    close: async () => {},
+    listTools: async () => [],
+    callTool: async (name) => {
+      throw new Error(`Unexpected fixture callTool: ${name}`);
+    },
+    ...overrides,
+  };
+}
+
+function runtime({
+  cwd = process.cwd(),
+  stdout = process.stdout,
+  ...client
+}: Partial<McpClientLike> & Partial<Pick<Runtime, "cwd" | "stdout">>): Runtime {
+  return {
+    cwd,
+    env: { PI_CODING_AGENT_DIR: join(tmpdir(), "linear-axi-test-no-config") },
+    binPath: "/tmp/linear-axi",
+    mcpUrl: "https://mcp.linear.app/mcp",
+    stdout,
+    client: fixtureClient(client),
+  };
+}
+
+async function makeNoGitTempDir() {
+  for (const parent of [tmpdir(), "/var/tmp", "/dev/shm"]) {
+    if (await hasGitAncestor(parent)) continue;
+    try {
+      return await mkdtemp(join(parent, "linear-axi-no-git-"));
+    } catch {
+      // Try the next conventional temp directory.
+    }
+  }
+  return null;
+}
+
+async function hasGitAncestor(path: string) {
+  let current = resolve(path);
+  for (;;) {
+    try {
+      await stat(join(current, ".git"));
+      return true;
+    } catch {
+      // Keep walking.
+    }
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
