@@ -1,5 +1,6 @@
 packages:
   - "integrations/*"
+  - "integrations/linear/packages/linear-axi"
   - "packages/*"
   - "src/extensions/**"
   - "src/plugins/*"

@@ -1,0 +1,69 @@
+{
+  "name": "@nikolauska/linear-axi",
+  "version": "0.3.1",
+  "private": true,
+  "description": "AXI wrapper for the Linear MCP server",
+  "keywords": [
+    "agent",
+    "agent-skills",
+    "axi",
+    "cli",
+    "linear",
+    "mcp",
+    "pi-package"
+  ],
+  "homepage": "https://github.com/nikolauska/linear-axi#readme",
+  "bugs": {
+    "url": "https://github.com/nikolauska/linear-axi/issues"
+  },
+  "license": "MIT",
+  "author": "nikolauska",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexshpunt/pi-agent-ide.git",
+    "directory": "integrations/linear/packages/linear-axi"
+  },
+  "bin": {
+    "linear-axi": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "imports": {
+    "#axi/*": "./src/*",
+    "#axi-test/*": "./test/*",
+    "#axi-package": "./package.json"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "axi-sdk-js": "^0.1.8",
+    "graphql": "17.0.2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@toon-format/toon-v4": "npm:@toon-format/toon@4.4.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "0.25.12",
+    "typebox": "1.3.27",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

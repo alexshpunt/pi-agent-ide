@@ -17,6 +17,11 @@ export default defineConfig({
       "integrations/**/*.test.ts",
       "scripts/**/*.test.ts",
     ],
-    exclude: ["**/node_modules/**", "**/integration/**", "integrations/**/*.integration.test.ts"],
+    exclude: [
+      "**/node_modules/**",
+      "**/integration/**",
+      "integrations/**/*.integration.test.ts",
+      "integrations/linear/packages/linear-axi/test/**",
+    ],
   },
 });

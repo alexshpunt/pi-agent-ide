@@ -165,6 +165,13 @@ jobs:
         id: unit-tests
         run: pnpm test:unit:report
 
+      - name: Test the Linear package and AXI
+        if: needs.plan.outputs.full == 'true'
+        run: |
+          pnpm --filter pi-agent-linear run test:node
+          pnpm --filter pi-agent-linear run test:axi
+          pnpm --filter pi-agent-linear run check:package
+
       - name: Upload unit test report
         if: needs.plan.outputs.full == 'true' && (always() && hashFiles('.agents/tmp/test-results/unit.xml') != '')
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
