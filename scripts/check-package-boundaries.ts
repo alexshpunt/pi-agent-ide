@@ -4,11 +4,11 @@ import path from "node:path";
 import { findRepositoryRoot } from "#scripts/repository-root.ts";
 
 const root = findRepositoryRoot(import.meta.url);
-const packageRoots = collectFiles(
-  [path.join(root, "packages"), path.join(root, "src")],
-  "package.json",
-).map((file) => path.dirname(file));
-const sourceFiles = collectSourceFiles([path.join(root, "packages"), path.join(root, "src")]);
+const workspaceRoots = ["packages", "src", "integrations"].map((directory) =>
+  path.join(root, directory),
+);
+const packageRoots = collectFiles(workspaceRoots, "package.json").map((file) => path.dirname(file));
+const sourceFiles = collectSourceFiles(workspaceRoots);
 const violations: string[] = [];
 
 for (const file of sourceFiles) {

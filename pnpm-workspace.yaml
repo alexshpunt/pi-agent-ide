@@ -1,4 +1,5 @@
 packages:
+  - "integrations/*"
   - "packages/*"
   - "src/extensions/**"
   - "src/plugins/*"

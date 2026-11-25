@@ -1,0 +1,85 @@
+{
+  "name": "pi-agent-github",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub resources for the Pi coding agent: issues, pull requests, reviews, Discussions, CI context and REST/GraphQL with local user, token and GitHub App authentication",
+  "keywords": [
+    "agent-tools",
+    "ai-agent",
+    "automation",
+    "code-review",
+    "codemode",
+    "developer-tools",
+    "github",
+    "github-api",
+    "github-app",
+    "github-automation",
+    "github-discussions",
+    "github-issues",
+    "graphql",
+    "pi",
+    "pi-agent",
+    "pi-agent-ide",
+    "pi-coding-agent",
+    "pi-extension",
+    "pi-package",
+    "pull-requests",
+    "rest-api",
+    "typescript"
+  ],
+  "homepage": "https://github.com/alexshpunt/pi-agent-ide/tree/main/integrations/github#readme",
+  "bugs": {
+    "url": "https://github.com/alexshpunt/pi-agent-ide/issues"
+  },
+  "license": "MIT",
+  "author": "Alex Shpunt",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexshpunt/pi-agent-ide.git",
+    "directory": "integrations/github"
+  },
+  "files": [
+    "src",
+    "docs",
+    "assets/banner.png",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
+  "imports": {
+    "#github/*": "./src/*",
+    "#github-package": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pi-agent-ide": "workspace:^1.1.0",
+    "proper-lockfile": "^4.1.2"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.5.2",
+    "@earendil-works/pi-coding-agent": "1.5.2",
+    "@earendil-works/pi-tui": "1.5.2",
+    "@types/node": "^24.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "pi-coding-agent-test": "0.1.8",
+    "typebox": "1.3.27",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "image": "https://raw.githubusercontent.com/alexshpunt/pi-agent-ide/main/integrations/github/assets/banner.png"
+  }
+}

@@ -9,8 +9,8 @@ import { findRepositoryRoot } from "#scripts/repository-root.ts";
  * made loading pi-agent-ide from sources about twice as slow.
  */
 const root = findRepositoryRoot(import.meta.url);
-const scanned = ["src", "packages", "tests", "scripts", "benchmarks"].map((directory) =>
-  path.join(root, directory),
+const scanned = ["src", "packages", "integrations", "tests", "scripts", "benchmarks"].map(
+  (directory) => path.join(root, directory),
 );
 const manifests = new Map<string, Record<string, unknown> | null>();
 const violations: string[] = [];

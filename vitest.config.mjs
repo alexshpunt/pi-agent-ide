@@ -14,8 +14,9 @@ export default defineConfig({
       "src/**/*.test.ts",
       "tests/**/*.test.ts",
       "packages/**/*.test.ts",
+      "integrations/**/*.test.ts",
       "scripts/**/*.test.ts",
     ],
-    exclude: ["**/node_modules/**", "**/integration/**"],
+    exclude: ["**/node_modules/**", "**/integration/**", "integrations/**/*.integration.test.ts"],
   },
 });
