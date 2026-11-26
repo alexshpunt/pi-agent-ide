@@ -35,7 +35,7 @@ export function parseRemoteProject(source: string): { target: string; path: stri
   return { target: url.hostname, path: filePath };
 }
 
-async function scope(filename: string): Promise<SshTarget[]> {
+async function scope(filename: string): Promise<(SshTarget | { id: string; unsupported: true })[]> {
   let source: string;
   try {
     source = await readFile(filename, "utf8");
@@ -53,34 +53,36 @@ async function scope(filename: string): Promise<SshTarget[]> {
     )
       throw new Error();
     const seen = new Set<string>();
-    return (data as { targets: unknown[] }).targets.flatMap((value) => {
-      if (!value || typeof value !== "object") throw new Error();
-      const t = value as Record<string, unknown>;
-      if (
-        Object.keys(t).some((k) => !["id", "host", "workspace", "configFile", "os"].includes(k)) ||
-        typeof t.id !== "string" ||
-        typeof t.host !== "string" ||
-        typeof t.workspace !== "string" ||
-        (t.configFile !== undefined && (typeof t.configFile !== "string" || !t.configFile))
-      )
-        throw new Error();
-      if (t.os !== undefined && t.os !== "linux" && t.os !== "windows") throw new Error();
-      if (seen.has(t.id) || !hostPattern.test(t.host)) throw new Error();
-      seen.add(t.id);
-      // Native Windows targets serve Pi Agent IDE only; Unity reaches Windows editors through a Linux (WSL) target.
-      if (t.os === "windows") return [];
-      remoteProject(t.id, t.workspace);
-      return [
-        {
+    return (data as { targets: unknown[] }).targets.map(
+      (value): SshTarget | { id: string; unsupported: true } => {
+        if (!value || typeof value !== "object") throw new Error();
+        const t = value as Record<string, unknown>;
+        if (
+          Object.keys(t).some(
+            (k) => !["id", "host", "workspace", "configFile", "os"].includes(k),
+          ) ||
+          typeof t.id !== "string" ||
+          typeof t.host !== "string" ||
+          typeof t.workspace !== "string" ||
+          (t.configFile !== undefined && (typeof t.configFile !== "string" || !t.configFile))
+        )
+          throw new Error();
+        if (t.os !== undefined && t.os !== "linux" && t.os !== "windows") throw new Error();
+        if (seen.has(t.id) || !hostPattern.test(t.host)) throw new Error();
+        seen.add(t.id);
+        // Native Windows targets serve Pi Agent IDE only; Unity reaches Windows editors through a Linux (WSL) target.
+        if (t.os === "windows") return { id: t.id, unsupported: true };
+        remoteProject(t.id, t.workspace);
+        return {
           id: t.id,
           host: t.host,
           workspace: t.workspace,
           ...(typeof t.configFile === "string"
             ? { configFile: path.resolve(path.dirname(filename), t.configFile) }
             : {}),
-        },
-      ];
-    });
+        };
+      },
+    );
   } catch {
     throw new Error(`Invalid SSH settings at ${filename}`);
   }
@@ -90,7 +92,9 @@ export async function sshTargets(): Promise<SshTarget[]> {
   const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
   const global = await scope(path.join(agentDir, "pi-agent-ide", "ssh.json"));
   const project = await scope(path.join(process.cwd(), ".pi", "pi-agent-ide", "ssh.json"));
-  return [...global.filter((t) => !project.some((p) => p.id === t.id)), ...project];
+  return [...global.filter((t) => !project.some((p) => p.id === t.id)), ...project].filter(
+    (target): target is SshTarget => !("unsupported" in target),
+  );
 }
 
 export async function sshTarget(id: string): Promise<SshTarget> {

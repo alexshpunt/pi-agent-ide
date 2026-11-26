@@ -5,6 +5,38 @@ import os from "node:os";
 import path from "node:path";
 import { parseRemoteProject, remoteProject, sshArguments, sshTargets } from "#unity/remote.ts";
 
+void test("project Windows target overrides a global Linux target with the same id", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "unity-ssh-override-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  const cwd = process.cwd();
+  try {
+    const global = path.join(dir, "agent", "pi-agent-ide");
+    const project = path.join(dir, "project", ".pi", "pi-agent-ide");
+    await mkdir(global, { recursive: true });
+    await mkdir(project, { recursive: true });
+    await writeFile(
+      path.join(global, "ssh.json"),
+      JSON.stringify({
+        targets: [{ id: "studio", host: "linux", workspace: "/work", os: "linux" }],
+      }),
+    );
+    await writeFile(
+      path.join(project, "ssh.json"),
+      JSON.stringify({
+        targets: [{ id: "studio", host: "windows", workspace: "C:/work", os: "windows" }],
+      }),
+    );
+    process.env.PI_CODING_AGENT_DIR = path.join(dir, "agent");
+    process.chdir(path.join(dir, "project"));
+    assert.deepEqual(await sshTargets(), []);
+  } finally {
+    process.chdir(cwd);
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 void test("SSH project paths retain their target and decode special characters", () => {
   const source = remoteProject("studio", "/home/me/My Game");
   assert.equal(source, "ssh://studio/home/me/My%20Game");
