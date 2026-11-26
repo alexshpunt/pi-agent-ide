@@ -61,6 +61,10 @@ async function run(mode: string, conversation: PiIntegrationTestOptions["convers
       tools: ["web_search", "wait_for_web_searches", "search_fixture_control"],
       isolateUserResources: true,
       rawMode: false,
+      // Session replacement and reload need a process owned by this scenario.
+      ...(["tree", "new-session", "reload"].includes(mode)
+        ? { tuiSize: { cols: 100, rows: 30 } }
+        : {}),
       conversation,
       environment: {
         PI_WEB_SEARCH_BACKGROUND_MODE: mode,

@@ -8,7 +8,7 @@ const config: WebsearchConfig = {
   aggregateDeadlineMs: 2000,
 };
 const request = { query: "fixture query", maxResults: 10 };
-const model = { provider: "openai-codex", id: "fixture-model" };
+const model = { provider: "openai-codex", api: "openai-codex-responses", id: "fixture-model" };
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
