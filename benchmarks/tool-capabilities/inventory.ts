@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFile, realpath, mkdtemp, rm } from "node:fs/promises";
+import { chmod, copyFile, readFile, realpath, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -11,6 +11,89 @@ import { schemaShape } from "./validation.ts";
 export interface Inventory {
   pi: string;
   tools: { name: string; namespace: string; exposure: string; parameters: unknown }[];
+}
+
+/** Load Unity and discover a fixture MCP tool without model inference. */
+export async function unityInventory(repository: string, command = "pi"): Promise<Inventory> {
+  const runtime = await piRuntime(command);
+  const sdk = (await import(pathToFileURL(runtime.sdk).href)) as typeof PiSdk;
+  const root = await mkdtemp(path.join(tmpdir(), "unity-inventory-"));
+  const cli = path.join(root, "unity");
+  await copyFile(path.join(repository, "integrations/unity/tests/schema-cli.mjs"), cli);
+  await chmod(cli, 0o755);
+  const prior = {
+    cwd: process.cwd(),
+    agent: process.env.PI_CODING_AGENT_DIR,
+    cli: process.env.PI_UNITY_CLI,
+  };
+  process.chdir(root);
+  process.env.PI_CODING_AGENT_DIR = root;
+  process.env.PI_UNITY_CLI = cli;
+  let session: AgentSession | undefined;
+  let api: ExtensionAPI | undefined;
+  try {
+    const settingsManager = sdk.SettingsManager.inMemory({ defaultTools: ["unity_search"] });
+    const loader = new sdk.DefaultResourceLoader({
+      cwd: root,
+      agentDir: root,
+      settingsManager,
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      additionalExtensionPaths: [path.join(repository, "integrations/unity/src/index.ts")],
+      extensionFactories: [
+        (value) => {
+          api = value;
+        },
+      ],
+    });
+    await loader.reload();
+    if (loader.getExtensions().errors.length)
+      throw Error(JSON.stringify(loader.getExtensions().errors));
+    ({ session } = await sdk.createAgentSession({
+      cwd: root,
+      agentDir: root,
+      resourceLoader: loader,
+      settingsManager,
+      sessionManager: sdk.SessionManager.inMemory(root),
+    }));
+    await session.bindExtensions({});
+    if (!api) throw Error("Unity inventory observer did not load");
+    api.setActiveTools(["unity_search"]);
+    const search = session.agent.state.tools.find((tool) => tool.name === "unity_search");
+    if (!search) throw Error("Unity search was not activated");
+    const result = await search.execute("inventory", {
+      path: `unity://project/${encodeURIComponent("/projects/Fixture")}/tools`,
+      query: "fixture",
+    });
+    if (result.isError) throw Error(`Unity fixture discovery failed: ${JSON.stringify(result)}`);
+    return {
+      pi: runtime.version,
+      tools: api
+        .getAllTools()
+        .filter((tool) => tool.namespace?.name === "unity" && tool.exposure !== "hidden")
+        .map((tool) => ({
+          name: tool.name,
+          namespace: tool.namespace?.name ?? "",
+          exposure: tool.exposure,
+          parameters: schemaShape(tool.parameters),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  } finally {
+    process.chdir(prior.cwd);
+    if (prior.agent === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = prior.agent;
+    if (prior.cli === undefined) delete process.env.PI_UNITY_CLI;
+    else process.env.PI_UNITY_CLI = prior.cli;
+    if (session) {
+      await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+      session.dispose();
+    }
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 /** Resolve an installed CLI and matching SDK, or the checkout SDK when no global CLI is present. */
