@@ -11,7 +11,7 @@ import {
 } from "./timeline.ts";
 
 export interface Bridge {
-  version: 1;
+  version: number;
   command(name: string, args: Record<string, unknown>): Promise<unknown>;
 }
 export interface HistoryItem {
@@ -129,10 +129,12 @@ export class HerdrService {
     if (
       !Array.isArray(result.profiles) ||
       !result.profiles.every(
-        (item) =>
-          item &&
+        (item: unknown) =>
+          item !== null &&
           typeof item === "object" &&
+          "id" in item &&
           typeof item.id === "string" &&
+          "model" in item &&
           typeof item.model === "string",
       )
     )
@@ -150,14 +152,15 @@ export class HerdrService {
     return this.render(await this.inspect(source), budget);
   }
   async inspect(source: string): Promise<Inspection> {
-    const target = address(source)!;
-    const value = await this.command<Inspection>(
+    const target = address(source);
+    if (!target) throw failure("HERDR_INVALID_ADDRESS", source, "Use a Herdr agent address.");
+    const value = await this.command<Partial<Inspection> | null>(
       "agent.inspect",
       { terminal: target.terminal },
       source,
     );
     if (
-      !value.inspection ||
+      !value?.inspection ||
       !Array.isArray(value.inspection.events) ||
       typeof value.inspection.busy !== "boolean" ||
       typeof value.pid !== "number" ||
@@ -169,7 +172,7 @@ export class HerdrService {
         source,
         "Herdr returned an invalid timeline. Update the App and reload the target Pi.",
       );
-    return value;
+    return value as Inspection;
   }
   /** Render an inspection as a read: advances the reply cursor and authorizes a later send. */
   render(value: Inspection, budget: number): string {
@@ -233,7 +236,8 @@ export class HerdrService {
     this.sends.delete(`${this.owner()}\0${terminal}`);
   }
   async history(source: string, params: Record<string, unknown>): Promise<HistoryItem[]> {
-    const target = address(source)!;
+    const target = address(source);
+    if (!target) throw failure("HERDR_INVALID_ADDRESS", source, "Use a Herdr agent address.");
     const result = await this.command<{ items?: HistoryItem[]; matches?: HistoryItem[] }>(
       "agent.history",
       { terminal: target.terminal, ...params },
@@ -316,7 +320,7 @@ export class HerdrService {
         throw failure("HERDR_DELETE_SELF", source, "Do not close your own terminal.");
       if (/single-pane tab/iu.test(reason)) throw failure("HERDR_DELETE_SPLIT_TAB", source, reason);
       // The App looks the terminal up before ending anything; a closed terminal fails here.
-      if (/^Cannot inspect /u.test(reason))
+      if (reason.startsWith("Cannot inspect "))
         throw failure(
           "HERDR_UNKNOWN_AGENT",
           source,
@@ -336,7 +340,7 @@ export class HerdrService {
     this.sends.delete(`${owner}\0${target.terminal}`);
     const replicas = this.replicas.get(owner);
     for (const replica of replicas ?? [])
-      if (sameTerminal(replica, target.terminal)) replicas!.delete(replica);
+      if (sameTerminal(replica, target.terminal)) replicas?.delete(replica);
   }
 }
 export function historyText(items: HistoryItem[]): string {

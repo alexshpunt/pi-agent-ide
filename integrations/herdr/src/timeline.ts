@@ -196,13 +196,13 @@ export class ReadCursor {
   }
   record(owner: string, value: Inspection): void {
     let terminals = this.owners.get(owner);
-    if (!terminals) this.owners.set(owner, (terminals = new Map()));
+    if (!terminals) this.owners.set(owner, (terminals = new Map<string, Cursor>()));
     terminals.set(value.terminal, cursorOf(value));
   }
   /** Record only the agent's identity, keeping its reply unread, unless a read already recorded it. */
   pin(owner: string, value: Inspection): void {
     let terminals = this.owners.get(owner);
-    if (!terminals) this.owners.set(owner, (terminals = new Map()));
+    if (!terminals) this.owners.set(owner, (terminals = new Map<string, Cursor>()));
     if (!terminals.has(value.terminal))
       terminals.set(value.terminal, { pid: value.pid, session: value.session });
   }

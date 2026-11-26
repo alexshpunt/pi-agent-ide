@@ -10,7 +10,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "pi-coding-agent-test";
+} from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
 import { currentIde } from "./fixtures/current-ide.ts";
 

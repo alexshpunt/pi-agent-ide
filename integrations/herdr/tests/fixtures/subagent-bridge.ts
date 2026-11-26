@@ -44,12 +44,12 @@ export default async function fixture(pi: ExtensionAPI) {
   });
   pi.registerTool({ name: 'herdr_subagent_fixture', label: 'Herdr sub-agent fixture', description: 'Change the fixture sub-agent or report the fixture state',
     parameters: Type.Object({ status: Type.Optional(Type.String()), reply: Type.Optional(Type.String()), profile: Type.Optional(Type.String()) }),
-    async execute(_id, args) {
+    async execute(_id, args, _signal, _update, ctx) {
       if (agent && args.status) agent.status = args.status;
       if (agent && args.reply) Object.assign(agent, { reply: args.reply, at: new Date().toISOString() });
       // The user adds a profile in Workflow settings while agents run.
       if (args.profile) profiles.push({ id: args.profile, name: args.profile, description: 'Added by the user', model: 'fixture/new', thinking: 'medium' });
-      const state = { agent: agent ?? null, launch: launch ?? null, sent, commands: [...new Set(commands)] };
+      const state = { cwd: ctx.cwd, agent: agent ?? null, launch: launch ?? null, sent, commands: [...new Set(commands)] };
       return { content: [{ type: 'text', text: JSON.stringify(state) }], details: state };
     },
   });

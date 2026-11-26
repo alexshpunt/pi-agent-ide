@@ -6,7 +6,7 @@ import { ResourceError } from "pi-agent-ide/api/resource";
 import { failure, sameTerminal, type Agent } from "./service.ts";
 import { writeReplicaSession, type ForkEntry, type ForkMessage } from "./fork.ts";
 import { agentStatusOf, oneLine, statusOf, type Inspection, type Status } from "./timeline.ts";
-import { AgentWaiter, signature, sleep, type Target } from "./wait.ts";
+import { signature, sleep, type AgentWaiter, type Target } from "./wait.ts";
 
 export const REPLICA_MESSAGE = "herdr-replica";
 export const REPLICA_CLOSED = "herdr-replica-closed";
@@ -65,6 +65,12 @@ function begun(value: Inspection, since: number): boolean {
 
 const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 /** Tell the replica who it is and how it works before its assignment. */
 export function replicaAssignment(name: string, task: string): string {
   return [
@@ -119,11 +125,12 @@ export class ReplicaWatcher {
     this.context = ctx;
     const owner = this.owner();
     const replicas = new Map<string, Replica>();
-    for (const entry of ctx.sessionManager.getBranch() as unknown as Record<string, any>[]) {
-      const message = entry.message,
-        details = entry.details ?? message?.details;
+    for (const source of ctx.sessionManager.getBranch()) {
+      const entry = record(source);
+      const message = record(entry?.message);
+      const details = record(entry?.details ?? message?.details);
       if (
-        entry.type === "message" &&
+        entry?.type === "message" &&
         message?.role === "toolResult" &&
         LAUNCH_TOOLS.has(message.toolName) &&
         !message.isError &&
@@ -138,19 +145,20 @@ export class ReplicaWatcher {
           ...(typeof details.since === "number" ? { since: details.since } : {}),
         });
       else if (
-        entry.type === "custom_message" &&
+        entry?.type === "custom_message" &&
         entry.customType === REPLICA_MESSAGE &&
-        details?.owner === owner
+        details?.owner === owner &&
+        typeof details.terminal === "string"
       ) {
         const replica = replicas.get(details.terminal);
         if (replica && details.final) replicas.delete(details.terminal);
-        else if (replica) replica.after = details.signature;
-      } else if (
-        entry.type === "custom" &&
-        entry.customType === REPLICA_CLOSED &&
-        entry.data?.owner === owner
-      )
-        replicas.delete(entry.data.terminal);
+        else if (replica)
+          replica.after = typeof details.signature === "string" ? details.signature : undefined;
+      } else if (entry?.type === "custom" && entry.customType === REPLICA_CLOSED) {
+        const data = record(entry.data);
+        if (data?.owner === owner && typeof data.terminal === "string")
+          replicas.delete(data.terminal);
+      }
     }
     for (const replica of replicas.values()) this.follow(replica, ctx.cwd);
   }
@@ -189,7 +197,7 @@ export class ReplicaWatcher {
   closed(address: string): void {
     const terminal = [...this.follows.keys()].find((key) => sameTerminal(key, address));
     if (terminal === undefined) return;
-    this.follows.get(terminal)!.controller.abort();
+    this.follows.get(terminal)?.controller.abort();
     this.follows.delete(terminal);
     this.pi.appendEntry(REPLICA_CLOSED, { terminal, owner: this.owner() });
     this.updateStatus();
@@ -401,7 +409,7 @@ export function registerReplicate(
     ),
     renderCall(args, theme) {
       return new Text(
-        `${theme.fg("toolTitle", theme.bold("replicate"))} ${theme.fg("muted", oneLine(String(args.name ?? "")))}`,
+        `${theme.fg("toolTitle", theme.bold("replicate"))} ${theme.fg("muted", oneLine(args.name))}`,
         0,
         0,
       );
@@ -427,9 +435,11 @@ export function registerReplicate(
         throw failure("HERDR_REPLICATE_NO_MODEL", "herdr:", "Select a model before replicating.");
       // Capture the conversation before any await, so a later turn cannot change the copy.
       const since = Date.now();
-      const entries = manager.getBranch() as unknown as ForkEntry[];
+      const entries: ForkEntry[] = manager.getBranch().map((entry) => ({ ...entry }));
       // Pi's projected context, after compaction and context edits, tells which tool calls are still open.
-      const messages = manager.buildSessionProjection().messages as unknown as ForkMessage[];
+      const messages: ForkMessage[] = manager
+        .buildSessionProjection()
+        .messages.map((message) => ({ ...message }));
       const fork = await writeReplicaSession({
         parentFile,
         sessionDir: manager.getSessionDir(),

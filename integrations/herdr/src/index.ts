@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   connectReadPlugin,
@@ -73,7 +74,10 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
     {
       id: "herdr",
       description: "Herdr agent resources, history and coordination messages.",
-      markdown: await readFile(new URL("../docs/herdr.md", import.meta.url), "utf8"),
+      markdown: await readFile(
+        path.join(path.dirname(import.meta.dirname), "docs/herdr.md"),
+        "utf8",
+      ),
       triggers: [
         ...["read", "search", "write", "delete"].map((tool) => ({
           tool,
@@ -184,8 +188,8 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                   result: textResult(
                     source,
                     historyText(page),
-                    page[0]?.index === undefined ? (offset ?? 1) : page[0].index + 1,
-                    page.at(-1)?.index === undefined ? (offset ?? 1) : page.at(-1)!.index + 1,
+                    (page.at(0)?.index ?? (offset ?? 1) - 1) + 1,
+                    (page.at(-1)?.index ?? (offset ?? 1) - 1) + 1,
                   ),
                 };
               }
@@ -269,7 +273,9 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                       });
                   }
                 } else {
-                  const target = address(source)!;
+                  const target = address(source);
+                  if (!target)
+                    throw failure("HERDR_INVALID_ADDRESS", source, "Use a Herdr agent address.");
                   const items = await service.history(source, {
                     query,
                     caseSensitive: request.caseSensitive ?? false,
@@ -328,8 +334,10 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
         api.tool("write").addSemanticHandler({
           matches: (value) => sourceOf(value) !== undefined,
           async execute(_context, value) {
-            const input = record(value)!,
-              source = sourceOf(value)!;
+            const input = record(value),
+              source = sourceOf(value);
+            if (!input || !source)
+              throw failure("HERDR_INVALID_ADDRESS", "herdr:", "Use a Herdr agent address.");
             if (
               typeof input.content !== "string" ||
               ["start", "end", "image"].some((key) => input[key] !== undefined)
@@ -351,8 +359,10 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
         api.tool("delete").addSemanticHandler({
           matches: (value) => sourceOf(value) !== undefined,
           async execute(_context, value) {
-            const input = record(value)!,
-              source = sourceOf(value)!;
+            const input = record(value),
+              source = sourceOf(value);
+            if (!input || !source)
+              throw failure("HERDR_INVALID_ADDRESS", "herdr:", "Use a Herdr agent address.");
             if (["start", "end"].some((key) => input[key] !== undefined))
               throw failure(
                 "UNSUPPORTED_OPERATION",
@@ -360,7 +370,8 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                 "Delete herdr:<terminal> with path alone.",
               );
             await service.remove(source);
-            replicas.closed(address(source)!.terminal);
+            const target = address(source);
+            if (target) replicas.closed(target.terminal);
             return {
               source,
               summary: `Closed ${source} and its tab.`,
@@ -371,10 +382,13 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
         });
         for (const tool of ["replace", "insert", "move", "copy"] as const)
           api.tool(tool).addSemanticHandler({
-            matches: (value) =>
-              sourceOf(value) !== undefined ||
-              (typeof record(value)?.target === "string" &&
-                (record(value)!.target as string).startsWith("herdr:")),
+            matches: (value) => {
+              const target = record(value)?.target;
+              return (
+                sourceOf(value) !== undefined ||
+                (typeof target === "string" && target.startsWith("herdr:"))
+              );
+            },
             execute(_context, value) {
               const source = sourceOf(value) ?? String(record(value)?.target);
               throw failure(

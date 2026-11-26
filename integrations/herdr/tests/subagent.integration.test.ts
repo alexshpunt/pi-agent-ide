@@ -9,7 +9,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "pi-coding-agent-test";
+} from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
 import { currentIde } from "./fixtures/current-ide.ts";
 
@@ -66,20 +66,23 @@ test("subagent starts a followed fresh agent with a workflow profile that the ca
       terminal: "laptop/t7",
       kind: "subagent",
       profile: "research",
-      folder: cwd,
     });
     for (const value of ["review", "fixture/new", "medium"])
       expect(getToolResultText(result, "profiles2")).toContain(value);
 
     const state = getToolExecutionDetails(getToolExecution(result, "state")) as {
+      cwd: string;
       agent: unknown;
       sent: string[];
       commands: string[];
       launch: { requestId: string; name: string; folder: string; profile: string; task: string };
     };
+    expect(getToolExecutionDetails(getToolExecution(result, "sub"))).toMatchObject({
+      folder: state.cwd,
+    });
     expect(state.launch).toMatchObject({
       name: "research-tooltips",
-      folder: cwd,
+      folder: state.cwd,
       profile: "research",
     });
     expect(state.launch.requestId).toMatch(/^subagent-.+-sub$/u);

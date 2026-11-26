@@ -34,7 +34,8 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 export function overlaps(a: string, b: string): boolean {
   const inside = (child: string, parent: string) => {
     const relative = path.relative(parent, child);
-    return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+    // oxlint-disable-next-line repo/no-parent-paths -- checks a relative path without traversing it
+    return relative.split(path.sep)[0] !== ".." && !path.isAbsolute(relative);
   };
   const [x, y] = [path.resolve(a), path.resolve(b)];
   return inside(x, y) || inside(y, x);
@@ -108,7 +109,7 @@ export function registerSubagent(
     renderCall(args, theme) {
       const profile = typeof args.profile === "string" ? ` · ${oneLine(args.profile)}` : "";
       return new Text(
-        `${theme.fg("toolTitle", theme.bold("subagent"))} ${theme.fg("muted", `${oneLine(String(args.name ?? ""))}${profile}`)}`,
+        `${theme.fg("toolTitle", theme.bold("subagent"))} ${theme.fg("muted", `${oneLine(args.name)}${profile}`)}`,
         0,
         0,
       );
@@ -171,12 +172,13 @@ export function registerSubagent(
           "unknown",
         );
       }
-      const outcome = String(receipt.outcome ?? "unknown");
+      const outcome = typeof receipt.outcome === "string" ? receipt.outcome : "unknown";
+      const detail = typeof receipt.detail === "string" ? `: ${oneLine(receipt.detail)}` : "";
       if (typeof receipt.terminal !== "string" || !receipt.terminal)
         throw failure(
           "HERDR_SUBAGENT_FAILED",
           "herdr:",
-          `Herdr did not confirm the launch (${outcome}${receipt.detail ? `: ${oneLine(String(receipt.detail))}` : ""}). Read herdr: before starting it again.`,
+          `Herdr did not confirm the launch (${outcome}${detail}). Read herdr: before starting it again.`,
           "unknown",
         );
       const source = `herdr:${receipt.terminal}`;
@@ -186,7 +188,7 @@ export function registerSubagent(
         throw failure(
           "HERDR_SUBAGENT_NOT_STARTED",
           source,
-          `Sub-agent ${params.name} in ${source} did not start (${outcome}${receipt.detail ? `: ${oneLine(String(receipt.detail))}` : ""}). Read it for the error and close it with delete.`,
+          `Sub-agent ${params.name} in ${source} did not start (${outcome}${detail}). Read it for the error and close it with delete.`,
         );
       const details: SubagentDetails = {
         terminal: receipt.terminal,

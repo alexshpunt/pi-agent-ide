@@ -1,3 +1,4 @@
+// This case checks read-before-write guards; the repository wrapper adds preflight reads.
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -8,7 +9,7 @@ import {
   testArtifactsDir,
   text,
   toolCall,
-} from "pi-coding-agent-test";
+} from "pi-coding-agent-test/base";
 import { expect, test } from "vitest";
 import { currentIde } from "./fixtures/current-ide.ts";
 

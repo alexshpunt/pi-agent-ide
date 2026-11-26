@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HerdrService } from "../src/service.ts";
+import { HerdrService } from "#herdr/service.ts";
 
 /** A Herdr bridge with one agent whose agent.remove reply the test chooses. */
 function harness(remove: () => unknown) {
@@ -92,7 +92,7 @@ describe("closing a Herdr agent", () => {
   ])('reports "%s" as %s', async (message, code, effect) => {
     const h = harness(fail(message));
     await h.service.read("herdr:m/t7", 3000);
-    const error = await h.service.remove("herdr:m/t7").catch((value) => value);
+    const error = await h.service.remove("herdr:m/t7").catch((value: unknown) => value);
     expect(error).toMatchObject({ code, effect });
     // A failed delete keeps the read, so the agent can be inspected and messaged again.
     await expect(h.service.send("herdr:m/t7", "hello")).resolves.toBeUndefined();

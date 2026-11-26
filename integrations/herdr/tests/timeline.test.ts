@@ -7,7 +7,7 @@ import {
   cut,
   budgetValue,
   type Inspection,
-} from "../src/timeline.ts";
+} from "#herdr/timeline.ts";
 
 const reply = "Reply fixture: beginning\n" + "context ".repeat(500) + "\nReply fixture: end";
 const inspection = (extra: Partial<Inspection> = {}): Inspection => ({
@@ -137,7 +137,7 @@ describe("agent timeline", () => {
     }
     for (const valid of ["500", "3000", "20000"]) expect(budgetValue(valid)).toBe(Number(valid));
     for (const invalid of ["499", "20001", "3.5", " 500", "", undefined, 500])
-      expect(() => budgetValue(invalid)).toThrow();
+      expect(() => budgetValue(invalid)).toThrow(Error);
   });
   it("omits repeated replies only for the same owner, terminal and target identity", () => {
     const cursor = new ReadCursor();
