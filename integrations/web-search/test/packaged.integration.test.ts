@@ -173,9 +173,12 @@ test.skipIf(!installedExtension)(
     );
     expect(packageCommands.map((command) => command.name)).toEqual(["pi-web-search-doctor"]);
 
-    for (const id of ["missing", "empty", "non-string", "extra", "both"]) {
+    for (const id of ["missing", "empty", "extra", "both"]) {
       expect(getToolExecution(result, id).isError).toBe(true);
     }
+    const numericQuery = getToolExecution(result, "non-string");
+    expect(numericQuery.isError).toBe(false);
+    expect(getToolExecutionDetails(numericQuery)).toMatchObject({ query: "42" });
 
     const limited = getToolExecution(result, "limit");
     expect(limited.isError).toBe(false);
