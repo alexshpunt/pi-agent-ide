@@ -46,10 +46,10 @@ export default async function fixture(pi: ExtensionAPI) {
   });
   pi.registerTool({ name: 'herdr_replica_fixture', label: 'Herdr replica fixture', description: 'Change the fixture replica or report the fixture state',
     parameters: Type.Object({ status: Type.Optional(Type.String()), reply: Type.Optional(Type.String()) }),
-    async execute(_id, args) {
+    async execute(_id, args, _signal, _update, ctx) {
       if (replica && args.status) replica.status = args.status;
       if (replica && args.reply) Object.assign(replica, { reply: args.reply, at: new Date().toISOString() });
-      const state = { replica: replica ?? null, launch: launch ?? null, refusedSession: refusedSession ?? null, sent, commands: [...new Set(commands)] };
+      const state = { cwd: ctx.cwd, replica: replica ?? null, launch: launch ?? null, refusedSession: refusedSession ?? null, sent, commands: [...new Set(commands)] };
       return { content: [{ type: 'text', text: JSON.stringify(state) }], details: state };
     },
   });

@@ -65,6 +65,7 @@ test("replicate starts a followed replica that the original steers and closes", 
     });
 
     const state = getToolExecutionDetails(getToolExecution(result, "state")) as {
+      cwd: string;
       replica: unknown;
       refusedSession: string;
       sent: string[];
@@ -80,7 +81,7 @@ test("replicate starts a followed replica that the original steers and closes", 
         copiedUser: boolean;
       };
     };
-    expect(state.launch).toMatchObject({ name: "check-auth", folder: cwd, copiedUser: true });
+    expect(state.launch).toMatchObject({ name: "check-auth", folder: state.cwd, copiedUser: true });
     expect(state.launch.model).toMatch(/^[^/]+\/.+/u);
     expect(state.launch.task).toContain("check-auth");
     expect(state.launch.task).toContain("Check the auth module.");
