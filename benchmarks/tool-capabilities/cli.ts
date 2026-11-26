@@ -429,7 +429,9 @@ async function attempt(
         ["semantic-code-search", "semantic-script-files"].includes(task.id) ||
           task.setup === "semantic-vera"
           ? ["semantic_search"]
-          : [],
+          : task.setup === "herdr"
+            ? ["replicate", "subagent"]
+            : [],
       ),
     );
     const taskPrompt = capabilityPrompt(task, mode);
@@ -438,7 +440,11 @@ async function attempt(
     const piArgs = [
       "--approve",
       "--offline",
-      ...(inspectHistory ? ["--session", TUI_HISTORY_SESSION] : ["--no-session"]),
+      ...(inspectHistory
+        ? ["--session", TUI_HISTORY_SESSION]
+        : task.setup === "herdr"
+          ? ["--session", "/state/herdr-capability.jsonl"]
+          : ["--no-session"]),
       ...(terminal ? [] : ["--mode", "json"]),
       "--no-extensions",
       "--no-skills",
@@ -470,6 +476,13 @@ async function attempt(
       piArgs.push("-e", "/source/benchmarks/tool-capabilities/semantic-write-fixture.ts");
     if (task.setup === "parallel-provider-writes")
       piArgs.push("-e", "/source/tests/integration/fixtures/slow-provider-writes.ts");
+    if (task.setup === "herdr")
+      piArgs.push(
+        "-e",
+        "/source/integrations/herdr/src/index.ts",
+        "-e",
+        "/source/benchmarks/tool-capabilities/herdr-fixture.ts",
+      );
     if (task.setup === "write-effects")
       piArgs.push("-e", "/source/tests/integration/support/write-saved-mismatch-resource.ts");
     if (task.setup === "write-hook")
