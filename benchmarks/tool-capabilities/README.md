@@ -21,6 +21,8 @@ Separate scripted real-Pi integration tests check nested Codemode event handling
 
 The Unity schema fixtures check built-in declarations and a dynamically discovered MCP tool in the scripted Pi provider context, and inspect serialized requests for Anthropic Messages and OpenAI Completions against local HTTP fixtures. Other provider serializers and paid model routes remain unverified.
 
+The free inventory also loads the optional Herdr integration with the IDE and checks the structural schemas of `replicate`, `subagent` and the deferred `wait_for_agents`. The paid runner has no Herdr App bridge; it does not verify these tools or Herdr resource composition on a model route.
+
 The scripted edit RPC regression checks the raw update and end records against a 128 KiB per-record limit for small edit arguments. It covers direct batching with and without the editor renderer and a Codemode batch of at least 12 edits on a shared file over 1 MiB, including Replace, Delete, Insert, Move and Write. It also checks the resulting file bytes. This does not replace the paid shared-file mixed probe.
 
 The Codemode-only `codemode-search-anchor-batch` and `codemode-search-value-batch` cases check local Search selections mixed with Insert, Replace and Delete in one committed batch. The anchor case retains readable Search output under `.pi/issued-search.txt`; the value case reuses native match values. Both validators check child membership in the native batch metadata. Focused real-Pi cases cover scoped selectors, source and target inference, concurrent writers, vanished selections and multi-file boundaries; the paid cases do not verify those additional paths. The native-value paid route remains unverified until paid execution.

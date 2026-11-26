@@ -19,13 +19,20 @@ import {
 } from "./connectors.ts";
 import {
   checkCoverage,
+  schemaShape,
   parseEvents,
   validateRoute,
   servedIdentity,
   type CapabilityCase,
   type RunEvent,
 } from "./validation.ts";
-import { piRuntime, toolInventory, unityInventory, type Inventory } from "./inventory.ts";
+import {
+  herdrInventory,
+  piRuntime,
+  toolInventory,
+  unityInventory,
+  type Inventory,
+} from "./inventory.ts";
 import {
   assertTuiInvocation,
   assertTuiHistoryInvocation,
@@ -119,6 +126,57 @@ async function coverage(command: string): Promise<Inventory> {
       "Live tool schemas changed. Review matrix/cases and explicitly record the reviewed contracts.",
     );
   if (problems.length) throw Error(problems.join("\n"));
+  const herdr = await herdrInventory(repository, command);
+  const herdrSchemas: Record<string, unknown> = {
+    replicate: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        task: { type: "string", minLength: 1 },
+      },
+      required: ["name", "task"],
+    },
+    subagent: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string", pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        task: { type: "string", minLength: 1 },
+        profile: { type: "string", minLength: 1 },
+        folder: { type: "string", minLength: 1 },
+      },
+      required: ["name", "task", "profile"],
+    },
+    wait_for_agents: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        path: {
+          anyOf: [
+            { type: "string", minLength: 1 },
+            { type: "array", items: { type: "string", minLength: 1 }, minItems: 1, maxItems: 20 },
+          ],
+        },
+        background: { type: "boolean" },
+      },
+      required: ["path"],
+    },
+  };
+  if (herdr.tools.length !== Object.keys(herdrSchemas).length)
+    throw Error("Herdr inventory is incomplete");
+  for (const tool of herdr.tools) {
+    if (JSON.stringify(tool.parameters) !== JSON.stringify(schemaShape(herdrSchemas[tool.name])))
+      throw Error(`Herdr schema changed: ${tool.name}`);
+    if (tool.name !== "wait_for_agents" && tool.exposure !== "direct")
+      throw Error(`Herdr direct tool exposure changed: ${tool.name}`);
+    if (
+      tool.name === "wait_for_agents" &&
+      (tool.namespace !== "Herdr" || tool.exposure !== "deferred")
+    )
+      throw Error("Herdr wait discovery changed");
+  }
+  console.log(`Herdr inventory: ${herdr.tools.length} tools. No model calls.`);
   const unity = await unityInventory(repository, command);
   const byName = new Map(unity.tools.map((tool) => [tool.name, tool]));
   const requiredFields: Record<string, string[]> = {
