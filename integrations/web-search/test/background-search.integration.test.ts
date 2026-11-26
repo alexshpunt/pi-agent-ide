@@ -64,7 +64,7 @@ async function run(mode: string, conversation: PiIntegrationTestOptions["convers
       conversation,
       environment: {
         PI_WEB_SEARCH_BACKGROUND_MODE: mode,
-        PI_WEB_SEARCH_BACKGROUND_REPORT: reportFile,
+        PI_WEB_SEARCH_BACKGROUND_REPORT: "report.json",
       },
     }).run(
       ["tree", "new-session", "reload"].includes(mode)

@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { formatSearchText } from "#src/search-format.ts";
 import { performSearch } from "#src/search.ts";
-import type { SearchDetails, SearchRequest, WebsearchConfig } from "#src/types.ts";
+import type { SearchDetails, WebsearchConfig } from "#src/types.ts";
+import type { Model } from "@earendil-works/pi-ai";
+import type { NativeRegistry } from "#src/native-search.ts";
 
 type ActiveModel = { provider: string; api: string; id: string };
 type NativeSearchResult = { text: string; provider: string; model: string };
@@ -21,18 +23,9 @@ type AggregateRuntime = {
   roundRobinCursor: number;
   successCounts: number[];
 };
-type AggregateSearch = (
-  config: WebsearchConfig,
-  request: SearchRequest,
-  signal?: AbortSignal,
-  runtime?: AggregateRuntime,
-) => Promise<SearchDetails>;
+const aggregateSearch = performSearch;
 
-// This is the package-owned deterministic seam the aggregate coordinator must implement.
-// Production adapters and tests both enter through this boundary; tests never call a live model.
-const aggregateSearch = performSearch as unknown as AggregateSearch;
-
-function aggregateConfig(overrides: Record<string, unknown> = {}): WebsearchConfig {
+function aggregateConfig(overrides: Partial<WebsearchConfig> = {}): WebsearchConfig {
   return {
     strategy: "priority",
     fallback: true,
@@ -43,7 +36,7 @@ function aggregateConfig(overrides: Record<string, unknown> = {}): WebsearchConf
     sourceTimeoutMs: 30_000,
     aggregateDeadlineMs: 45_000,
     ...overrides,
-  } as unknown as WebsearchConfig;
+  };
 }
 
 function requestUrl(input: string | URL | Request): string {
@@ -110,9 +103,7 @@ function nativeRuntime(overrides: Partial<NativeSource> = {}): AggregateRuntime 
 }
 
 function statuses(details: SearchDetails): unknown[] {
-  return (details.attempts ?? []).map(
-    (attempt) => (attempt as unknown as { status?: unknown }).status,
-  );
+  return (details.attempts ?? []).map((attempt) => attempt.status);
 }
 
 afterEach(() => {
@@ -403,31 +394,47 @@ describe("aggregate lifecycle contract with controlled time", () => {
       api: "openai-codex-responses",
       id: "gpt-5.3-codex",
       baseUrl: "https://chatgpt.com/backend-api",
-    };
+      name: "Fixture",
+      input: ["text"],
+      reasoning: false,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1000,
+      maxTokens: 100,
+    } satisfies Model<"openai-codex-responses">;
     const completionStarted = deferred<void>();
     let completionSignal: AbortSignal | undefined;
-    const complete = vi.fn(
-      async (_model: unknown, _context: unknown, options?: Record<string, unknown>) => {
-        completionSignal = options?.signal as AbortSignal | undefined;
+    const complete = vi.fn();
+    const registry: NativeRegistry = {
+      getAvailable: () => [model],
+      isUsingOAuth: () => true,
+      getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "codex-secret" })),
+      complete: async (_model, _context, options) => {
+        complete();
+        completionSignal = options?.signal;
         completionStarted.resolve(undefined);
-        return new Promise<{ content: Array<{ type: string; text: string }> }>((resolve) => {
-          completionSignal?.addEventListener(
-            "abort",
-            () => resolve({ content: [{ type: "text", text: "late native completion" }] }),
-            { once: true },
-          );
-        });
+        await new Promise<void>((resolve) =>
+          completionSignal?.addEventListener("abort", () => resolve(), { once: true }),
+        );
+        return {
+          role: "assistant",
+          content: [{ type: "text", text: "late native completion" }],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          stopReason: "stop",
+          timestamp: 0,
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
       },
-    );
-    const runtime = {
-      activeModel: model,
-      modelRegistry: {
-        getAvailable: () => [model],
-        isUsingOAuth: () => true,
-        getApiKeyAndHeaders: vi.fn(async () => ({ ok: true as const, apiKey: "codex-secret" })),
-        complete,
-      },
-    } as unknown as AggregateRuntime;
+    };
+    const runtime = { activeModel: model, modelRegistry: registry };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
@@ -505,7 +512,7 @@ describe("aggregate lifecycle contract with controlled time", () => {
     await settle();
     await vi.advanceTimersByTimeAsync(30_000);
     const abortedAtTimeout = nativeAborted;
-    releaseNative?.();
+    releaseNative();
     const details = await search;
 
     expect(abortedAtTimeout).toBe(true);
@@ -544,7 +551,7 @@ describe("aggregate lifecycle contract with controlled time", () => {
     await settle();
     await vi.advanceTimersByTimeAsync(30_000);
     const abortedAtTimeout = slowAborted;
-    releaseSlow?.();
+    releaseSlow();
     const details = await search;
 
     expect(abortedAtTimeout).toBe(true);

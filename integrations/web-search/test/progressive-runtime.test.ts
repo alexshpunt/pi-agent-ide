@@ -1,7 +1,6 @@
 import { expect, it, vi } from "vitest";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { BackgroundSearchRuntime } from "../src/background-search.ts";
-import type { SearchDetails } from "../src/types.ts";
+import { BackgroundSearchRuntime } from "#src/background-search.ts";
+import type { SearchDetails } from "#src/types.ts";
 
 const external: SearchDetails = {
   provider: "serper",
@@ -24,8 +23,8 @@ it("returns the first usable source and delivers the other once under the origin
   const runtime = new BackgroundSearchRuntime({
     sendMessage: vi.fn(),
     appendEntry: vi.fn(),
-  } as unknown as ExtensionAPI);
-  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } } as unknown as ExtensionContext;
+  });
+  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } };
   runtime.executionStarted("outer");
   runtime.executionStarted("inner", "outer");
   let emit!: (value: SearchDetails) => void;
@@ -63,8 +62,8 @@ it("delivers background sources independently without replaying the aggregate", 
   const runtime = new BackgroundSearchRuntime({
     sendMessage: vi.fn(),
     appendEntry: vi.fn(),
-  } as unknown as ExtensionAPI);
-  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } } as unknown as ExtensionContext;
+  });
+  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } };
   let emit!: (value: SearchDetails) => void;
   let finish!: (value: SearchDetails) => void;
   const done = runtime.startProgressive(
@@ -100,8 +99,8 @@ it("wait returns a ready source without waiting for the other source", async () 
   const runtime = new BackgroundSearchRuntime({
     sendMessage: vi.fn(),
     appendEntry: vi.fn(),
-  } as unknown as ExtensionAPI);
-  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } } as unknown as ExtensionContext;
+  });
+  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } };
   let emit!: (value: SearchDetails) => void;
   let finish!: (value: SearchDetails) => void;
   const done = runtime.startProgressive(

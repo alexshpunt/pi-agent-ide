@@ -1,12 +1,16 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 export const CODEX_CLIENT_VERSION = "0.151.0";
-type ActiveModel = { provider: string; api: string; id: string; baseUrl: string };
+export type ActiveModel = { provider: string; api: string; id: string; baseUrl?: string };
+export type NativeRegistry = Pick<
+  ModelRegistry,
+  "getAvailable" | "isUsingOAuth" | "getApiKeyAndHeaders" | "complete"
+>;
 type NativeResult = { text: string; provider: string; model: string };
 type Input = {
   query: string;
   model: ActiveModel;
-  modelRegistry: ModelRegistry;
+  modelRegistry: NativeRegistry;
   signal: AbortSignal;
   fetch: typeof fetch;
 };
@@ -44,7 +48,7 @@ function authHeaders(auth: {
 /** Select a supported OAuth Codex model without depending on the active model. */
 export async function selectNativeSearch(input: {
   model?: ActiveModel;
-  modelRegistry: ModelRegistry;
+  modelRegistry: NativeRegistry;
   signal: AbortSignal;
   fetch: typeof fetch;
   compatibility?: { codexClientVersion?: string };
@@ -67,7 +71,9 @@ export async function selectNativeSearch(input: {
       ? input.compatibility.codexClientVersion
       : CODEX_CLIENT_VERSION;
   if (!version || !/^\d+\.\d+\.\d+$/.test(version)) return undefined;
-  const auth = await registry.getApiKeyAndHeaders(candidates[0]!);
+  const first = candidates[0];
+  if (!first) return undefined;
+  const auth = await registry.getApiKeyAndHeaders(first);
   if (!auth.ok) throw new Error("Codex native-search authentication failed.");
   input.signal.throwIfAborted();
   const response = await input.fetch(
@@ -76,28 +82,39 @@ export async function selectNativeSearch(input: {
   );
   if (!response.ok)
     throw new Error(`Codex native-search capability request failed with HTTP ${response.status}.`);
-  let body: any;
+  let body: unknown;
   try {
     body = await response.json();
   } catch {
     throw new Error("Codex native-search capability response was malformed.");
   }
-  if (!Array.isArray(body?.models))
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("models" in body) ||
+    !Array.isArray(body.models)
+  )
     throw new Error("Codex native-search capability response was malformed.");
+  const records: unknown[] = body.models;
   for (const model of candidates) {
-    const matching = body.models.filter(
-      (record: any) => record !== null && typeof record === "object" && record.slug === model.id,
+    const matching = records.filter(
+      (record): record is Record<string, unknown> =>
+        record !== null &&
+        typeof record === "object" &&
+        "slug" in record &&
+        record.slug === model.id,
     );
     if (matching.length > 1)
       throw new Error("Codex native-search capability response had duplicate model records.");
-    if (!matching.length) continue;
-    if (typeof matching[0].supports_search_tool !== "boolean")
+    const match = matching[0];
+    if (!match) continue;
+    if (typeof match.supports_search_tool !== "boolean")
       throw new Error("Codex native-search capability response had malformed model metadata.");
-    if (!matching[0].supports_search_tool) continue;
+    if (!match.supports_search_tool) continue;
     const adapter: NativeAdapter = {
       id: "openai-codex-responses",
       async search(searchInput) {
-        const result = await searchInput.modelRegistry.complete(
+        const result: unknown = await searchInput.modelRegistry.complete(
           searchInput.model as never,
           {
             messages: [
@@ -112,7 +129,7 @@ export async function selectNativeSearch(input: {
             signal: searchInput.signal,
             fetch: searchInput.fetch,
             onPayload: (payload: unknown) => ({
-              ...((payload as object) ?? {}),
+              ...(typeof payload === "object" && payload !== null ? payload : {}),
               model: searchInput.model.id,
               store: false,
               stream: true,
@@ -123,11 +140,20 @@ export async function selectNativeSearch(input: {
         );
         if (!result || typeof result !== "object")
           throw new Error("Native search response was malformed.");
-        const content = result.content;
-        if (!Array.isArray(content)) throw new Error("Native search response was malformed.");
+        if (!("content" in result) || !Array.isArray(result.content))
+          throw new Error("Native search response was malformed.");
+        const content: unknown[] = result.content;
         const text = content
-          .filter((part) => part?.type === "text" && typeof part.text === "string")
-          .map((part) => (part as { text: string }).text)
+          .filter(
+            (part): part is { type: "text"; text: string } =>
+              typeof part === "object" &&
+              part !== null &&
+              "type" in part &&
+              part.type === "text" &&
+              "text" in part &&
+              typeof part.text === "string",
+          )
+          .map((part) => part.text)
           .join("\n");
         if (content.length > 0 && !text)
           throw new Error("Native search response had no usable text.");

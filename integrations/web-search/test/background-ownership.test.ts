@@ -1,7 +1,8 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { strict as assert } from "node:assert";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { BackgroundSearchRuntime } from "../src/background-search.ts";
-import type { SearchDetails } from "../src/types.ts";
+import { BackgroundSearchRuntime } from "#src/background-search.ts";
+import type { SearchDetails } from "#src/types.ts";
 
 const details: SearchDetails = {
   provider: "duckduckgo-html",
@@ -17,9 +18,12 @@ const boundary = () => ({
   context: { canContinue: true },
 });
 function setup() {
-  const pi = { sendMessage: vi.fn(), appendEntry: vi.fn() };
-  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } } as unknown as ExtensionContext;
-  const runtime = new BackgroundSearchRuntime(pi as unknown as ExtensionAPI);
+  const pi = {
+    sendMessage: vi.fn<ExtensionAPI["sendMessage"]>(),
+    appendEntry: vi.fn<ExtensionAPI["appendEntry"]>(),
+  };
+  const ctx = { isIdle: () => false, ui: { setStatus: vi.fn() } };
+  const runtime = new BackgroundSearchRuntime(pi);
   return { runtime, pi, ctx };
 }
 
@@ -47,16 +51,17 @@ describe("delayed search ownership", () => {
     await vi.waitFor(() => expect(runtime.readyCount()).toBe(1));
     finish(details);
     await vi.waitFor(() => expect(runtime.readyCount()).toBe(2));
-    const delivery = runtime.deliverBoundary(boundary())!;
-    const cards = delivery.entries!.filter((entry) => entry.type === "custom");
+    const delivery = runtime.deliverBoundary(boundary());
+    assert.ok(delivery?.entries);
+    const cards = delivery.entries.filter((entry) => entry.type === "custom");
     expect(cards.map((entry) => entry.data)).toMatchObject([
       { requestId: "outer-b", parentToolCallId: "outer-b" },
       { requestId: "leaf-a", parentToolCallId: "outer-a" },
     ]);
-    const messages = delivery.entries!.filter((entry) => entry.type === "custom_message");
+    const messages = delivery.entries.filter((entry) => entry.type === "custom_message");
     expect(messages).toHaveLength(2);
-    expect(messages.every((message) => message.display === false)).toBe(true);
-    expect(messages[1]!.content).toContain("Complete native answer");
+    expect(messages.every((message) => !message.display)).toBe(true);
+    expect(messages[1]?.content).toContain("Complete native answer");
     expect(runtime.deliverBoundary(boundary())).toBeUndefined();
   });
 
@@ -67,9 +72,10 @@ describe("delayed search ownership", () => {
     const results = await runtime.wait();
     expect(results).toMatchObject([{ requestId: "launch", search: details }]);
     expect(pi.appendEntry).not.toHaveBeenCalled();
-    const delivery = runtime.deliverBoundary(boundary())!;
+    const delivery = runtime.deliverBoundary(boundary());
+    assert.ok(delivery?.entries);
     expect(delivery.entries).toHaveLength(1);
-    expect(delivery.entries![0]).toMatchObject({
+    expect(delivery.entries[0]).toMatchObject({
       type: "custom",
       data: { requestId: "launch", parentToolCallId: "launch" },
     });
@@ -124,16 +130,21 @@ describe("delayed search ownership", () => {
       runtime.start("launch", "query", async () => complete, ctx);
       await vi.waitFor(() => expect(runtime.readyCount()).toBe(1));
       const results = wait ? await runtime.wait() : undefined;
-      const delivery = runtime.deliverBoundary(boundary())!;
+      const delivery = runtime.deliverBoundary(boundary());
+      assert.ok(delivery?.entries);
+      const hidden = delivery.entries.find((entry) => entry.type === "custom_message");
+      if (!wait) assert.ok(hidden && typeof hidden.content === "string");
       const full = wait
         ? JSON.stringify(results)
-        : String(delivery.entries!.find((entry) => entry.type === "custom_message")!.content);
+        : typeof hidden?.content === "string"
+          ? hidden.content
+          : "";
       expect(full).toContain(complete.answer);
       expect(full).toContain("exact-model");
       expect(full).toContain("HTTP 401");
       expect(full).not.toContain("secret-token");
       expect(full).not.toContain("private-key");
-      expect(delivery.entries!.filter((entry) => entry.type === "custom")).toHaveLength(1);
+      expect(delivery.entries.filter((entry) => entry.type === "custom")).toHaveLength(1);
       expect(await runtime.wait()).toEqual([]);
     }
   });
@@ -149,15 +160,12 @@ describe("delayed search ownership", () => {
       expect.objectContaining({ parentToolCallId: "idle-launch" }),
     );
     expect(pi.appendEntry.mock.invocationCallOrder[0]).toBeLessThan(
-      pi.sendMessage.mock.invocationCallOrder[0]!,
+      pi.sendMessage.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER,
     );
-    expect(pi.sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        display: false,
-        content: expect.stringContaining("Complete native answer"),
-      }),
-      { triggerTurn: true },
-    );
+    const [message, options] = pi.sendMessage.mock.calls[0] ?? [];
+    expect(message).toMatchObject({ display: false });
+    expect(message?.content).toContain("Complete native answer");
+    expect(options).toEqual({ triggerTurn: true });
     expect(await runtime.wait()).toEqual([]);
     expect(runtime.deliverBoundary(boundary())).toBeUndefined();
   });

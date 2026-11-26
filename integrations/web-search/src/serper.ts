@@ -51,7 +51,7 @@ export function serperCredentials(
 
 function endpointUrl(baseUrl: string, endpoint: SerperEndpoint): string {
   const url = new URL(baseUrl);
-  url.pathname = /\/search$/u.test(url.pathname)
+  url.pathname = url.pathname.endsWith("/search")
     ? url.pathname.replace(/search$/u, endpoint)
     : `${url.pathname.replace(/\/$/u, "")}/${endpoint}`;
   return url.href;

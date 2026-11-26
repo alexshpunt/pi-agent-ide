@@ -18,10 +18,12 @@
   ],
   "type": "module",
   "imports": {
-    "#src/*": "./src/*"
+    "#src/*": "./src/*",
+    "#web-search-entry": "./index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:package": "node -e \"if (!process.env.PI_WEB_SEARCH_INSTALLED_EXTENSION) { console.error('PI_WEB_SEARCH_INSTALLED_EXTENSION is required'); process.exit(1); }\" && pi-test run -- vitest run --config ../../vitest.integration.config.mjs integrations/web-search/test/packaged.integration.test.ts"
   },
   "dependencies": {
     "pi-agent-ide": "workspace:^1.1.0"

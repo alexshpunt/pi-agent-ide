@@ -235,11 +235,18 @@ export default async function registerWebSearch(pi: ExtensionAPI): Promise<void>
           },
         ],
         details: { results },
-        structuredContent: { results } as unknown as JsonObject,
+        structuredContent: JSON.parse(JSON.stringify({ results })) as JsonObject,
       };
     },
     renderResult(result, _options, theme) {
-      const count = result.details?.results.length;
+      const details: unknown = result.details;
+      const count =
+        typeof details === "object" &&
+        details !== null &&
+        "results" in details &&
+        Array.isArray(details.results)
+          ? details.results.length
+          : undefined;
       if (count === undefined)
         return new Text(
           result.content

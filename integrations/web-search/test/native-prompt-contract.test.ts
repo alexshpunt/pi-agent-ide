@@ -1,3 +1,4 @@
+import { strict as assert } from "node:assert";
 import { describe, expect, it } from "vitest";
 
 import { nativePromptContractViolations } from "./support/native-prompt-contract.js";
@@ -75,7 +76,9 @@ describe("native prompt semantic contract", () => {
   ])(
     "rejects misleading invalid wording: %s",
     (_name, approved, replacement, expectedViolation) => {
-      const prompt = validPrompts[0]!.replace(approved, replacement);
+      const original = validPrompts[0];
+      assert.ok(original);
+      const prompt = original.replace(approved, replacement);
       expect(nativePromptContractViolations(prompt, query)).toContain(expectedViolation);
     },
   );
@@ -114,7 +117,9 @@ describe("native prompt semantic contract", () => {
   ])(
     "rejects ordinary negative polarity: %s",
     (_name, approved, replacement, expectedViolation) => {
-      const prompt = validPrompts[0]!.replace(approved, replacement);
+      const original = validPrompts[0];
+      assert.ok(original);
+      const prompt = original.replace(approved, replacement);
       expect(nativePromptContractViolations(prompt, query)).toContain(expectedViolation);
     },
   );

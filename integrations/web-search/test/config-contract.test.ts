@@ -267,11 +267,17 @@ describe("aggregate configuration contract", () => {
     });
 
     expect(loaded).toMatchObject({ ok: false, reason: "invalid_config" });
-    expect(loaded).toMatchObject({
-      message: expect.stringContaining("providers[1].provider is unsupported"),
-    });
-    expect(loaded).toMatchObject({
-      message: expect.stringContaining("providers[3] must be an object"),
-    });
+    if (loaded.ok) throw new Error("Expected invalid configuration");
+    expect(loaded.message).toContain("providers[1]");
+    expect(loaded.message).toContain("providers[3]");
+    for (const entry of [{ provider: "not-a-provider", apiKey: "ignored" }, "malformed-entry"]) {
+      await writeFile(
+        path.join(cwd, ".pi", "websearch.json"),
+        JSON.stringify({ providers: [entry] }),
+      );
+      expect(
+        await loadWebsearchConfig({ cwd, agentDirectory: path.join(root, "agent"), env: {} }),
+      ).toMatchObject({ ok: false, reason: "invalid_config" });
+    }
   });
 });

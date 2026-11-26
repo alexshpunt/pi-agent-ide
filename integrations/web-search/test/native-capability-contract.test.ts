@@ -1,4 +1,6 @@
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { strict as assert } from "node:assert";
+import type { Model } from "@earendil-works/pi-ai";
+import type { NativeRegistry } from "#src/native-search.ts";
 import { describe, expect, it, vi } from "vitest";
 import { selectNativeSearch } from "#src/native-search.ts";
 import { expectNativePromptContract } from "./support/native-prompt-contract.js";
@@ -7,31 +9,59 @@ const model = {
   provider: "openai-codex",
   api: "openai-codex-responses",
   id: "gpt-5.3-codex",
+  name: "Fixture",
   baseUrl: "https://chatgpt.com/backend-api",
-};
+  input: ["text"],
+  reasoning: false,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 1000,
+  maxTokens: 100,
+} satisfies Model<"openai-codex-responses">;
 const active = { provider: "other", api: "other", id: "other", baseUrl: "https://example.com" };
 const catalog = (records: unknown[] = [{ slug: model.id, supports_search_tool: true }]) =>
   Response.json({ models: records });
-function runtime(auth: unknown = { ok: true, apiKey: "token" }) {
-  const getApiKeyAndHeaders = vi.fn(async () => auth);
-  const complete = vi.fn(
-    async (
-      _model: unknown,
-      _context: unknown,
-      options: { onPayload: (value: unknown, selectedModel: typeof model) => unknown },
-    ) => {
-      const payload = options.onPayload({ tools: [], stream: true, store: false }, model);
-      return { content: [{ type: "text", text: "Search evidence" }], payload };
+function runtime(
+  auth: Awaited<ReturnType<NativeRegistry["getApiKeyAndHeaders"]>> = { ok: true, apiKey: "token" },
+) {
+  const getApiKeyAndHeaders = vi
+    .fn<NativeRegistry["getApiKeyAndHeaders"]>()
+    .mockResolvedValue(auth);
+  const completeCalls = vi.fn((_model: unknown, _context: unknown, _options: unknown) => {});
+  const response = {
+    role: "assistant",
+    content: [{ type: "text", text: "Search evidence" }],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    stopReason: "stop",
+    timestamp: 0,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
-  );
-  return { getAvailable: () => [model], isUsingOAuth: () => true, getApiKeyAndHeaders, complete };
+  } satisfies Awaited<ReturnType<NativeRegistry["complete"]>>;
+  const complete: NativeRegistry["complete"] = async (requested, context, options) => {
+    completeCalls(requested, context, options);
+    return response;
+  };
+  return {
+    getAvailable: () => [model],
+    isUsingOAuth: () => true,
+    getApiKeyAndHeaders,
+    complete,
+    completeCalls,
+  } satisfies NativeRegistry & { completeCalls: typeof completeCalls };
 }
 function input(
   registry: ReturnType<typeof runtime>,
   fetch: typeof globalThis.fetch,
   signal = new AbortController().signal,
 ) {
-  return { model: active, modelRegistry: registry as unknown as ModelRegistry, signal, fetch };
+  return { model: active, modelRegistry: registry, signal, fetch };
 }
 
 describe("Codex subscription capability", () => {
@@ -46,8 +76,10 @@ describe("Codex subscription capability", () => {
     expect(selected?.model).toEqual(model);
     expect(registry.getApiKeyAndHeaders).toHaveBeenCalledWith(model);
     expect(fetch).toHaveBeenCalledOnce();
-    const [url, init] = fetch.mock.calls[0]!;
-    const parsed = new URL(String(url));
+    const call = fetch.mock.calls[0];
+    assert.ok(call);
+    const [url, init] = call;
+    const parsed = new URL(url instanceof Request ? url.url : String(url));
     expect(parsed.origin + parsed.pathname).toBe("https://chatgpt.com/backend-api/codex/models");
     expect(parsed.searchParams.get("client_version")).toMatch(/^\d+\.\d+\.\d+$/);
     expect(init).toMatchObject({
@@ -60,11 +92,11 @@ describe("Codex subscription capability", () => {
     const registry = runtime();
     const fetch = vi.fn(async () => catalog());
     const selected = await selectNativeSearch(input(registry, fetch));
-    expect(selected).toBeDefined();
-    const result = await selected!.adapter.search({
+    assert.ok(selected);
+    const result = await selected.adapter.search({
       query: "What changed in 2026?",
-      model: selected!.model,
-      modelRegistry: registry as unknown as ModelRegistry,
+      model: selected.model,
+      modelRegistry: registry,
       signal: new AbortController().signal,
       fetch,
     });
@@ -73,12 +105,21 @@ describe("Codex subscription capability", () => {
       provider: "openai-codex",
       model: model.id,
     });
-    const context = registry.complete.mock.calls[0]![1] as {
+    const call = registry.completeCalls.mock.calls[0];
+    assert.ok(call);
+    const context = call[1] as {
       messages: Array<{ content: unknown }>;
     };
     expectNativePromptContract(context.messages[0]?.content, "What changed in 2026?");
-    const opts = registry.complete.mock.calls[0]![2];
-    expect(opts.onPayload({ tools: [] }, model)).toMatchObject({
+    const opts = call[2];
+    assert.ok(
+      typeof opts === "object" &&
+        opts !== null &&
+        "onPayload" in opts &&
+        typeof opts.onPayload === "function",
+    );
+    const onPayload = opts.onPayload as (payload: unknown, selected: typeof model) => unknown;
+    expect(onPayload({ tools: [] }, model)).toMatchObject({
       model: model.id,
       tools: [{ type: "web_search", external_web_access: true }],
       store: false,
@@ -108,7 +149,7 @@ describe("Codex subscription capability", () => {
     ],
   ])("reports invalid metadata: %s", async (_name, body) => {
     const fetch = vi.fn(async () => Response.json(body));
-    await expect(selectNativeSearch(input(runtime(), fetch))).rejects.toThrow();
+    await expect(selectNativeSearch(input(runtime(), fetch))).rejects.toBeInstanceOf(Error);
   });
 
   it("ignores malformed unrelated records and reacquires metadata on each search", async () => {
@@ -134,10 +175,12 @@ describe("Codex subscription capability", () => {
       "Basic existing",
     ],
     [{ ok: true, headers: { AuThOrIzAtIoN: "Bearer mixed" } }, "Bearer mixed"],
-  ])("preserves authentication headers", async (auth, expected) => {
+  ] as const)("preserves authentication headers", async (auth, expected) => {
     const fetch = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => catalog());
     await selectNativeSearch(input(runtime(auth), fetch));
-    const headers = new Headers(fetch.mock.calls[0]![1]?.headers);
+    const call = fetch.mock.calls[0];
+    assert.ok(call);
+    const headers = new Headers(call[1]?.headers);
     expect(headers.get("authorization")).toBe(expected);
     expect([...headers.keys()].filter((key) => key.toLowerCase() === "authorization")).toHaveLength(
       1,
@@ -148,7 +191,7 @@ describe("Codex subscription capability", () => {
     const fetch = vi.fn(async () => catalog());
     await expect(
       selectNativeSearch(input(runtime({ ok: false, error: "private" }), fetch)),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(Error);
     expect(fetch).not.toHaveBeenCalled();
   });
 

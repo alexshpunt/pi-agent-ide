@@ -81,7 +81,11 @@ export function createSession(
     singlePage: input.singlePage ?? false,
   };
   sessions.set(session.id, session);
-  while (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value!);
+  while (sessions.size > MAX_SESSIONS) {
+    const oldest = sessions.keys().next();
+    if (oldest.done) break;
+    sessions.delete(oldest.value);
+  }
   return session;
 }
 

@@ -109,7 +109,8 @@ export async function serperImageSearch(
         fetchPage: (page, pageSignal) => serperImagePage(credentials, query, page, pageSignal),
       });
     } else {
-      uploaded = await publicImageUrl(image!, input.cwd, signal, config.catboxUserhash);
+      if (!image) throw new Error("Image is required");
+      uploaded = await publicImageUrl(image, input.cwd, signal, config.catboxUserhash);
       const url = uploaded.url;
       if (url !== image)
         note = uploaded.remove

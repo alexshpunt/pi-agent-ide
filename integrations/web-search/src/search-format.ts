@@ -50,7 +50,7 @@ function isUnsafeFormattingControl(codePoint: number): boolean {
 /** Removes terminal and bidirectional controls from one displayed line. */
 export function sanitizePresentationControls(value: string): string {
   return Array.from(value, (character) => {
-    const codePoint = character.codePointAt(0)!;
+    const codePoint = character.codePointAt(0) ?? 0;
     if (isC0OrC1Control(codePoint)) return isWhitespaceControl(codePoint) ? " " : "";
     return isUnsafeFormattingControl(codePoint) ? "" : character;
   }).join("");
@@ -80,7 +80,7 @@ function decodeHtmlEntities(value: string): string {
       }
 
       const name = reference.toLowerCase();
-      return Object.hasOwn(namedHtmlEntities, name) ? namedHtmlEntities[name]! : entity;
+      return Object.hasOwn(namedHtmlEntities, name) ? (namedHtmlEntities[name] ?? entity) : entity;
     },
   );
 }
@@ -96,7 +96,7 @@ function plainSnippet(value: string): string {
     .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|(?:[-+*]|\d+[.)])\s+)/gmu, "")
     .replace(/^\s*(?:`{3,}|~{3,}|(?:-{3,}|\*{3,}|_{3,}))\s*$/gmu, "")
     .replace(/[\\`*_~]/g, "")
-    .replace(/[\[\]]/g, "")
+    .replace(/[[\]]/g, "")
     .replace(/\|/g, " ")
     .replace(
       /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu,

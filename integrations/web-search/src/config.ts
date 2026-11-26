@@ -88,7 +88,7 @@ function providerEntry(raw: JsonObject, index?: number): ProviderParseResult {
     if (raw[key] === undefined) continue;
     if (typeof raw[key] !== "string" || raw[key].length === 0)
       return { ok: false, message: `${prefix}.${key} must be a non-empty string.` };
-    result[key] = raw[key] as string;
+    result[key] = raw[key];
   }
   if (raw.enabled !== undefined) {
     if (typeof raw.enabled !== "boolean")
@@ -99,7 +99,7 @@ function providerEntry(raw: JsonObject, index?: number): ProviderParseResult {
     if (raw[key] === undefined) continue;
     if (typeof raw[key] !== "number" || !Number.isFinite(raw[key]))
       return { ok: false, message: `${prefix}.${key} must be a finite number.` };
-    result[key] = raw[key] as number;
+    result[key] = raw[key];
   }
   if (raw.codexMode !== undefined) {
     if (!oneOf(CODEX_MODES, raw.codexMode))

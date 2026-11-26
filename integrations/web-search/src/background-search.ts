@@ -27,6 +27,12 @@ export function formatBackgroundSearchResult(result: BackgroundSearchResult): st
   return `Background web search result:\n${JSON.stringify(result, null, 2)}`;
 }
 
+type SearchContext = {
+  signal?: AbortSignal;
+  isIdle: ExtensionContext["isIdle"];
+  ui: Pick<ExtensionContext["ui"], "setStatus">;
+};
+
 interface SearchJob {
   requestId: string;
   parentToolCallId?: string;
@@ -53,7 +59,7 @@ export class BackgroundSearchRuntime {
   private readonly owners = new Map<string, string | undefined>();
   private waiting = new Set<string>();
   private notifyWait?: () => void;
-  private context?: ExtensionContext;
+  private context?: SearchContext;
   private removeAbortListener?: () => void;
   private turnSignal?: AbortSignal;
   private idleDeliveryPending = false;
@@ -74,7 +80,7 @@ export class BackgroundSearchRuntime {
   }
 
   /** Refreshes the context and observes explicit cancellation without owning the tool-call lifetime. */
-  setContext(ctx: ExtensionContext): void {
+  setContext(ctx: SearchContext): void {
     this.context = ctx;
     if (this.turnSignal !== ctx.signal) {
       this.removeAbortListener?.();
@@ -91,7 +97,7 @@ export class BackgroundSearchRuntime {
     requestId: string,
     query: string,
     search: (signal: AbortSignal) => Promise<SearchDetails>,
-    ctx: ExtensionContext,
+    ctx: SearchContext,
   ) {
     ctx.signal?.throwIfAborted();
     this.setContext(ctx);
@@ -158,7 +164,7 @@ export class BackgroundSearchRuntime {
       signal: AbortSignal,
       onSource: (details: SearchDetails) => void,
     ) => Promise<SearchDetails>,
-    ctx: ExtensionContext,
+    ctx: SearchContext,
     background: boolean,
     signal?: AbortSignal,
   ): Promise<SearchDetails> {
@@ -325,7 +331,7 @@ export class BackgroundSearchRuntime {
   }
 
   /** Clears the idle wake guard when a real new turn or settlement is observed. */
-  resume(ctx: ExtensionContext): void {
+  resume(ctx: SearchContext): void {
     this.idleDeliveryPending = false;
     this.setContext(ctx);
   }
@@ -365,7 +371,7 @@ export class BackgroundSearchRuntime {
   }
 
   /** Disposes session resources on reload/shutdown, or starts fresh in a different branch. */
-  reset(ctx?: ExtensionContext): void {
+  reset(ctx?: SearchContext): void {
     this.clearJobs(false);
     this.owners.clear();
     this.removeAbortListener?.();

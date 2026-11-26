@@ -1,11 +1,11 @@
 import { initTheme, Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
-import { renderBackgroundSearchCard } from "../src/background-renderer.ts";
+import { renderBackgroundSearchCard } from "#src/background-renderer.ts";
 import {
   formatBackgroundSearchResult,
   type BackgroundSearchResult,
-} from "../src/background-search.ts";
+} from "#src/background-search.ts";
 
 const result: BackgroundSearchResult = {
   requestId: "search-1",

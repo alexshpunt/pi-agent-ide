@@ -1,7 +1,12 @@
 import { DEFAULT_AGGREGATE_DEADLINE_MS, DEFAULT_SOURCE_TIMEOUT_MS } from "./config.ts";
 import { buildSearchRequest } from "./providers/request.ts";
 import { normalizeSearchResponse } from "./providers/response.ts";
-import { selectNativeSearch, type NativeAdapter } from "./native-search.ts";
+import {
+  selectNativeSearch,
+  type ActiveModel,
+  type NativeAdapter,
+  type NativeRegistry,
+} from "./native-search.ts";
 import type {
   JsonObject,
   NativeDetails,
@@ -207,7 +212,9 @@ function rankItems(
     );
   });
   const results = all.map((aggregate) => {
-    const strongest = [...aggregate.variants].sort((a, b) => b.relevance - a.relevance)[0]!.item;
+    const strongest = aggregate.variants.reduce((best, variant) =>
+      variant.relevance > best.relevance ? variant : best,
+    ).item;
     const sourceNames = [...aggregate.sources];
     return {
       ...strongest,
@@ -220,16 +227,16 @@ function rankItems(
 }
 
 type NativeRuntime = {
-  activeModel?: any;
+  activeModel?: ActiveModel;
   nativeSource?: {
-    isEligible(model: any): boolean;
+    isEligible(model: ActiveModel): boolean;
     search(input: {
       query: string;
-      model: any;
+      model: ActiveModel;
       signal: AbortSignal;
     }): Promise<{ text: string; provider: string; model: string }>;
   };
-  modelRegistry?: any;
+  modelRegistry?: NativeRegistry;
 };
 type RaceResult<T> = { value?: T; timedOut: boolean; error?: unknown };
 function raceWithTimeout<T>(
@@ -288,7 +295,7 @@ export async function performSearch(
   const fetchImpl = transport();
   const aggregateController = new AbortController();
   const onCallerAbort = () =>
-    aggregateController.abort(signal!.reason ?? new Error("Search cancelled"));
+    aggregateController.abort(signal?.reason ?? new Error("Search cancelled"));
   signal?.addEventListener("abort", onCallerAbort, { once: true });
   const aggregateDeadlineMs = config.aggregateDeadlineMs ?? DEFAULT_AGGREGATE_DEADLINE_MS;
   const sourceTimeoutMs = config.sourceTimeoutMs ?? DEFAULT_SOURCE_TIMEOUT_MS;
@@ -341,7 +348,8 @@ export async function performSearch(
         });
         continue;
       }
-      const result = outcome.value!;
+      const result = outcome.value;
+      if (!result) throw new Error("Missing provider result");
       const aggregateTimedOut = result.details.error === AGGREGATE_DEADLINE_REASON;
       attemptsBy.set(label(state.entry), {
         provider: state.entry.provider,
@@ -362,13 +370,14 @@ export async function performSearch(
   let native: NativeDetails = { status: "ineligible" };
   let nativeModel = runtime?.nativeSource ? runtime.activeModel : undefined;
   const nativeState = { settled: false };
+  const isNativeSettled = () => nativeState.settled;
   const nativeTask = (async () => {
     if (!runtime || (!nativeModel && !runtime.modelRegistry)) return;
     const metadataStarted = Date.now();
     const sourceDeadline = metadataStarted + sourceTimeoutMs;
     // One controller and deadline cover capability acquisition and completion.
     const controller = childController(aggregateController.signal);
-    let adapter: NativeAdapter | { search: any } | undefined;
+    let adapter: NativeAdapter | NonNullable<NativeRuntime["nativeSource"]> | undefined;
     try {
       const acquiredResult = runtime.nativeSource
         ? {
@@ -404,7 +413,10 @@ export async function performSearch(
         }
         return;
       }
-      if (acquiredResult.error) throw acquiredResult.error;
+      if (acquiredResult.error)
+        throw acquiredResult.error instanceof Error
+          ? acquiredResult.error
+          : new Error("Native capability acquisition failed", { cause: acquiredResult.error });
       if (acquiredResult.value) {
         nativeModel = acquiredResult.value.model;
         adapter = acquiredResult.value.adapter;
@@ -459,23 +471,27 @@ export async function performSearch(
       controller.abort(new Error("source-timeout"));
       return;
     }
-    const task = Promise.resolve().then(() =>
-      runtime.nativeSource
-        ? runtime.nativeSource.search({
-            query: request.query,
-            model: nativeModel,
-            signal: controller.signal,
-          })
-        : (adapter as NativeAdapter).search({
-            query: request.query,
-            model: nativeModel,
-            modelRegistry: runtime.modelRegistry,
-            signal: controller.signal,
-            fetch: fetchImpl,
-          }),
-    );
+    const selectedModel = nativeModel;
+    const nativeSource = runtime.nativeSource;
+    const registry = runtime.modelRegistry;
+    const task = Promise.resolve().then(() => {
+      if (nativeSource)
+        return nativeSource.search({
+          query: request.query,
+          model: selectedModel,
+          signal: controller.signal,
+        });
+      if (!registry) throw new Error("Native search registry unavailable");
+      return (adapter as NativeAdapter).search({
+        query: request.query,
+        model: selectedModel,
+        modelRegistry: registry,
+        signal: controller.signal,
+        fetch: fetchImpl,
+      });
+    });
     const outcome = await raceWithTimeout(task, remaining, controller);
-    if (nativeState.settled) return;
+    if (isNativeSettled()) return;
     nativeState.settled = true;
     if (outcome.timedOut) {
       native = {
@@ -499,7 +515,8 @@ export async function performSearch(
       };
       return;
     }
-    const result = outcome.value!;
+    const result = outcome.value;
+    if (!result) throw new Error("Missing native result");
     const usableText = typeof result.text === "string" && result.text.trim().length > 0;
     native = {
       status: usableText ? "success" : "empty",
@@ -516,6 +533,7 @@ export async function performSearch(
   let nativeEmitted = false;
   let callbackError: unknown;
   let callbackFailed = false;
+  const hasCallbackFailed = () => callbackFailed;
   const emit = (details: SearchDetails) => {
     if (!onSource || signal?.aborted) return;
     try {
@@ -574,6 +592,7 @@ export async function performSearch(
   const reportingExternalTask = externalTask.then(emitExternal);
   const reportingNativeTask = nativeTask.then(emitNative);
   let deadlineReached = false;
+  const hasDeadlineReached = () => deadlineReached;
   let releaseDeadline!: () => void;
   const deadlinePromise = new Promise<void>((resolve) => {
     releaseDeadline = resolve;
@@ -612,8 +631,8 @@ export async function performSearch(
     releaseCaller = reject;
   });
   const callerListener = () => {
-    aggregateController.abort(signal!.reason ?? new Error("Search cancelled"));
-    releaseCaller(signal!.reason ?? new Error("Search cancelled"));
+    aggregateController.abort(signal?.reason ?? new Error("Search cancelled"));
+    releaseCaller(signal?.reason ?? new Error("Search cancelled"));
   };
   signal?.removeEventListener("abort", onCallerAbort);
   signal?.addEventListener("abort", callerListener, { once: true });
@@ -629,9 +648,9 @@ export async function performSearch(
     signal?.removeEventListener("abort", onCallerAbort);
   }
   if (signal?.aborted) throw signal.reason;
-  if (callbackFailed) throw callbackError;
+  if (hasCallbackFailed()) throw callbackError;
   // Underlying providers are allowed to ignore abort. Their handlers remain attached and cannot alter finalized state.
-  if (deadlineReached)
+  if (hasDeadlineReached())
     for (const state of externalStates)
       if (state.started && !attemptsBy.has(label(state.entry)))
         attemptsBy.set(label(state.entry), {
@@ -665,7 +684,7 @@ export async function performSearch(
     aggregateDeadlineMs,
     sourceTimeoutMs,
   };
-  if (nativeText) (details as any).answer = nativeText;
+  if (nativeText) details.answer = nativeText;
   if (!nativeText && ranked.results.length === 0)
     details.error =
       "Web search failed: all eligible sources failed or timed out. All configured search providers failed.";

@@ -78,7 +78,7 @@ export async function publicImageUrl(
       `The file host did not accept the image (HTTP ${response.status}): ${body.slice(0, 200)}`,
     );
   if (!catboxUserhash) return { url: body };
-  const name = new URL(body).pathname.split("/").pop()!;
+  const name = new URL(body).pathname.split("/").pop() ?? "";
   return {
     url: body,
     async remove() {

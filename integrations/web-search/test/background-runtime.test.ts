@@ -1,7 +1,6 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { BackgroundSearchRuntime } from "../src/background-search.ts";
-import type { SearchDetails } from "../src/types.ts";
+import { BackgroundSearchRuntime } from "#src/background-search.ts";
+import type { SearchDetails } from "#src/types.ts";
 
 const details: SearchDetails = {
   provider: "duckduckgo-html",
@@ -23,14 +22,14 @@ function setup() {
   const runtime = new BackgroundSearchRuntime({
     sendMessage,
     appendEntry,
-  } as unknown as ExtensionAPI);
+  });
   const controller = new AbortController();
   let idle = false;
   const ctx = {
     signal: controller.signal,
     isIdle: () => idle,
     ui: { setStatus: vi.fn() },
-  } as unknown as ExtensionContext;
+  };
   runtime.setContext(ctx);
   return {
     runtime,

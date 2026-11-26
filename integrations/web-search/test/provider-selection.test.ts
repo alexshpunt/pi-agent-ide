@@ -20,7 +20,7 @@ it("tries providers in order until one returns results, then stops", async () =>
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string | URL | Request) => {
-      const url = String(input);
+      const url = input instanceof Request ? input.url : String(input);
       calls.push(url);
       if (url.includes("serper")) return new Response("failed", { status: 402 });
       if (url.includes("brave"))
@@ -40,7 +40,7 @@ it("tries providers in order until one returns results, then stops", async () =>
 
 it("tries the next provider after an empty result", async () => {
   const fetcher = vi.fn(async (input: string | URL | Request) =>
-    String(input).includes("serper")
+    (input instanceof Request ? input.url : String(input)).includes("serper")
       ? Response.json({ organic: [] })
       : Response.json({ web: { results: [{ title: "Found", url: "https://example.com/found" }] } }),
   );
