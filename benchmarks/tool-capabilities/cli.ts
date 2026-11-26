@@ -25,7 +25,7 @@ import {
   type CapabilityCase,
   type RunEvent,
 } from "./validation.ts";
-import { piRuntime, toolInventory, type Inventory } from "./inventory.ts";
+import { piRuntime, toolInventory, unityInventory, type Inventory } from "./inventory.ts";
 import {
   assertTuiInvocation,
   assertTuiHistoryInvocation,
@@ -119,6 +119,51 @@ async function coverage(command: string): Promise<Inventory> {
       "Live tool schemas changed. Review matrix/cases and explicitly record the reviewed contracts.",
     );
   if (problems.length) throw Error(problems.join("\n"));
+  const unity = await unityInventory(repository, command);
+  const byName = new Map(unity.tools.map((tool) => [tool.name, tool]));
+  const requiredFields: Record<string, string[]> = {
+    unity_read: ["path"],
+    unity_search: ["query"],
+    unity_call: ["project", "name", "arguments"],
+    unity_install_cli: [],
+  };
+  for (const [name, fields] of Object.entries(requiredFields)) {
+    const tool = byName.get(name);
+    if (!tool) throw Error(`Unity inventory missing ${name}`);
+    const schema = tool.parameters as { properties?: Record<string, unknown> };
+    const properties = schema.properties;
+    if (!properties || fields.some((field) => !(field in properties))) {
+      throw Error(`Unity schema missing fields: ${name}`);
+    }
+  }
+  const fixture = byName.get("unity_fixture_inspect");
+  if (!fixture) throw Error("Unity inventory missing unity_fixture_inspect");
+  const dynamic = fixture.parameters as {
+    properties?: {
+      arguments?: {
+        properties?: Record<string, { type?: string }>;
+        required?: string[];
+        additionalProperties?: boolean;
+      };
+    };
+    required?: string[];
+  };
+  const args = dynamic.properties?.arguments;
+  const properties = args?.properties;
+  if (
+    !dynamic.required?.includes("project") ||
+    !dynamic.required.includes("arguments") ||
+    !args?.required?.includes("path") ||
+    properties?.path?.type !== "string" ||
+    properties.recursive?.type !== "boolean" ||
+    properties.limit?.type !== "integer" ||
+    args.additionalProperties !== false
+  ) {
+    throw Error("Unity dynamic fixture schema changed");
+  }
+  console.log(
+    `Unity inventory: ${unity.tools.length} tools including the discovered fixture. No model calls.`,
+  );
   console.log(
     `Coverage: ${live.tools.length} live IDE tools, ${capabilityMatrix.length} capabilities, ${capabilityCases.length} cases. No model calls.`,
   );
