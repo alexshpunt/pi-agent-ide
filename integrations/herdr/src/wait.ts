@@ -319,7 +319,7 @@ export function registerWaitForAgents(pi: ExtensionAPI, waiter: AgentWaiter): vo
     renderCall(args, theme) {
       const paths = Array.isArray(args.path) ? args.path : args.path ? [args.path] : [];
       return new Text(
-        `${theme.fg("toolTitle", theme.bold("wait_for_agents"))} ${theme.fg("muted", paths.map((path) => oneLine(String(path))).join(", "))}${args.background ? theme.fg("muted", " · background") : ""}`,
+        `${theme.fg("toolTitle", theme.bold("wait_for_agents"))} ${theme.fg("muted", paths.map((path) => oneLine(path)).join(", "))}${args.background ? theme.fg("muted", " · background") : ""}`,
         0,
         0,
       );
