@@ -81,6 +81,7 @@ interface Store {
   state: "signed-out" | "connected";
   credential?: Credential;
   pending?: PendingLogin;
+  appRenewalPending?: true;
 }
 export interface ManagedConnectionOptions {
   env: NodeJS.ProcessEnv;
@@ -172,19 +173,19 @@ function safeStatus(store?: Store): ConnectionStatus {
     workspace: { id: who.workspace.id, slug: who.workspace.slug, name: who.workspace.name },
   };
   return {
-    state: expired ? "expired" : "connected",
+    state: store.appRenewalPending ? "error" : expired ? "expired" : "connected",
     epoch: store.epoch,
     credentialType: c.type,
     ...(c.actor ? { actor: c.actor } : {}),
     identity: safeIdentity,
     scopes: [...c.scopes],
     capabilities: {
-      mcp: !expired,
-      native: !expired && c.native !== false,
+      mcp: !expired && !store.appRenewalPending,
+      native: !expired && !store.appRenewalPending && c.native !== false,
       // No private-file authorization was proven by the MCP/native identity probes.
-      storage: !expired && !c.mcp && c.native !== false,
-      refresh: Boolean(c.refreshToken || c.appRenewal),
-      revoke: c.type === "oauth" && !c.mcp,
+      storage: !expired && !store.appRenewalPending && !c.mcp && c.native !== false,
+      refresh: !store.appRenewalPending && Boolean(c.refreshToken || c.appRenewal),
+      revoke: c.type === "oauth" && !c.mcp && !c.appRenewal && !store.appRenewalPending,
     },
   };
 }
@@ -304,6 +305,15 @@ export class ManagedConnection {
     this.pin(store?.epoch ?? "legacy");
     if (!store) return undefined;
     if (store.state !== "connected" || !store.credential) fail("LINEAR_AUTH_REQUIRED");
+    if (store.appRenewalPending) {
+      return this.lock(async () => {
+        const latest = await this.read();
+        this.pin(latest?.epoch ?? "legacy");
+        if (latest?.state !== "connected" || !latest.credential) fail("LINEAR_AUTH_REQUIRED");
+        if (latest.appRenewalPending) fail("LINEAR_AUTH_APP_RENEWAL_UNKNOWN");
+        return latest.credential;
+      });
+    }
     const c = store.credential;
     if (
       c.type === "oauth" &&
@@ -313,6 +323,7 @@ export class ManagedConnection {
         const latest = await this.read();
         this.pin(latest?.epoch ?? "legacy");
         if (latest?.state !== "connected" || !latest.credential) fail("LINEAR_AUTH_REQUIRED");
+        if (latest.appRenewalPending) fail("LINEAR_AUTH_APP_RENEWAL_UNKNOWN");
         const current = latest.credential;
         if (
           current.accessToken !== c.accessToken &&
@@ -323,10 +334,11 @@ export class ManagedConnection {
         if (renewal) {
           const provider = new LinearAppTokenProvider({ env: this.env });
           const request = await provider.renewalRequest(renewal);
-          const payload = await this.exchange(
-            request.body,
-            this.env.LINEAR_AXI_TOKEN_URL ?? "https://api.linear.app/oauth/token",
-          );
+          const url = endpoint(this.env.LINEAR_AXI_TOKEN_URL, "https://api.linear.app/oauth/token");
+          if (!renewal.endpoint || renewal.endpoint !== url) fail("LINEAR_AUTH_APP_RENEWAL_CONFIG");
+          // Fence before dispatch: any failure or process death leaves the outcome unknown.
+          await this.write({ ...latest, appRenewalPending: true });
+          const payload = await this.exchange(request.body, url);
           const lifetime = payload.expires_in;
           if (typeof lifetime !== "number") fail("LINEAR_AUTH_INVALID_RESPONSE");
           const expiresAt = Date.now() + lifetime * 1000;
@@ -439,6 +451,7 @@ export class ManagedConnection {
       const store = await this.read();
       this.pin(store?.epoch ?? "legacy");
       const c = store?.credential;
+      if (store?.appRenewalPending) fail("LINEAR_AUTH_APP_RENEWAL_UNKNOWN");
       if (
         store?.state !== "connected" ||
         !c ||
@@ -452,6 +465,9 @@ export class ManagedConnection {
       const declared = appRenewalScopes(declaredScopes);
       const provider = new LinearAppTokenProvider({ env: this.env });
       const { binding } = await provider.renewalRequest(c.appRenewal);
+      const url = endpoint(this.env.LINEAR_AXI_TOKEN_URL, "https://api.linear.app/oauth/token");
+      if (c.appRenewal?.endpoint && c.appRenewal.endpoint !== url)
+        fail("LINEAR_AUTH_APP_RENEWAL_CONFIG");
       if (
         declared.length !== binding.scopes.length ||
         declared.some((scope) => !binding.scopes.includes(scope)) ||
@@ -460,10 +476,13 @@ export class ManagedConnection {
             c.scopes.some((scope) => !declared.includes(scope))))
       )
         fail("LINEAR_AUTH_APP_RENEWAL_CONFIG");
-      if (c.appRenewal) return safeStatus(store);
+      if (c.appRenewal?.endpoint) return safeStatus(store);
       if (!(await provider.matchesCachedToken(c.accessToken)))
         fail("LINEAR_AUTH_APP_TOKEN_UNAVAILABLE");
-      const saved: Store = { ...store, credential: { ...c, appRenewal: binding } };
+      const saved: Store = {
+        ...store,
+        credential: { ...c, appRenewal: { ...binding, endpoint: url } },
+      };
       await this.write(saved);
       return safeStatus(saved);
     });
@@ -633,7 +652,9 @@ export class ManagedConnection {
       if (
         store?.state !== "connected" ||
         store.credential?.type !== "oauth" ||
-        store.credential.mcp
+        store.credential.mcp ||
+        store.credential.appRenewal ||
+        store.appRenewalPending
       )
         fail("LINEAR_AUTH_REVOKE_UNSUPPORTED");
       const credential = store.credential;
@@ -919,6 +940,12 @@ export class ManagedConnection {
         if (c.appRenewal !== undefined) {
           const binding = record(c.appRenewal);
           text(binding.clientId);
+          if (
+            binding.endpoint !== undefined &&
+            (typeof binding.endpoint !== "string" ||
+              endpoint(binding.endpoint, "https://api.linear.app/oauth/token") !== binding.endpoint)
+          )
+            fail("LINEAR_AUTH_STORE_INVALID");
           const boundScopes = appRenewalScopes(binding.scopes);
           if (
             c.type !== "oauth" ||
@@ -939,6 +966,13 @@ export class ManagedConnection {
         const workspace = record(who.workspace);
         for (const v of [who.id, who.name, workspace.id, workspace.slug, workspace.name]) text(v);
       }
+      if (
+        value.appRenewalPending !== undefined &&
+        (value.appRenewalPending !== true ||
+          value.state !== "connected" ||
+          !record(value.credential).appRenewal)
+      )
+        fail("LINEAR_AUTH_STORE_INVALID");
       if (value.pending !== undefined) {
         const pending = record(value.pending);
         for (const v of [pending.state, pending.verifier, pending.clientId, pending.redirectUri])
@@ -976,6 +1010,14 @@ export class ManagedConnection {
       }
       await safePath(path);
       await rename(temporary, path);
+      if (process.platform !== "win32") {
+        const directory = await open(dirname(path), constants.O_RDONLY);
+        try {
+          await directory.sync();
+        } finally {
+          await directory.close();
+        }
+      }
     } finally {
       await rm(temporary, { force: true });
     }

@@ -380,8 +380,23 @@ export function createAuthRunner(
           encoding: "utf8",
         },
         (error) => {
-          if (buffer.trim() && !output.protocolError) output.consume(buffer);
-          resolve(error ?? undefined);
+          const finish = () => {
+            if (buffer.trim() && !output.protocolError) output.consume(buffer);
+            resolve(error ?? undefined);
+          };
+          if (
+            args[0] === "login" &&
+            options.signal?.aborted &&
+            child.exitCode === null &&
+            child.signalCode === null
+          ) {
+            const deadline = setTimeout(() => child.kill("SIGKILL"), 5000);
+            deadline.unref();
+            child.once("close", () => {
+              clearTimeout(deadline);
+              finish();
+            });
+          } else finish();
         },
       );
       function consume(line: string) {

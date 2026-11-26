@@ -16,6 +16,17 @@ async function fixture(code: string) {
   await writeFile(entry, code);
   return { root, run: createAuthRunner(async () => entry) };
 }
+test("cancelled login waits for backend cleanup before returning", async () => {
+  const { root, run } = await fixture(
+    `process.on('SIGTERM', () => setTimeout(async () => { await (await import('node:fs/promises')).writeFile('cleanup-done', 'done'); process.exit(0); }, 150)); console.log(JSON.stringify({event:'authorization',url:'https://linear.app/oauth/authorize?client_id=fixture'})); setInterval(() => {}, 1000);`,
+  );
+  const controller = new AbortController();
+  await expect(
+    run(root, ["login"], { signal: controller.signal, onAuthorization: () => controller.abort() }),
+  ).rejects.toThrow("LINEAR_AUTH_CANCELLED");
+  const { readFile } = await import("node:fs/promises");
+  expect(await readFile(path.join(root, "cleanup-done"), "utf8")).toBe("done");
+});
 test("app OAuth permission profiles reach the backend unchanged and cannot be used for MCP or user login", async () => {
   const scope = "read,write,comments:create,app:assignable";
   const { root, run } = await fixture(
