@@ -20,6 +20,89 @@ const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 
 add(
+  "herdr-message",
+  ["herdr.read-message"],
+  'Read herdr: to list agents. Read the fixture-agent at its returned terminal address, then Write the message "hello-fixture" to that same agent. Do not write or modify local files.',
+  [
+    { tool: "read", args: { path: "herdr:" }, contains: "fixture/t7" },
+    { tool: "read", args: { path: "herdr:fixture/t7" }, contains: "fixture-reply", after: [0] },
+    { tool: "write", args: { path: "herdr:fixture/t7", content: "hello-fixture" }, after: [1] },
+  ],
+  {
+    setup: "herdr",
+    files: {},
+    expected: { "herdr-journal.txt": "send:fixture/t7:hello-fixture\n" },
+    forbiddenTools: ["bash", "replace", "insert", "delete", "copy", "move"],
+  },
+);
+add(
+  "herdr-subagent",
+  ["herdr.profile-subagent"],
+  'Read herdr:profiles. Start a subagent named check-fixture with task "Inspect the fixture" using the research profile you read. After the launch returns, Delete the returned agent address to close it. Do not write or modify local files.',
+  [
+    { tool: "read", args: { path: "herdr:profiles" }, contains: "research" },
+    {
+      tool: "subagent",
+      args: { name: "check-fixture", task: "Inspect the fixture", profile: "research" },
+      contains: "herdr:fixture/t9",
+      after: [0],
+    },
+    { tool: "delete", args: { path: "herdr:fixture/t9" }, after: [1] },
+  ],
+  {
+    setup: "herdr",
+    files: {},
+    expected: { "herdr-journal.txt": "subagent:check-fixture:research\nremove:fixture/t9\n" },
+    forbiddenTools: ["bash", "write", "replace", "insert", "copy", "move"],
+  },
+);
+add(
+  "herdr-replica",
+  ["herdr.replicate-message"],
+  'Start a replica named check-fixture with task "Inspect the fixture". After it starts, Write "hello-fixture" to the returned agent address, then Delete that same address. Do not write or modify local files.',
+  [
+    {
+      tool: "replicate",
+      args: { name: "check-fixture", task: "Inspect the fixture" },
+      contains: "herdr:fixture/t9",
+    },
+    { tool: "write", args: { path: "herdr:fixture/t9", content: "hello-fixture" }, after: [0] },
+    { tool: "delete", args: { path: "herdr:fixture/t9" }, after: [1] },
+  ],
+  {
+    setup: "herdr",
+    files: {},
+    expected: {
+      "herdr-journal.txt":
+        "replicate:check-fixture\nsend:fixture/t9:hello-fixture\nremove:fixture/t9\n",
+    },
+    forbiddenTools: ["bash", "replace", "insert", "copy", "move"],
+  },
+);
+add(
+  "herdr-wait",
+  ["herdr.wait-agents"],
+  "Read herdr: to list agents. In direct mode discover wait_for_agents through tool_search; in Codemode call it through tools. Wait for the listed fixture-agent using its returned terminal address, and report its fixture reply. Do not modify files.",
+  [
+    { tool: "read", args: { path: "herdr:" }, contains: "fixture/t7" },
+    { tool: "tool_search", discovers: ["wait_for_agents"] },
+    {
+      tool: "wait_for_agents",
+      args: { path: "herdr:fixture/t7" },
+      contains: "fixture-reply",
+      after: [0],
+    },
+  ],
+  {
+    setup: "herdr",
+    files: {},
+    expected: {},
+    answer: "fixture-reply",
+    forbiddenTools: ["bash", "write", "replace", "insert", "delete", "copy", "move"],
+  },
+);
+
+add(
   "codemode-tool-names",
   ["codemode.provider-tool-names"],
   'Use one native Codemode script to Read task.txt. Wait for that Read result so it captures OLD before any edit. Replace the literal OLD fragment with NEW, and pass the unchanged returned mutation value as the path argument to Read. Print both Read values. Then Write note.txt with exactly "saved\\n", run Bash with command "printf tool-name-probe", and print its output. Keep every other byte. Report the probe output and the final task.txt content.',

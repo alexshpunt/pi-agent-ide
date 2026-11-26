@@ -14,6 +14,10 @@ import type { Capability } from "./validation.ts";
 // Literal boundary/EOF edits use exactText; their line-anchor deletion remains an issued selector.
 // Batch/line-shift setup Inserts leave selector spelling free; outcomes establish their placement.
 const groups: [string[], string[]][] = [
+  [["herdr.read-message"], ["herdr-message"]],
+  [["herdr.profile-subagent"], ["herdr-subagent"]],
+  [["herdr.replicate-message"], ["herdr-replica"]],
+  [["herdr.wait-agents"], ["herdr-wait"]],
   [["codemode.provider-tool-names"], ["codemode-tool-names"]],
   [
     ["discovery.ast-search", "discovery.lsp-search", "discovery.diff", "discovery.undo"],

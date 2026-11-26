@@ -155,6 +155,19 @@ export async function piRuntime(
 
 /** Load the IDE without a prompt or model call and collect real tool structures. */
 export async function toolInventory(repository: string, command = "pi"): Promise<Inventory> {
+  return ideInventory(repository, command, false);
+}
+
+/** Load the optional Herdr integration with the IDE and inspect its registered tool schemas. */
+export async function herdrInventory(repository: string, command = "pi"): Promise<Inventory> {
+  return ideInventory(repository, command, true);
+}
+
+async function ideInventory(
+  repository: string,
+  command: string,
+  herdr: boolean,
+): Promise<Inventory> {
   const runtime = await piRuntime(command);
   const sdk = (await import(pathToFileURL(runtime.sdk).href)) as typeof PiSdk;
   const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } = sdk;
@@ -184,7 +197,10 @@ export async function toolInventory(repository: string, command = "pi"): Promise
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
-      additionalExtensionPaths: [path.join(repository, "src/pi-agent-ide.ts")],
+      additionalExtensionPaths: [
+        path.join(repository, "src/pi-agent-ide.ts"),
+        ...(herdr ? [path.join(repository, "integrations/herdr/src/index.ts")] : []),
+      ],
       extensionFactories: [
         (pi) => {
           api = pi;
@@ -207,7 +223,11 @@ export async function toolInventory(repository: string, command = "pi"): Promise
       pi: runtime.version,
       tools: api
         .getAllTools()
-        .filter((tool) => tool.namespace?.name.startsWith("ide_") && tool.exposure !== "hidden")
+        .filter((tool) =>
+          herdr
+            ? ["replicate", "subagent", "wait_for_agents"].includes(tool.name)
+            : tool.namespace?.name.startsWith("ide_") && tool.exposure !== "hidden",
+        )
         .map((tool) => ({
           name: tool.name,
           namespace: tool.namespace?.name ?? "",
