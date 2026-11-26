@@ -22,7 +22,7 @@ export async function currentIde() {
   const extensions: unknown = metadata.pi?.extensions;
   if (!Array.isArray(extensions) || extensions.length !== 1 || typeof extensions[0] !== "string")
     throw new Error("The installed IDE dependency must declare its integration extension.");
-  const extension = path.join(source, "src/pi-agent-ide.ts");
+  const extension = path.resolve(source, extensions[0]);
   return {
     extension,
     async record(directory: string) {

@@ -45,6 +45,8 @@ export const signature = (observations: Observation[]) =>
             value.session,
             replyHashOf(value) ?? "",
             value.inspection.events.length,
+            value.inspection.pendingQuestion ?? "",
+            value.inspection.lastError ?? "",
           ]
         : [target.terminal, "gone"],
     ),

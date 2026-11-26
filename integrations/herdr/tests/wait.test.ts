@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HerdrService } from "#herdr/service.ts";
-import { AgentWaiter } from "#herdr/wait.ts";
+import { AgentWaiter, signature } from "#herdr/wait.ts";
 
 type Fake = {
   terminal: string;
@@ -85,6 +85,19 @@ const run = async (waiter: AgentWaiter, sources: string[]) =>
   waiter.run(await waiter.resolve(sources), new AbortController().signal, "/fixture");
 
 describe("wait_for_agents waiter", () => {
+  it("detects a changed question or error in a stopped agent", async () => {
+    const agents: Fake[] = [{ terminal: "t7", status: "blocked", question: "first-question" }];
+    const h = harness(agents);
+    const targets = await h.waiter().resolve(["herdr:t7"]);
+    const first = await h.service.inspect("herdr:t7");
+    agents[0].question = "second-question";
+    const second = await h.service.inspect("herdr:t7");
+    const observation = (value: typeof first) => [{ target: targets[0], value }];
+    expect(signature(observation(first))).not.toEqual(signature(observation(second)));
+    const beforeError = signature(observation(second));
+    second.inspection.lastError = "new-error";
+    expect(beforeError).not.toEqual(signature(observation(second)));
+  });
   it("waits until every agent stops and reports each timeline once", async () => {
     const agents: Fake[] = [
       { terminal: "laptop/t7", status: "working" },
