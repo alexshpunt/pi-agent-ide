@@ -154,21 +154,28 @@ export async function managedAuthCommand(
           ...(name === undefined ? {} : { name }),
           ...(method === undefined ? {} : { method }),
         } satisfies Parameters<typeof connection.beginLogin>[0];
-        const start = await connection.beginLogin(login);
-        const event = {
-          event: "authorization",
-          ...start,
-          ...(parsed.manual ? { pending: true } : {}),
-        };
-        if (parsed.manual) return JSON.stringify(event);
+        const cancellation = new AbortController();
+        const onTerminate = () => cancellation.abort();
+        if (!parsed.manual) process.on("SIGTERM", onTerminate);
+        let start: Awaited<ReturnType<typeof connection.beginLogin>> | undefined;
         try {
-          const status = await callbackLogin(connection, start, timeout, () =>
+          start = await connection.beginLogin(login);
+          const event = {
+            event: "authorization",
+            ...start,
+            ...(parsed.manual ? { pending: true } : {}),
+          };
+          if (parsed.manual) return JSON.stringify(event);
+          if (cancellation.signal.aborted) throw new Error("LINEAR_AUTH_CANCELLED");
+          const status = await callbackLogin(connection, start, timeout, cancellation.signal, () =>
             runtime.stdout?.write(JSON.stringify(event) + "\n"),
           );
           return JSON.stringify({ event: "result", ...status });
         } catch (error) {
-          await connection.cancelLogin(start.epoch);
+          if (start && !parsed.manual) await connection.cancelLogin(start.epoch);
           throw error;
+        } finally {
+          if (!parsed.manual) process.removeListener("SIGTERM", onTerminate);
         }
       }
       default: {
@@ -183,6 +190,7 @@ async function callbackLogin(
   connection: ManagedConnection,
   start: { url: string; epoch: string; redirectUri: string },
   timeout: number,
+  signal: AbortSignal,
   announce: () => void,
 ): Promise<ConnectionStatus> {
   const callback = new URL(start.redirectUri);
@@ -224,6 +232,9 @@ async function callbackLogin(
     settle(finish);
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const onCancel = () => {
+    if (!handled) reject(new Error("LINEAR_AUTH_CANCELLED"));
+  };
   try {
     await new Promise<void>((resolve, fail) => {
       server.once("error", fail);
@@ -233,6 +244,8 @@ async function callbackLogin(
         resolve,
       );
     });
+    if (signal.aborted) throw new Error("LINEAR_AUTH_CANCELLED");
+    signal.addEventListener("abort", onCancel, { once: true });
     timer = setTimeout(() => reject(new Error("LINEAR_AUTH_CALLBACK_TIMEOUT")), timeout);
     announce();
     return await result;
@@ -241,6 +254,7 @@ async function callbackLogin(
       throw new Error("LINEAR_AUTH_CALLBACK_BUSY", { cause: error });
     throw error;
   } finally {
+    signal.removeEventListener("abort", onCancel);
     if (timer) clearTimeout(timer);
     server.closeIdleConnections();
     const closed = new Promise<void>((resolve) => server.close(() => resolve()));
