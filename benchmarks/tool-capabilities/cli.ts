@@ -31,6 +31,7 @@ import {
   piRuntime,
   toolInventory,
   unityInventory,
+  webSearchInventory,
   type Inventory,
 } from "./inventory.ts";
 import {
@@ -177,6 +178,24 @@ async function coverage(command: string): Promise<Inventory> {
       throw Error("Herdr wait discovery changed");
   }
   console.log(`Herdr inventory: ${herdr.tools.length} tools. No model calls.`);
+  const webSearch = await webSearchInventory(repository, command);
+  const webFields: Record<string, string[]> = {
+    web_search: ["query", "limit", "background"],
+    image_search: ["query", "image", "limit"],
+    wait_for_web_searches: [],
+  };
+  if (webSearch.tools.length !== Object.keys(webFields).length)
+    throw Error("Web search inventory is incomplete");
+  for (const tool of webSearch.tools) {
+    const schema = tool.parameters as { properties?: Record<string, unknown>; required?: string[] };
+    const fields = webFields[tool.name];
+    const properties = schema.properties;
+    if (!fields || !properties || fields.some((field) => !(field in properties)))
+      throw Error(`Web search schema missing fields: ${tool.name}`);
+    if (tool.name === "web_search" && !schema.required?.includes("query"))
+      throw Error("Web search query is not required");
+  }
+  console.log(`Web search inventory: ${webSearch.tools.length} tools. No model calls.`);
   const unity = await unityInventory(repository, command);
   const byName = new Map(unity.tools.map((tool) => [tool.name, tool]));
   const requiredFields: Record<string, string[]> = {
@@ -431,7 +450,9 @@ async function attempt(
           ? ["semantic_search"]
           : task.setup === "herdr"
             ? ["replicate", "subagent"]
-            : [],
+            : task.setup === "web-search"
+              ? ["web_search", "image_search", "wait_for_web_searches"]
+              : [],
       ),
     );
     const taskPrompt = capabilityPrompt(task, mode);
@@ -482,6 +503,13 @@ async function attempt(
         "/source/integrations/herdr/src/index.ts",
         "-e",
         "/source/benchmarks/tool-capabilities/herdr-fixture.ts",
+      );
+    if (task.setup === "web-search")
+      piArgs.push(
+        "-e",
+        "/source/integrations/web-search/test/fixtures/serper-transport.ts",
+        "-e",
+        "/source/integrations/web-search/index.ts",
       );
     if (task.setup === "write-effects")
       piArgs.push("-e", "/source/tests/integration/support/write-saved-mismatch-resource.ts");

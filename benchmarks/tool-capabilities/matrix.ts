@@ -14,6 +14,8 @@ import type { Capability } from "./validation.ts";
 // Literal boundary/EOF edits use exactText; their line-anchor deletion remains an issued selector.
 // Batch/line-shift setup Inserts leave selector spelling free; outcomes establish their placement.
 const groups: [string[], string[]][] = [
+  [["web-search.read", "web-search.search"], ["web-search-resource"]],
+  [["web-search.image-read"], ["image-search-resource"]],
   [["herdr.read-message"], ["herdr-message"]],
   [["herdr.profile-subagent"], ["herdr-subagent"]],
   [["herdr.replicate-message"], ["herdr-replica"]],

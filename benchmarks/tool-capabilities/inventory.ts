@@ -155,18 +155,23 @@ export async function piRuntime(
 
 /** Load the IDE without a prompt or model call and collect real tool structures. */
 export async function toolInventory(repository: string, command = "pi"): Promise<Inventory> {
-  return ideInventory(repository, command, false);
+  return ideInventory(repository, command, "ide");
 }
 
 /** Load the optional Herdr integration with the IDE and inspect its registered tool schemas. */
 export async function herdrInventory(repository: string, command = "pi"): Promise<Inventory> {
-  return ideInventory(repository, command, true);
+  return ideInventory(repository, command, "herdr");
+}
+
+/** Load optional web search with the IDE and inspect its registered tool schemas. */
+export async function webSearchInventory(repository: string, command = "pi"): Promise<Inventory> {
+  return ideInventory(repository, command, "web-search");
 }
 
 async function ideInventory(
   repository: string,
   command: string,
-  herdr: boolean,
+  integration: "ide" | "herdr" | "web-search",
 ): Promise<Inventory> {
   const runtime = await piRuntime(command);
   const sdk = (await import(pathToFileURL(runtime.sdk).href)) as typeof PiSdk;
@@ -199,7 +204,12 @@ async function ideInventory(
       noContextFiles: true,
       additionalExtensionPaths: [
         path.join(repository, "src/pi-agent-ide.ts"),
-        ...(herdr ? [path.join(repository, "integrations/herdr/src/index.ts")] : []),
+        ...(integration === "herdr"
+          ? [path.join(repository, "integrations/herdr/src/index.ts")]
+          : []),
+        ...(integration === "web-search"
+          ? [path.join(repository, "integrations/web-search/index.ts")]
+          : []),
       ],
       extensionFactories: [
         (pi) => {
@@ -224,9 +234,11 @@ async function ideInventory(
       tools: api
         .getAllTools()
         .filter((tool) =>
-          herdr
+          integration === "herdr"
             ? ["replicate", "subagent", "wait_for_agents"].includes(tool.name)
-            : tool.namespace?.name.startsWith("ide_") && tool.exposure !== "hidden",
+            : integration === "web-search"
+              ? ["web_search", "image_search", "wait_for_web_searches"].includes(tool.name)
+              : tool.namespace?.name.startsWith("ide_") && tool.exposure !== "hidden",
         )
         .map((tool) => ({
           name: tool.name,

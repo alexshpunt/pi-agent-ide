@@ -19,6 +19,57 @@ const textFile = { "task.txt": "keep\nOLD\nlast\n" };
 const deleteFixture = { "sentinel.txt": "KEEP\n", "tracked/data": "KEEP\n" };
 const cases: CapabilityCase[] = [];
 
+const webSearchConfig = '{"providers":[{"provider":"serper","apiKey":"fixture-key"}]}\n';
+add(
+  "web-search-resource",
+  ["web-search.read", "web-search.search"],
+  'Call web_search with query "fixture search" and limit 10. Use its returned websearch resource with Read at offset 11, limit 2, and Search for "r/12". Report Result 12. Do not modify files.',
+  [
+    { tool: "web_search", args: { query: "fixture search", limit: 10 } },
+    {
+      tool: "read",
+      args: { path: /^websearch:/u, offset: 11, limit: 2 },
+      reuse: reuse(0, "path", "text"),
+      contains: "Result 11",
+      after: [0],
+    },
+    {
+      tool: "search",
+      args: { path: /^websearch:/u, query: "r/12" },
+      reuse: reuse(0, "path", "text"),
+      contains: "Result 12",
+      after: [0],
+    },
+  ],
+  {
+    setup: "web-search",
+    files: { ".pi/websearch.json": webSearchConfig },
+    expected: {},
+    answer: "Result 12",
+  },
+);
+add(
+  "image-search-resource",
+  ["web-search.image-read"],
+  'Call image_search with query "fixture image" and limit 2. Use its returned websearch resource with Read at offset 95, limit 2. Report the URL https://img.example/95.jpg. Do not modify files.',
+  [
+    { tool: "image_search", args: { query: "fixture image", limit: 2 } },
+    {
+      tool: "read",
+      args: { path: /^websearch:/u, offset: 95, limit: 2 },
+      reuse: reuse(0, "path", "text"),
+      contains: "https://img.example/95.jpg",
+      after: [0],
+    },
+  ],
+  {
+    setup: "web-search",
+    files: { ".pi/websearch.json": webSearchConfig },
+    expected: {},
+    answer: "https://img.example/95.jpg",
+  },
+);
+
 add(
   "herdr-message",
   ["herdr.read-message"],
