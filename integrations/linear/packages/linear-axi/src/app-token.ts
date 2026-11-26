@@ -13,6 +13,8 @@ interface CachedToken {
 export interface AppRenewalBinding {
   clientId: string;
   scopes: string[];
+  /** Absent on old bindings; explicit re-enablement pins the configured endpoint. */
+  endpoint?: string;
 }
 const renewableScopes = new Set([
   "read",

@@ -467,7 +467,9 @@ for (const [label, viewer] of [
     const result = await f.run(["auth", "status", "--json"]);
     assert.equal(result.code, 1);
     assert.equal(result.value.error, "LINEAR_AUTH_IDENTITY_MISMATCH");
-    assert.equal(await readFile(f.grantFile, "utf8"), before);
+    const after = jsonRecord(await readFile(f.grantFile, "utf8"));
+    assert.equal(after.appRenewalPending, true);
+    assert.deepEqual(after.credential, jsonRecord(before).credential);
     privateOutput(result);
   });
 }
@@ -500,7 +502,9 @@ for (const [label, patch, expected] of [
     const result = await f.run(["auth", "status", "--json"]);
     assert.equal(result.code, 1);
     assert.equal(result.value.error, expected);
-    assert.equal(await readFile(f.grantFile, "utf8"), before);
+    const after = jsonRecord(await readFile(f.grantFile, "utf8"));
+    assert.equal(after.appRenewalPending, true);
+    assert.deepEqual(after.credential, jsonRecord(before).credential);
     assert.deepEqual(
       f.calls.map((call) => call.url),
       ["/oauth/token"],
@@ -526,9 +530,28 @@ void test("a rejected or redirected exchange does not leak its response or follo
   privateOutput(redirected);
   assert.deepEqual(
     f.calls.map((call) => call.url),
-    ["/oauth/token", "/oauth/token"],
+    ["/oauth/token"],
   );
-  assert.equal(await readFile(f.grantFile, "utf8"), before);
+  const after = jsonRecord(await readFile(f.grantFile, "utf8"));
+  assert.equal(after.appRenewalPending, true);
+  assert.deepEqual(after.credential, jsonRecord(before).credential);
+});
+
+void test("a redirected renewal is fenced and never followed", async (t) => {
+  const f = await fixture();
+  t.after(() => f.close());
+  succeeds(await f.enable());
+  await f.expire();
+  f.calls.length = 0;
+  f.setRedirect();
+  const result = await f.run(["auth", "status", "--json"]);
+  assert.equal(result.code, 1);
+  assert.deepEqual(
+    f.calls.map((call) => call.url),
+    ["/oauth/token"],
+  );
+  assert.equal(jsonRecord(await readFile(f.grantFile, "utf8")).appRenewalPending, true);
+  privateOutput(result);
 });
 
 void test("a failed native mutation is dispatched once after proactive renewal, never replayed", async (t) => {
