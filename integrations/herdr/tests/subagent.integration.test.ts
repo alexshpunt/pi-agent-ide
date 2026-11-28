@@ -23,7 +23,8 @@ const calls = (...items: [string, string, Record<string, unknown>][]) =>
 
 // Contract: an agent reads the current workflow profiles, hands a side track to a fresh sub-agent with one of them,
 // every new stop of the sub-agent wakes the agent with its timeline, the agent steers it without reading it first,
-// a profile the user adds shows on the next read, and delete closes the sub-agent for good.
+// a profile the user adds shows on the next read, and delete closes the sub-agent for good. With askUser the
+// sub-agent may ask the user itself.
 test("subagent starts a followed fresh agent with a workflow profile that the caller steers and closes", async () => {
   const ide = await currentIde();
   await mkdir(path.join(root, ".tmp"), { recursive: true });
@@ -43,7 +44,12 @@ test("subagent starts a followed fresh agent with a workflow profile that the ca
         calls([
           "sub",
           "subagent",
-          { name: "research-tooltips", task: "Find how GPUI shows tooltips.", profile: "research" },
+          {
+            name: "research-tooltips",
+            task: "Find how GPUI shows tooltips.",
+            profile: "research",
+            askUser: true,
+          },
         ]),
         calls(["finish", "herdr_subagent_fixture", { status: "done", reply: "tooltips-found" }]),
         assistantMessage([text("Back to my own task.", once)]),
@@ -66,6 +72,7 @@ test("subagent starts a followed fresh agent with a workflow profile that the ca
       terminal: "laptop/t7",
       kind: "subagent",
       profile: "research",
+      askUser: true,
     });
     for (const value of ["review", "fixture/new", "medium"])
       expect(getToolResultText(result, "profiles2")).toContain(value);
@@ -88,6 +95,8 @@ test("subagent starts a followed fresh agent with a workflow profile that the ca
     expect(state.launch.requestId).toMatch(/^subagent-.+-sub$/u);
     expect(state.launch.task).toContain("research-tooltips");
     expect(state.launch.task).toContain("Find how GPUI shows tooltips.");
+    // askUser lets the sub-agent use ask_user itself.
+    expect(state.launch.task).toContain("ask_user");
     expect(state.sent).toEqual(["Also check popovers."]);
     expect(state.agent).toBeNull();
     expect(getToolExecution(result, "steer").isError).toBe(false);

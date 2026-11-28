@@ -18,6 +18,8 @@ export interface SubagentDetails extends ReplicaDetails {
   model?: string;
   folder: string;
   outcome: string;
+  /** The sub-agent may ask the user for decisions only the user can make. */
+  askUser?: true;
 }
 /** The startup receipt Herdr returns for a workflow-profile launch. */
 interface Receipt {
@@ -42,13 +44,24 @@ export function overlaps(a: string, b: string): boolean {
 }
 
 /** Tell the sub-agent who started it and how it works before its assignment. */
-export function subagentAssignment(name: string, task: string, sharedFolder: boolean): string {
+export function subagentAssignment(
+  name: string,
+  task: string,
+  sharedFolder: boolean,
+  askUser = false,
+): string {
   return [
     `You are a sub-agent started with subagent as "${name}" by another agent for a side task of its work. That agent receives your timeline each time you stop and answers your messages; it closes you when your work is done.`,
     "",
     "Rules for a sub-agent:",
     "- Complete only the assignment below.",
-    "- Do not ask the user. When you need a decision, end your turn with the question; the agent that started you answers with a message.",
+    ...(askUser
+      ? [
+          "- Ask the user with ask_user only for a decision that only the user can make, such as accepting a task or choosing between real options. For any other question, end your turn with it; the agent that started you answers with a message.",
+        ]
+      : [
+          "- Do not ask the user. When you need a decision, end your turn with the question; the agent that started you answers with a message.",
+        ]),
     ...(sharedFolder
       ? [
           "- You work in the same directory tree as the agent that started you, and it changes other files at the same time. Change only the files your assignment covers, and do not commit or change Git state unless your assignment says so.",
@@ -103,6 +116,12 @@ export function registerSubagent(
             description: "Absolute folder the sub-agent works in. Default: your directory.",
           }),
         ),
+        askUser: Type.Optional(
+          Type.Boolean({
+            description:
+              "true lets the sub-agent ask the user with ask_user for decisions only the user can make, such as accepting a task; its other questions still come to you. Default: false.",
+          }),
+        ),
       },
       { additionalProperties: false },
     ),
@@ -143,7 +162,12 @@ export function registerSubagent(
             name: params.name,
             folder,
             profile: params.profile,
-            task: subagentAssignment(params.name, params.task, overlaps(folder, ctx.cwd)),
+            task: subagentAssignment(
+              params.name,
+              params.task,
+              overlaps(folder, ctx.cwd),
+              params.askUser === true,
+            ),
           },
           "herdr:",
           toolCallId,
@@ -203,6 +227,7 @@ export function registerSubagent(
         folder,
         outcome,
         herdrReceipts: receipts,
+        ...(params.askUser === true ? { askUser: true as const } : {}),
         ...(typeof receipt.model === "string" ? { model: receipt.model } : {}),
         ...(typeof receipt.space === "string" ? { space: receipt.space } : {}),
         ...(typeof receipt.tab === "string" ? { tab: receipt.tab } : {}),
@@ -220,11 +245,15 @@ export function registerSubagent(
       const model = details.model ? ` on ${details.model}` : "";
       const waiting =
         outcome === "started" ? "" : ` Its startup is ${outcome}; you hear when it stops.`;
+      const asks =
+        params.askUser === true
+          ? " It may ask the user for decisions only the user can make; while it waits for the answer, you get a stop notice with status waiting."
+          : "";
       return {
         content: [
           {
             type: "text",
-            text: `Sub-agent ${params.name} started in ${source}${model} (profile ${params.profile}), a new tab in your space, working in ${folder}.${waiting} Each time it stops, its timeline arrives here as a message. Steer it with write to ${source}; close it with delete once its result is in and checked.`,
+            text: `Sub-agent ${params.name} started in ${source}${model} (profile ${params.profile}), a new tab in your space, working in ${folder}.${waiting}${asks} Each time it stops, its timeline arrives here as a message. Steer it with write to ${source}; close it with delete once its result is in and checked.`,
           },
         ],
         details,

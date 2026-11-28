@@ -146,6 +146,7 @@ async function coverage(command: string): Promise<Inventory> {
         task: { type: "string", minLength: 1 },
         profile: { type: "string", minLength: 1 },
         folder: { type: "string", minLength: 1 },
+        askUser: { type: "boolean" },
       },
       required: ["name", "task", "profile"],
     },
