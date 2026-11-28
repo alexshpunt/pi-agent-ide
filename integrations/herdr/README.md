@@ -22,7 +22,9 @@ This integration is not published to npm.
 - `read({path: "herdr:profiles"})` lists the user's workflow profiles with what each is for.
 - `subagent({name: "research-tooltips", task: "Find how GPUI shows tooltips and report the API.", profile: "research"})` starts a fresh agent with that profile in a new tab of the caller's space; the caller follows it as a replica.
 
-Replicas and sub-agents nest at most two levels below the agent the user started.
+Add `askUser: true` to let a sub-agent ask the user with `ask_user` for decisions only the user can make; its other questions still go to the caller.
+
+Replicas and sub-agents nest at most three levels below the agent the user started.
 
 See [the agent guide](docs/herdr.md) for statuses, paging, write guards, replicas and sub-agents.
 
