@@ -179,6 +179,7 @@ export function lineAnchors(lines: readonly string[]): readonly string[] {
 }
 
 const documentCache = new WeakMap<readonly TextLine[], readonly string[]>();
+const selectedDocumentCache = new WeakMap<readonly TextLine[], Map<number, string>>();
 
 /**
  * The anchor of every line of a text document. Documents of large files are shared and frozen,
@@ -191,6 +192,7 @@ export function documentLineAnchors(lines: readonly TextLine[]): readonly string
   }
   const anchors = lineAnchors(lines.map((line) => line.content));
   documentCache.set(lines, anchors);
+  selectedDocumentCache.delete(lines);
   return anchors;
 }
 
@@ -215,6 +217,20 @@ export function documentSelectedLineAnchors(
     for (const index of selected) result.set(index, cached[index] as string);
     return result;
   }
+  const partial = selectedDocumentCache.get(lines) ?? new Map<number, string>();
+  for (const index of selected) {
+    const anchor = partial.get(index);
+    if (anchor !== undefined) {
+      result.set(index, anchor);
+      selected.delete(index);
+    }
+  }
+  if (selected.size === 0) return result;
+  selectedDocumentCache.set(lines, partial);
+  const finish = () => {
+    for (const [index, anchor] of result) partial.set(index, anchor);
+    return result;
+  };
 
   const occurrences = new Map<string, number>();
   for (const line of lines) {
@@ -226,7 +242,7 @@ export function documentSelectedLineAnchors(
     if (occurrences.get(content) === 1) result.set(index, encode(`u\0${content}`));
     else repeated.add(content);
   }
-  if (repeated.size === 0) return result;
+  if (repeated.size === 0) return finish();
 
   interface SelectedLandmark {
     readonly at: number;
@@ -293,7 +309,7 @@ export function documentSelectedLineAnchors(
       ),
     );
   }
-  return result;
+  return finish();
 }
 
 /** The anchors of the lines of `content`, split as Read splits them. */

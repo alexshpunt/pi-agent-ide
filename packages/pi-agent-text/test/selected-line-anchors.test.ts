@@ -46,6 +46,34 @@ describe("selected line anchors", () => {
     expect(documentLineAnchors(lines)).toBe(all);
   });
 
+  test("retain correct anchors across overlapping windows and a later full-document request", () => {
+    const { lines } = createTextDocument("fixture.cpp", "one\nrepeat\n}\ntwo\nrepeat\n}\nthree");
+    const first = documentSelectedLineAnchors(lines, new Set([1, 2]));
+    const overlap = documentSelectedLineAnchors(lines, new Set([1, 4, 5]));
+    const repeated = documentSelectedLineAnchors(lines, new Set([1, 2]));
+    const all = documentLineAnchors(lines);
+    expect(first).toEqual(
+      new Map([
+        [1, all[1]],
+        [2, all[2]],
+      ]),
+    );
+    expect(overlap).toEqual(
+      new Map([
+        [1, all[1]],
+        [4, all[4]],
+        [5, all[5]],
+      ]),
+    );
+    expect(repeated).toEqual(first);
+    expect(documentSelectedLineAnchors(lines, new Set([1, 4]))).toEqual(
+      new Map([
+        [1, all[1]],
+        [4, all[4]],
+      ]),
+    );
+  });
+
   test("match complete anchors for deterministic varied selections and line patterns", () => {
     let seed = 0x1912;
     const random = () => {
