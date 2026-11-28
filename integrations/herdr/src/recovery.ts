@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { agentStatusOf, clean, cut, oneLine } from "./timeline.ts";
 
 const DELIVERY = "herdr-recovery";
 const WAKE = "herdr-recovery-wake";
@@ -45,6 +46,160 @@ const isItem = (value: unknown): value is RecoveryItem => {
   );
 };
 
+const addressOf = (value: unknown): string | undefined => {
+  const terminal = record(value)?.terminal;
+  return typeof terminal === "string" && /^(?:[^\s/:#]+\/)?t[a-zA-Z0-9]+$/u.test(terminal)
+    ? `herdr:${terminal}`
+    : undefined;
+};
+const actionName: Record<string, string> = {
+  "agent.send": "message",
+  "agent.remove": "agent closure",
+  "agent.replicate": "replica launch",
+  "agent.subagent": "sub-agent launch",
+};
+/** Avoid injecting raw tool payloads, logs, code, or stack traces into a recovery notice. */
+function proseExcerpt(
+  value: unknown,
+  limit: number,
+): { text?: string; incomplete: boolean } | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const text = clean(value).trim();
+  if (!text) return undefined;
+  const raw =
+    /```|^\s*(?:[[{]|Traceback \(most recent call last\)|at\s+\S+.*:\d+:\d+|File "[^"]+", line \d+|\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d|(?:INFO|WARN|ERROR|DEBUG|TRACE)\s*[:[])/mu.test(
+      text,
+    ) || /"[\w.-]+"\s*:\s*(?:"|[{[\d]|true\b|false\b|null\b)/u.test(text);
+  if (raw) return { incomplete: true };
+  return { text: cut(text, limit), incomplete: text.length > limit };
+}
+
+/** Present only the outcome and what the agent can do with it. Receipts stay in details. */
+function describeOutcome(item: RecoveryItem): string {
+  const result = record(item.result);
+  const source = addressOf(item.result);
+  const readOnly = ["agent.list", "agent.inspect", "agent.history", "workflow.get"].includes(
+    item.operation,
+  );
+  const related = Array.isArray(item.evidence)
+    ? item.evidence.map((entry) => addressOf(record(entry)?.result)).find(Boolean)
+    : undefined;
+  const uncertain = (target?: string) =>
+    readOnly
+      ? "An interrupted Herdr read has no confirmed result. Repeat the read."
+      : `The interrupted ${actionName[item.operation] ?? "Herdr action"} may have taken effect. ${target ? `Read ${target}` : "Read herdr:"} before retrying.`;
+  if (item.state === "unknown") return uncertain(related);
+  if (item.state === "error" && record(item.error)?.effect !== "not-applied")
+    return uncertain(related);
+  if (item.state === "error") {
+    const reason = record(item.error)?.reason;
+    const guidance =
+      reason === "queue"
+        ? "Wait for other Herdr requests to finish, then retry."
+        : reason === "app-version"
+          ? "Update Herdr App and reload Pi before retrying."
+          : reason === "storage"
+            ? "Check recovery storage and available space before retrying."
+            : "Read herdr: to check the situation before retrying.";
+    return `The ${actionName[item.operation] ?? "Herdr request"} was not submitted. ${guidance}`;
+  }
+  if (typeof result?.error === "string") {
+    if (result.effect === "not-applied")
+      return "The Herdr request was refused before it took effect. Read herdr: to check the situation before retrying.";
+    return `The Herdr request failed and may have taken effect. ${source ? `Read ${source}` : "Inspect Herdr"} before retrying.`;
+  }
+  if (item.operation === "agent.list" && Array.isArray(result?.agents)) {
+    const agents = result.agents.map((entry: unknown) => {
+      const agent = record(entry),
+        address = addressOf(entry);
+      if (!agent || !address) return undefined;
+      const name = typeof agent.name === "string" ? oneLine(agent.name) : "Agent";
+      const status =
+        typeof agent.state === "string"
+          ? agentStatusOf({
+              state: agent.state,
+              status: typeof agent.status === "string" ? agent.status : undefined,
+              exited: agent.exited === true,
+            })
+          : undefined;
+      return `${name || "Agent"} at ${address}${status ? ` is ${status}` : ""}.`;
+    });
+    if (agents.some((agent: unknown) => !agent))
+      return "The recovered agent list was incomplete. Read herdr: again.";
+    return agents.length ? agents.join("\n") : "There are no Pi agents in Herdr.";
+  }
+  const inspection = record(result?.inspection);
+  if (item.operation === "agent.inspect" && source && inspection) {
+    if (typeof inspection.busy !== "boolean")
+      return `The recovered inspection was incomplete. Read ${source} again.`;
+    const status =
+      result?.exited === true || result?.state === "exited" || result?.status === "exited"
+        ? "exited"
+        : inspection.pendingQuestion
+          ? "waiting for an answer"
+          : inspection.busy
+            ? "working"
+            : inspection.failed
+              ? "in error"
+              : "idle";
+    const question = proseExcerpt(inspection.pendingQuestion, 300);
+    const events = Array.isArray(inspection.events) ? inspection.events : [];
+    const reply = events
+      .map(record)
+      .findLast((event) => event?.kind === "reply" && typeof event.text === "string");
+    const latest = proseExcerpt(reply?.text, 500);
+    return [
+      `The agent at ${source} is ${status}.`,
+      question?.text && `Question: ${question.text}`,
+      question?.incomplete && `Read ${source} for the full question.`,
+      latest?.text && `Latest reply: ${latest.text}`,
+      latest?.incomplete && `Read ${source}/history for the full reply.`,
+      inspection.lastError && `Read ${source} for error details.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (item.operation === "agent.history") {
+    const entries = Array.isArray(result?.matches) ? result.matches : result?.items;
+    if (Array.isArray(entries)) {
+      if (!entries.length) return "The recovered history had no results.";
+      return source
+        ? `The recovered history has results. Read ${source}/history or repeat the search to see them.`
+        : "The recovered history has results. Repeat the interrupted history read or search to see them.";
+    }
+  }
+  if (item.operation === "workflow.get" && Array.isArray(result?.profiles)) {
+    const profiles = result.profiles.map((entry: unknown) => {
+      const profile = record(entry);
+      if (!profile || typeof profile.id !== "string") return undefined;
+      const description =
+        typeof profile.description === "string" ? oneLine(profile.description) : "";
+      return `Profile ${oneLine(profile.id)}${description ? `: ${description}` : ""}.`;
+    });
+    if (profiles.some((profile: unknown) => !profile))
+      return "The recovered profiles were incomplete. Read herdr:profiles again.";
+    return profiles.length ? profiles.join("\n") : "There are no workflow profiles.";
+  }
+  if (item.operation === "agent.send" && result?.outcome === "submitted" && source)
+    return `The message was submitted to ${source}.`;
+  if (item.operation === "agent.remove" && result?.outcome === "removed" && source)
+    return `The agent at ${source} was closed.`;
+  if ((item.operation === "agent.replicate" || item.operation === "agent.subagent") && source) {
+    if (item.operation === "agent.replicate") {
+      if (result?.outcome === "unknown") return uncertain(source);
+      return `A replica tab was created at ${source}. Read it to check whether the agent started.`;
+    }
+    if (result?.outcome === "started") return `The sub-agent started at ${source}.`;
+    if (result?.outcome === "blocked")
+      return `The sub-agent at ${source} is waiting for an answer. Read it to see what it needs.`;
+    if (result?.outcome === "pending")
+      return `The sub-agent at ${source} is still starting. Read it before retrying.`;
+    return `The sub-agent at ${source} did not confirm a successful start. Read it before taking further action.`;
+  }
+  return readOnly
+    ? "The recovered Herdr read could not be presented. Repeat the read."
+    : "The recovered Herdr action could not be confirmed. Inspect its effects before retrying.";
+}
 /** Deliver interrupted App outcomes only after they are written into the originating session. */
 export function registerRecovery(
   pi: ExtensionAPI,
@@ -179,9 +334,10 @@ export function registerRecovery(
     }));
     return {
       customType: DELIVERY,
-      content: `Recovered Herdr request outcomes. Inspect effects before retrying any operation with an unknown outcome.\n${JSON.stringify(outcomes)}`,
+      content: items.map(describeOutcome).join("\n\n"),
       display: true,
       details: {
+        outcomes,
         items: items.map(({ id, revision }) => ({ id, revision })),
         helpers: items.flatMap((item) => {
           const kind =
