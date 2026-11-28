@@ -11,6 +11,7 @@ type Item = {
   recoverable?: boolean;
   result?: unknown;
   error?: unknown;
+  evidence?: unknown;
 };
 type Draft = { type: string; customType: string; content: string; details: unknown };
 type Response = { entries: Draft[] };
@@ -92,6 +93,313 @@ const item = (state: Item["state"], revision: string): Item => ({
   ...(state === "result" ? { result: { fixture: "result-fixture" } } : {}),
 });
 describe("Herdr recovery delivery", () => {
+  it("reports a recovered agent list without internal metadata or JSON", async () => {
+    const h = harness();
+    h.setItems([
+      {
+        ...item("result", "v1"),
+        operation: "agent.list",
+        result: {
+          agents: [
+            {
+              terminal: "workstation/t9",
+              name: "fixture-helper",
+              state: "live",
+              status: "working",
+              pid: 847239,
+              session: "private-session-fixture",
+            },
+          ],
+        },
+      },
+    ]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const content = response?.entries[0].content ?? "";
+    expect(content).toContain("workstation/t9");
+    expect(content).toContain("fixture-helper");
+    expect(content).not.toContain("847239");
+    expect(content).not.toContain("private-session-fixture");
+    expect(content).not.toContain('"agents"');
+    expect(content).not.toContain("request-fixture");
+    expect(content).not.toContain("v1");
+    await h.invoke("session_shutdown");
+  });
+
+  it("retains a recovered helper address when its launch outcome is uncertain", async () => {
+    const h = harness();
+    h.setItems([
+      {
+        ...item("unknown", "v1"),
+        operation: "agent.subagent",
+        evidence: [{ state: "done", result: { terminal: "workstation/t9", pid: 847239 } }],
+      },
+    ]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const content = response?.entries[0].content ?? "";
+    expect(content).toContain("workstation/t9");
+    expect(content).not.toContain("847239");
+    expect(content).not.toContain('"state"');
+    await h.invoke("session_shutdown");
+  });
+  it("reports a recovered inspection without its internal identity", async () => {
+    const h = harness();
+    h.setItems([
+      {
+        ...item("result", "v1"),
+        operation: "agent.inspect",
+        result: {
+          terminal: "workstation/t9",
+          state: "live",
+          pid: 847239,
+          session: "private-session-fixture",
+          inspection: {
+            busy: false,
+            failed: false,
+            pendingQuestion: "question-fixture",
+            events: [{ kind: "reply", text: "reply-fixture" }],
+          },
+        },
+      },
+    ]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const content = response?.entries[0].content ?? "";
+    expect(content).toContain("workstation/t9");
+    expect(content).toContain("question-fixture");
+    expect(content).toContain("reply-fixture");
+    expect(content).not.toContain("private-session-fixture");
+    expect(content).not.toContain("847239");
+    expect(content).not.toContain('"inspection"');
+    await h.invoke("session_shutdown");
+  });
+
+  it("keeps large inspection and history payloads out of the agent message", async () => {
+    const h = harness();
+    const raw = `{"internalLogFixture":"${"stack-frame-fixture ".repeat(4000)}"}`;
+    h.setItems([
+      {
+        ...item("result", "v1"),
+        id: "inspection",
+        operation: "agent.inspect",
+        result: {
+          terminal: "workstation/t9",
+          state: "live",
+          screen: raw,
+          inspection: {
+            busy: false,
+            failed: true,
+            pendingQuestion: raw,
+            lastError: raw,
+            events: [{ kind: "reply", text: raw }],
+          },
+        },
+      },
+      {
+        ...item("result", "v1"),
+        id: "history",
+        operation: "agent.history",
+        result: {
+          terminal: "workstation/t9",
+          items: [
+            { kind: "call", text: raw },
+            { kind: "reply", text: raw },
+          ],
+        },
+      },
+    ]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const content = response?.entries[0].content ?? "";
+    expect(content).toContain("herdr:workstation/t9");
+    expect(content).not.toContain("internalLogFixture");
+    expect(content).not.toContain("stack-frame-fixture");
+    expect(content.length).toBeLessThan(1000);
+    expect(response?.entries[0].details).toMatchObject({
+      outcomes: [
+        { result: { inspection: { pendingQuestion: raw } } },
+        { result: { items: [{ text: raw }, { text: raw }] } },
+      ],
+    });
+    await h.invoke("session_shutdown");
+  });
+
+  it("preserves bounded natural replies and directs the agent to the full history", async () => {
+    const h = harness();
+    const reply = `reply-start-fixture ${"natural sentence ".repeat(300)} reply-end-fixture`;
+    h.setItems([
+      {
+        ...item("result", "v1"),
+        operation: "agent.inspect",
+        result: {
+          terminal: "workstation/t9",
+          state: "live",
+          inspection: { busy: false, events: [{ kind: "reply", text: reply }] },
+        },
+      },
+    ]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const content = response?.entries[0].content ?? "";
+    expect(content).toContain("reply-start-fixture");
+    expect(content).toContain("reply-end-fixture");
+    expect(content).not.toContain(reply);
+    expect(content).toContain("herdr:workstation/t9/history");
+    expect(content.length).toBeLessThan(1000);
+    await h.invoke("session_shutdown");
+  });
+
+  it("suppresses raw stack replies and points to history", async () => {
+    const h = harness();
+    const reply =
+      "Error: internal-fixture\n    at operation (/private/path:4:5)\n    at main (/private/path:8:9)";
+    h.setItems([
+      {
+        ...item("result", "v1"),
+        operation: "agent.inspect",
+        result: {
+          terminal: "workstation/t9",
+          state: "live",
+          inspection: { busy: false, events: [{ kind: "reply", text: reply }] },
+        },
+      },
+    ]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const content = response?.entries[0].content ?? "";
+    expect(content).not.toContain("internal-fixture");
+    expect(content).not.toContain("/private/path");
+    expect(content).toContain("herdr:workstation/t9/history");
+    await h.invoke("session_shutdown");
+  });
+
+  it("distinguishes empty history from results containing only tool calls", async () => {
+    const render = async (items: unknown[]) => {
+      const h = harness();
+      h.setItems([
+        {
+          ...item("result", "v1"),
+          operation: "agent.history",
+          result: { terminal: "workstation/t9", items },
+        },
+      ]);
+      await h.invoke("session_start");
+      const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+      await h.invoke("session_shutdown");
+      return response?.entries[0].content;
+    };
+    const calls = await render([{ kind: "call", text: "internal-arguments-fixture" }]);
+    expect(calls).toContain("herdr:workstation/t9");
+    expect(calls).not.toContain("internal-arguments-fixture");
+    expect(calls).toBe(await render([{ kind: "reply", text: "reply-fixture" }]));
+    expect(calls).not.toBe(await render([]));
+  });
+
+  it("retains an ordinary inspection question", async () => {
+    const render = async (pendingQuestion?: string) => {
+      const h = harness();
+      h.setItems([
+        {
+          ...item("result", "v1"),
+          operation: "agent.inspect",
+          result: {
+            terminal: "workstation/t9",
+            state: "live",
+            inspection: { busy: false, pendingQuestion },
+          },
+        },
+      ]);
+      await h.invoke("session_start");
+      const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+      await h.invoke("session_shutdown");
+      return response?.entries[0].content;
+    };
+    const question = await render("question-fixture");
+    expect(question).toContain("herdr:workstation/t9");
+    expect(question).toContain("question-fixture");
+    expect(question).not.toBe(await render());
+  });
+
+  it("treats an error without proof of non-submission like an unknown effect", async () => {
+    const render = async (value: Item) => {
+      const h = harness();
+      h.setItems([value]);
+      await h.invoke("session_start");
+      const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+      await h.invoke("session_shutdown");
+      return response?.entries[0].content;
+    };
+    const uncertain = await render(item("unknown", "v1"));
+    expect(await render({ ...item("error", "v2"), error: { effect: "unknown" } })).toBe(uncertain);
+    expect(await render({ ...item("error", "v3"), error: {} })).toBe(uncertain);
+    expect(await render({ ...item("error", "v4"), error: { effect: "not-applied" } })).not.toBe(
+      uncertain,
+    );
+  });
+
+  it("preserves uncertainty when a replica receipt explicitly says its outcome is unknown", async () => {
+    const render = async (value: Item) => {
+      const h = harness();
+      h.setItems([value]);
+      await h.invoke("session_start");
+      const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+      await h.invoke("session_shutdown");
+      return response?.entries[0].content;
+    };
+    const result = { terminal: "workstation/t9", outcome: "unknown" };
+    const uncertain = await render({
+      ...item("unknown", "v1"),
+      operation: "agent.replicate",
+      evidence: [{ result }],
+    });
+    const receipt = await render({ ...item("result", "v2"), operation: "agent.replicate", result });
+    expect(receipt).toBe(uncertain);
+    expect(receipt).toContain("herdr:workstation/t9");
+  });
+
+  it("reports a recovered message destination without internal identity", async () => {
+    const h = harness();
+    h.setItems([
+      {
+        ...item("result", "v1"),
+        operation: "agent.send",
+        result: {
+          terminal: "workstation/t9",
+          outcome: "submitted",
+          pid: 847239,
+          session: "private-session-fixture",
+        },
+      },
+    ]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const content = response?.entries[0].content ?? "";
+    expect(content).toContain("workstation/t9");
+    expect(content).not.toContain("847239");
+    expect(content).not.toContain("private-session-fixture");
+    expect(content).not.toContain('"outcome"');
+    await h.invoke("session_shutdown");
+  });
+
+  it("retains full outcomes internally while delivering only their useful details", async () => {
+    const h = harness();
+    const result = {
+      terminal: "workstation/t9",
+      outcome: "pending",
+      pid: 847239,
+      session: "private-session-fixture",
+    };
+    h.setItems([{ ...item("result", "v1"), operation: "agent.subagent", result }]);
+    await h.invoke("session_start");
+    const response = await h.invoke("turn_end", { entries: [], outcome: "completed" });
+    const entry = response?.entries[0];
+    expect(entry?.content).toContain("workstation/t9");
+    expect(entry?.content).not.toContain("private-session-fixture");
+    expect(entry?.details).toMatchObject({ outcomes: [{ result }] });
+    await h.invoke("session_shutdown");
+  });
+
   it("persists the information needed to follow a recovered helper and signals only after persistence", async () => {
     const h = harness();
     h.setItems([
