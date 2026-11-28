@@ -194,6 +194,108 @@ export function documentLineAnchors(lines: readonly TextLine[]): readonly string
   return anchors;
 }
 
+/**
+ * Anchors for selected zero-based line indexes. The complete document is still needed to identify
+ * unique landmarks and count copies, but only requested lines and their landmarks are hashed.
+ * This is for presentation only: resolving an anchor must still check the complete document for
+ * collisions with lines that were not presented.
+ */
+export function documentSelectedLineAnchors(
+  lines: readonly TextLine[],
+  indexes: ReadonlySet<number>,
+): ReadonlyMap<number, string> {
+  const selected = new Set(
+    [...indexes].filter((index) => Number.isInteger(index) && index >= 0 && index < lines.length),
+  );
+  const result = new Map<number, string>();
+  if (selected.size === 0) return result;
+
+  const cached = documentCache.get(lines);
+  if (cached !== undefined) {
+    for (const index of selected) result.set(index, cached[index] as string);
+    return result;
+  }
+
+  const occurrences = new Map<string, number>();
+  for (const line of lines) {
+    occurrences.set(line.content, (occurrences.get(line.content) ?? 0) + 1);
+  }
+  const repeated = new Set<string>();
+  for (const index of selected) {
+    const content = (lines[index] as TextLine).content;
+    if (occurrences.get(content) === 1) result.set(index, encode(`u\0${content}`));
+    else repeated.add(content);
+  }
+  if (repeated.size === 0) return result;
+
+  interface SelectedLandmark {
+    readonly at: number;
+    readonly nth: number;
+    readonly crossedBlockEnd: boolean;
+  }
+  const sweep = (step: 1 | -1): Map<number, SelectedLandmark> => {
+    const found = new Map<number, SelectedLandmark>();
+    let at = step === 1 ? -1 : lines.length;
+    let crossedBlockEnd = false;
+    const sinceLandmark = new Map<string, number>();
+    for (let index = at + step; index >= 0 && index < lines.length; index += step) {
+      const content = (lines[index] as TextLine).content;
+      if (occurrences.get(content) === 1) {
+        at = index;
+        // The upward interval includes its landmark; the downward interval excludes it.
+        crossedBlockEnd = step === 1 && endsBlock(content);
+        sinceLandmark.clear();
+        continue;
+      }
+      if (repeated.has(content)) {
+        const nth = (sinceLandmark.get(content) ?? 0) + 1;
+        sinceLandmark.set(content, nth);
+        if (selected.has(index)) found.set(index, { at, nth, crossedBlockEnd });
+      }
+      crossedBlockEnd ||= endsBlock(content);
+    }
+    return found;
+  };
+  const above = sweep(1);
+  const below = sweep(-1);
+  const landmarkAnchors = new Map<number, string>();
+  const anchorAt = (index: number): string => {
+    if (index < 0 || index >= lines.length) return EDGE_OF_FILE;
+    let anchor = landmarkAnchors.get(index);
+    if (anchor === undefined) {
+      anchor = encode(`u\0${(lines[index] as TextLine).content}`);
+      landmarkAnchors.set(index, anchor);
+    }
+    return anchor;
+  };
+  for (const index of selected) {
+    if (result.has(index)) continue;
+    const line = (lines[index] as TextLine).content;
+    const upper = above.get(index) as SelectedLandmark;
+    const lower = below.get(index) as SelectedLandmark;
+    const up: Landmark = { at: upper.at, nth: upper.nth, anchor: anchorAt(upper.at) };
+    const down: Landmark = { at: lower.at, nth: lower.nth, anchor: anchorAt(lower.at) };
+    if (line.trim() === "") {
+      result.set(
+        index,
+        encode(`ab\0${up.anchor}\0${up.nth}\0${down.anchor}\0${down.nth}\0${line}`),
+      );
+      continue;
+    }
+    const blockEndsIn = (from: number) =>
+      from === up.at ? upper.crossedBlockEnd : lower.crossedBlockEnd;
+    result.set(
+      index,
+      encode(
+        sideOf(index, line, up, down, blockEndsIn) === "above"
+          ? `a\0${up.anchor}\0${up.nth}\0${down.nth}\0${line}`
+          : `b\0${down.anchor}\0${down.nth}\0${up.nth}\0${line}`,
+      ),
+    );
+  }
+  return result;
+}
+
 /** The anchors of the lines of `content`, split as Read splits them. */
 export function textLineAnchors(source: string, content: string): readonly string[] {
   return documentLineAnchors(createTextDocument(source, content).lines);

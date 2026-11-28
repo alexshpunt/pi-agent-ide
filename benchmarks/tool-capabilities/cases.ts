@@ -4212,12 +4212,15 @@ add(
   },
 );
 
+const anchorWindowPrefix = Array.from({ length: 1000 }, (_, index) => `before ${index}\n`).join("");
+const anchorWindowSuffix = Array.from({ length: 1000 }, (_, index) => `after ${index}\n`).join("");
+
 add(
   "line-anchor-range-interior-change",
   ["edit.line-anchor-range-interior-change"],
-  'Read all of task.txt with views ["anchors"] and capture the 7-character anchors printed before BEGIN and END. Replace the exact line BODY OLD with BODY NEW, leaving BEGIN and END unchanged. Wait for Replace to finish, then call Delete on task.txt with from and through set to the BEGIN and END anchors from the first Read. Delete must refuse because the span changed after the anchors were issued. Leave the entire file intact after Replace.',
+  'Read task.txt at offset 1001 with limit 3 and views ["anchors"], and capture the 7-character anchors printed before BEGIN and END. Replace the exact line BODY OLD with BODY NEW, leaving BEGIN and END unchanged. Wait for Replace to finish, then call Delete on task.txt with from and through set to the BEGIN and END anchors from the first Read. Delete must refuse because the span changed after the anchors were issued. Leave the entire file intact after Replace.',
   [
-    { tool: "read", args: { path: "task.txt", views: ["anchors"] } },
+    { tool: "read", args: { path: "task.txt", offset: 1001, limit: 3, views: ["anchors"] } },
     {
       tool: "replace",
       args: { path: "task.txt", at: "BODY OLD" },
@@ -4237,8 +4240,8 @@ add(
     },
   ],
   {
-    files: { "task.txt": "before\nBEGIN\nBODY OLD\nEND\nafter\n" },
-    expected: { "task.txt": "before\nBEGIN\nBODY NEW\nEND\nafter\n" },
+    files: { "task.txt": `${anchorWindowPrefix}BEGIN\nBODY OLD\nEND\n${anchorWindowSuffix}` },
+    expected: { "task.txt": `${anchorWindowPrefix}BEGIN\nBODY NEW\nEND\n${anchorWindowSuffix}` },
   },
 );
 add(

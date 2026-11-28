@@ -31,6 +31,7 @@ export { getTextSourceLine, type TextSourceLine, withTextSourceLine } from "./so
 
 export {
   documentLineAnchors,
+  documentSelectedLineAnchors,
   isLineAnchor,
   LINE_ANCHOR_PATTERN,
   lineAnchors,

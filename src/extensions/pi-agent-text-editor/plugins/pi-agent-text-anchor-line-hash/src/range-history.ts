@@ -25,7 +25,7 @@ export class LineHashRangeHistory {
   public record(
     source: string,
     document: TextDocument,
-    anchors: readonly string[],
+    anchorAt: (index: number) => string | undefined,
     shown: ReadonlySet<number> | undefined,
   ): void {
     if (this.exhausted || shown?.size === 0) return;
@@ -35,8 +35,8 @@ export class LineHashRangeHistory {
     let last = 0;
     for (const [index, line] of document.lines.entries()) {
       const to = from + line.content.length + line.lineEnding.length;
-      const token = anchors[index];
-      if (token !== undefined && (shown === undefined || shown.has(line.lineNumber))) {
+      const token = shown === undefined || shown.has(line.lineNumber) ? anchorAt(index) : undefined;
+      if (token !== undefined) {
         first ??= from;
         last = to;
         lines.set(token, lines.has(token) ? null : { from: from - first, to: to - first });
