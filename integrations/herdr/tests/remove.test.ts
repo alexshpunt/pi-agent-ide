@@ -98,6 +98,31 @@ describe("closing a Herdr agent", () => {
     await expect(h.service.send("herdr:m/t7", "hello")).resolves.toBeUndefined();
   });
 
+  it.each([
+    ["HERDR_NOT_SUBMITTED", "not-applied"],
+    ["HERDR_OUTCOME_UNKNOWN", "unknown"],
+  ])("preserves the bridge's structured %s outcome", async (code, effect) => {
+    const h = harness(() => {
+      throw Object.assign(new Error("fixture"), { code, effect, requestId: "request-fixture" });
+    });
+    await h.service.read("herdr:m/t7", 3000);
+    await expect(h.service.remove("herdr:m/t7")).rejects.toMatchObject({ code, effect });
+  });
+
+  it("does not treat a malformed bridge refusal as proof that the operation was not applied", async () => {
+    const h = harness(() => {
+      throw Object.assign(new Error("fixture"), {
+        code: "HERDR_NOT_SUBMITTED",
+        effect: "unknown",
+      });
+    });
+    await h.service.read("herdr:m/t7", 3000);
+    await expect(h.service.remove("herdr:m/t7")).rejects.toMatchObject({
+      code: "HERDR_DELETE_FAILED",
+      effect: "unknown",
+    });
+  });
+
   it("rejects history addresses", async () => {
     await expect(harness(() => ({})).service.remove("herdr:m/t7/history")).rejects.toMatchObject({
       code: "UNSUPPORTED_OPERATION",

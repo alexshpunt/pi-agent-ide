@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   assistantMessage,
   getToolExecution,
+  getToolExecutionDetails,
   getToolResultText,
   PiIntegrationTest,
   testArtifactsDir,
@@ -103,6 +104,20 @@ test.each([false, true])(
         ).toBe(id in failures);
         if (failures[id])
           expect(JSON.stringify(getToolExecution(result, id))).toContain(failures[id]);
+      }
+      for (const [call, operation] of [
+        ["list", "agent.list"],
+        ["read", "agent.inspect"],
+        ["budget", "agent.inspect"],
+        ["history", "agent.history"],
+        ["root-search", "agent.list"],
+        ["search", "agent.history"],
+        ["send", "agent.send"],
+        ["delete", "agent.remove"],
+      ]) {
+        const details = JSON.stringify(getToolExecutionDetails(getToolExecution(result, call)));
+        expect(details).toContain(`receipt-${operation}`);
+        expect(details).toContain("revision-fixture");
       }
       expect(getToolResultText(result, "list")).toContain("t7");
       const listed = getToolResultText(result, "list")

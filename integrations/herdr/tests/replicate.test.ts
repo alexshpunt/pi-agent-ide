@@ -302,6 +302,52 @@ describe("replica watcher", () => {
     h.watcher.stopAll();
   });
 
+  it("follows a persisted recovered helper once and remembers its closure across reloads", async () => {
+    const h = harness({
+      terminal: "t9",
+      status: "done",
+      reply: "fixture",
+      listed: true,
+      answers: true,
+    });
+    const branch: unknown[] = [
+      {
+        type: "custom_message",
+        customType: "herdr-recovery",
+        details: {
+          helpers: [{ terminal: "t9", name: "fixture", owner: "owner", kind: "subagent" }],
+        },
+      },
+    ];
+    const ctx = {
+      cwd: "/repo",
+      ui: { setStatus() {} },
+      sessionManager: { getBranch: () => branch },
+    };
+    h.watcher.restore(ctx as never);
+    expect(h.watcher.count).toBe(1);
+    h.watcher.reconcile(ctx as never);
+    await until(() => h.sent.length === 1);
+    expect(h.sent[0].details).toMatchObject({ terminal: "t9", kind: "subagent", status: "idle" });
+    expect(h.watcher.count).toBe(1);
+    h.watcher.closed("t9");
+    branch.push({
+      type: "custom",
+      customType: REPLICA_CLOSED,
+      data: { terminal: "t9", owner: "owner" },
+    });
+    branch.push({
+      type: "custom_message",
+      customType: "herdr-recovery",
+      details: { helpers: [{ terminal: "t9", name: "fixture", owner: "owner", kind: "subagent" }] },
+    });
+    h.watcher.reconcile(ctx as never);
+    expect(h.watcher.count).toBe(0);
+    h.watcher.restore(ctx as never);
+    expect(h.watcher.count).toBe(0);
+    h.watcher.stopAll();
+  });
+
   it("reports a followed replica that exited while the original reloaded as exited, not as failed to start", async () => {
     const h = harness({
       terminal: "t9",
