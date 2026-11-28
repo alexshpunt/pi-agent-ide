@@ -3,7 +3,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { ResourceError } from "pi-agent-ide/api/resource";
-import { failure } from "./service.ts";
+import { failure, type RecoveryReceipt } from "./service.ts";
 import { oneLine } from "./timeline.ts";
 import {
   NESTING_LIMIT,
@@ -134,6 +134,7 @@ export function registerSubagent(
       // One call is one launch: a retried call with the same ID reuses its receipt instead of starting a second agent.
       const requestId = `subagent-${ctx.sessionManager.getSessionId()}-${toolCallId}`;
       let receipt: Receipt;
+      const receipts: RecoveryReceipt[] = [];
       try {
         receipt = await watcher.service.command<Receipt>(
           "agent.subagent",
@@ -145,6 +146,8 @@ export function registerSubagent(
             task: subagentAssignment(params.name, params.task, overlaps(folder, ctx.cwd)),
           },
           "herdr:",
+          toolCallId,
+          receipts,
         );
       } catch (error) {
         if (error instanceof ResourceError) throw error;
@@ -199,6 +202,7 @@ export function registerSubagent(
         profile: params.profile,
         folder,
         outcome,
+        herdrReceipts: receipts,
         ...(typeof receipt.model === "string" ? { model: receipt.model } : {}),
         ...(typeof receipt.space === "string" ? { space: receipt.space } : {}),
         ...(typeof receipt.tab === "string" ? { tab: receipt.tab } : {}),

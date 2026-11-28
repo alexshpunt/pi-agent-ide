@@ -10,9 +10,15 @@ import {
   type Inspection,
 } from "./timeline.ts";
 
+export type RecoveryReceipt = { id: string; revision: string };
 export interface Bridge {
   version: number;
   command(name: string, args: Record<string, unknown>): Promise<unknown>;
+  commandTracked?(
+    name: string,
+    args: Record<string, unknown>,
+    options: { toolCallId: string | null },
+  ): Promise<{ id: string; revision?: string; result: unknown }>;
 }
 export interface HistoryItem {
   index: number;
@@ -95,7 +101,13 @@ export class HerdrService {
     private pi: Pick<ExtensionAPI, "events">,
     private owner: () => string,
   ) {}
-  async command<T>(name: string, args: Record<string, unknown>, source: string): Promise<T> {
+  async command<T>(
+    name: string,
+    args: Record<string, unknown>,
+    source: string,
+    tracked?: string | null,
+    receipts?: RecoveryReceipt[],
+  ): Promise<T> {
     let bridge: Bridge | undefined;
     this.pi.events.emit("herdr:bridge", {
       provide: (value: Bridge) => {
@@ -108,13 +120,54 @@ export class HerdrService {
         source,
         "Run Pi in a Herdr terminal with a current Herdr App, then reload Pi.",
       );
-    const result = await bridge.command(name, args);
+    let result: unknown;
+    try {
+      if (tracked !== undefined && bridge.commandTracked) {
+        const reply = await bridge.commandTracked(name, args, { toolCallId: tracked });
+        result = reply.result;
+        if (typeof reply.id === "string" && typeof reply.revision === "string")
+          receipts?.push({ id: reply.id, revision: reply.revision });
+      } else result = await bridge.command(name, args);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && "effect" in error) {
+        if (error.code === "HERDR_NOT_SUBMITTED" && error.effect === "not-applied") {
+          const reason = "reason" in error ? error.reason : undefined;
+          if (reason === "app-version")
+            throw failure("HERDR_RECOVERY_UNSUPPORTED", source, "Update Herdr App and reload Pi.");
+          if (reason === "storage")
+            throw failure(
+              "HERDR_RECOVERY_STORAGE",
+              source,
+              "Check recovery storage and saved outcomes before retrying.",
+            );
+          throw failure(
+            "HERDR_NOT_SUBMITTED",
+            source,
+            "The App request was not submitted. Check the recovery guide before retrying.",
+          );
+        }
+        if (error.code === "HERDR_OUTCOME_UNKNOWN" && error.effect === "unknown")
+          throw failure(
+            "HERDR_OUTCOME_UNKNOWN",
+            source,
+            "The request's outcome is unknown. Inspect its effects before retrying a mutation.",
+            "unknown",
+          );
+      }
+      throw error;
+    }
     if (result && typeof result === "object" && "error" in result)
       throw new Error(String(result.error));
     return result as T;
   }
-  async list(): Promise<Agent[]> {
-    const result = await this.command<{ agents: Agent[] }>("agent.list", {}, "herdr:");
+  async list(tracked = false, receipts?: RecoveryReceipt[]): Promise<Agent[]> {
+    const result = await this.command<{ agents: Agent[] }>(
+      "agent.list",
+      {},
+      "herdr:",
+      tracked ? null : undefined,
+      receipts,
+    );
     if (!Array.isArray(result.agents))
       throw failure(
         "HERDR_INVALID_REPLY",
@@ -124,8 +177,14 @@ export class HerdrService {
     return result.agents;
   }
   /** The user's workflow profiles, read fresh each time so added and removed ones show at once. */
-  async profiles(): Promise<Profile[]> {
-    const result = await this.command<{ profiles?: unknown }>("workflow.get", {}, PROFILES);
+  async profiles(receipts?: RecoveryReceipt[]): Promise<Profile[]> {
+    const result = await this.command<{ profiles?: unknown }>(
+      "workflow.get",
+      {},
+      PROFILES,
+      null,
+      receipts,
+    );
     if (
       !Array.isArray(result.profiles) ||
       !result.profiles.every(
@@ -145,19 +204,27 @@ export class HerdrService {
       );
     return result.profiles as Profile[];
   }
-  async read(source: string, budget: number): Promise<string> {
+  async read(source: string, budget: number, receipts?: RecoveryReceipt[]): Promise<string> {
     if (source === "herdr:")
-      return (await this.list()).map(agentLine).join("\n") || "No Pi agents in Herdr.";
-    if (source === PROFILES) return profilesText(await this.profiles());
-    return this.render(await this.inspect(source), budget);
+      return (
+        (await this.list(true, receipts)).map(agentLine).join("\n") || "No Pi agents in Herdr."
+      );
+    if (source === PROFILES) return profilesText(await this.profiles(receipts));
+    return this.render(await this.inspect(source, true, receipts), budget);
   }
-  async inspect(source: string): Promise<Inspection> {
+  async inspect(
+    source: string,
+    tracked = false,
+    receipts?: RecoveryReceipt[],
+  ): Promise<Inspection> {
     const target = address(source);
     if (!target) throw failure("HERDR_INVALID_ADDRESS", source, "Use a Herdr agent address.");
     const value = await this.command<Partial<Inspection> | null>(
       "agent.inspect",
       { terminal: target.terminal },
       source,
+      tracked ? null : undefined,
+      receipts,
     );
     if (
       !value?.inspection ||
@@ -235,20 +302,26 @@ export class HerdrService {
   acknowledge(terminal: string): void {
     this.sends.delete(`${this.owner()}\0${terminal}`);
   }
-  async history(source: string, params: Record<string, unknown>): Promise<HistoryItem[]> {
+  async history(
+    source: string,
+    params: Record<string, unknown>,
+    receipts?: RecoveryReceipt[],
+  ): Promise<HistoryItem[]> {
     const target = address(source);
     if (!target) throw failure("HERDR_INVALID_ADDRESS", source, "Use a Herdr agent address.");
     const result = await this.command<{ items?: HistoryItem[]; matches?: HistoryItem[] }>(
       "agent.history",
       { terminal: target.terminal, ...params },
       source,
+      null,
+      receipts,
     );
     const items = params.query === undefined ? result.items : result.matches;
     if (!Array.isArray(items))
       throw failure("HERDR_INVALID_REPLY", source, "Herdr returned an invalid history page.");
     return items;
   }
-  async send(source: string, message: string): Promise<void> {
+  async send(source: string, message: string, receipts?: RecoveryReceipt[]): Promise<void> {
     const target = address(source);
     if (!target || target.history)
       throw failure("UNSUPPORTED_OPERATION", source, "Write a message to herdr:<terminal>.");
@@ -263,7 +336,13 @@ export class HerdrService {
     if (!message.trim())
       throw failure("HERDR_INVALID_MESSAGE", source, "Supply a non-empty message.");
     try {
-      await this.command("agent.send", { terminal: target.terminal, ...identity, message }, source);
+      await this.command(
+        "agent.send",
+        { terminal: target.terminal, ...identity, message },
+        source,
+        null,
+        receipts,
+      );
       this.sends.set(`${owner}\0${target.terminal}`, {
         at: Date.now(),
         ...identity,
@@ -292,7 +371,7 @@ export class HerdrService {
     }
   }
   /** End the agent read in this session and close its dedicated tab through Herdr's agent.remove. */
-  async remove(source: string): Promise<void> {
+  async remove(source: string, receipts?: RecoveryReceipt[]): Promise<void> {
     const target = address(source);
     if (!target || target.history)
       throw failure("UNSUPPORTED_OPERATION", source, "Delete herdr:<terminal> to close an agent.");
@@ -305,7 +384,13 @@ export class HerdrService {
         `Read ${source} in this session before closing it.`,
       );
     try {
-      await this.command("agent.remove", { terminal: target.terminal, ...identity }, source);
+      await this.command(
+        "agent.remove",
+        { terminal: target.terminal, ...identity },
+        source,
+        null,
+        receipts,
+      );
     } catch (error) {
       if (error instanceof ResourceError) throw error;
       const reason = error instanceof Error ? error.message : String(error);

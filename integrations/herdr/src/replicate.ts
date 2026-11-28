@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { ResourceError } from "pi-agent-ide/api/resource";
-import { failure, sameTerminal, type Agent } from "./service.ts";
+import { failure, sameTerminal, type Agent, type RecoveryReceipt } from "./service.ts";
 import { writeReplicaSession, type ForkEntry, type ForkMessage } from "./fork.ts";
 import { agentStatusOf, oneLine, statusOf, type Inspection, type Status } from "./timeline.ts";
 import { signature, sleep, type AgentWaiter, type Target } from "./wait.ts";
@@ -29,6 +29,7 @@ export interface ReplicaDetails {
   session?: string;
   space?: string;
   tab?: string;
+  herdrReceipts?: RecoveryReceipt[];
 }
 export interface ReplicaMessageDetails {
   terminal: string;
@@ -92,6 +93,7 @@ export function replicaAssignment(name: string, task: string): string {
 export class ReplicaWatcher {
   /** Followed agents by terminal: the watch to abort and what kind of agent it is. */
   private readonly follows = new Map<string, { controller: AbortController; kind: HelperKind }>();
+  private readonly followed = new Set<string>();
   private context: ExtensionContext | undefined;
   constructor(
     private pi: ExtensionAPI,
@@ -122,9 +124,16 @@ export class ReplicaWatcher {
   /** Session start: forget other sessions' replicas and follow this session's open ones again. */
   restore(ctx: ExtensionContext): void {
     this.stopAll();
+    this.followed.clear();
+    this.reconcile(ctx);
+  }
+
+  /** Follow persisted recoveries without restarting watches that are already running. */
+  reconcile(ctx: ExtensionContext): void {
     this.context = ctx;
     const owner = this.owner();
     const replicas = new Map<string, Replica>();
+    const finished = new Set<string>();
     for (const source of ctx.sessionManager.getBranch()) {
       const entry = record(source);
       const message = record(entry?.message);
@@ -146,25 +155,53 @@ export class ReplicaWatcher {
         });
       else if (
         entry?.type === "custom_message" &&
+        entry.customType === "herdr-recovery" &&
+        Array.isArray(details?.helpers)
+      ) {
+        for (const value of details.helpers) {
+          const helper = record(value);
+          if (
+            helper?.owner !== owner ||
+            typeof helper.terminal !== "string" ||
+            !helper.terminal ||
+            (helper.kind !== "replica" && helper.kind !== "subagent")
+          )
+            continue;
+          if (!replicas.has(helper.terminal) && !finished.has(helper.terminal))
+            replicas.set(helper.terminal, {
+              terminal: helper.terminal,
+              name: typeof helper.name === "string" ? helper.name : helper.terminal,
+              kind: helper.kind,
+              restored: true,
+            });
+        }
+      } else if (
+        entry?.type === "custom_message" &&
         entry.customType === REPLICA_MESSAGE &&
         details?.owner === owner &&
         typeof details.terminal === "string"
       ) {
         const replica = replicas.get(details.terminal);
-        if (replica && details.final) replicas.delete(details.terminal);
-        else if (replica)
+        if (details.final) {
+          replicas.delete(details.terminal);
+          finished.add(details.terminal);
+        } else if (replica)
           replica.after = typeof details.signature === "string" ? details.signature : undefined;
       } else if (entry?.type === "custom" && entry.customType === REPLICA_CLOSED) {
         const data = record(entry.data);
-        if (data?.owner === owner && typeof data.terminal === "string")
+        if (data?.owner === owner && typeof data.terminal === "string") {
           replicas.delete(data.terminal);
+          finished.add(data.terminal);
+        }
       }
     }
-    for (const replica of replicas.values()) this.follow(replica, ctx.cwd);
+    for (const replica of replicas.values())
+      if (!this.followed.has(replica.terminal)) this.follow(replica, ctx.cwd);
   }
 
   /** Follow a replica until it exits, is closed or the session changes. */
   follow(replica: Replica, cwd: string): void {
+    this.followed.add(replica.terminal);
     this.follows.get(replica.terminal)?.controller.abort();
     const controller = new AbortController();
     this.follows.set(replica.terminal, { controller, kind: replica.kind ?? "replica" });
@@ -260,8 +297,8 @@ export class ReplicaWatcher {
         ? `${titleOf(replica.kind)} ${replica.name} in ${source} exited.`
         : `${titleOf(replica.kind)} ${replica.name} in ${source} stopped (${status}).`;
       const hint = final
-        ? "It no longer runs. Close its tab with delete when you no longer need it."
-        : "Reply with write to steer it or answer its question. Close it with delete once its work is done and checked. It may also have stopped to compact or reload; then it continues on its own. When nothing significant happened and it keeps working, stay silent: end your turn without a message.";
+        ? "Inspect the delivered timeline and check its result. Close its tab with delete after checking it."
+        : "Inspect the delivered timeline and determine why it stopped. If its work is finished, check the result and close it with delete. If it needs input, answer its question or steer it with write. When nothing significant happened and it keeps working, stay silent: end your turn without a message.";
       this.deliver(
         replica,
         owner,
@@ -355,6 +392,10 @@ export function registerReplicate(
   pi.on("session_start", (_event, ctx) => watcher.restore(ctx));
   pi.on("session_tree", (_event, ctx) => watcher.restore(ctx));
   pi.on("session_shutdown", () => watcher.stopAll());
+  pi.events.on("herdr:recovery-persisted", (event: unknown) => {
+    const ctx = record(event)?.ctx as ExtensionContext | undefined;
+    if (ctx) watcher.reconcile(ctx);
+  });
   pi.registerMessageRenderer<ReplicaMessageDetails>(REPLICA_MESSAGE, (message, options, theme) => {
     const details = message.details;
     const text =
@@ -452,6 +493,7 @@ export function registerReplicate(
       });
       const thinking = pi.getThinkingLevel();
       let launched: { terminal?: unknown; space?: unknown; tab?: unknown };
+      const receipts: RecoveryReceipt[] = [];
       try {
         launched = await waiter.service.command(
           "agent.replicate",
@@ -464,12 +506,14 @@ export function registerReplicate(
             task: replicaAssignment(params.name, params.task),
           },
           "herdr:",
+          toolCallId,
+          receipts,
         );
       } catch (error) {
         const reason = messageOf(error);
         const refused =
           error instanceof ResourceError
-            ? error.code === "HERDR_UNAVAILABLE"
+            ? error.effect === "not-applied"
             : /Unsupported Herdr bridge command|^agent\.replicate /u.test(reason);
         // Nothing started, so the prepared copy is not needed.
         if (refused) await rm(fork.file, { force: true });
@@ -505,6 +549,7 @@ export function registerReplicate(
         since,
         kind: "replica",
         session: fork.id,
+        herdrReceipts: receipts,
         ...(typeof launched.space === "string" ? { space: launched.space } : {}),
         ...(typeof launched.tab === "string" ? { tab: launched.tab } : {}),
       };

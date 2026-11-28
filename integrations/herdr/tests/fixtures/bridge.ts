@@ -10,7 +10,7 @@ export default async function fixture(pi: ExtensionAPI) {
   pi.on('session_start', (_event, context) => { cwd = context.cwd; generation = 1; available = true; mode = 'idle'; requests.length = 0; });
   pi.events.on('herdr:bridge', (request: unknown) => {
     if (!available) return;
-    (request as { provide(api: unknown): void }).provide({ version: 1,
+    const bridge = { version: 1,
       async command(name: string, args: Record<string, unknown>) {
         requests.push({ name, args });
         await writeFile(path.join(cwd, 'bridge-requests.json'), JSON.stringify(requests));
@@ -46,6 +46,11 @@ export default async function fixture(pi: ExtensionAPI) {
           return { terminal: args.terminal, outcome: 'removed' };
         }
         throw Error('Fixture command outside bridge allowlist');
+      },
+    };
+    (request as { provide(api: unknown): void }).provide({ ...bridge,
+      async commandTracked(name: string, args: Record<string, unknown>) {
+        return { id: `receipt-${name}`, revision: 'revision-fixture', result: await bridge.command(name, args) };
       },
     });
   });

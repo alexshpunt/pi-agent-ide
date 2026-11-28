@@ -22,11 +22,20 @@ import {
 import { type ResourceResolver } from "pi-agent-ide/api/resource";
 import { connectAgentDocumentation } from "pi-agent-ide/api/documentation";
 import { registerAgentIdeSettings, readAgentIdeSetting } from "pi-agent-ide/api/settings";
-import { HerdrService, PROFILES, address, agentLine, failure, historyText } from "./service.ts";
+import {
+  HerdrService,
+  PROFILES,
+  address,
+  agentLine,
+  failure,
+  historyText,
+  type RecoveryReceipt,
+} from "./service.ts";
 import { budgetValue, oneLine } from "./timeline.ts";
 import { AgentWaiter, registerWaitForAgents } from "./wait.ts";
 import { registerReplicate } from "./replicate.ts";
 import { registerSubagent } from "./subagent.ts";
+import { registerRecovery } from "./recovery.ts";
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -42,12 +51,14 @@ function textResult(
   text: string,
   startLine = 1,
   endLine = startLine + text.split("\n").length - 1,
+  receipts: RecoveryReceipt[] = [],
 ): ReadToolResult {
+  const details = { source, resolvedBy: "herdr", startLine, endLine, herdrReceipts: receipts };
   return {
     content: [{ type: "text", text }],
     // A history page has no known total. Native text avoids inventing an EOF for a partial page.
     script: { kind: "native", source, blocks: [{ type: "text", text }] },
-    details: { source, resolvedBy: "herdr", startLine, endLine },
+    details,
   };
 }
 
@@ -60,6 +71,7 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
     owner = "stopped";
   });
   const service = new HerdrService(pi, () => owner);
+  registerRecovery(pi);
   registerAgentIdeSettings(pi, "pi-agent-herdr", [
     {
       kind: "text",
@@ -116,6 +128,7 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
       apiVersion: READ_API_VERSION,
       id: "herdr",
       setup(api) {
+        const readReceipts = new WeakMap<object, RecoveryReceipt[]>();
         api.addView({
           view: "budget",
           contentKind: "any",
@@ -127,6 +140,8 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
             id: "herdr",
             async tryResolve(source, context) {
               if (!source.startsWith("herdr:")) return { kind: "not-handled" };
+              const receipts: RecoveryReceipt[] = [];
+              readReceipts.set(context, receipts);
               return {
                 kind: "resolved",
                 resource: {
@@ -135,7 +150,11 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                     return [
                       {
                         type: "text",
-                        text: await service.read(source, await defaultBudget(context.cwd)),
+                        text: await service.read(
+                          source,
+                          await defaultBudget(context.cwd),
+                          receipts,
+                        ),
                       },
                     ];
                   },
@@ -159,6 +178,7 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
               if (budgetViews.length > 1)
                 throw failure("HERDR_INVALID_BUDGET", source, "Supply one budget:<chars> view.");
               if (target?.history) {
+                const receipts: RecoveryReceipt[] = [];
                 if (budgetViews.length)
                   throw failure(
                     "UNSUPPORTED_OPERATION",
@@ -177,10 +197,14 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                     source,
                     "Use a positive history item offset and a limit from 1 to 50.",
                   );
-                const items = await service.history(source, {
-                  limit,
-                  ...(offset === undefined ? {} : { before: offset - 1 + limit }),
-                });
+                const items = await service.history(
+                  source,
+                  {
+                    limit,
+                    ...(offset === undefined ? {} : { before: offset - 1 + limit }),
+                  },
+                  receipts,
+                );
                 const page =
                   offset === undefined ? items : items.filter((item) => item.index >= offset - 1);
                 return {
@@ -190,6 +214,7 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                     historyText(page),
                     (page.at(0)?.index ?? (offset ?? 1) - 1) + 1,
                     (page.at(-1)?.index ?? (offset ?? 1) - 1) + 1,
+                    receipts,
                   ),
                 };
               }
@@ -201,9 +226,11 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                   "The budget view applies to one agent timeline.",
                 );
               const budget = budgetValue(budgetViews[0].slice("budget:".length));
+              const receipts: RecoveryReceipt[] = [];
+              const text = await service.read(source, budget, receipts);
               return {
                 kind: "return",
-                result: textResult(source, await service.read(source, budget)),
+                result: textResult(source, text, 1, text.split("\n").length, receipts),
               };
             } catch (error) {
               return {
@@ -217,6 +244,24 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                 },
               };
             }
+          },
+        });
+        api.addHandler({
+          stage: "post-read",
+          async handler(context) {
+            const receipts = readReceipts.get(context.resolverContext);
+            if (!receipts?.length) return { kind: "continue", context };
+            return {
+              kind: "continue",
+              context,
+              transform: (result) =>
+                result.isError
+                  ? result
+                  : {
+                      ...result,
+                      details: { ...result.details, herdrReceipts: receipts },
+                    },
+            };
           },
         });
         api.describe({
@@ -257,8 +302,9 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                 const fold = (value: string) =>
                   request.caseSensitive ? value : value.toLowerCase();
                 const matches: SearchSelectionMatch[] = [];
+                const receipts: RecoveryReceipt[] = [];
                 if (source === "herdr:") {
-                  const agents = await service.list();
+                  const agents = await service.list(true, receipts);
                   for (const [index, agent] of agents.entries()) {
                     const lineText = agentLine(agent);
                     const startColumn = fold(lineText).indexOf(fold(query));
@@ -276,11 +322,15 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                   const target = address(source);
                   if (!target)
                     throw failure("HERDR_INVALID_ADDRESS", source, "Use a Herdr agent address.");
-                  const items = await service.history(source, {
-                    query,
-                    caseSensitive: request.caseSensitive ?? false,
-                    limit,
-                  });
+                  const items = await service.history(
+                    source,
+                    {
+                      query,
+                      caseSensitive: request.caseSensitive ?? false,
+                      limit,
+                    },
+                    receipts,
+                  );
                   for (const item of items) {
                     const lineText = oneLine(item.text),
                       startColumn = Math.max(0, fold(lineText).indexOf(fold(query)));
@@ -294,7 +344,10 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                     });
                   }
                 }
-                return { kind: "resolved", payload: { source, matches, complete: false } };
+                return {
+                  kind: "resolved",
+                  payload: { source, matches, complete: false, receipts },
+                };
               } catch (error) {
                 return { kind: "failed", error };
               }
@@ -304,7 +357,11 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
               return selectionData(value.matches, false);
             },
             format(payload) {
-              const value = payload as { source: string; matches: SearchSelectionMatch[] };
+              const value = payload as {
+                source: string;
+                matches: SearchSelectionMatch[];
+                receipts: RecoveryReceipt[];
+              };
               return {
                 content: [
                   {
@@ -315,7 +372,7 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                         .join("\n") || "No matches.",
                   },
                 ],
-                details: { source: value.source, payload: value },
+                details: { source: value.source, payload: value, herdrReceipts: value.receipts },
               };
             },
           },
@@ -347,11 +404,12 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                 source,
                 "Write a plain text message with path and content.",
               );
-            await service.send(source, input.content);
+            const receipts: RecoveryReceipt[] = [];
+            await service.send(source, input.content, receipts);
             return {
               source,
               summary: `Message sent to ${source}.`,
-              data: { kind: "herdr-message", effect: "applied" },
+              data: { kind: "herdr-message", effect: "applied", herdrReceipts: receipts },
               script: { source },
             };
           },
@@ -369,13 +427,19 @@ export default async function herdrExtension(pi: ExtensionAPI): Promise<void> {
                 source,
                 "Delete herdr:<terminal> with path alone.",
               );
-            await service.remove(source);
+            const receipts: RecoveryReceipt[] = [];
+            await service.remove(source, receipts);
             const target = address(source);
             if (target) replicas.closed(target.terminal);
             return {
               source,
               summary: `Closed ${source} and its tab.`,
-              data: { kind: "herdr-agent", deleted: true, effect: "applied" },
+              data: {
+                kind: "herdr-agent",
+                deleted: true,
+                effect: "applied",
+                herdrReceipts: receipts,
+              },
               script: { source },
             };
           },
