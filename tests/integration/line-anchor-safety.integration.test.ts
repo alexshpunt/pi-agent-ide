@@ -83,6 +83,37 @@ async function run(cwd: string, route: Route, name: string, steps: Step[]) {
 }
 
 test.each(["direct", "codemode"] as const)(
+  "uses a repeated line anchor from a small window in a large file through %s",
+  async (route) =>
+    withTempWorkspace(async (cwd) => {
+      const prefix = Array.from({ length: 1000 }, (_, index) => `prefix ${index}\n`).join("");
+      const suffix = Array.from({ length: 1000 }, (_, index) => `suffix ${index}\n`).join("");
+      const initial = `${prefix}first\nrepeat\n}\nsecond\nrepeat\n}\n${suffix}`;
+      const anchors = textLineAnchors("task.txt", initial);
+      const selected = requiredValue(anchors[1004]);
+      const other = requiredValue(anchors[1001]);
+      expect(selected).not.toBe(other);
+      await writeFile(path.join(cwd, "task.txt"), initial);
+      const result = await run(cwd, route, "large-paged-line-anchor", [
+        {
+          id: "read-window",
+          tool: "read",
+          args: { path: "task.txt", offset: 1004, limit: 3, views: ["anchors"] },
+        },
+        {
+          id: "edit-window",
+          tool: "replace",
+          args: { path: "task.txt", at: selected, text: "changed\n" },
+        },
+      ]);
+      expect(getToolResultText(result, "read-window")).toContain(`${selected}|repeat`);
+      expect(await readFile(path.join(cwd, "task.txt"), "utf8")).toBe(
+        `${prefix}first\nrepeat\n}\nsecond\nchanged\n}\n${suffix}`,
+      );
+    }),
+);
+
+test.each(["direct", "codemode"] as const)(
   "refuses copied display prefixes without writes and accepts a corrected retry through %s",
   async (route) =>
     withTempWorkspace(async (cwd) => {

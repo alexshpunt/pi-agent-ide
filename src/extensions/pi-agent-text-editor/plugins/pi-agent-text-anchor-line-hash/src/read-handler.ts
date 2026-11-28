@@ -1,5 +1,6 @@
 import {
   documentLineAnchors,
+  documentSelectedLineAnchors,
   getTextSourceLine,
   type TextLine,
   type TextLinePresenter,
@@ -15,14 +16,25 @@ export function createLineHashPresenter(history?: LineHashRangeHistory): TextLin
         (context.resolvedBy === "filesystem" || context.resolvedBy === "ssh") &&
         ((context.purpose === "edit-diff" && context.sourceText === undefined) ||
           context.sourceText === document.content);
-      // Anchors name content, so a physical document needs the whole text, not only shown lines.
-      const physicalAnchors = physical ? documentLineAnchors(document.lines) : undefined;
-      if (physicalAnchors !== undefined) {
-        history?.record(context.source, document, physicalAnchors, context.lineNumbers);
+      const shown = context.lineNumbers;
+      // Uniqueness and landmarks are determined from the whole file, but a window only needs
+      // tokens for the lines it exposes. Full-document consumers still use the cached array.
+      const full =
+        physical && shown === undefined ? documentLineAnchors(document.lines) : undefined;
+      const selected =
+        physical && shown !== undefined
+          ? documentSelectedLineAnchors(
+              document.lines,
+              new Set([...shown].map((number) => number - 1)),
+            )
+          : undefined;
+      const physicalAnchorAt = (index: number) => full?.[index] ?? selected?.get(index);
+      if (physical) {
+        history?.record(context.source, document, physicalAnchorAt, shown);
       }
       const anchorFor = (line: TextLine) => {
-        if (physicalAnchors !== undefined) {
-          const anchor = physicalAnchors[line.lineNumber - 1];
+        if (physical) {
+          const anchor = physicalAnchorAt(line.lineNumber - 1);
           return anchor === undefined ? undefined : { anchor, lineNumber: line.lineNumber };
         }
         const sourceLine = getTextSourceLine(line);
@@ -30,19 +42,21 @@ export function createLineHashPresenter(history?: LineHashRangeHistory): TextLin
           ? undefined
           : { anchor: sourceLine.anchor, lineNumber: sourceLine.lineNumber };
       };
-      const shown = context.lineNumbers;
-      const presented = document.lines.map((line) =>
-        shown === undefined || shown.has(line.lineNumber) ? anchorFor(line) : undefined,
-      );
-      // Pad shown lines as if the whole document were presented, so they match Read.
+      // Pad shown lines as if the whole document were presented, without spreading one argument
+      // per line into Math.max (which exceeds V8's argument limit on large documents).
       const lastLine = shown === undefined ? undefined : document.lines.at(-1);
-      const last = lastLine === undefined ? undefined : anchorFor(lastLine);
-      const lineWidth = Math.max(
-        String(last?.lineNumber ?? "").length,
-        ...presented.map((item) => String(item?.lineNumber ?? "").length),
-      );
-      const lines = document.lines.map((line, index) => {
-        const item = presented[index];
+      const lastNumber = physical
+        ? lastLine?.lineNumber
+        : lastLine && anchorFor(lastLine)?.lineNumber;
+      let lineWidth = String(lastNumber ?? "").length;
+      for (const line of document.lines) {
+        if (shown !== undefined && !shown.has(line.lineNumber)) continue;
+        const item = anchorFor(line);
+        lineWidth = Math.max(lineWidth, String(item?.lineNumber ?? "").length);
+      }
+      const lines = document.lines.map((line) => {
+        const item =
+          shown === undefined || shown.has(line.lineNumber) ? anchorFor(line) : undefined;
 
         if (item === undefined) {
           return line;
