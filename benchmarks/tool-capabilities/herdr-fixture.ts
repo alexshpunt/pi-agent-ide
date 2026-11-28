@@ -11,7 +11,7 @@ export default async function fixture(pi: ExtensionAPI) {
   });
   const record = (text: string) => appendFile(path.join(cwd, "herdr-journal.txt"), `${text}\n`);
   pi.events.on("herdr:bridge", (request: unknown) => {
-    (request as { provide(api: unknown): void }).provide({
+    const bridge = {
       version: 1,
       async command(name: string, args: Record<string, unknown>) {
         if (name === "workflow.get")
@@ -88,6 +88,16 @@ export default async function fixture(pi: ExtensionAPI) {
           return { outcome: name === "agent.send" ? "submitted" : "removed" };
         }
         throw Error(`Unexpected bridge command ${name}`);
+      },
+    };
+    (request as { provide(api: unknown): void }).provide({
+      ...bridge,
+      async commandTracked(name: string, args: Record<string, unknown>) {
+        return {
+          id: "fixture-request",
+          revision: "fixture-revision",
+          result: await bridge.command(name, args),
+        };
       },
     });
   });
