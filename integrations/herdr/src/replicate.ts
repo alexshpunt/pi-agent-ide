@@ -298,7 +298,9 @@ export class ReplicaWatcher {
         : `${titleOf(replica.kind)} ${replica.name} in ${source} stopped (${status}).`;
       const hint = final
         ? "Inspect the delivered timeline and check its result. Close its tab with delete after checking it."
-        : "Inspect the delivered timeline and determine why it stopped. If its work is finished, check the result and close it with delete. If it needs input, answer its question or steer it with write. When nothing significant happened and it keeps working, stay silent: end your turn without a message.";
+        : status === "waiting"
+          ? "It waits for the user's answer to a question in its tab, and writes to it are refused until the user answers. Check that the question is one only the user can answer; then end your turn without a message. You hear again when it stops after the answer."
+          : "Inspect the delivered timeline and determine why it stopped. If its work is finished, check the result and close it with delete. If it needs input, answer its question or steer it with write. When nothing significant happened and it keeps working, stay silent: end your turn without a message.";
       this.deliver(
         replica,
         owner,

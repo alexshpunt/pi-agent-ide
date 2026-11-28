@@ -183,6 +183,32 @@ describe("subagent", () => {
     h.watcher.stopAll();
   });
 
+  it("lets a sub-agent ask the user only with askUser and reports its wait for the answer", async () => {
+    let question: string | undefined;
+    const replies = () => ({
+      "agent.subagent": () => ({ outcome: "started", terminal: "t5" }),
+      "agent.list": () => live("t5", question ? "blocked" : "working"),
+      "agent.inspect": () => {
+        const value = timeline("t5", "Drafted the task.");
+        return { ...value, inspection: { ...value.inspection, pendingQuestion: question } };
+      },
+    });
+    const quiet = harness(replies());
+    const plain = await quiet.run({ name: "plain", task: "x", profile: "feature" });
+    quiet.watcher.stopAll();
+    expect(String(quiet.calls[0][1].task)).not.toContain("ask_user");
+    expect(plain.details.askUser).toBeUndefined();
+    const h = harness(replies());
+    const asking = await h.run({ name: "manager", task: "x", profile: "feature", askUser: true });
+    expect(String(h.calls[0][1].task)).toContain("ask_user");
+    expect(asking.details).toMatchObject({ name: "manager", askUser: true });
+    question = "Accept LPT-1 as written?";
+    await until(() => h.sent.length === 1);
+    expect(h.sent[0].details).toMatchObject({ status: "waiting", final: false });
+    expect(h.sent[0].content).toContain("Accept LPT-1 as written?");
+    h.watcher.stopAll();
+  });
+
   it("follows this session's sub-agents again after a reload", async () => {
     const h = harness({
       "agent.list": () => live("t5", "done"),
@@ -233,7 +259,7 @@ describe("subagent", () => {
     const refusal = (message: string) => harness({ "agent.subagent": () => new Error(message) });
     await expect(
       refusal(
-        "agent.subagent refused: this agent is a replica or sub-agent at nesting depth 2, and nesting stops at depth 2. Do this work yourself.",
+        "agent.subagent refused: this agent is a replica or sub-agent at nesting depth 3, and nesting stops at depth 3. Do this work yourself.",
       ).run({ name: "side", task: "x", profile: "feature" }),
     ).rejects.toThrow(/^HERDR_NESTING_LIMIT/u);
     await expect(
