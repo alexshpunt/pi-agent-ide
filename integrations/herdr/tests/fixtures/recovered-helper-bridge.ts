@@ -14,7 +14,11 @@ export default async function fixture(pi: ExtensionAPI) {
       throw new Error(`Unexpected fixture command ${name}`);
     },
     recovery: {
-      async list() { return pending ? [{ id: 'fixture', revision: 'revision', session, operation: 'agent.replicate', toolCallId: 'call', state: 'result', recoverable: true, result: { terminal: 'fixture/t9' } }] : []; },
+      async list() { return pending ? [
+        { id: 'fixture', revision: 'revision', session, operation: 'agent.replicate', toolCallId: 'call', state: 'result', recoverable: true, result: { terminal: 'fixture/t9' } },
+        { id: 'fixture-refused', revision: 'revision', session, operation: 'agent.remove', toolCallId: 'call-2', state: 'error', recoverable: true, error: { effect: 'not-applied', reason: 'storage' } },
+        { id: 'fixture-unknown', revision: 'revision', session, operation: 'agent.send', toolCallId: 'call-3', state: 'unknown', recoverable: true, evidence: [{ result: { terminal: 'fixture/t8' } }] },
+      ] : []; },
       async ack({ items }: any) { if (items.some((item: any) => item.id === 'fixture')) pending = false; },
     },
   }));

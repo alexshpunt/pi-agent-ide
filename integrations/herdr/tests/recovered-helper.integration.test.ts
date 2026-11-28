@@ -51,6 +51,11 @@ test("a recovered helper launch is followed after its outcome is persisted", asy
         (entry) => entry.type === "custom_message" && entry.customType === "herdr-recovery",
       ),
     ).toBe(true);
+    const recovery = branch.find(
+      (entry) => entry.type === "custom_message" && entry.customType === "herdr-recovery",
+    );
+    expect(String(recovery?.content)).toContain("herdr:fixture/t8");
+    expect(String(recovery?.content)).not.toContain("fixture-refused");
     expect(
       branch.some(
         (entry) =>
