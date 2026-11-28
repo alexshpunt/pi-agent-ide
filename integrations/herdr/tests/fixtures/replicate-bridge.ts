@@ -16,7 +16,7 @@ export default async function fixture(pi: ExtensionAPI) {
         if (name === 'agent.replicate' && args.name === 'too-deep') {
           // Herdr refuses a replica of a Pi that is already nested as deep as allowed.
           refusedSession = String(args.session);
-          throw Error('agent.replicate refused: this agent is a replica or sub-agent at nesting depth 2, and nesting stops at depth 2. Do this work yourself.');
+          throw Error('agent.replicate refused: this agent is a replica or sub-agent at nesting depth 3, and nesting stops at depth 3. Do this work yourself.');
         }
         if (name === 'agent.replicate') {
           const rows = (await readFile(String(args.session), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
