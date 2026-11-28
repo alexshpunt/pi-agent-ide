@@ -16,6 +16,7 @@ import type { Capability } from "./validation.ts";
 const groups: [string[], string[]][] = [
   [["web-search.read", "web-search.search"], ["web-search-resource"]],
   [["web-search.image-read"], ["image-search-resource"]],
+  // Interrupted delivery is covered by recovered-helper.integration.test.ts, not these paid routes.
   [["herdr.read-message"], ["herdr-message"]],
   [["herdr.profile-subagent"], ["herdr-subagent"]],
   [["herdr.replicate-message"], ["herdr-replica"]],
